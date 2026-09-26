@@ -4,6 +4,11 @@ set -euo pipefail
 # JoltFX Project Scaffolding Script
 # Creates the complete directory structure and placeholder files
 
+if [[ "$1" != "--force" ]]; then
+	echo "Script run forbidden, it will destory important files in the repository"
+	exit 1
+fi
+
 PROJECT_ROOT="$(pwd)"
 PROJECT_NAME="JoltFX"
 PROJECT_VERSION="0.1.0"
@@ -649,14 +654,14 @@ cat > tilly/src/logger.c << 'EOF'
 
 void tilly_log(tilly_log_level_t level, const char *format, ...) {
     const char *level_str[] = {"DEBUG", "INFO", "WARN", "ERROR"};
-    
+
     fprintf(stderr, "[%s] ", level_str[level]);
-    
+
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);
     va_end(args);
-    
+
     fprintf(stderr, "\n");
 }
 EOF
@@ -1793,16 +1798,16 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Configure CMake
       run: cmake --preset default
-      
+
     - name: Build
       run: cmake --build build
-      
+
     - name: Run Tests
       run: ctest --test-dir build --output-on-failure
 EOF
