@@ -318,6 +318,7 @@ The following vendored or linked libraries are used across JoltFX's subsystems. 
 | xxHash               | Fast non-cryptographic hashing                        |
 | utf8.h               | UTF-8 string utilities                                |
 | PCRE2                | Regular expression engine                             |
+| Klib                 | Multi-purpose simple lightweight libraries            |
 
 ---
 
