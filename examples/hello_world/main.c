@@ -2,7 +2,7 @@
 #include "tilly/logger.h"
 
 int main(void) {
-    tilly_log(TILLY_LOG_INFO, "Hello from JoltFX!");
+    tilly_log_simple(TILLY_LOG_INFO, "Hello from JoltFX!");
 
     jfx_engine_config_t config = {
         .max_buffers = 256,
@@ -16,7 +16,7 @@ int main(void) {
         return 1;
     }
 
-    tilly_log(TILLY_LOG_INFO, "Engine initialized successfully");
+    tilly_log_simple(TILLY_LOG_INFO, "Engine initialized successfully");
 
     jfx_engine_shutdown(engine);
 

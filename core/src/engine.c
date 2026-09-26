@@ -1,10 +1,14 @@
 #include "jfx/jfx_engine.h"
+#include "jfx/jfx_memory.h"
+#include "jfx/jfx_scheduler.h"
+#include "jfx/jfx_events.h"
 #include "tilly/tilly.h"
+#include "tilly/allocator.h"
 #include <stdlib.h>
 #include <string.h>
 
 struct jfx_engine {
-    tilly_runtime_t *runtime;
+    tilly_context_t *ctx;
     jfx_engine_config_t config;
 };
 
@@ -18,15 +22,33 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
         return JFX_ERROR_OUT_OF_MEMORY;
     }
 
-    engine->runtime = tilly_init(tilly_default_allocator());
-    if (!engine->runtime) {
+    tilly_config_t tilly_config = {
+        .heap_size = 64 * 1024 * 1024,
+        .enable_logging = true,
+        .log_level = TILLY_LOG_INFO,
+        .enable_profiling = false,
+    };
+
+    engine->ctx = tilly_init(&tilly_config);
+    if (!engine->ctx) {
         free(engine);
         return JFX_ERROR_NOT_INITIALIZED;
     }
 
+    // Initialize memory subsystem with heap allocator
+    tilly_allocator_t *heap = tilly_get_heap_allocator(engine->ctx);
+    memory_init(heap);
+
+    // Initialize scheduler with configured thread count
+    uint32_t worker_count = config->max_buffers > 0 ? config->max_buffers : 4;
+    scheduler_init(worker_count);
+
+    // Initialize event bus
+    event_bus_init();
+
     memcpy(&engine->config, config, sizeof(jfx_engine_config_t));
 
-    tilly_log(TILLY_LOG_INFO, "JoltFX engine initialized");
+    tilly_log_info("jfx_engine", "JoltFX engine initialized");
 
     *out_engine = engine;
     return JFX_SUCCESS;
@@ -34,8 +56,14 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
 
 void jfx_engine_shutdown(jfx_engine_t *engine) {
     if (engine) {
-        tilly_log(TILLY_LOG_INFO, "JoltFX engine shutting down");
-        tilly_shutdown(engine->runtime);
+        tilly_log_info("jfx_engine", "JoltFX engine shutting down");
+        
+        // Shutdown subsystems in reverse order
+        event_bus_shutdown();
+        scheduler_shutdown();
+        memory_shutdown();
+        
+        tilly_shutdown(engine->ctx);
         free(engine);
     }
 }
@@ -44,6 +72,17 @@ jfx_result_t jfx_engine_tick(jfx_engine_t *engine) {
     if (!engine) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    
+    // Begin frame
+    event_publish(JFX_EVENT_FRAME_BEGIN, NULL);
+    
+    // Reset frame arena
+    jfx_frame_reset();
+    
     // TODO: Implement frame processing
+    
+    // End frame
+    event_publish(JFX_EVENT_FRAME_END, NULL);
+    
     return JFX_SUCCESS;
 }

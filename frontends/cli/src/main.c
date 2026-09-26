@@ -42,11 +42,11 @@ int main(int argc, char **argv) {
         jfx_result_t result = jfx_engine_init(&config, &engine);
 
         if (result != JFX_SUCCESS) {
-            tilly_log(TILLY_LOG_ERROR, "Failed to initialize engine");
+            tilly_log_simple(TILLY_LOG_ERROR, "Failed to initialize engine");
             return 1;
         }
 
-        tilly_log(TILLY_LOG_INFO, "Engine initialized, running...");
+        tilly_log_simple(TILLY_LOG_INFO, "Engine initialized, running...");
 
         // TODO: Load and execute effect pipeline
 

@@ -1,6 +1,7 @@
 add_subdirectory(tillyz)
 
 add_library(tilly STATIC
+    src/tilly.c
     src/allocator.c
     src/logger.c
     src/module.c

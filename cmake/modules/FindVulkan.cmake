@@ -1,7 +1,2 @@
-# Placeholder for Vulkan finder
-# Use find_package(Vulkan REQUIRED) in CMake 3.21+
-find_package(Vulkan QUIET)
-
-if(NOT Vulkan_FOUND)
-    message(STATUS "Vulkan SDK not found, skipping Vulkan backend")
-endif()
+# Use CMake's built-in Vulkan support (available in CMake 3.21+)
+# This file is a no-op since CMake 4.4.3 has built-in Vulkan support

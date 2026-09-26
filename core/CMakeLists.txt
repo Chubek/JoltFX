@@ -3,6 +3,7 @@ add_library(jfx_core STATIC
     src/scheduler.c
     src/memory.c
     src/event_bus.c
+    src/result.c
 )
 
 target_include_directories(jfx_core PUBLIC
