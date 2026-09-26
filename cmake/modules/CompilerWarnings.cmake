@@ -4,10 +4,8 @@ function(set_project_warnings target_name)
         -Wextra
         -Wpedantic
         -Wshadow
-        -Wnon-virtual-dtor
         -Wcast-align
         -Wunused
-        -Woverloaded-virtual
         -Wconversion
         -Wsign-conversion
         -Wnull-dereference
@@ -31,5 +29,6 @@ function(set_project_warnings target_name)
         set(PROJECT_WARNINGS ${MSVC_WARNINGS})
     endif()
 
-    target_compile_options(${target_name} PRIVATE ${PROJECT_WARNINGS})
+    target_compile_options(${target_name} PRIVATE ${PROJECT_WARNINGS}
+        $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor;-Woverloaded-virtual>)
 endfunction()

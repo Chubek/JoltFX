@@ -56,6 +56,7 @@ typedef struct {
 // Bootstrap context
 typedef struct tillyz_context {
     tillyz_arena_t arena;
+    int owns_arena;
     tillyz_error_t errors[16];
     uint32_t error_count;
     tillyz_platform_t platform;

@@ -17,6 +17,7 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
         return JFX_ERROR_INVALID_ARGUMENT;
     }
 
+    *out_engine = NULL;
     jfx_engine_t *engine = malloc(sizeof(jfx_engine_t));
     if (!engine) {
         return JFX_ERROR_OUT_OF_MEMORY;
@@ -37,14 +38,21 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
 
     // Initialize memory subsystem with heap allocator
     tilly_allocator_t *heap = tilly_get_heap_allocator(engine->ctx);
-    memory_init(heap);
+    if (!memory_init(heap)) {
+        tilly_shutdown(engine->ctx); free(engine); return JFX_ERROR_OUT_OF_MEMORY;
+    }
 
     // Initialize scheduler with configured thread count
     uint32_t worker_count = config->max_buffers > 0 ? config->max_buffers : 4;
-    scheduler_init(worker_count);
+    if (!scheduler_init(worker_count)) {
+        memory_shutdown(); tilly_shutdown(engine->ctx); free(engine); return JFX_ERROR_NOT_INITIALIZED;
+    }
 
     // Initialize event bus
-    event_bus_init();
+    if (!event_bus_init()) {
+        scheduler_shutdown(); memory_shutdown(); tilly_shutdown(engine->ctx); free(engine);
+        return JFX_ERROR_NOT_INITIALIZED;
+    }
 
     memcpy(&engine->config, config, sizeof(jfx_engine_config_t));
 
@@ -79,7 +87,8 @@ jfx_result_t jfx_engine_tick(jfx_engine_t *engine) {
     // Reset frame arena
     jfx_frame_reset();
     
-    // TODO: Implement frame processing
+    // Phase 1 frame boundary: complete queued CPU work before ending the frame.
+    scheduler_wait_idle();
     
     // End frame
     event_publish(JFX_EVENT_FRAME_END, NULL);

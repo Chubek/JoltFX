@@ -1,4 +1,4 @@
-#include "tilly/allocator.h"
+#include "jfx/jfx_memory.h"
 #include "tilly/logger.h"
 #include <stdlib.h>
 
@@ -6,7 +6,8 @@ static tilly_allocator_t *g_frame_arena = NULL;
 static tilly_allocator_t *g_resource_pool = NULL;
 static tilly_allocator_t *g_heap = NULL;
 
-void memory_init(tilly_allocator_t *heap) {
+bool memory_init(tilly_allocator_t *heap) {
+    if (!heap || g_heap) return false;
     g_heap = heap;
     
     // Create frame arena (1MB per frame)
@@ -15,8 +16,10 @@ void memory_init(tilly_allocator_t *heap) {
     // Create resource pool (4KB blocks, 1024 blocks = 4MB)
     g_resource_pool = tilly_allocator_create(TILLY_ALLOC_POOL, 4 * 1024 * 1024);
     
+    if (!g_frame_arena || !g_resource_pool) { memory_shutdown(); return false; }
     tilly_log_debug("memory", "Memory subsystem initialized: frame_arena=%p, resource_pool=%p", 
                     (void*)g_frame_arena, (void*)g_resource_pool);
+    return true;
 }
 
 void memory_shutdown(void) {
@@ -28,6 +31,7 @@ void memory_shutdown(void) {
         tilly_allocator_destroy(g_resource_pool);
         g_resource_pool = NULL;
     }
+    g_heap = NULL;
     tilly_log_debug("memory", "Memory subsystem shutdown");
 }
 

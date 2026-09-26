@@ -27,7 +27,7 @@ static void *arena_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
     uintptr_t aligned = (addr + align - 1) & ~(uintptr_t)(align - 1);
     size_t padding = aligned - addr;
     
-    if (state->offset + padding + size > state->size) {
+    if (padding > state->size - state->offset || size > state->size - state->offset - padding) {
         pthread_mutex_unlock(&state->lock);
         return NULL;
     }
@@ -78,7 +78,7 @@ typedef struct {
 
 static void *pool_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
     pool_state_t *state = (pool_state_t *)alloc->state;
-    if (!state || size > state->block_size) return NULL;
+    if (!state || size > state->block_size || align > _Alignof(max_align_t)) return NULL;
     
     pthread_mutex_lock(&state->lock);
     
@@ -103,6 +103,9 @@ static void pool_free(tilly_allocator_t *alloc, void *ptr) {
     
     pthread_mutex_lock(&state->lock);
     
+    uintptr_t position = (uintptr_t)ptr, base = (uintptr_t)state->blocks;
+    if (position < base || position - base >= state->block_count * state->block_size ||
+        (position - base) % state->block_size) { pthread_mutex_unlock(&state->lock); return; }
     pool_block_t *block = (pool_block_t *)ptr;
     block->next = state->free_list;
     state->free_list = block;
@@ -130,13 +133,13 @@ static void pool_reset(tilly_allocator_t *alloc) {
 static size_t pool_usage(const tilly_allocator_t *alloc) {
     pool_state_t *state = (pool_state_t *)alloc->state;
     if (!state) return 0;
-    return (state->block_count * state->block_size) - alloc->used;
+    return alloc->used;
 }
 
 // ==================== General Allocator (malloc/free) ====================
 
 static void *general_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
-    (void)align; // malloc doesn't guarantee alignment > max_align_t
+    if (align > _Alignof(max_align_t)) return NULL;
     void *ptr = malloc(size);
     if (ptr) {
         alloc->used += size;
@@ -182,7 +185,7 @@ static void *stack_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
     uintptr_t aligned = (addr + align - 1) & ~(uintptr_t)(align - 1);
     size_t padding = aligned - addr;
     
-    if (state->offset + padding + size > state->size) {
+    if (padding > state->size - state->offset || size > state->size - state->offset - padding) {
         return NULL;
     }
     
@@ -262,6 +265,8 @@ const tilly_allocator_t *tilly_default_allocator(void) {
 // ==================== Allocator Factory ====================
 
 tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_t capacity) {
+    if (strategy < TILLY_ALLOC_ARENA || strategy > TILLY_ALLOC_STACK ||
+        (capacity == 0 && strategy != TILLY_ALLOC_GENERAL)) return NULL;
     tilly_allocator_t *alloc = calloc(1, sizeof(tilly_allocator_t));
     if (!alloc) return NULL;
     
@@ -379,7 +384,7 @@ void tilly_allocator_destroy(tilly_allocator_t *alloc) {
 }
 
 void *tilly_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
-    if (!alloc || !alloc->alloc || size == 0) return NULL;
+    if (!alloc || !alloc->alloc || size == 0 || !align || (align & (align - 1))) return NULL;
     return alloc->alloc(alloc, size, align);
 }
 
@@ -402,14 +407,8 @@ void *tilly_realloc(tilly_allocator_t *alloc, void *ptr, size_t new_size) {
         return new_ptr;
     }
     
-    // Fallback: allocate new, copy, free old
-    void *new_ptr = tilly_alloc(alloc, new_size, 8);
-    if (new_ptr && ptr) {
-        // We don't know the old size, so this is best effort
-        memcpy(new_ptr, ptr, new_size);
-        tilly_free(alloc, ptr);
-    }
-    return new_ptr;
+    // Old allocation size is unavailable for arena, pool and stack.
+    return NULL;
 }
 
 void tilly_allocator_reset(tilly_allocator_t *alloc) {

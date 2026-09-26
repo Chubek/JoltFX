@@ -63,14 +63,16 @@ static void *arena_align_ptr(void *ptr, size_t align) {
 }
 
 void *tillyz_arena_alloc(tillyz_arena_t *arena, size_t size, size_t align) {
-    if (!arena || !arena->base || size == 0) {
+    if (!arena || !arena->base || !align || (align & (align - 1)) ||
+        arena->offset > arena->size || size == 0) {
         return NULL;
     }
     
     void *aligned_ptr = arena_align_ptr(arena->base + arena->offset, align);
     size_t padding = (uintptr_t)aligned_ptr - (uintptr_t)(arena->base + arena->offset);
     
-    if (arena->offset + padding + size > arena->size) {
+    if (padding > arena->size - arena->offset ||
+        size > arena->size - arena->offset - padding) {
         return NULL;
     }
     
@@ -93,7 +95,7 @@ size_t tillyz_arena_usage(const tillyz_arena_t *arena) {
 }
 
 size_t tillyz_arena_remaining(const tillyz_arena_t *arena) {
-    return arena ? (arena->size - arena->offset) : 0;
+    return arena && arena->offset <= arena->size ? arena->size - arena->offset : 0;
 }
 
 size_t tillyz_arena_peak(const tillyz_arena_t *arena) {
@@ -318,26 +320,33 @@ tillyz_context_t *tillyz_init(const tillyz_config_t *config) {
     // Allocate context from arena
     size_t arena_size = default_config.arena_size;
     uint8_t *arena_base = default_config.arena_buffer;
-    int owns_arena = 0;
+    int owns_arena = !arena_base;
     
-    if (!arena_base) {
+    if (!arena_base && arena_size >= sizeof(tillyz_context_t)) {
 #if defined(_WIN32)
         arena_base = VirtualAlloc(NULL, arena_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #else
         arena_base = mmap(NULL, arena_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (arena_base == MAP_FAILED) arena_base = NULL;
 #endif
-        owns_arena = 1;
+
     }
     
-    if (!arena_base) {
-        tillyz_default_panic("Failed to allocate bootstrap arena", __FILE__, __LINE__);
+    if (!arena_base) return NULL;
+    if (arena_size < sizeof(tillyz_context_t) ||
+        ((uintptr_t)arena_base % _Alignof(tillyz_context_t)) != 0) {
+#if defined(_WIN32)
+        if (owns_arena) VirtualFree(arena_base, 0, MEM_RELEASE);
+#else
+        if (owns_arena) munmap(arena_base, arena_size);
+#endif
         return NULL;
     }
     
     // Place context at start of arena
     tillyz_context_t *ctx = (tillyz_context_t *)arena_base;
     
+    ctx->owns_arena = owns_arena;
     ctx->arena.base = arena_base;
     ctx->arena.size = arena_size;
     ctx->arena.offset = sizeof(tillyz_context_t);
@@ -356,11 +365,11 @@ void tillyz_shutdown(tillyz_context_t *ctx) {
     
 #if !defined(_WIN32) && !defined(__wasm__) && !defined(__EMSCRIPTEN__)
     // If we allocated the arena, free it
-    if (ctx->arena.base && ctx->arena.base == (uint8_t *)ctx) {
+    if (ctx->owns_arena && ctx->arena.base) {
         munmap(ctx->arena.base, ctx->arena.size);
     }
 #elif defined(_WIN32)
-    if (ctx->arena.base && ctx->arena.base == (uint8_t *)ctx) {
+    if (ctx->owns_arena && ctx->arena.base) {
         VirtualFree(ctx->arena.base, 0, MEM_RELEASE);
     }
 #endif
