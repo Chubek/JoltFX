@@ -1,0 +1,123 @@
+﻿Category,Kernel Name,Description,Input Types,Output Type,Parameters,Complexity,GPU Friendly
+TRANSFORM,translate2d,Moves a frame in two-dimensional space by a horizontal and vertical offset.,"Frame, Vec2",Frame,offset:Vec2; interpolation:Kernel; border_mode:String,Low,Yes
+TRANSFORM,scale2d,Resizes a frame around a selected anchor point.,"Frame, Vec2",Frame,scale:Vec2; anchor:Vec2; interpolation:Kernel; border_mode:String,Low,Yes
+TRANSFORM,rotate2d,Rotates a frame around a pivot point in the image plane.,"Frame, Float",Frame,angle:Float; pivot:Vec2; interpolation:Kernel; border_mode:String,Low,Yes
+TRANSFORM,skew2d,Shears a frame along horizontal and vertical axes.,"Frame, Vec2",Frame,skew:Vec2; pivot:Vec2; interpolation:Kernel; border_mode:String,Low,Yes
+TRANSFORM,transform3d,"Applies a three-dimensional position, rotation, and scale to a frame.","Frame, Vec3, Vec3, Vec3",Frame,position:Vec3; rotation:Vec3; scale:Vec3; camera:Kernel,High,Partial
+TRANSFORM,perspective_warp,Maps a frame between four-point perspective quadrilaterals.,"Frame, Vec2[]",Frame,corners:Vec2[]; interpolation:Kernel; border_mode:String; antialias:Bool,Medium,Yes
+TRANSFORM,affine_transform,Applies a general two-dimensional affine matrix to a frame.,"Frame, Matrix3",Frame,matrix:Matrix3; interpolation:Kernel; border_mode:String; antialias:Bool,Medium,Yes
+TRANSFORM,polar_transform,Converts image coordinates between Cartesian and polar layouts.,"Frame, Bool",Frame,inverse:Bool; center:Vec2; radius:Float; interpolation:Kernel,Medium,Yes
+COLOR,brightness_contrast,Adjusts image brightness and contrast while preserving the frame layout.,"Frame, Float, Float",Frame,brightness:Float; contrast:Float; pivot:Float; clamp:Bool,Low,Yes
+COLOR,hue_rotate,Rotates hue values around the color wheel.,"Frame, Float",Frame,angle:Float; color_space:String; preserve_luma:Bool; clamp:Bool,Low,Yes
+COLOR,saturation,Scales color saturation without changing image geometry.,"Frame, Float",Frame,amount:Float; color_space:String; preserve_luma:Bool; clamp:Bool,Low,Yes
+COLOR,color_balance,"Adjusts color casts in shadows, midtones, and highlights.","Frame, Vec3, Vec3, Vec3",Frame,shadows:Vec3; midtones:Vec3; highlights:Vec3; preserve_luma:Bool,Medium,Yes
+COLOR,levels,Remaps input tonal ranges to an output range.,"Frame, Vec4",Frame,input_black:Float; input_white:Float; gamma:Float; output_black:Float; output_white:Float,Low,Yes
+COLOR,curves,Applies a channel curve to remap image tone values.,"Frame, Curve",Frame,curve:Curve; channel:String; interpolation:String; clamp:Bool,Medium,Yes
+COLOR,lut_apply,Applies a lookup table to transform image colors.,"Frame, LUT",Frame,lut:LUT; strength:Float; interpolation:String; input_space:String; output_space:String,Medium,Yes
+COLOR,channel_mixer,Recombines input color channels using a configurable mixing matrix.,"Frame, Matrix3",Frame,matrix:Matrix3; preserve_alpha:Bool; clamp:Bool; output_space:String,Low,Yes
+COLOR,vibrance,Boosts muted colors with reduced effect on already saturated colors.,"Frame, Float",Frame,amount:Float; skin_protection:Bool; color_space:String; clamp:Bool,Medium,Yes
+COLOR,color_temperature,Shifts image white balance using temperature and tint controls.,"Frame, Float, Float",Frame,temperature:Float; tint:Float; strength:Float; color_space:String,Medium,Yes
+COLOR,exposure,Adjusts image exposure using an exposure value and optional offset.,"Frame, Float",Frame,exposure_ev:Float; offset:Float; gamma:Float; clamp:Bool,Low,Yes
+COLOR,invert,Inverts selected color channels in a frame.,"Frame, Bool[]",Frame,channels:Bool[]; invert_alpha:Bool; color_space:String; clamp:Bool,Low,Yes
+BLUR/SHARPEN,gaussian_blur,Softens an image with a Gaussian blur kernel.,"Frame, Float",Frame,radius:Float; sigma:Float; iterations:Int; edge_mode:String,Low,Yes
+BLUR/SHARPEN,motion_blur,Blurs image samples along a direction and motion distance.,"Frame, Vec2, Float",Frame,direction:Vec2; distance:Float; samples:Int; shutter:Float,Medium,Yes
+BLUR/SHARPEN,radial_blur,Creates a blur radiating toward or away from a chosen center.,"Frame, Vec2, Float",Frame,center:Vec2; amount:Float; samples:Int; zoom:Float,Medium,Yes
+BLUR/SHARPEN,box_blur,Averages neighboring pixels over a rectangular kernel.,"Frame, Int",Frame,radius:Int; radius_y:Int; iterations:Int; edge_mode:String,Low,Yes
+BLUR/SHARPEN,unsharp_mask,Sharpens detail by adding a scaled high-frequency image component.,"Frame, Float, Float",Frame,radius:Float; amount:Float; threshold:Float; edge_mode:String,Medium,Yes
+BLUR/SHARPEN,bilateral_filter,Smooths local noise while reducing blur across strong edges.,"Frame, Float, Float",Frame,spatial_sigma:Float; range_sigma:Float; radius:Int; iterations:Int,High,Partial
+BLUR/SHARPEN,lens_blur,Simulates depth-dependent defocus using an aperture shape.,"Frame, Float, Mask",Frame,radius:Float; aperture:String; blade_count:Int; rotation:Float; depth_mask:Mask,High,Partial
+BLUR/SHARPEN,tilt_shift,Combines blur and a focus band to simulate a miniature-depth effect.,"Frame, Float, Vec2",Frame,focus_center:Vec2; focus_width:Float; blur_radius:Float; transition:Float,Medium,Yes
+DISTORTION,wave_distort,Displaces image coordinates with periodic wave motion.,"Frame, Float, Float",Frame,amplitude:Float; frequency:Float; phase:Float; axis:String; border_mode:String,Medium,Yes
+DISTORTION,ripple,Creates concentric wave displacement around a center point.,"Frame, Vec2, Float",Frame,center:Vec2; amplitude:Float; wavelength:Float; phase:Float; damping:Float,Medium,Yes
+DISTORTION,bulge_pinch,Warps pixels radially inward or outward within a defined region.,"Frame, Vec2, Float, Float",Frame,center:Vec2; radius:Float; strength:Float; falloff:Float; border_mode:String,Medium,Yes
+DISTORTION,lens_distortion,Corrects or adds radial and tangential lens distortion.,"Frame, Float, Float, Float",Frame,k1:Float; k2:Float; p1:Float; p2:Float; center:Vec2,High,Yes
+DISTORTION,displacement_map,Offsets image coordinates according to channels in a displacement frame.,"Frame, Frame, Float",Frame,map:Frame; amount:Float; channel_x:String; channel_y:String; border_mode:String,Medium,Yes
+DISTORTION,turbulence_warp,Warps an image using a multiscale procedural turbulence field.,"Frame, Float, Float",Frame,scale:Float; strength:Float; octaves:Int; seed:Int; evolution:Float,High,Yes
+DISTORTION,polar_coords,Reprojects an image between polar coordinates and Cartesian coordinates.,"Frame, Bool",Frame,inverse:Bool; center:Vec2; radius:Float; angle_offset:Float; interpolation:Kernel,Medium,Yes
+DISTORTION,twist,Rotates pixels by a radius-dependent angle around a center.,"Frame, Vec2, Float, Float",Frame,center:Vec2; radius:Float; angle:Float; falloff:Float; border_mode:String,Medium,Yes
+GENERATIVE,solid_color,Generates a frame filled with a constant color.,"Color, Int, Int",Frame,color:Color; width:Int; height:Int; format:String,Low,Yes
+GENERATIVE,gradient_linear,Generates a linear color gradient between configured stops.,"ColorMap, Vec2, Int, Int",Frame,stops:ColorMap; start:Vec2; end:Vec2; width:Int; height:Int,Low,Yes
+GENERATIVE,gradient_radial,Generates a radial color gradient centered on a point.,"ColorMap, Vec2, Float, Int, Int",Frame,stops:ColorMap; center:Vec2; radius:Float; width:Int; height:Int,Low,Yes
+GENERATIVE,checkerboard,Generates a repeating checker pattern with two colors.,"Color, Color, Int, Int, Int, Int",Frame,color_a:Color; color_b:Color; cell_width:Int; cell_height:Int; width:Int; height:Int,Low,Yes
+GENERATIVE,grid,Generates a regular grid pattern with configurable spacing and line styling.,"Color, Color, Vec2, Int, Int",Frame,background:Color; line_color:Color; spacing:Vec2; line_width:Float; width:Int; height:Int,Low,Yes
+GENERATIVE,plasma,"Generates an animated, smoothly varying color field from periodic functions.","ColorMap, Float, Int, Int",Frame,palette:ColorMap; time:Float; scale:Float; width:Int; height:Int,Medium,Yes
+GENERATIVE,cell_noise,Generates a cellular pattern from seeded feature points.,"Int, Float, Int, Int",Frame,seed:Int; cell_scale:Float; metric:String; output_mode:String; width:Int; height:Int,Medium,Yes
+GENERATIVE,voronoi,Generates a Voronoi diagram or feature-distance texture.,"Int, Float, Int, Int",Frame,seed:Int; cell_scale:Float; metric:String; edge_width:Float; width:Int; height:Int,Medium,Yes
+GENERATIVE,mandelbrot,Renders the Mandelbrot set as a color-mapped fractal image.,"Vec2, Float, Int, ColorMap, Int, Int",Frame,center:Vec2; zoom:Float; iterations:Int; palette:ColorMap; width:Int; height:Int,High,Yes
+COMPOSITING,blend,Combines two frames using a selected blend mode and opacity.,"Frame, Frame, Float",Frame,mode:String; opacity:Float; mask:Mask; preserve_alpha:Bool,Medium,Yes
+COMPOSITING,alpha_composite,Composites a foreground frame over a background using alpha.,"Frame, Frame",Frame,opacity:Float; premultiplied:Bool; blend_space:String; mask:Mask,Low,Yes
+COMPOSITING,chroma_key,Creates transparency from a target color range in a frame.,"Frame, Color",Frame,key_color:Color; tolerance:Float; softness:Float; spill_suppression:Float; despill:Bool,Medium,Yes
+COMPOSITING,luma_matte,Uses luminance values from a source frame to create a matte.,"Frame, Frame",Frame,source:Frame; invert:Bool; threshold:Float; softness:Float; channel:String,Low,Yes
+COMPOSITING,screen,Composites frames using the screen blend equation.,"Frame, Frame, Float",Frame,opacity:Float; mask:Mask; preserve_alpha:Bool; blend_space:String,Low,Yes
+COMPOSITING,multiply,Composites frames using the multiply blend equation.,"Frame, Frame, Float",Frame,opacity:Float; mask:Mask; preserve_alpha:Bool; blend_space:String,Low,Yes
+COMPOSITING,overlay,Composites frames using the overlay blend equation.,"Frame, Frame, Float",Frame,opacity:Float; mask:Mask; preserve_alpha:Bool; blend_space:String,Low,Yes
+COMPOSITING,difference,Composites frames by calculating the per-channel absolute difference.,"Frame, Frame, Float",Frame,opacity:Float; mask:Mask; preserve_alpha:Bool; blend_space:String,Low,Yes
+COMPOSITING,add,Adds corresponding frame channels with configurable intensity and clipping.,"Frame, Frame, Float",Frame,amount:Float; clamp:Bool; mask:Mask; preserve_alpha:Bool,Low,Yes
+PARTICLE,particle_emit,Creates particles from an emitter shape using rate and lifetime settings.,"Path, Int, Float",ParticleSystem,shape:Path; rate:Float; lifetime:Float; seed:Int; velocity:Vec2,High,Partial
+PARTICLE,particle_gravity,Applies constant gravitational acceleration to a particle system.,"ParticleSystem, Vec2, Float",ParticleSystem,gravity:Vec2; time_step:Float; mass_scale:Float; enabled:Bool,Low,Yes
+PARTICLE,particle_turbulence,Applies a procedural turbulent force field to particle motion.,"ParticleSystem, Float, Int",ParticleSystem,strength:Float; scale:Float; octaves:Int; seed:Int; time_step:Float,High,Partial
+PARTICLE,particle_collide,Resolves particle collisions against a frame-based or geometric surface.,"ParticleSystem, Frame, Float",ParticleSystem,surface:Frame; restitution:Float; friction:Float; radius:Float; enabled:Bool,High,Partial
+PARTICLE,particle_trail,Renders particle motion history as trails in an output frame.,"ParticleSystem, Int, Float",Frame,history: Int; fade:Float; width:Float; color:Color; blend_mode:String,Medium,Yes
+PARTICLE,particle_color_over_life,Assigns particle colors by evaluating a color map over normalized age.,"ParticleSystem, ColorMap",ParticleSystem,colors:ColorMap; age_start:Float; age_end:Float; interpolation:String,Medium,Yes
+TEXT,text_render,Rasterizes styled text into a frame using a selected font and layout.,"String, String, Int, Int",Frame,text:String; font:String; size:Float; color:Color; alignment:String; width:Int; height:Int,Medium,Partial
+TEXT,text_path,Places glyphs along a path and renders the resulting text frame.,"String, String, Path",Frame,text:String; font:String; size:Float; offset:Float; alignment:String; reverse:Bool,High,Partial
+TEXT,text_scramble,Animates text by replacing glyphs with randomized characters during a reveal.,"String, Float, Int",Frame,text:String; progress:Float; seed:Int; character_set:String; font:String; size:Float,Medium,Partial
+TEXT,text_typewriter,Reveals text progressively according to a typewriter timing value.,"String, Float, Int",Frame,text:String; progress:Float; characters_per_step:Int; font:String; size:Float; color:Color,Low,Partial
+TEXT,text_kinetic,"Animates glyph positions, rotations, and scale using per-character timing.","String, Float, Curve",Frame,text:String; time:Float; motion_curve:Curve; stagger:Float; font:String; size:Float,High,Partial
+3D,extrude_path,Extrudes a two-dimensional path into a shaded three-dimensional mesh.,"Path, Float",Mesh,path:Path; depth:Float; bevel:Float; bevel_segments:Int; cap:Bool,High,Partial
+3D,depth_map_shade,Derives surface shading from depth variations in a depth frame.,"Frame, Frame, Vec3",Frame,color:Frame; depth:Frame; light_direction:Vec3; depth_scale:Float; ambient:Float,Medium,Yes
+3D,normal_map_light,Lights a normal-map frame using a configurable directional light.,"Frame, Frame, Vec3",Frame,color:Frame; normal_map:Frame; light_direction:Vec3; intensity:Float; specular:Float,Medium,Yes
+3D,ambient_occlusion,Estimates local occlusion from scene depth or geometry.,"Frame, Frame",Frame,depth:Frame; radius:Float; strength:Float; samples:Int; bias:Float,High,Partial
+3D,obj_render,"Renders an OBJ mesh with a camera, material, and lighting configuration.","Mesh, Kernel",Frame,mesh:Mesh; camera:Kernel; material:Kernel; lighting:Kernel; width:Int; height:Int,High,Partial
+AUDIO_REACTIVE,audio_amplitude_scale,Maps audio amplitude to a scalar animation control.,"AudioBuffer, Float",Float,audio:AudioBuffer; gain:Float; smoothing:Float; attack:Float; release:Float,Low,Yes
+AUDIO_REACTIVE,audio_spectrum_bars,Renders audio frequency bands as bars in a frame.,"AudioBuffer, Int, Int, Int",Frame,audio:AudioBuffer; bands:Int; width:Int; height:Int; color:Color; smoothing:Float,Medium,Partial
+AUDIO_REACTIVE,audio_waveform_draw,Draws an audio waveform into a frame over a selected time window.,"AudioBuffer, Int, Int",Frame,audio:AudioBuffer; width:Int; height:Int; samples:Int; color:Color; line_width:Float,Low,Yes
+AUDIO_REACTIVE,audio_beat_flash,Generates a flash control from detected audio beat events.,"AudioBuffer, Float",Float,audio:AudioBuffer; threshold:Float; decay:Float; sensitivity:Float; smoothing:Float,Medium,Partial
+MASK_MATTE,rect_mask,Generates a rectangular mask with optional rounded corners.,"Vec2, Vec2, Int, Int",Mask,center:Vec2; size:Vec2; corner_radius:Float; feather:Float; width:Int; height:Int,Low,Yes
+MASK_MATTE,ellipse_mask,Generates an elliptical mask with configurable center and softness.,"Vec2, Vec2, Int, Int",Mask,center:Vec2; radii:Vec2; feather:Float; invert:Bool; width:Int; height:Int,Low,Yes
+MASK_MATTE,bezier_mask,Rasterizes a closed Bezier path into a mask.,"Path, Int, Int",Mask,path:Path; feather:Float; antialias:Bool; fill_rule:String; width:Int; height:Int,Medium,Yes
+MASK_MATTE,feather_mask,Softens mask edges by applying a configurable feather radius.,"Mask, Float",Mask,mask:Mask; radius:Float; iterations:Int; edge_mode:String; expand:Float,Low,Yes
+MASK_MATTE,track_matte,Combines a source frame with a mask or matte frame.,"Frame, Mask, Bool",Frame,source:Frame; matte:Mask; invert:Bool; premultiplied:Bool; opacity:Float,Low,Yes
+TIME,frame_delay,Outputs a frame from a specified number of frames earlier.,"Frame[], Int",Frame,frames:Frame[]; delay:Int; boundary_mode:String; cache:Bool,Medium,Partial
+TIME,time_remap,Maps output time to a source-frame time using a configurable time curve.,"Frame[], Curve",Frame,frames:Frame[]; time:Float; mapping:Curve; interpolation:String; boundary_mode:String,Medium,Partial
+TIME,frame_blend,Interpolates between adjacent frames to create a blended temporal sample.,"Frame, Frame, Float",Frame,frame_a:Frame; frame_b:Frame; weight:Float; optical_flow:Bool; blend_mode:String,Medium,Yes
+TIME,motion_trail,Composites earlier frames with decreasing weights to create a motion trail.,"Frame[], Int",Frame,frames:Frame[]; length:Int; decay:Float; blend_mode:String; direction:String,Medium,Partial
+TIME,freeze_frame,Outputs a chosen source frame unchanged for the selected time range.,"Frame[], Int, Float",Frame,frames:Frame[]; frame_index:Int; start_time:Float; end_time:Float,Low,Partial
+NOISE,perlin_noise,Generates smooth gradient noise with configurable scale and octaves.,"Int, Float, Int, Int",Frame,seed:Int; scale:Float; octaves:Int; persistence:Float; width:Int; height:Int,Medium,Yes
+NOISE,simplex_noise,Generates continuous simplex noise with configurable frequency and seed.,"Int, Float, Int, Int",Frame,seed:Int; scale:Float; octaves:Int; amplitude:Float; width:Int; height:Int,Medium,Yes
+NOISE,worley_noise,Generates cellular noise from distances to randomized feature points.,"Int, Float, String, Int, Int",Frame,seed:Int; scale:Float; metric:String; output_mode:String; width:Int; height:Int,Medium,Yes
+NOISE,fractal_noise,Combines multiple noise octaves into a fractal procedural texture.,"Int, Float, Int, Float, Int, Int",Frame,seed:Int; scale:Float; octaves:Int; persistence:Float; lacunarity:Float; width:Int; height:Int,Medium,Yes
+NOISE,white_noise,Generates independent random noise values for each pixel.,"Int, Float, Int, Int",Frame,seed:Int; amplitude:Float; monochrome:Bool; width:Int; height:Int,Low,Yes
+FRACTAL,julia_set,Renders a Julia set fractal for a selected complex constant and view.,"Vec2, Vec2, Float, Int, ColorMap, Int, Int",Frame,center:Vec2; constant:Vec2; zoom:Float; iterations:Int; palette:ColorMap; width:Int; height:Int,High,Yes
+FRACTAL,ifs_fractal,Generates a fractal image by iterating weighted affine transforms.,"Kernel, Int, Int, Int, ColorMap",Frame,transforms:Kernel; iterations:Int; seed:Int; width:Int; height:Int; palette:ColorMap,High,Partial
+FRACTAL,barnsley_fern,Renders a Barnsley fern from its iterated function system.,"Int, Int, Int, Color",Frame,iterations:Int; seed:Int; width:Int; height:Int; color:Color; scale:Float,Medium,Partial
+TRANSITION,cross_dissolve,Interpolates two frames over time for a smooth dissolve transition.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; curve:Curve; premultiplied:Bool,Low,Yes
+TRANSITION,wipe,Reveals a destination frame across a directional boundary.,"Frame, Frame, Float, Vec2",Frame,from:Frame; to:Frame; progress:Float; direction:Vec2; softness:Float,Low,Yes
+TRANSITION,zoom_transition,Transitions between frames using a timed zoom and crossfade.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; zoom:Float; center:Vec2; curve:Curve,Medium,Yes
+TRANSITION,luma_wipe,Reveals a destination frame according to a luminance map.,"Frame, Frame, Frame, Float",Frame,from:Frame; to:Frame; luma:Frame; progress:Float; softness:Float; invert:Bool,Medium,Yes
+TRANSITION,slide_transition,Moves source and destination frames in opposite directions during a transition.,"Frame, Frame, Float, Vec2",Frame,from:Frame; to:Frame; progress:Float; direction:Vec2; easing:Curve,Medium,Yes
+TRANSITION,cube_flip,Transitions between frames with a simulated rotating cube-face effect.,"Frame, Frame, Float, Vec3",Frame,from:Frame; to:Frame; progress:Float; axis:Vec3; perspective:Float; background:Color,High,Partial
+LIGHT,point_light,Illuminates a frame from a position with distance attenuation.,"Frame, Vec2, Color",Frame,position:Vec2; color:Color; intensity:Float; radius:Float; falloff:Float,Medium,Yes
+LIGHT,directional_light,Applies uniform directional illumination to a frame or normal map.,"Frame, Vec3, Color",Frame,direction:Vec3; color:Color; intensity:Float; ambient:Float; normal_map:Frame,Medium,Yes
+LIGHT,glow,Adds a soft luminous halo around bright image regions.,"Frame, Float, Float",Frame,threshold:Float; radius:Float; intensity:Float; color:Color; iterations:Int,Medium,Yes
+LIGHT,lens_flare,Generates a lens-flare overlay aligned to a light position.,"Frame, Vec2, Float",Frame,position:Vec2; intensity:Float; color:Color; scale:Float; ghost_count:Int,Medium,Partial
+LIGHT,bloom,Extracts highlights and spreads their brightness over nearby pixels.,"Frame, Float, Float",Frame,threshold:Float; radius:Float; intensity:Float; knee:Float; iterations:Int,Medium,Yes
+LIGHT,shadow_cast,Creates a soft offset shadow from a frame alpha or mask.,"Frame, Vec2, Color",Frame,offset:Vec2; color:Color; blur_radius:Float; opacity:Float; spread:Float,Medium,Yes
+GEOMETRY,stroke_path,Draws a stroked outline along a vector path into an output frame.,"Path, Float, Color, Int, Int",Frame,path:Path; width:Float; color:Color; cap:String; join:String; canvas_size:Vec2,Low,Yes
+GEOMETRY,fill_shape,Fills a closed path with a solid or mapped color.,"Path, Color",Frame,path:Path; color:Color; fill_rule:String; antialias:Bool; opacity:Float,Low,Yes
+GEOMETRY,boolean_op,Combines two vector paths using a Boolean geometry operation.,"Path, Path, String",Path,path_a:Path; path_b:Path; operation:String; tolerance:Float; fill_rule:String,Medium,Partial
+GEOMETRY,offset_path,Offsets a path inward or outward by a signed distance.,"Path, Float",Path,path:Path; distance:Float; join:String; miter_limit:Float; tolerance:Float,Medium,Partial
+GEOMETRY,shape_morph,Interpolates corresponding points between two compatible vector paths.,"Path, Path, Float",Path,path_a:Path; path_b:Path; progress:Float; correspondence:String; easing:Curve,High,Partial
+DATA_ANALYSIS,histogram_compute,Computes per-channel value distributions for an input frame.,"Frame, Int",Histogram,frame:Frame; bins:Int; channel:String; range:Vec2; normalized:Bool,Low,Partial
+DATA_ANALYSIS,motion_detect,Measures frame-to-frame change and returns a motion mask or score.,"Frame, Frame, Float",Mask,previous:Frame; current:Frame; threshold:Float; blur_radius:Float; output_mode:String,Medium,Partial
+DATA_ANALYSIS,optical_flow,Estimates per-pixel motion vectors between consecutive frames.,"Frame, Frame",FlowField,previous:Frame; current:Frame; pyramid_levels:Int; window_size:Int; quality:String,High,Partial
+DATA_ANALYSIS,edge_detect,Detects image edges and outputs an edge-strength frame.,"Frame, Float, Float",Frame,low_threshold:Float; high_threshold:Float; operator:String; blur_radius:Float; output_mode:String,Medium,Yes
+DATA_ANALYSIS,corner_detect,Finds image corner features and returns their positions and response values.,"Frame, Int, Float",Point[],frame:Frame; max_corners:Int; quality:Float; min_distance:Float; method:String,High,Partial
+UTILITY,passthrough,Returns the input frame unchanged for graph routing or interface compatibility.,Frame,Frame,frame:Frame; enabled:Bool; label:String,Low,Yes
+UTILITY,clamp_values,Constrains numeric frame values to a specified minimum and maximum.,"Frame, Float, Float",Frame,minimum:Float; maximum:Float; channels:String; preserve_nan:Bool,Low,Yes
+UTILITY,remap_range,Linearly remaps input values from one numeric interval to another.,"Frame, Vec2, Vec2",Frame,input_range:Vec2; output_range:Vec2; clamp:Bool; channels:String,Low,Yes
+UTILITY,premultiply_alpha,Multiplies color channels by alpha for premultiplied-alpha processing.,Frame,Frame,frame:Frame; alpha_channel:String; color_space:String; clamp:Bool,Low,Yes
+UTILITY,format_convert,Converts a frame to a requested pixel format and color representation.,"Frame, String",Frame,format:String; color_space:String; bit_depth:Int; alpha_mode:String,Low,Partial
+UTILITY,channel_split,Extracts selected channels from a frame into separate output frames.,"Frame, String[]",Frame[],frame:Frame; channels:String[]; output_format:String; normalize:Bool,Low,Partial
+UTILITY,channel_merge,Combines separate channel frames into a single multi-channel frame.,"Frame[], String[]",Frame,channels:Frame[]; channel_names:String[]; outputBool,Low,Partial
+UTILITY,channel_merge,Combines separate channel frames into a single multi-channel frame.,"Frame[], String[]",Frame,channels:Frame[]; channel_names:String[]; output_format:String; alpha_mode:String,Low,Partial

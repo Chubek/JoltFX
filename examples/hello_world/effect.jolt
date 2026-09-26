@@ -1,0 +1,9 @@
+// Simple passthrough effect
+kernel passthrough {
+    input source: Texture2D;
+    output result: Texture2D;
+
+    fn main(coord: vec2) -> vec4 {
+        return sample(source, coord);
+    }
+}

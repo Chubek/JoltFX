@@ -1,0 +1,11 @@
+// Brightness adjustment kernel
+kernel brightness {
+    input image: Texture2D;
+    output result: Texture2D;
+    param amount: float;
+
+    fn main(coord: vec2) -> vec4 {
+        let color = sample(image, coord);
+        return vec4(color.rgb * amount, color.a);
+    }
+}

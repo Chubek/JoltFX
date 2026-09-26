@@ -1,0 +1,9 @@
+PROJECT_NAME           = "JoltFX"
+PROJECT_NUMBER         = 0.1.0
+OUTPUT_DIRECTORY       = docs/_build
+INPUT                  = core/include tilly/include joltscript/layers/execution/include joltscript/layers/glue/include
+RECURSIVE              = YES
+EXTRACT_ALL            = YES
+GENERATE_LATEX         = NO
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html

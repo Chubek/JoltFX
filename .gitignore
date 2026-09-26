@@ -1,0 +1,54 @@
+# Build artifacts
+build/
+build-*/
+build_*/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Rust
+target/
+Cargo.lock
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Documentation
+docs/_build/
+*.pdf
+
+# Package artifacts
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Test outputs
+test_results/
+*.log
+
+# Binary images
+*.bin
+*.dat
+*.cache
+
