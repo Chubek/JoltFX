@@ -1,4 +1,4 @@
-# JoltFX Glue Layer Specification
+# AGENTS.md — JoltFX Glue Layer
 
 ## Overview
 
@@ -6,8 +6,43 @@ The Glue Layer is the binding infrastructure between JoltFX's high-level compone
 
 ---
 
+## Repository Layout
+
+```
+joltscript/layers/glue/
+  src/
+    abi_registry.c       # Symbol catalog and function pointer resolution
+    marshal_engine.c     # Type conversion across language boundaries
+    capability_dispatch.c # Pre-call capability enforcement and routing
+    lifetime_bridge.c    # Cross-model memory ownership synchronization
+    error_adapter.c      # Unified error representation and propagation
+    extension_host.c     # Third-party extension load, sandbox, and lifecycle
+    jolt_glue.c          # Public API entry points
+  include/
+    jolt_glue.h          # Main C header
+    jolt_glue_types.h    # Type descriptors only (for codegen tools)
+    jolt_glue_marshal.h  # Marshal engine internals (for adapter authors)
+    jolt_abi.h           # ABI registry types
+    jolt_capability.h    # Capability system types
+    jolt_lifetime.h      # Lifetime bridge types
+    jolt_error.h         # Error adapter types
+    jolt_extension.h     # Extension host types
+  bindings/
+    rust/                # Generated Rust crate (jolt-glue)
+    python/              # Generated Python module (jolt_glue)
+    go/                  # Generated Go package (github.com/joltfx/glue)
+  tests/
+    unit/                # Per-component unit tests
+    integration/         # Cross-language round-trip tests
+    conformance/         # ABI stability tests
+  benches/               # Marshaling/dispatch overhead benchmarks
+```
+
+---
+
 ## Architecture
 
+```
 ┌─────────────────────────────────────────────────┐
 │         User-Facing Layer                        │
 │   CLI │ TUI │ Dear ImGui GUI │ Web (joltvm.js)  │
@@ -28,7 +63,7 @@ The Glue Layer is the binding infrastructure between JoltFX's high-level compone
 ┌────────────────▼────────────────────────────────┐
 │         Tilly Core / JoltVM                      │
 └─────────────────────────────────────────────────┘
-
+```
 
 ---
 
@@ -60,14 +95,17 @@ JoltStatus       jolt_abi_resolve_all(JoltABIRegistry*);
 
 #### Symbol Naming Convention
 
+```
 jolt.<module>.<subsystem>.<name>
+```
 
 Examples:
-  jolt.fx.render.submit_frame
-  jolt.core.timeline.advance
-  jolt.script.kernel.invoke
-  jolt.vm.heap.alloc
+- `jolt.fx.render.submit_frame`
+- `jolt.core.timeline.advance`
+- `jolt.script.kernel.invoke`
+- `jolt.vm.heap.alloc`
 
+**All symbols must follow this convention.** The Glue Layer rejects symbols that don't match at registration time when `abi_strict_mode` is enabled.
 
 ---
 
@@ -190,7 +228,14 @@ JoltStatus jolt_dispatch(
 
 #### Capability Grant Model
 
-Capabilities are assigned per-call-site at the binding layer, not per-module. A Python extension calling into the render subsystem must have `JOLT_CAP_RENDER` in its dispatch context. The Glue Layer enforces this before any C A Python extension calling into the render subsystem must have `JOLT_CAP_RENDER` in its dispatch context. The Glue Layer enforces this before any C s);
+Capabilities are assigned **per-call-site at the binding layer**, not per-module. A Python extension calling into the render subsystem must have `JOLT_CAP_RENDER` in its dispatch context. The Glue Layer enforces this before any C function is invoked.
+
+```c
+typedef struct JoltCapGrant {
+    uint64_t capabilities;
+} JoltCapGrant;
+
+JoltCapGrant* jolt_cap_grant_create(uint64_t capabilities);
 void          jolt_cap_grant_destroy(JoltCapGrant*);
 
 // Attach to a scripting runtime context
@@ -198,6 +243,7 @@ JoltStatus jolt_cap_attach(JoltScriptCtx*, JoltCapGrant*);
 
 // Check before dispatch (called internally)
 bool jolt_cap_check(JoltDispatchCtx*, JoltCapability);
+```
 
 ---
 
@@ -205,7 +251,7 @@ bool jolt_cap_check(JoltDispatchCtx*, JoltCapability);
 
 The Lifetime Bridge synchronizes object lifetimes across the ARC (Joltscript), stack/arena (C kernels), and garbage-collected (Python) or ownership-tracked (Rust) memory models.
 
-c
+```c
 typedef enum JoltLifetimeKind {
     JOLT_LT_ARC,        // Joltscript automatic reference counting
     JOLT_LT_ARENA,      // Kernel-scoped arena; freed at kernel end
@@ -226,6 +272,7 @@ JoltLifetimeHandle* jolt_lt_acquire(void* ptr, JoltLifetimeKind, void (*dtor)(vo
 void                jolt_lt_retain(JoltLifetimeHandle*);
 void                jolt_lt_release(JoltLifetimeHandle*);
 bool                jolt_lt_is_live(JoltLifetimeHandle*);
+```
 
 #### Cross-boundary Ownership Rules
 
@@ -244,7 +291,7 @@ bool                jolt_lt_is_live(JoltLifetimeHandle*);
 
 The Error Adapter normalizes error representations from all language contexts into a unified `JoltError` type and propagates them across boundaries without loss of detail.
 
-c
+```c
 typedef enum JoltErrorDomain {
     JOLT_EDOM_CORE,
     JOLT_EDOM_SCRIPT,
@@ -263,13 +310,10 @@ typedef struct JoltError {
     const char*      message;       // UTF-8, Glue-owned
     const char*      source_file;
     uint32_t         source_line;
-    struct JoltError* cauef struct JoltError {
-    JoltErrorDomain  domain;
-    int32_t          code;
-    const char*      message;       // UTF-8, Glue-owned
-    const char*      source_file;
-    uint32_t         source_line;
-    struct JoltError* caurDomain, int32_t code, const char* msg);
+    struct JoltError* cause;        // Chained cause
+} JoltError;
+
+JoltError* jolt_error_new(JoltErrorDomain, int32_t code, const char* msg);
 void       jolt_error_chain(JoltError* cause);
 JoltError* jolt_error_pop(void);
 
@@ -286,6 +330,7 @@ typedef enum JoltStatus {
     JOLT_ERR_SCRIPT    = -8,   // Script runtime error
     JOLT_ERR_ABI       = -9,   // ABI resolution failure
 } JoltStatus;
+```
 
 ---
 
@@ -293,12 +338,13 @@ typedef enum JoltStatus {
 
 The Extension Host is the part of the Glue Layer responsible for loading, sandboxing, and communicating with third-party extensions written in any supported language.
 
-c
+```c
 typedef struct JoltExtManifest {
     const char*   name;
     const char*   version;         // SemVer string
     const char*   entry_symbol;    // Symbol for extension init fn
-    uint64_t      required_caps;   // ue ABI version this wst char*   abi_version;     // Glue ABI version this was compiled against
+    uint64_t      required_caps;   // Required capabilities
+    const char*   abi_version;     // Glue ABI version this was compiled against
 } JoltExtManifest;
 
 typedef struct JoltExtensionAPI {
@@ -317,6 +363,7 @@ JoltStatus    jolt_ext_unload(JoltExtHandle);
 
 // Extension ABI version check
 bool jolt_ext_abi_compatible(const char* ext_abi_ver);
+```
 
 ---
 
@@ -330,7 +377,7 @@ Direct C ABI — no wrapping overhead. Headers generated by `joltc --gen-header`
 
 ### Rust Adapter
 
-rust
+```rust
 // jolt-glue crate generated from ABI registry
 use jolt_glue::{Dispatch, Marshal, CapGrant};
 
@@ -339,23 +386,26 @@ let ctx = Dispatch::new()
     .build()?;
 
 let result = ctx.call("jolt.fx.render.submit_frame", &[frame.into()])?;
+```
 
 ### Python Adapter
 
-python
+```python
 # jolt_glue module, installed via pip or bundled
 import jolt_glue as jolt
 
 ctx = jolt.DispatchContext(caps=["render", "file_read"])
 result = ctx.call("jolt.fx.render.submit_frame", frame)
+```
 
 ### Go Adapter
 
-go
+```go
 import "github.com/joltfx/glue"
 
 ctx := glue.NewDispatch(glue.CapRender | glue.CapFileRead)
 result, err := ctx.Call("jolt.fx.render.submit_frame", frame)
+```
 
 ---
 
@@ -363,7 +413,7 @@ result, err := ctx.Call("jolt.fx.render.submit_frame", frame)
 
 A complete cross-boundary call from a Python extension into a Joltscript kernel:
 
-
+```
 Python extension
   │ calls jolt_glue.call("jolt.fx.kernels.wave_distortion", args)
   ▼
@@ -393,6 +443,7 @@ Return path:
   │ marshal JoltValue → PyObject
   ▼
 Python extension receives result
+```
 
 ---
 
@@ -412,15 +463,18 @@ Python extension receives result
 
 The Glue Layer exposes a versioned ABI. Extensions compiled against a given ABI version are forward-compatible within the same major version.
 
-c
+```c
 #define JOLT_GLUE_ABI_MAJOR  1
 #define JOLT_GLUE_ABI_MINOR  0
 #define JOLT_GLUE_ABI_PATCH  0
 
 const char* jolt_glue_abi_version(void);
 bool        jolt_glue_abi_compatible(uint32_t major, uint32_t minor);
+```
 
-Breaking changes (new required fields in structs, removed symbols, changed calling conventions) increment `MAJOR`. Additive changes increment `MINOR`. Bug fixes increment `PATCH`.
+- **Breaking changes** (new required fields in structs, removed symbols, changed calling conventions) increment `MAJOR`.
+- **Additive changes** increment `MINOR`.
+- **Bug fixes** increment `PATCH`.
 
 ---
 
@@ -445,16 +499,15 @@ The Glue Layer enforces sandboxing at every boundary crossing. An extension or s
 
 ### Sandbox Enforcement Points
 
-
-1. ABI Registration   — symbols not in the registry cannot be dispatched
-2. Capability Check   — dispatch fails before the call if caps are absent
-3. Marshal Validation — malformed or oversized inputs are rejected pre-call
-4. Arena Limits       — per-call arenas have a configurable byte ceiling
-5. Timeout            — dispatch context carries a hard timeout in ms
+1. **ABI Registration** — symbols not in the registry cannot be dispatched
+2. **Capability Check** — dispatch fails before the call if caps are absent
+3. **Marshal Validation** — malformed or oversized inputs are rejected pre-call
+4. **Arena Limits** — per-call arenas have a configurable byte ceiling
+5. **Timeout** — dispatch context carries a hard timeout in ms
 
 ### Capability Denial Behavior
 
-c
+```c
 // When a capability check fails, dispatch returns JOLT_ERR_CAP.
 // The error stack is populated with domain, code, and a message
 // naming the missing capability.
@@ -464,6 +517,7 @@ if (result == JOLT_ERR_CAP) {
     JoltError* err = jolt_error_get();
     // err->message: "Missing capability: JOLT_CAP_RENDER"
 }
+```
 
 ---
 
@@ -471,7 +525,7 @@ if (result == JOLT_ERR_CAP) {
 
 The Glue Layer must be initialized before any binding or dispatch call is made.
 
-c
+```c
 int main(void) {
     // 1. Initialize the Glue Layer
     JoltGlueConfig cfg = {
@@ -499,6 +553,7 @@ int main(void) {
     jolt_abi_registry_destroy(reg);
     jolt_glue_shutdown();
 }
+```
 
 ---
 
@@ -512,3 +567,67 @@ int main(void) {
 | Lifetime Bridge      | Cross-model memory ownership synchronization |
 | Error Adapter        | Unified error representation and propagation |
 | Extension Host       | Third-party extension load, sandbox, and lifecycle |
+
+---
+
+## Contribution Guidelines
+
+### Adding a New Language Binding
+
+1. Implement the marshal adapter functions in `marshal_engine.c`.
+2. Add language-specific type mappings in `jolt_glue_types.h`.
+3. Generate idiomatic bindings (Rust crate, Python module, Go package).
+4. Add integration tests in `tests/integration/` for round-trip marshaling.
+5. Run conformance tests: `ctest -R glue_conformance`.
+
+### Modifying the ABI Registry
+
+1. Changes to `JoltABIEntry` or `JoltTypeDesc` require **MAJOR version bump**.
+2. Update all language bindings.
+3. Run full conformance suite.
+4. Get two reviewer sign-offs (compiler team gate).
+
+### Extending Capabilities
+
+1. Add new `JoltCapability` flag (power of two).
+2. Update capability grant model documentation.
+3. Add enforcement tests for the new capability.
+4. Coordinate with extension language owners.
+
+---
+
+## PR Checklist
+
+- [ ] Builds clean with ASAN/UBSan
+- [ ] All unit tests pass
+- [ ] Integration tests pass (all language bindings)
+- [ ] Conformance tests pass (ABI stability)
+- [ ] No memory leaks (Valgrind clean)
+- [ ] Thread safety verified (TSan clean)
+- [ ] Documentation updated for API changes
+- [ ] Two reviewer sign-offs for compiler/ABI changes
+- [ ] Benchmarks run for marshal/dispatch changes
+
+---
+
+## Common Mistakes
+
+**Forgetting to release ARC retains** across the call boundary. Every Joltscript value passed to C must have its retain released after the call completes.
+
+**Mismatched type descriptors** between caller and callee. The marshal engine validates at runtime but compile-time verification is preferred.
+
+**Blocking in the dispatcher**. The dispatch path must be fast; move slow operations (compilation, I/O) to async tasks.
+
+**Leaking per-call arenas**. Each dispatch allocates a scratch arena; ensure it's freed on all return paths (success and error).
+
+**Capability escalation**. Never grant more capabilities than the call site explicitly requests.
+
+---
+
+## Contacts
+
+- **ABI Registry / marshaling**: `#joltfx-compiler`
+- **Capability system**: `#joltfx-security`
+- **Extension host**: `#joltfx-ext-core`
+- **Language bindings**: `#joltfx-bindings`
+- **Error handling**: `#joltfx-diagnostics`

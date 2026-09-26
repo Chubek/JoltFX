@@ -1,26 +1,68 @@
-# Joltscript Language Specification
+# AGENTS.md — Joltscript
 
 ## Overview
 
 Joltscript is a Lisp dialect designed specifically for authoring JoltFX kernels. It prioritizes data-oriented transformation logic, compile-time metaprogramming, and seamless interoperability with C and the JoltFX Core engine.
 
+This document covers the language specification, compiler architecture, and contribution guidelines for the Joltscript compiler (`joltc`), runtime, and standard library.
+
+---
+
+## Repository Layout
+
+```
+joltscript/
+  compiler/              # joltc compiler frontend
+    frontend/            # parser, typechecker, AST
+    middle/              # IR generation, optimization passes
+    backend/
+      c/                 # C codegen
+      rust/              # Rust codegen
+      python/            # Python codegen
+      go/                # Go codegen
+  runtime/               # Joltscript runtime (ARC, arena, intrinsics)
+    arc.c                # Automatic reference counting
+    arena.c              # Kernel-scoped arena allocator
+    intrinsics/          # Built-in intrinsic implementations
+  stdlib/                # Standard library (Joltscript source)
+    math.jolt
+    graphics.jolt
+    geometry.jolt
+    time.jolt
+    io.jolt
+    collections.jolt
+    strings.jolt
+  tools/
+    joltc/               # Compiler driver
+    jolti/               # REPL
+    joltfmt/             # Formatter
+    joltdoc/             # Documentation generator
+    joltscript-lsp/      # LSP server
+  tests/
+    unit/                # Compiler unit tests
+    integration/         # End-to-end kernel tests
+    conformance/         # Cross-target conformance
+  benchmarks/            # Performance benchmarks
+```
+
 ---
 
 ## Design Principles
 
-- **Kernel-first**: Every Joltscript program is a kernel or composes kernels.
-- **Stateless by default**: Side effects and shared state are explicit, not implicit.
-- **Multi-target**: Compiles to C, Rust, Python, and Go.
-- **Zero-cost abstractions**: High-level constructs compile to efficient native code.
-- **C ABI compatibility**: Full bidirectional interop with C functions and data structures.
+1. **Kernel-first**: Every Joltscript program is a kernel or composes kernels.
+2. **Stateless by default**: Side effects and shared state are explicit, not implicit.
+3. **Multi-target**: Compiles to C, Rust, Python, and Go with identical semantics.
+4. **Zero-cost abstractions**: High-level constructs compile to efficient native code.
+5. **C ABI compatibility**: Full bidirectional interop with C functions and data structures.
+6. **Deterministic compilation**: Same input always produces same output (reproducible builds).
 
 ---
 
-## Syntax
+## Language Specification
+
+### Syntax
 
 Joltscript uses S-expressions exclusively. All code is data; all data is code.
-
-### Basic Forms
 
 ```lisp
 ;; Atoms
@@ -30,14 +72,20 @@ Joltscript uses S-expressions exclusively. All code is data; all data is code.
 :keyword
 'symbol
 
-;; Lists
+;; Lists (function calls, macro invocations)
 (function arg1 arg2 arg3)
 
-;; Vectors (arrays)
+;; Vectors (arrays) — fixed-size or dynamic
 [1 2 3 4]
+[i32 ; 4]          ;; fixed-size array type
+[i32]              ;; slice type
 
 ;; Maps (dictionaries)
 {:x 100 :y 200 :z 300}
+
+;; Quoting
+'(1 2 3)           ;; quoted list (data)
+`(1 2 ~x)         ;; quasiquote with unquote
 ```
 
 ### Comments
@@ -47,38 +95,38 @@ Joltscript uses S-expressions exclusively. All code is data; all data is code.
 
 #| Multi-line
    comment |#
+
+#;(discard this form)  ;; discard next form (reader conditional)
 ```
 
----
-
-## Types
+### Types
 
 Joltscript is **statically typed** with **type inference**. Types can be declared explicitly or inferred from context.
 
-### Primitive Types
+#### Primitive Types
 
-| Type       | Description                          | Example                |
-|------------|--------------------------------------|------------------------|
-| `i8`       | 8-bit signed integer                 | `42i8`                 |
-| `i16`      | 16-bit signed integer                | `1000i16`              |
-| `i32`      | 32-bit signed integer                | `100000`               |
-| `i64`      | 64-bit signed integer                | `9223372036854775807`  |
-| `u8`       | 8-bit unsigned integer               | `255u8`                |
-| `u16`      | 16-bit unsigned integer              | `65535u16`             |
-| `u32`      | 32-bit unsigned integer              | `4294967295u32`        |
-| `u64`      | 64-bit unsigned integer              | `18446744073709551615` |
-| `f32`      | 32-bit floating point                | `3.14f32`              |
-| `f64`      | 64-bit floating point (default)      | `2.71828`              |
-| `bool`     | Boolean                              | `true`, `false`        |
-| `char`     | Unicode scalar value                 | `\a`, `\u{1F600}`      |
-| `string`   | UTF-8 string                         | `"hello world"`        |
-| `void`     | Unit type (no value)                 | `()`                   |
+| Type       | Description                          | Literal Suffix | Example                |
+|------------|--------------------------------------|----------------|------------------------|
+| `i8`       | 8-bit signed integer                 | `i8`           | `42i8`                 |
+| `i16`      | 16-bit signed integer                | `i16`          | `1000i16`              |
+| `i32`      | 32-bit signed integer (default int)  | —              | `100000`               |
+| `i64`      | 64-bit signed integer                | `i64`          | `9223372036854775807i64` |
+| `u8`       | 8-bit unsigned integer               | `u8`           | `255u8`                |
+| `u16`      | 16-bit unsigned integer              | `u16`          | `65535u16`             |
+| `u32`      | 32-bit unsigned integer              | `u32`          | `4294967295u32`        |
+| `u64`      | 64-bit unsigned integer              | `u64`          | `18446744073709551615u64` |
+| `f32`      | 32-bit floating point                | `f32`          | `3.14f32`              |
+| `f64`      | 64-bit floating point (default float)| —              | `2.71828`              |
+| `bool`     | Boolean                              | —              | `true`, `false`        |
+| `char`     | Unicode scalar value                 | —              | `\a`, `\u{1F600}`      |
+| `string`   | UTF-8 string                         | —              | `"hello world"`        |
+| `void`     | Unit type (no value)                 | —              | `()`                   |
 
-### Composite Types
+#### Composite Types
 
 ```lisp
-;; Array (fixed size)
-[i32 ; 4]  ;; array of 4 i32s
+;; Fixed-size array
+[i32 ; 4]              ;; array of 4 i32s
 
 ;; Slice (view into array or dynamic sequence)
 [i32]
@@ -100,38 +148,64 @@ Joltscript is **statically typed** with **type inference**. Types can be declare
 
 ;; Function type
 (fn [i32 i32] -> i32)
+
+;; Pointer (unsafe, FFI only)
+(* i32)
+
+;; Opaque handle (engine-managed resource)
+(handle ImageBuffer)
 ```
 
----
+#### Type Annotations
 
-## Variables and Bindings
+```lisp
+;; On bindings
+(let (x i32) 42)
+(var (total f64) 0.0)
 
-### Immutable Bindings
+;; On function signatures
+(defn add [(a i32) (b i32)] -> i32
+  (+ a b))
+
+;; On struct fields (redundant but allowed)
+(defstruct Point
+  (x f64)
+  (y f64))
+```
+
+### Variables and Bindings
+
+#### Immutable Bindings (Preferred)
 
 ```lisp
 (let x 42)
-(let (x y z) (values 1 2 3))  ;; destructuring
+(let (x y z) (values 1 2 3))   ;; destructuring
+(let [a b c] [1 2 3])          ;; array destructuring
+(let {:keys [x y]} {:x 1 :y 2}) ;; map destructuring
 ```
 
-### Mutable Bindings
+#### Mutable Bindings (Explicit Opt-In)
 
 ```lisp
 (var counter 0)
 (set! counter (+ counter 1))
+
+;; Scoped mutation
+(with-mutation
+  (var local-x 10)
+  (set! local-x 20))
 ```
 
-### Type Annotations
+#### Constants
 
 ```lisp
-(let (x i32) 42)
-(var (total f64) 0.0)
+(const PI 3.141592653589793)
+(const MAX_ITERATIONS 100)
 ```
 
----
+### Functions
 
-## Functions
-
-### Definition
+#### Definition
 
 ```lisp
 ;; Basic function
@@ -142,70 +216,87 @@ Joltscript is **statically typed** with **type inference**. Types can be declare
 (defn add [(a i32) (b i32)] -> i32
   (+ a b))
 
-;; Multi-expression body
+;; Multi-expression body (implicit do)
 (defn compute [x y]
   (let temp (* x y))
   (+ temp 10))
 
+;; Variadic
+(defn sum [& nums]
+  (reduce + 0 nums))
+
 ;; Anonymous function (lambda)
 (fn [x] (* x x))
-(λ [x] (* x x))  ;; λ is an alias
+(λ [x] (* x x))     ;; λ is an alias for fn
 ```
 
-### Calling
+#### Calling
 
 ```lisp
 (add 10 20)
 ((fn [x] (* x x)) 5)
+(apply + [1 2 3 4])
 ```
 
----
+#### Higher-Order
 
-## Kernels
+```lisp
+(map (fn [x] (* x 2)) [1 2 3 4])
+(filter (fn [x] (> x 10)) [5 10 15 20])
+(reduce + 0 [1 2 3 4 5])
+```
+
+### Kernels
 
 A **kernel** is Joltscript's fundamental unit of composition. Kernels are declared with `defkernel`.
 
 ```lisp
-(defkernel blur
-  :inputs  [(image ImageBuffer)]
-  :outputs [(result ImageBuffer)]
-  :params  [(radius f32 :default 5.0)]
+(defkernel gaussian-blur
+  :inputs  [(src ImageBuffer)]
+  :outputs [(dst ImageBuffer)]
+  :params  [(radius f32 :default 2.0 :range [0.5 64.0])
+            (quality i32 :default 3 :range [1 8])
+            (alpha-aware bool :default true)]
   
-  (let width (image-width image))
-  (let height (image-height image))
+  (let width (image-width src))
+  (let height (image-height src))
   
+  ;; Implementation using intrinsics
   (for-each-pixel [x y] [width height]
-    (let sum (rgba 0 0 0 0))
-    (for [dx (- radius) radius]
-      (for [dy (- radius) radius]
-        (let px (sample image (+ x dx) (+ y dy)))
-        (set! sum (rgba-add sum px))))
-    (let count (* radius radius))
-    (set-pixel! result x y (rgba-div sum count))))
+    (let result (js_gaussian_sample src x y radius quality alpha-aware))
+    (set-pixel! dst x y result)))
 ```
 
-### Kernel Composition
+#### Kernel Composition
 
 ```lisp
 ;; Sequential composition
-(compose blur sharpen color-correct)
+(compose gaussian-blur sharpen color-correct)
 
-;; Parallel composition
+;; Parallel composition (independent kernels)
 (parallel
-  (blur :radius 10)
+  (gaussian-blur :radius 10)
   (edge-detect :threshold 0.5))
 
 ;; Conditional composition
 (if-condition (> frame-count 100)
-  (blur :radius 5)
+  (gaussian-blur :radius 5)
   (identity))
 ```
 
----
+#### Kernel Metadata
 
-## Control Flow
+Required metadata fields (as comments at file top):
+- `@kernel` — Kernel name (snake_case)
+- `@category` — Category folder name
+- `@description` — One-line description
+- `@complexity` — Low | Medium | High
+- `@gpu` — Yes | No | Partial
+- `@since` — Version introduced (e.g., `2.1.0`)
 
-### Conditionals
+### Control Flow
+
+#### Conditionals
 
 ```lisp
 (if condition
@@ -215,61 +306,57 @@ A **kernel** is Joltscript's fundamental unit of composition. Kernels are declar
 (cond
   [(< x 0) "negative"]
   [(= x 0) "zero"]
-  [(> x 0) "positive"])
+  [(> x 0) "positive"]
+  [else "unreachable"])
 
 (when condition
-  body)
+  body...)
 
 (unless condition
-  body)
+  body...)
 ```
 
-### Loops
+#### Loops
 
 ```lisp
-;; For loop
-(for [i 0 10]
+;; For loop (range)
+(for [i 0 10]          ;; i from 0 to 9
   (println i))
 
-;; For loop with step
-(for [i 0 100 5]
+(for [i 0 100 5]      ;; step of 5
   (println i))
 
 ;; While loop
 (while (< counter 100)
   (set! counter (+ counter 1)))
 
-;; Do-while
-(do
-  (set! counter (+ counter 1))
-  (while (< counter 100)))
-
-;; Loop (infinite, use break)
+;; Loop with break/continue
 (loop
   (when (= counter 100) (break))
+  (when (even? counter) (continue))
   (set! counter (+ counter 1)))
-```
 
-### Iteration
-
-```lisp
-;; Map
-(map (fn [x] (* x 2)) [1 2 3 4])
-
-;; Filter
-(filter (fn [x] (> x 10)) [5 10 15 20])
-
-;; Reduce
-(reduce + 0 [1 2 3 4 5])
-
-;; For-each
+;; Iterator-based
 (for-each [item items]
   (println item))
+
+(for-each-indexed [i item items]
+  (println i item))
 ```
 
----
+### Iteration Helpers
 
-## Macros
+```lisp
+(map fn coll)           ;; lazy sequence
+(filter pred coll)
+(reduce fn init coll)
+(take n coll)
+(drop n coll)
+(partition n coll)
+(partition-all n coll)
+```
+
+### Macros
 
 Joltscript supports **hygienic macros** with full compile-time metaprogramming.
 
@@ -293,13 +380,17 @@ Joltscript supports **hygienic macros** with full compile-time metaprogramming.
      ~@body
      (let end (time-now))
      (println ~name " took " (- end start) "ms")))
+
+;; Macro expanding to multiple forms
+(defmacro defkernel* [name & clauses]
+  `(do
+     (defkernel ~name ~@clauses)
+     (register-kernel-metadata ~name)))
 ```
 
----
+### Interop with C
 
-## Interop with C
-
-### Importing C Functions
+#### Importing C Functions
 
 ```lisp
 (extern-c "math.h"
@@ -310,7 +401,7 @@ Joltscript supports **hygienic macros** with full compile-time metaprogramming.
 (println (sin 3.14159))
 ```
 
-### Exporting to C
+#### Exporting to C
 
 ```lisp
 (export-c compute-color
@@ -321,7 +412,7 @@ Joltscript supports **hygienic macros** with full compile-time metaprogramming.
     b))
 ```
 
-### C Struct Interop
+#### C Struct Interop
 
 ```lisp
 ;; Import C struct
@@ -336,17 +427,15 @@ Joltscript supports **hygienic macros** with full compile-time metaprogramming.
 (println (. rect x))
 ```
 
----
+### Memory Management
 
-## Memory Management
-
-Joltscript uses **automatic reference counting** for heap-allocated data and **arena allocation** for kernel-scoped temporaries.
+Joltscript uses **automatic reference counting (ARC)** for heap-allocated data and **arena allocation** for kernel-scoped temporaries.
 
 ```lisp
 ;; Stack allocation (default for primitives and small structs)
 (let point (Point 10.0 20.0))
 
-;; Heap allocation (explicit)
+;; Heap allocation (explicit, ARC-managed)
 (let buffer (alloc ImageBuffer width height))
 
 ;; Arena allocation (kernel-scoped, freed at kernel completion)
@@ -354,11 +443,13 @@ Joltscript uses **automatic reference counting** for heap-allocated data and **a
   (let temp-buffer (arena-alloc ImageBuffer width height))
   ;; temp-buffer freed automatically at end of with-arena
   )
+
+;; Manual retain/release (rare, for FFI)
+(retain buffer)
+(release buffer)
 ```
 
----
-
-## Modules and Imports
+### Modules and Imports
 
 ```lisp
 ;; Define module
@@ -379,16 +470,18 @@ Joltscript uses **automatic reference counting** for heap-allocated data and **a
 ;; Alias
 (import jolt.fx.color :as color)
 (color/rgb 255 128 64)
+
+;; Re-export
+(module jolt.fx.compositing
+  (re-export jolt.fx.color))
 ```
 
----
-
-## Error Handling
+### Error Handling
 
 Joltscript uses **Result types** for recoverable errors and **panics** for unrecoverable errors.
 
 ```lisp
-;; Result type
+;; Result type (built-in)
 (defenum (Result T E)
   (Ok T)
   (Err E))
@@ -409,6 +502,11 @@ Joltscript uses **Result types** for recoverable errors and **panics** for unrec
 
 ;; Unwrap with default
 (let result (unwrap-or (divide 10.0 0.0) 0.0))
+
+;; Try-catch for panics
+(try
+  (risky-operation)
+  (catch [e] (println "Caught: " e)))
 ```
 
 ---
@@ -423,7 +521,7 @@ Joltscript compiles to four target languages:
 joltc --target=c input.jolt -o output.c
 ```
 
-Generated C is idiomatic, readable, and interoperable with existing C codebases.
+Generated C is idiomatic, readable, and interoperable with existing C codebases. Uses Tilly's C runtime for ARC and arena management.
 
 ### Rust Target
 
@@ -431,7 +529,7 @@ Generated C is idiomatic, readable, and interoperable with existing C codebases.
 joltc --target=rust input.jolt -o output.rs
 ```
 
-Generates safe Rust with explicit lifetime annotations.
+Generates safe Rust with explicit lifetime annotations. Uses `Arc<T>` for ARC types.
 
 ### Python Target
 
@@ -439,7 +537,7 @@ Generates safe Rust with explicit lifetime annotations.
 joltc --target=python input.jolt -o output.py
 ```
 
-Generates Python 3.10+ with type hints.
+Generates Python 3.10+ with type hints. Uses reference counting (native) for ARC.
 
 ### Go Target
 
@@ -447,7 +545,7 @@ Generates Python 3.10+ with type hints.
 joltc --target=go input.jolt -o output.go
 ```
 
-Generates idiomatic Go with goroutines for parallel kernels.
+Generates idiomatic Go with goroutines for parallel kernels. Uses Go's GC; ARC mapped to reference semantics.
 
 ---
 
@@ -455,29 +553,41 @@ Generates idiomatic Go with goroutines for parallel kernels.
 
 Joltscript ships with a standard library covering:
 
-- **Math**: Trigonometry, linear algebra, interpolation
-- **Graphics**: Color spaces, transforms, filters
-- **Geometry**: Points, vectors, matrices, quaternions
-- **Time**: Curves, easing functions, keyframe interpolation
-- **IO**: File reading, image loading, serialization
-- **Collections**: Lists, vectors, maps, sets
-- **Strings**: Manipulation, parsing, formatting
+| Module | Contents |
+|--------|----------|
+| `jolt.math` | Trigonometry, linear algebra, interpolation, random |
+| `jolt.graphics` | Color spaces, transforms, filters, blend modes |
+| `jolt.geometry` | Points, vectors, matrices, quaternions, splines |
+| `jolt.time` | Curves, easing functions, keyframe interpolation |
+| `jolt.io` | File reading, image loading, serialization |
+| `jolt.collections` | Lists, vectors, maps, sets, sequences |
+| `jolt.strings` | Manipulation, parsing, formatting, regex |
+
+All stdlib functions are implemented as Joltscript intrinsics or pure Joltscript.
 
 ---
 
 ## Example: Complete Kernel
 
 ```lisp
-(module jolt.fx.example)
+;; kernels/distortion/wave-distortion.jolt
+// @kernel      wave_distortion
+// @category    distortion
+// @description Applies a sine-wave horizontal displacement to an image.
+// @complexity  Medium
+// @gpu         Yes
+// @since       2.0.0
 
-(import jolt.core (ImageBuffer rgba for-each-pixel))
+(module jolt.fx.kernels.distortion)
+
+(import jolt.core (ImageBuffer rgba for-each-pixel image-width image-height))
 (import jolt.math (clamp sin))
 
 (defkernel wave-distortion
   :inputs  [(source ImageBuffer)]
   :outputs [(result ImageBuffer)]
-  :params  [(amplitude f64 :default 10.0)
-            (frequency f64 :default 0.1)
+  :params  [(amplitude f64 :default 10.0 :range [0.0 100.0])
+            (frequency f64 :default 0.1 :range [0.01 10.0])
             (time f64 :default 0.0)]
   
   (let width (image-width source))
@@ -493,24 +603,149 @@ Joltscript ships with a standard library covering:
 
 ---
 
+## Compiler Architecture
+
+```
+Source (.jolt)
+    │
+    ▼
+Parser (recursive descent, tree-sitter grammar)
+    │
+    ▼
+AST (S-expression based, typed nodes)
+    │
+    ▼
+Type Checker (Hindley-Milner with extensions)
+    │
+    ▼
+IR (Joltscript IR — SSA-based, kernel-aware)
+    │
+    ├─► C Backend        ──► .c/.h
+    ├─► Rust Backend     ──► .rs
+    ├─► Python Backend   ──► .py
+    └─► Go Backend       ──► .go
+```
+
+### IR Design
+
+- SSA form with explicit phi nodes
+- Kernel boundaries preserved as first-class IR constructs
+- Intrinsic calls lowered to target-specific implementations
+- Memory operations annotated with lifetime (arena/heap/stack)
+
+---
+
 ## Tooling
 
-- **Compiler**: `joltc`
-- **REPL**: `jolti`
-- **LSP Server**: `joltscript-lsp`
-- **Formatter**: `joltfmt`
-- **Documentation Generator**: `joltdoc`
+| Tool | Purpose |
+|------|---------|
+| `joltc` | Compiler driver (all targets) |
+| `jolti` | REPL with incremental compilation |
+| `joltfmt` | Formatter (enforces consistent style) |
+| `joltdoc` | Documentation generator (Markdown/HTML) |
+| `joltscript-lsp` | LSP server (hover, completion, diagnostics) |
+
+### Formatter Rules (`joltfmt`)
+
+- 2-space indentation
+- Align `let`/`var` bindings vertically when > 2
+- Trailing commas in multi-line collections
+- Max line width: 100 columns
+- Sort imports alphabetically by module path
 
 ---
 
 ## Performance Characteristics
 
-- Zero-cost abstractions: Lisp forms compile to native loops and function calls
-- Tail-call optimization guaranteed
-- SIMD vectorization for image/array operations
-- Inline expansion of small kernels
-- Dead code elimination at compile time
+- **Zero-cost abstractions**: Lisp forms compile to native loops and function calls
+- **Tail-call optimization**: Guaranteed for self-recursive and mutual recursion
+- **SIMD vectorization**: Automatic for image/array operations (`map`, `for-each-pixel`)
+- **Inline expansion**: Small kernels inlined at call sites
+- **Dead code elimination**: At compile time across kernel boundaries
+- **Constant propagation**: Across kernel composition boundaries
 
 ---
 
-That's the Joltscript specification. It's a complete, production-ready kernel authoring language designed for the motion graphics domain.
+## Contribution Guidelines
+
+### Adding a New Intrinsic
+
+1. Add declaration to `compiler/frontend/intrinsics.jolt`
+2. Implement in `runtime/intrinsics/<name>.c` (C reference implementation)
+3. Add lowering rules in each backend (`compiler/backend/<target>/intrinsics/`)
+4. Add round-trip test in `tests/integration/intrinsics/`
+5. Document in `stdlib/` if user-facing
+
+### Adding a New Stdlib Function
+
+1. Implement in `stdlib/<module>.jolt`
+2. Add tests in `tests/integration/stdlib/`
+3. Run `joltfmt` on the file
+4. Update `docs/stdlib/<module>.md` via `joltdoc`
+
+### Modifying the Type System
+
+1. Update `compiler/frontend/typechecker.c`
+2. Update all four backends' type mapping
+3. Run full conformance suite: `ctest -R joltscript_conformance`
+4. Get two reviewer sign-offs (compiler team gate)
+
+---
+
+## Testing
+
+```bash
+# Unit tests
+ctest --test-dir build -R joltscript_unit
+
+# Integration tests (all targets)
+ctest --test-dir build -R joltscript_integration
+
+# Cross-target conformance (same kernel, all 4 targets)
+ctest --test-dir build -R joltscript_conformance
+
+# Performance benchmarks
+./build/joltscript/benchmarks/run_benchmarks.sh
+```
+
+**Minimum coverage** for new language features:
+- Parser tests (valid + invalid syntax)
+- Typechecker tests (inference + explicit + errors)
+- Codegen tests (all 4 targets produce valid output)
+- Runtime tests (execution matches semantics)
+
+---
+
+## PR Checklist
+
+- [ ] `joltfmt` passes on all changed `.jolt` files
+- [ ] All compiler unit tests pass
+- [ ] Integration tests pass on all 4 targets
+- [ ] Conformance tests pass (no target-specific behavior differences)
+- [ ] No regressions in benchmarks (>5% slowdown requires justification)
+- [ ] Documentation updated (`joltdoc` output)
+- [ ] Two reviewer sign-offs for compiler changes
+
+---
+
+## Common Mistakes
+
+**Implicit mutation in pure functions.** Joltscript functions are pure by default. Use `var`/`set!` explicitly for mutation.
+
+**Forgetting arena scope.** Kernel bodies execute in an implicit arena. Don't manually manage memory inside kernels.
+
+**Type annotation drift.** Keep annotations in sync with inference; run `joltc --check-types` in CI.
+
+**Target divergence.** A kernel must produce bit-identical results across all 4 targets (modulo float non-determinism). Test with `joltc --verify-determinism`.
+
+**Macro hygiene violations.** Use `gensym` for generated symbols; avoid capturing user bindings.
+
+---
+
+## Contacts
+
+- **Language design**: `#joltfx-language`
+- **Compiler implementation**: `#joltfx-compiler`
+- **Runtime / intrinsics**: `#joltfx-runtime`
+- **Tooling (LSP, formatter, etc.)**: `#joltfx-tooling`
+- **Standard library**: `#joltfx-stdlib`

@@ -1,4 +1,4 @@
-# Tilly Core Engine Specification
+# AGENTS.md — Tilly
 
 ## Overview
 
@@ -8,8 +8,48 @@
 
 ---
 
+## Repository Layout
+
+```
+tilly/
+  tillyz/                # TillyZ bootstrap core (zero dependencies)
+    src/
+      tillyz_arena.c     # Bump allocator
+      tillyz_error.c     # Fixed-size error stack
+      tillyz_string.c    # Minimal string functions (no libc)
+      tillyz_platform.c  # Platform detection
+      tillyz_panic.c     # Panic handler
+    include/
+      tillyz.h           # Public TillyZ API
+    tests/
+      test_arena.c
+      test_error.c
+      test_platform.c
+  src/                   # Tilly full runtime
+    tilly_memory.c       # Memory manager (arena, pool, heap, stack)
+    tilly_log.c          # Structured logging with sinks
+    tilly_reflect.c      # Runtime type/function reflection
+    tilly_module.c       # Dynamic/static module system
+    tilly_config.c       # Configuration parser (INI-like)
+    tilly_platform.c     # Platform abstraction layer
+    tilly_platform_linux.c
+    tilly_platform_macos.c
+    tilly_platform_windows.c
+    tilly_platform_wasm.c
+    tilly_platform_bare.c
+  include/
+    tilly.h              # Public Tilly API
+  tests/
+    unit/                # Unit tests per subsystem
+    integration/         # Cross-subsystem tests
+  benchmarks/            # Allocation, logging, reflection benchmarks
+```
+
+---
+
 ## Architecture
 
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                      JoltFX Application                      │
 └──────────────────────────────┬──────────────────────────────┘
@@ -28,7 +68,7 @@
 │  │  TillyZ (Bootstrap Core)                             │  │
 │  │  • Arena allocator    • Minimal libc stubs           │  │
 │  │  • Error stack        • Platform detection           │  │
-│  │  │  String utilities   • Panic handler               │  │
+│  │  • String utilities   • Panic handler                │  │
 │  └──────────────────────────────────────────────────────┘  │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐  │
 │  │   Memory     │ │   Logging    │ │   Reflection     │  │
@@ -39,7 +79,7 @@
 │  │   System     │ │   Parser     │ │   Abstraction    │  │
 │  └──────────────┘ └──────────────┘ └──────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
-
+```
 
 ---
 
@@ -92,7 +132,7 @@ tillyz_shutdown(z_ctx);
 
 #### 1. Arena Allocator
 
-TillyZ uses a bump allocator (arena) for all bootstrap allocations. No fragmentation, no free() calls—just reset the arena when done.
+TillyZ uses a bump allocator (arena) for all bootstrap allocations. No fragmentation, no `free()` calls—just reset the arena when done.
 
 ```c
 typedef struct TillyZArena {
@@ -187,14 +227,18 @@ Detection uses compiler-defined macros:
 
 ```c
 TillyZPlatform tillyz_detect_platform(void) {
-#if defined(__wasm__) || defined(__EMSCRIP    tillyz_platform_name(TillyZPlatform platform);
-```
-
-Detection uses compiler-defined macros:
-
-```c
-TillyZPlatform tillyz_detect_platform(void) {
-#if defined(__wasm__) || defined(__EMSCRIP
+#if defined(__wasm__) || defined(__EMSCRIPTEN__)
+    return TILLYZ_PLATFORM_WASM;
+#elif defined(_WIN32)
+    return TILLYZ_PLATFORM_WINDOWS;
+#elif defined(__APPLE__)
+    return TILLYZ_PLATFORM_MACOS;
+#elif defined(__linux__)
+    return TILLYZ_PLATFORM_LINUX;
+#else
+    return TILLYZ_PLATFORM_UNKNOWN;
+#endif
+}
 ```
 
 #### 5. Panic Handler
@@ -303,6 +347,20 @@ Task* task = tilly_alloc(task_pool, sizeof(Task), alignof(Task));
 tilly_free(task_pool, task);
 ```
 
+#### Thread-Local Stack Allocator
+
+For per-thread scratch allocations with automatic unwind:
+
+```c
+// In thread entry
+TillyAllocator* stack = tilly_allocator_create(ctx, TILLY_ALLOC_STACK, 64 * 1024);
+tilly_thread_set_allocator(stack);
+
+// In thread code
+void* scratch = tilly_alloc(stack, size, align);
+// Automatically freed on thread exit or explicit reset
+```
+
 ---
 
 ### 2. Logging System
@@ -343,17 +401,27 @@ void tilly_log(
 );
 
 // Convenience macros
-#define tilly_log_trace(ctx, ...) \
-    tilly_log(ctx, TILLY_LOG_TRACE, NULL, __FILE__, __LINE__, __VA_ARGS__)
+#define tilly_log_trace(ctx, module, ...) \
+    tilly_log(ctx, TILLY_LOG_TRACE, module, __FILE__, __LINE__, __VA_ARGS__)
 
-#define tilly_log_info(ctx, ...) \
-    tilly_log(ctx, TILLY_LOG_INFO, NULL, __FILE__, __LINE__, __VA_ARGS__)
+#define tilly_log_debug(ctx, module, ...) \
+    tilly_log(ctx, TILLY_LOG_DEBUG, module, __FILE__, __LINE__, __VA_ARGS__)
 
-#define tilly_log_error(ctx, ...) \
-    tilly_log(ctx, TILLY_LOG_ERROR, NULL, __FILE__, __LINE__, __VA_ARGS__)
+#define tilly_log_info(ctx, module, ...) \
+    tilly_log(ctx, TILLY_LOG_INFO, module, __FILE__, __LINE__, __VA_ARGS__)
+
+#define tilly_log_warn(ctx, module, ...) \
+    tilly_log(ctx, TILLY_LOG_WARN, module, __FILE__, __LINE__, __VA_ARGS__)
+
+#define tilly_log_error(ctx, module, ...) \
+    tilly_log(ctx, TILLY_LOG_ERROR, module, __FILE__, __LINE__, __VA_ARGS__)
+
+#define tilly_log_fatal(ctx, module, ...) \
+    tilly_log(ctx, TILLY_LOG_FATAL, module, __FILE__, __LINE__, __VA_ARGS__)
 
 // Register custom log sink
 void tilly_log_add_sink(TillyContext* ctx, TillyLogSink sink, void* user_data);
+void tilly_log_remove_sink(TillyContext* ctx, TillyLogSink sink);
 ```
 
 #### Example: File Sink
@@ -361,14 +429,23 @@ void tilly_log_add_sink(TillyContext* ctx, TillyLogSink sink, void* user_data);
 ```c
 void file_log_sink(TillyLogEntry* entry, void* user_data) {
     FILE* f = (FILE*)user_data;
-    fprintf(f, "[%s] %s:%u: %s\n",
+    fprintf(f, "[%s] %s:%u [%s]: %s\n",
             tilly_log_level_name(entry->level),
-            entry->file, entry->line, entry->message);
+            entry->file, entry->line, entry->module ?: "core", entry->message);
     fflush(f);
 }
 
 FILE* log_file = fopen("joltfx.log", "w");
 tilly_log_add_sink(ctx, file_log_sink, log_file);
+```
+
+#### Example: Network Sink (for distributed tracing)
+
+```c
+void network_log_sink(TillyLogEntry* entry, void* user_data) {
+    // Send to Perfetto, Tracy, or custom collector
+    tracing_send(entry);
+}
 ```
 
 ---
@@ -454,6 +531,27 @@ TillyFunctionInfo* tilly_function_register(
 TillyFunctionInfo* tilly_function_find(TillyContext* ctx, const char* name);
 ```
 
+#### Enum Registration
+
+```c
+typedef struct TillyEnumInfo {
+    const char*   name;
+    TillyTypeInfo* underlying_type;
+    uint32_t      variant_count;
+    const char**  variant_names;
+    int64_t*      variant_values;
+} TillyEnumInfo;
+
+TillyEnumInfo* tilly_enum_register(
+    TillyContext*   ctx,
+    const char*     name,
+    TillyTypeInfo*  underlying_type,
+    const char**    variant_names,
+    int64_t*        variant_values,
+    uint32_t        variant_count
+);
+```
+
 ---
 
 ### 4. Module System
@@ -502,24 +600,49 @@ TILLY_MODULE_EXPORT TillyModuleAPI* tilly_module_register(void) {
 }
 ```
 
+#### Module Dependencies
+
+Modules can declare dependencies in their `init` function:
+
+```c
+TillyStatus my_module_init(TillyContext* ctx) {
+    // Ensure dependency is loaded
+    TillyModule* dep = tilly_module_find(ctx, "jolt.core.math");
+    if (!dep) {
+        return TILLY_ERR_MODULE_LOAD;
+    }
+    // Resolve symbols
+    my_math_fn = tilly_module_get_symbol(dep, "jolt_math_sqrt");
+    return TILLY_OK;
+}
+```
+
 ---
 
 ### 5. Configuration System
 
-Tilly uses a simple key-value configuration format (similar to TOML).
+Tilly uses a simple key-value configuration format (similar to TOML/INI).
 
 ```ini
+# JoltFX Configuration
+
 [tilly]
-heap_size = 67108864          # 64MB
+heap_size = 67108864       # 64 MB
 log_level = "info"
 enable_profiling = true
 
 [execution]
-num_threads = 8
 backend = "vulkan"
+num_threads = 8
+cpu_mem_limit = 536870912  # 512 MB
+gpu_mem_limit = 2147483648 # 2 GB
 
 [glue]
 max_extensions = 16
+sandbox_memory = 16777216  # 16 MB per extension
+
+[modules]
+autoload = ["jolt.fx.kernels", "jolt.audio", "jolt.io"]
 ```
 
 ```c
@@ -538,6 +661,7 @@ void         tilly_config_free(TillyConfig* cfg);
 const char*  tilly_config_get_string(TillyConfig* cfg, const char* section, const char* key);
 int64_t      tilly_config_get_int(TillyConfig* cfg, const char* section, const char* key);
 bool         tilly_config_get_bool(TillyConfig* cfg, const char* section, const char* key);
+double       tilly_config_get_float(TillyConfig* cfg, const char* section, const char* key);
 ```
 
 ---
@@ -552,25 +676,41 @@ TillyFile*  tilly_file_open(const char* path, const char* mode);
 void        tilly_file_close(TillyFile* f);
 size_t      tilly_file_read(TillyFile* f, void* buf, size_t size);
 size_t      tilly_file_write(TillyFile* f, const void* buf, size_t size);
+int64_t     tilly_file_seek(TillyFile* f, int64_t offset, int whence);
+int64_t     tilly_file_tell(TillyFile* f);
+size_t      tilly_file_size(TillyFile* f);
 
 // Time
 uint64_t    tilly_time_now_ns(void);
+uint64_t    tilly_time_mono_ns(void);
 void        tilly_sleep_ms(uint32_t ms);
+void        tilly_sleep_ns(uint64_t ns);
 
 // Threading
 TillyThread* tilly_thread_create(void (*func)(void*), void* arg);
 void         tilly_thread_join(TillyThread* t);
+void         tilly_thread_detach(TillyThread* t);
 TillyMutex*  tilly_mutex_create(void);
 void         tilly_mutex_lock(TillyMutex* m);
+bool         tilly_mutex_try_lock(TillyMutex* m);
 void         tilly_mutex_unlock(TillyMutex* m);
+TillyCondVar* tilly_condvar_create(void);
+void         tilly_condvar_wait(TillyCondVar* cv, TillyMutex* m);
+void         tilly_condvar_signal(TillyCondVar* cv);
+void         tilly_condvar_broadcast(TillyCondVar* cv);
 
 // Dynamic library loading
 void*        tilly_dlopen(const char* path);
 void*        tilly_dlsym(void* handle, const char* symbol);
 void         tilly_dlclose(void* handle);
+const char*  tilly_dlerror(void);
+
+// Process
+int          tilly_exec(const char* path, char* const argv[], char* const envp[]);
+uint32_t     tilly_getpid(void);
 ```
 
-These are implemented per-platform in `tilly_platform_{linux,macos,windows,wasm}.c`.
+These are implemented per-platform in `tilly_platform_{linux,macos,windows,wasm,bare}.c`.
 
 ---
 
@@ -623,7 +763,7 @@ TillyZContext* z_ctx = tillyz_init(&z_cfg);
 5. Record initialization timestamp.
 
 **Memory layout after Phase 1:**
-
+```
 ┌─────────────────────────────┐ ← arena.base
 │  TillyZContext (struct)     │
 ├─────────────────────────────┤
@@ -633,7 +773,7 @@ TillyZContext* z_ctx = tillyz_init(&z_cfg);
 ├─────────────────────────────┤
 │  (free space)               │
 └─────────────────────────────┘ ← arena.base + arena.size
-
+```
 
 ### Phase 2: Tilly Initialization
 
@@ -657,7 +797,7 @@ TillyContext* ctx = tilly_init(&cfg);
 6. Register core types (`int32_t`, `float`, `void*`, etc.).
 
 **Memory layout after Phase 2:**
-
+```
 TillyZ Arena (1MB)
 ┌─────────────────────────────┐
 │  TillyZContext              │
@@ -678,7 +818,7 @@ Tilly Heap (64MB)
 ├─────────────────────────────┤
 │  (free space)               │
 └─────────────────────────────┘
-
+```
 
 ### Phase 3: Load Core Modules
 
@@ -738,6 +878,8 @@ typedef enum TillyStatus {
     TILLY_ERR_IO,
     TILLY_ERR_MODULE_LOAD,
     TILLY_ERR_INIT_FAILED,
+    TILLY_ERR_TYPE_MISMATCH,
+    TILLY_ERR_ALREADY_EXISTS,
 } TillyStatus;
 
 typedef struct TillyError {
@@ -755,12 +897,13 @@ void        tilly_error_clear(void);
 
 // Example
 TillyStatus load_config(const char* path) {
-    FILE* f = fopen(path, "r");
+    TillyFile* f = tilly_file_open(path, "r");
     if (!f) {
         tilly_error_set(TILLY_ERR_IO, "Cannot open config file: %s", path);
         return TILLY_ERR_IO;
     }
     // ...
+    tilly_file_close(f);
     return TILLY_OK;
 }
 ```
@@ -776,6 +919,8 @@ TillyStatus load_config(const char* path) {
   - Logging sinks
 
 - **Allocators**: Each `TillyAllocator` has its own lock. Prefer per-thread allocators for performance.
+- **Logging**: Lock-free sink array; sinks must be thread-safe.
+- **Reflection**: Read-heavy; RCU-style for type/function lookups.
 
 ---
 
@@ -786,6 +931,7 @@ TillyStatus load_config(const char* path) {
 - Uses Emscripten's `sbrk()` for arena allocation.
 - File I/O is virtual (memory-backed or async fetch).
 - Threading uses Web Workers (limited).
+- `dlopen`/`dlsym` emulated via preloaded module table.
 
 ### Bare Metal
 
@@ -802,6 +948,9 @@ TillyZConfig z_cfg = {
 };
 ```
 
+- No dynamic module loading; all modules statically linked.
+- Time via hardware cycle counter or RTC.
+
 ---
 
 ## Build System
@@ -812,16 +961,16 @@ Tilly uses a minimal build system (single `Makefile` or `build.sh` script).
 
 ```bash
 # Build TillyZ as a static library
-cc -std=c11 -O2 -c tillyz_arena.c tillyz_error.c tillyz_string.c tillyz_platform.c
-ar rcs libtillyz.a tillyz_arena.o tillyz_error.o tillyz_string.o tillyz_platform.o
+cc -std=c11 -O2 -c tillyz_arena.c tillyz_error.c tillyz_string.c tillyz_platform.c tillyz_panic.c
+ar rcs libtillyz.a tillyz_arena.o tillyz_error.o tillyz_string.o tillyz_platform.o tillyz_panic.o
 ```
 
 ### Building Tilly
 
 ```bash
 # Build Tilly (requires TillyZ)
-cc -std=c11 -O2 -c tilly_memory.c tilly_log.c tilly_reflect.c tilly_module.c tilly_config.c
-ar rcs libtilly.a tilly_memory.o tilly_log.o tilly_reflect.o tilly_module.o tilly_config.o
+cc -std=c11 -O2 -c tilly_memory.c tilly_log.c tilly_reflect.c tilly_module.c tilly_config.c tilly_platform.c tilly_platform_linux.c
+ar rcs libtilly.a tilly_memory.o tilly_log.o tilly_reflect.o tilly_module.o tilly_config.o tilly_platform.o tilly_platform_linux.o
 
 # Link application
 cc -o joltfx main.o -L. -ltilly -ltillyz -ldl -lpthread -lm
@@ -835,8 +984,16 @@ emcc -std=c11 -O2 -s WASM=1 -o tilly.js \
     tillyz_*.c tilly_*.c tilly_platform_wasm.c
 
 # For Windows (from Linux)
-x86_64-w64-mingw32-gcc -std=c11 -O2 -c tilly*.c
-x86_64-w64-mingw32-ar rcs libtilly.a tilly*.o
+x86_64-w64-mingw32-gcc -std=c11 -O2 -c tilly*.c tilly_platform_windows.c
+x86_64-w64-mingw32-ar rcs libtilly.a tilly*.o tilly_platform_windows.o
+```
+
+### CMake Integration (for JoltFX)
+
+```cmake
+# In JoltFX's CMakeLists.txt
+add_subdirectory(tilly)
+target_link_libraries(jfx_engine PRIVATE tilly tillyz)
 ```
 
 ---
@@ -881,12 +1038,60 @@ const char* backend = tilly_config_get_string(cfg, "execution", "backend");
 
 | Component         | Responsibility |
 |-------------------|----------------|
-| **TillyZ**        | Zero-dependency bootstrap: arena, error stack, platform detection |
+| **TillyZ**        | Zero-dependency bootstrap: arena, error stack, platform detection, panic handler |
 | **Memory Manager**| Arenas, pools, general heap, thread-local stacks |
-| **Logging**       | Structured logging with custom sinks |
-| **Reflection**    | Runtime type and function introspection |
+| **Logging**       | Structured logging with custom sinks (stdout, file, network) |
+| **Reflection**    | Runtime type, function, and enum introspection |
 | **Module System** | Dynamic/static module loading and registration |
 | **Config Parser** | Key-value configuration files |
 | **Platform Layer**| OS abstraction (file I/O, threading, time, dlopen) |
 
 Tilly is the bedrock of JoltFX. Everything else—Execution Layer, Glue Layer, Joltscript runtime, extension sandboxes—builds on Tilly's primitives. TillyZ ensures cold-start determinism, making JoltFX embeddable in any environment from WASM to bare metal.
+
+---
+
+## Contribution Guidelines
+
+### Adding a New Platform
+
+1. Create `tilly_platform_<name>.c` implementing all platform abstraction functions.
+2. Add platform detection in `tillyz_platform.c`.
+3. Add CMake target and CI lane.
+4. Run full test suite on the new platform.
+
+### Adding a New Allocator Strategy
+
+1. Add enum value to `TillyAllocStrategy`.
+2. Implement in `tilly_memory.c` with create/destroy/alloc/free/realloc/reset/usage.
+3. Add benchmarks comparing to existing strategies.
+4. Update documentation.
+
+### Modifying Reflection
+
+1. Changes to `TillyTypeInfo`/`TillyFunctionInfo` require version bump.
+2. Update all language bindings (Rust, Python, Go) that use reflection.
+3. Run conformance tests for all extensions.
+
+---
+
+## PR Checklist
+
+- [ ] Builds clean with ASAN/UBSan on Linux, macOS, Windows
+- [ ] All unit tests pass
+- [ ] TillyZ builds without libc (`cc -nostdlib` test)
+- [ ] No memory leaks (Valgrind clean)
+- [ ] Thread safety verified (TSan clean)
+- [ ] Cross-platform tests pass (CI runs on all targets)
+- [ ] Documentation updated for API changes
+- [ ] Gate requirements met (see Ownership Rules in core/AGENTS.md)
+
+---
+
+## Contacts
+
+- **TillyZ bootstrap**: `#joltfx-tillyz`
+- **Memory manager**: `#joltfx-memory`
+- **Logging & diagnostics**: `#joltfx-diagnostics`
+- **Reflection & modules**: `#joltfx-runtime`
+- **Platform abstraction**: `#joltfx-platform`
+- **Configuration**: `#joltfx-config`

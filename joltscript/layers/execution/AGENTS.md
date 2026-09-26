@@ -1,4 +1,4 @@
-# JoltFX Execution Layer Specification
+# AGENTS.md — JoltFX Execution Layer
 
 ## Overview
 
@@ -6,8 +6,44 @@ The Execution Layer is the runtime substrate of JoltFX. It orchestrates kernel e
 
 ---
 
+## Repository Layout
+
+```
+joltscript/layers/execution/
+  src/
+    scheduler.c          # Task scheduling and dispatch
+    pipeline_manager.c   # Multi-kernel pipeline compilation and caching
+    kernel_runner.c      # Individual kernel execution context
+    resource_budget.c    # Per-frame memory and time limits
+    memory_manager.c     # CPU/GPU buffer allocation and transfer
+    frame_graph.c        # Declarative render/compute pass scheduling
+    dep_resolver.c       # Task DAG construction and analysis
+    command_buffer.c     # Low-level GPU command recording
+    batch_compiler.c     # Kernel fusion and optimization
+    jolt_execution.c     # Public API entry points
+  include/
+    jolt_execution.h     # Public C API
+    jolt_scheduler.h
+    jolt_pipeline.h
+    jolt_kernel.h
+    jolt_budget.h
+    jolt_memory.h
+    jolt_frame_graph.h
+    jolt_dep_graph.h
+    jolt_cmd_buffer.h
+    jolt_batch_compiler.h
+  tests/
+    unit/                # Per-component unit tests
+    integration/         # End-to-end execution tests
+    conformance/         # Cross-backend execution tests
+    perf/                # Scheduler, memory, batch compiler benchmarks
+```
+
+---
+
 ## Architecture
 
+```
 ┌──────────────────────────────────────────────────────────┐
 │                    Glue Layer                             │
 └────────────────────────────┬─────────────────────────────┘
@@ -32,7 +68,7 @@ The Execution Layer is the runtime substrate of JoltFX. It orchestrates kernel e
 │           Hardware Abstraction Layer (HAL)                │
 │            Vulkan │ Metal │ WGPU │ CPU SIMD              │
 └──────────────────────────────────────────────────────────┘
-
+```
 
 ---
 
@@ -40,7 +76,7 @@ The Execution Layer is the runtime substrate of JoltFX. It orchestrates kernel e
 
 ### 1. Scheduler
 
-The Scheduler determines the order in which kernels execute, respecting data dependencies, resource availability, and user-defined priorities. It operates in two modes: **immediate** (execute-on-submit for interactive tools) and **deferred** (batch-optimize for rendering).
+The Scheduler determines the order in which kernels execute, respecting data dependencies, resource availability, and user-defined priorities. It operates in three modes: **immediate** (execute-on-submit for interactive tools), **deferred** (batch-optimize for rendering), and **timeline** (timeline playback with frame deadlines).
 
 ```c
 typedef enum JoltSchedMode {
@@ -80,10 +116,11 @@ void           jolt_scheduler_set_priority(JoltScheduler*, JoltTaskID, int32_t p
 
 #### Task States
 
+```
 PENDING → READY → RUNNING → COMPLETED
             ↓        ↓
          CANCELED  FAILED
-
+```
 
 ---
 
@@ -675,6 +712,7 @@ void          jolt_exec_reset_stats(JoltScheduler*);
 
 The Execution Layer is **multi-threaded by default**. The Scheduler owns a thread pool for CPU kernel execution. GPU command submission happens on a dedicated GPU thread to avoid stalls.
 
+```
 Main Thread
   │
   ├─ Submit tasks to Scheduler
@@ -695,7 +733,7 @@ Worker Threads (CPU)         GPU Thread
   │                            │
   ▼                            ▼
 Callback on completion       Callback on completion
-
+```
 
 ### Synchronization
 
@@ -749,51 +787,37 @@ void     jolt_hal_destroy(JoltHAL*);
 
 A complete kernel execution from submission to completion:
 
-1. User submits kernel via Glue Layer
-   jolt.call("jolt.fx.kernels.wave_distortion", inputs)
-   │
-   ▼
-2. Glue Layer dispatches to Execution Layer
-   jolt_scheduler_submit(sched, kernel_desc, deps, dep_count)
-   │
-   ▼
-3. Scheduler adds task to pending queue
-   │
-   ▼
-4. Dependency Resolver checks if dependencies are satisfied
-   │
-   ▼
-5. Task moves to ready queue
-   │
-   ▼
-6. Resource Budget checks CPU/GPU memory availability
-   │
-   ▼
-7. Memory Manager allocates input/output buffers
-   │
-   ▼
-8. Kernel Runner creates execution context
-   │
-   ▼
-9. Backend (HAL) executes kernel
+1. **User submits kernel via Glue Layer**
+   `jolt.call("jolt.fx.kernels.wave_distortion", inputs)`
+
+2. **Glue Layer dispatches to Execution Layer**
+   `jolt_scheduler_submit(sched, kernel_desc, deps, dep_count)`
+
+3. **Scheduler adds task to pending queue**
+
+4. **Dependency Resolver checks if dependencies are satisfied**
+
+5. **Task moves to ready queue**
+
+6. **Resource Budget checks CPU/GPU memory availability**
+
+7. **Memory Manager allocates input/output buffers**
+
+8. **Kernel Runner creates execution context**
+
+9. **Backend (HAL) executes kernel**
    - CPU: calls compiled native function
    - GPU: records commands to command buffer, submits to GPU queue
-   │
-   ▼
-10. On completion, callback invoked
-   │
-   ▼
-11. Memory Manager releases buffers (if not pooled)
-   │
-   ▼
-12. Resource Budget updated
-   │
-   ▼
-13. Result marshaled back to Glue Layer
-   │
-   ▼
-14. User receives result
 
+10. **On completion, callback invoked**
+
+11. **Memory Manager releases buffers (if not pooled)**
+
+12. **Resource Budget updated**
+
+13. **Result marshaled back to Glue Layer**
+
+14. **User receives result**
 
 ---
 
@@ -835,3 +859,68 @@ void       jolt_exec_shutdown(void);
 | Batch Compiler     | Fuse and optimize kernel sequences for target backends |
 
 The Execution Layer is the performance-critical core of JoltFX, responsible for turning high-level kernel descriptions into real-time rendered frames and computed results.
+
+---
+
+## Contribution Guidelines
+
+### Adding a New Scheduler Mode
+
+1. Add enum value to `JoltSchedMode`.
+2. Implement scheduling logic in `scheduler.c`.
+3. Add tests for the new mode in `tests/unit/scheduler/`.
+4. Benchmark against existing modes.
+
+### Modifying the Frame Graph
+
+1. Changes to `JoltFrameGraphPass` or `JoltFrameGraphResource` require version bump.
+2. Update all backend frame graph compilers.
+3. Run conformance tests across all backends.
+
+### Optimizing the Batch Compiler
+
+1. Add new optimization pass in `batch_compiler.c`.
+2. Verify correctness with `jolt verify --opt-level=AGGRESSIVE`.
+3. Benchmark on representative kernel chains.
+4. Ensure all four targets produce valid output.
+
+---
+
+## PR Checklist
+
+- [ ] Builds clean with ASAN/UBSan
+- [ ] All unit tests pass
+- [ ] Integration tests pass (all execution modes)
+- [ ] Conformance tests pass (all backends)
+- [ ] No memory leaks (Valgrind clean)
+- [ ] Thread safety verified (TSan clean)
+- [ ] Benchmarks run for scheduler/memory/batch compiler changes
+- [ ] Documentation updated for API changes
+- [ ] Gate requirements met (see core/AGENTS.md Ownership Rules)
+
+---
+
+## Common Mistakes
+
+**Submitting tasks without checking budget.** Always call `jolt_budget_can_allocate_*` before `jolt_scheduler_submit`.
+
+**Not releasing budget after task completion.** Every `allocate` must have a matching `release`.
+
+**Creating frame graph cycles.** The dependency resolver will catch this, but it's better to design acyclic graphs from the start.
+
+**Forgetting to reset frame budget.** Call `jolt_budget_reset_frame` at the start of each frame in timeline mode.
+
+**Blocking on GPU in scheduler thread.** GPU submission is async; use fences and callbacks, not `jolt_cmd_wait` in the hot path.
+
+**Leaking command buffers.** Every `jolt_cmd_create` must have a matching `jolt_cmd_destroy`.
+
+---
+
+## Contacts
+
+- **Scheduler**: `#joltfx-scheduler`
+- **Pipeline Manager**: `#joltfx-pipeline`
+- **Memory/Budget**: `#joltfx-memory`
+- **Frame Graph**: `#joltfx-render`
+- **Batch Compiler**: `#joltfx-compiler`
+- **HAL / Backend integration**: `#joltfx-backend-core`
