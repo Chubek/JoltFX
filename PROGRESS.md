@@ -181,3 +181,12 @@ on Linux.
   WASM builds remain unverified locally.
 - Phase 2 carry-overs unchanged: per-call Vulkan pipeline compilation
   (no cross-call cache), async submit, and non-Vulkan backends.
+
+---
+
+# Phase 4 expansion progress
+
+Started September 27, 2026. Scope review is complete. The Metal, D3D12,
+Dear ImGui, Lua, and mruby submodules are registered but unpopulated in this
+checkout, so Phase 4 work is being implemented with buildable, tested
+engine-facing fallback paths and explicit native-integration limits.

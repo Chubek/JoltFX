@@ -71,6 +71,18 @@ int main(void) {
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS && engine);
     assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
     jfx_engine_shutdown(engine);
+    named.backend_name = "metal";
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
+        strcmp(jfx_engine_backend_name(engine), "metal") == 0);
+    jfx_engine_shutdown(engine);
+    named.backend_name = "d3d12";
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
+        strcmp(jfx_engine_backend_name(engine), "d3d12") == 0);
+    jfx_engine_shutdown(engine);
+    named.backend_name = "webgpu";
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
+        strcmp(jfx_engine_backend_name(engine), "webgpu") == 0);
+    jfx_engine_shutdown(engine);
     tilly_allocator_t *alloc = tilly_allocator_create(TILLY_ALLOC_GENERAL, 1024);
     assert(alloc);
     assert(!tilly_alloc(alloc, 16, 3));

@@ -28,3 +28,19 @@ add_custom_target(validate_kernels COMMAND $<TARGET_FILE:test_effects> DEPENDS t
 add_executable(test_vulkan_backend backends/test_vulkan_backend.c)
 target_link_libraries(test_vulkan_backend PRIVATE jfx_backend_vulkan)
 add_test(NAME test_vulkan_backend COMMAND test_vulkan_backend)
+
+add_executable(test_fallback_backends backends/test_fallback_backends.c)
+target_link_libraries(test_fallback_backends PRIVATE
+    jfx_backend_metal
+    jfx_backend_d3d12
+    jfx_backend_webgpu
+)
+add_test(NAME backend_fallback_conformance COMMAND test_fallback_backends)
+
+add_executable(test_extensions extif/test_extensions.c)
+target_link_libraries(test_extensions PRIVATE jfx_lua jfx_mruby)
+add_test(NAME ext_conformance COMMAND test_extensions)
+
+add_executable(test_desktop_frontend frontends/test_desktop_frontend.cpp)
+target_link_libraries(test_desktop_frontend PRIVATE jfx_desktop_frontend)
+add_test(NAME desktop_frontend COMMAND test_desktop_frontend)
