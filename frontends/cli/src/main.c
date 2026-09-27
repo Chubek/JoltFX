@@ -77,6 +77,21 @@ int main(int argc, char **argv) {
     if (strcmp(command, "export") == 0) {
         return cmd_export(rest_argc, rest_argv);
     }
+    if (strcmp(command, "nodes") == 0) {
+        return cmd_nodes(rest_argc, rest_argv);
+    }
+    if (strcmp(command, "lut") == 0) {
+        return cmd_lut(rest_argc, rest_argv);
+    }
+    if (strcmp(command, "render-graph") == 0) {
+        return cmd_render_graph(rest_argc, rest_argv);
+    }
+    if (strcmp(command, "render-sequence") == 0) {
+        return cmd_render_sequence(rest_argc, rest_argv);
+    }
+    if (strcmp(command, "project") == 0) {
+        return cmd_project(rest_argc, rest_argv);
+    }
     if (strcmp(command, "capabilities") == 0 || strcmp(command, "caps") == 0) {
         return cmd_capabilities();
     }

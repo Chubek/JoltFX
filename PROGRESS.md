@@ -613,3 +613,200 @@ Metal, and D3D12 fallback conformance remains intact.
 Follow-up verification: an ASan/UBSan Debug build passes all 16 CTests,
 including `web_session`; `npm test` compiles TypeScript and passes both player
 and Emscripten-bridge tests. Leak detection remains disabled under ptrace.
+
+### Colour grading, NLE and node compositing work — started September 27, 2026
+
+Bottom-up through the strata, per the new feature brief. Stage 1 is complete
+and tested; the remaining stages are in progress.
+
+**Stage 1 — LUT library (`core/include/jfx/jfx_lut.h`, `core/src/lut.c`) — done.**
+
+A self-contained lookup-table library: no dependencies, so it runs identically
+on the desktop, through WASM in a browser, and on a phone. Three shapes (1D
+per-channel curve, 2D strip, 3D cube) with correct interpolation for each, an
+explicit sampling domain, `mix` for dialling a grade back, and identity/curve
+generators.
+
+Readers and writers for every common on-disk format:
+
+| Format          | Shapes read | Notes                                                     |
+|-----------------|-------------|-----------------------------------------------------------|
+| Adobe `.cube`   | 1D, 3D      | `LUT_1D_SIZE`/`LUT_3D_SIZE`, `DOMAIN_MIN/MAX`, `TITLE`    |
+| Autodesk `.3dl` | 1D, 2D      | Headerless, so the shape is a parameter, not guessed      |
+| Sony `.spi1d`   | 1D          | Raw LE float32 triples                                    |
+| Sony `.spi3d`   | 3D          | Raw LE float32 triples                                    |
+| DaVinci `.look` | 1D, 3D      | Container; parses the index and the embedded `.cube`      |
+| Hald CLUT       | 3D          | Decodes the image; correct level-geometry (see below)      |
+
+Two correctness points worth recording, because both were wrong in the first
+draft and a test caught them:
+
+- **`.3dl` and `.spi*` are headerless, so the file does not say whether it holds
+  a curve or a cube.** Sniffing the entry count silently misreads an 8-entry 1D
+  LUT as a 2x2x2 cube, and 8 triples genuinely satisfy *both* readings. These
+  formats therefore take the shape as a parameter (`jfx_lut_load_3dl_as`,
+  `jfx_lut_load_spi_as`); the convenience loaders take it from the file name and
+  say so.
+- **A Hald CLUT of level L is an L^3-square image carrying a cube of edge L^2**
+  (level 2 = 8x8 image, 4-cube; level 8 = 512x512, 64-cube; level 16 =
+  4096x4096, 256-cube), written as one continuous buffer with red varying
+  fastest. This is the convention specified by the format's author, not the
+  tile layout one might guess from the name. The reader derives the level from
+  the image side and rejects sides that are not a perfect cube.
+
+Iridas/Cinespace `.csp` is detected and explicitly rejected with a message
+naming what is supported, rather than being misread. It is the one common LUT
+container still unparsed.
+
+`core/src/image.c` (`jfx_image.h`) adds still-image decoding through the
+vendored `stb_image`, which the Hald reader and the NLE clip sources both use.
+`tests/unit/color/test_lut.c` is the conformance suite: container contract,
+sampling maths per shape, every reader and writer, round-trips, and the
+truncation, overflow, domain and shape-rejection paths.
+
+**Stage 2 — Node compositing (`core/include/jfx/jfx_compose.h`, `core/src/compose.c`) — done.**
+
+A DAG of typed nodes with a 26-kind built-in library covering the catalog's
+COLOR and COMPOSITING categories: sources (solid, linear gradient, checker,
+test pattern, image), grading (exposure, contrast, saturation, vibrance, white
+balance, lift/gamma/gain, levels, curves, white clip, channel mixer, LUT,
+parametric curve), transform, keying (luma, chroma with spill suppression) and
+compositing (14 separable blend modes plus alpha, opacity, posterize, invert).
+Evaluation is pull-based with a per-node frame cache, so a node feeding several
+consumers is computed once.
+
+The design decision that matters for the brief's "add to all frontends" is that
+**the node table is self-describing**: every kind declares its label, category,
+input ports (name, type, required, default) and parameters (name, range, default,
+step, integral flag). The desktop panel, the web canvas, the CLI and a host
+plugin all build their widgets from that one table, so adding a node kind makes
+it appear everywhere rather than needing a UI change per frontend.
+
+Three real defects the conformance suite caught, all now fixed:
+
+- **Node removal used swap-with-last while the reference rewriting assumed
+  shift-down**, so after removing a node the graph silently miswired. It now
+  shifts down, keeping creation order, which is also what a node list displays.
+- **The topological sort decremented a consumer's indegree only once even when it
+  read the same source from several ports**, so a `blend` with two inputs from
+  one node looked like a cycle and refused to render.
+- **`ctx_release` walked the full node capacity over arrays allocated for the
+  graph's actual node count**, freeing past the end of the allocation. ASan
+  caught this as a plain `free(): invalid pointer`.
+
+Two API-consistency problems were also fixed rather than worked around: a failed
+`jfx_graph_add_node` and a failed `jfx_lut_create` used to write `0`/`NULL` to
+the out-parameter, which orphaned a live object when a caller reused one handle
+across attempts. Every out-handle in both modules is now published only on
+success.
+
+`tests/unit/color/test_compose.c` covers the kind table's self-consistency,
+port typing, cycle rejection (including that a diamond is *not* a cycle),
+index stability across removal, the numeric result of every grading operator,
+the alpha compositing rule, keying, the node budget, and that every kind renders
+both fully wired and with nothing connected at all.
+
+Both new suites pass under ASan+UBSan with leak detection on.
+
+**Stage 3 — NLE model (`core/include/jfx/jfx_timeline.h`, `core/src/timeline.c`) — done.**
+
+Tracks, clips with in/out points, the per-clip effect stack, and keyframes. Time
+is counted in frames against an exact rational rate, so 30000/1001 is not rounded
+to 29.97 and drift never accumulates; a clip's `in_point` is the source frame
+that lands on the clip's own frame zero, which is what makes trim and speed
+expressible.
+
+The layer-based effects panel's model lives here: a clip's effect stack is an
+ordered list of stages, each with on/off, a blend mode against the stage below,
+an opacity, a parameter set, and keyframes. Every operation a panel needs -
+add, disable, reorder by drag, set a blend, load a LUT path, key a parameter -
+is an API call.
+
+Clip sources are the graph's source nodes, and a clip's effect stack is applied
+by assembling a small graph (source, then one node per enabled effect) and
+rendering it. So a grading operator behaves identically whether it is reached
+through the node panel, a clip's layer stack, or the timeline; there is one
+implementation, not three.
+
+Keyframes support linear, hold and smoothstep interpolation, are held sorted
+with a binary search because evaluation looks up the bracketing pair on every
+frame, hold their value outside the keyed range rather than extrapolating, and
+are evaluated in the **clip's own time base** - so a wipe written against a clip
+behaves the same wherever the clip is dragged on the sequence.
+
+Four real defects the conformance suite caught:
+
+- **`move_clip`'s downward branch memmoved the wrong range**, so dragging a clip
+  earlier overwrote it in place and dropped it from the track, leaking whatever
+  it owned. The first version of the test missed this because the two clips it
+  reordered had the same name; the test now uses distinct names and checks the
+  full permutation.
+- **`relocate_clip` went through `remove_clip`**, which freed the clip's path and
+  effect strings and then reinserted the copy still pointing at them: a
+  use-after-free, and a double free at destroy. The move now shifts the array
+  and clears the vacated slot instead of releasing.
+- **The track loop iterated top-down while compositing each track onto the
+  accumulator**, which put the *bottom* track on top. It now composites bottom-up
+  so a higher index is above a lower one.
+- **`jfx_blend_rgba8`'s opaque-over-clear fast path ran a 0..1 float-to-byte
+  conversion over bytes that were already 0..255**, so any value above 1.0
+  saturated to 255 and a 25% grey solid rendered as white.
+
+Also corrected: timecode used `fps_num / fps_den`, which truncates 29.97 to 29
+rather than rounding to the nominal 30 the frames actually play at.
+
+`tests/unit/color/test_timeline.c` covers construction and rational rates,
+timecode, track/clip/effect structural edits and their index rules, the exact
+frames a clip covers, keyframe insertion/removal/interpolation/hold behaviour,
+track and clip compositing with mute/solo, that a clip's effect stack changes
+the pixels in order, and that a clip's keyframes follow the clip when it is
+moved.
+
+All three new suites pass under ASan+UBSan with leak detection on, and the
+`default`, `release` and `minimal` presets build with zero warnings and pass
+21/21 tests.
+
+**Stage 4 — Project interchange (`core/include/jfx/jfx_project.h`, `core/src/project.c`) — done.**
+
+One line-oriented plain-text format for a graph (a grade) and a sequence (an
+edit), in core so the desktop editor, the CLI, the web player, a phone app and a
+host plugin all read and write the same documents. Plain text means a project
+can be diffed, reviewed, generated by a script, and read by a person debugging a
+render - and a render is reproducible from a file alone.
+
+The parser is strict about what it does not understand: an unknown directive, a
+bad value or a cycle is an error naming the line, not something silently
+rendered. Out-parameters are published only on success.
+
+Sequence round-trips preserve the exact rational frame rate (30000/1001, not
+29.97), every track, clip placement and in-point, each effect's kind, text fields
+and parameters, its enabled flag and opacity, and every keyframe - and the test
+asserts that a reloaded document renders **byte-identical** frames to the original.
+
+Two defects found while writing it: the graph reader accepted `param` and `link`
+in a different shape from the one the writer emits and the header documented
+(node indices were 0-based on the way in, 1-based on the way out), and the
+sequence writer appended an image clip's path and parameters with no bounds
+checks, which ASan reported as a heap overflow.
+
+**Stage 5 — CLI surface (`frontends/cli/src/compose_commands.c`) — done.**
+
+- `joltfx nodes [NAME]` — the compositing node library, or one node's ports and
+  parameters (and whether it is usable as a clip effect)
+- `joltfx lut info FILE` — format, shape, size, domain of any LUT this build reads
+- `joltfx lut convert IN OUT [--as cube|3dl|spi]` — convert between LUT formats
+- `joltfx lut apply LUT IMAGE OUT --mix M` — grade a still image
+- `joltfx render-graph DOC.jfx -o OUT.ppm` — render a grade
+- `joltfx render-sequence DOC.jfx -o PREFIX` — render an edit to a PPM sequence
+- `joltfx project info DOC.jfx` / `project render` — inspect or render either kind
+
+### What is not done yet
+
+The strata are complete, tested and reachable from the command line, but the
+**panels are not written**. The desktop frontend still has its old Properties
+panel; it has not been converted to the layer-based effects panel, and the NLE
+timeline, colour-grading and node-compositing panels do not exist yet. The web
+and mobile frontends have no editor UI. The model each panel would edit is in
+place and tested (`jfx_timeline_t`, `jfx_graph_t`, `jfx_lut_t`, and the
+self-describing node table the widgets are generated from), so this is UI work
+against a finished API rather than more engine work.

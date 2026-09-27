@@ -78,6 +78,19 @@ if(JFX_FRONTEND_WEB)
     target_include_directories(test_web_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
+# The colour LUT library: container, every supported on-disk format, the
+# writers, and the samplers.
+jfx_test_target(test_lut SOURCES color/test_lut.c LIBRARIES jfx_core)
+
+# The node graph: typing, cycle rejection, and the grading/compositing maths.
+jfx_test_target(test_compose SOURCES color/test_compose.c LIBRARIES jfx_core)
+
+# The NLE model: tracks, clips, the per-clip effect stack and keyframes.
+jfx_test_target(test_timeline SOURCES color/test_timeline.c LIBRARIES jfx_core)
+
+# The text project format every frontend reads and writes.
+jfx_test_target(test_project SOURCES color/test_project.c LIBRARIES jfx_core)
+
 # The shared frontend contract, exercised with a deliberately minimal frontend
 # so the NOT_IMPLEMENTED paths are covered.
 jfx_test_target(test_frontend_contract SOURCES frontends/test_frontend_contract.c
@@ -132,5 +145,9 @@ if(JFX_FRONTEND_WEB)
     jfx_register_test(web_session test_web_session)
     set_property(TEST web_session APPEND PROPERTY LABELS frontend)
 endif()
+jfx_register_test(lut test_lut)
+jfx_register_test(compose test_compose)
+jfx_register_test(timeline test_timeline)
+jfx_register_test(project test_project)
 jfx_register_test(frontend_contract test_frontend_contract)
 set_property(TEST frontend_contract APPEND PROPERTY LABELS conformance)
