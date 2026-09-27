@@ -78,7 +78,8 @@ jolt_status_t jolt_pipeline_run(jolt_pipeline_t *p,const float *rgba,size_t pixe
         memcpy(args+4,stage->parameters,stage->count*sizeof(float));
         for (size_t i=0;i<pixels;++i) {
             memcpy(args,src+i*4,4*sizeof(float));
-            s=jolt_vm_run(vm,stage->code,stage->size,args,4+stage->count,storage+(id*pixels+i)*4,4);
+            s=jolt_vm_run_prevalidated(vm,stage->code,stage->size,args,4+stage->count,
+                storage+(id*pixels+i)*4,4);
             if (s!=JOLT_OK) goto done;
         }
     }

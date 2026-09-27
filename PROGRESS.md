@@ -238,3 +238,82 @@ initialized during this work; mruby's source build additionally needs Ruby's
 - Lua/mruby currently expose the intentionally constrained numeric scripting
   API only. Typed marshalling, buffer/texture wrappers, event callbacks,
   diagnostics stack traces, and broader extension conformance remain open.
+
+---
+
+# Phase 5 production progress
+
+Updated September 27, 2026. Phase 5 is **implemented as a portable public-beta
+foundation**, with proprietary SDK/platform integrations clearly retained as
+release-blocking follow-up work.
+
+## Implemented
+
+- Native plugin host: versioned C ABI (`jfx_plugin.h`), bounded plugin registry,
+  dynamic load/unload, descriptor and API-version validation, duplicate-ID
+  rejection, optional shutdown callbacks, and XAS plugin lifecycle events. The
+  host is exercised with a real dynamically loaded test module.
+- Host application bridges: After Effects, Premiere Pro, and DaVinci Resolve
+  build as portable SDK-independent libraries with stable identifiers and
+  import/export/effect capability contracts. They accurately report that a
+  proprietary host SDK is still required for an installable host binary.
+- Web player: a strict, dependency-free TypeScript canvas player with WASM
+  bridge contract, playback/seek/loop, frame and state events, drag/drop,
+  256 MiB package limit, and same-origin URL enforcement. A portable C web
+  session owns the Core lifecycle for an Emscripten integration.
+- Mobile player: a tested portable Core-owning playback surface for JNI and
+  Swift/Objective-C wrappers. Tap toggles playback, swipe scrubs, pinch zooms,
+  and render advances the timeline and engine frame.
+- Performance: public engine frame timing metrics plus an engine benchmark;
+  immutable pipeline-owned JBC1 bytecode is validated at registration and no
+  longer revalidated for every pixel during pipeline execution.
+- Beta release support: version `0.5.0-beta.1`, package install rules and TGZ/
+  ZIP CPack artifacts, Phase 5 guide/changelog, and CI jobs for the web player
+  and beta package.
+
+## Verification on Linux
+
+- ASan/UBSan Debug CMake build: pass. `ctest` 15/15 pass, including new plugin
+  lifecycle, mobile gesture/state, and three host-bridge contract tests.
+  Leak detection remains disabled because LeakSanitizer cannot run under this
+  environment's ptrace restriction.
+- `npm test` in `frontends/web`: TypeScript compile and Node web-player test
+  pass.
+- `jfx_engine_benchmark` runs 1,000 WebGPU-fallback engine ticks and reports
+  timing metrics. The observed timing is informational, not a performance
+  target.
+- `cpack --config /tmp/joltfx-phase5/CPackConfig.cmake` generated both
+  `JoltFX-0.5.0-beta.1.tar.gz` and `JoltFX-0.5.0-beta.1.zip`.
+
+## Remaining Phase 5 release blockers
+
+- The After Effects, Premiere, and DaVinci adapters require the respective
+  proprietary SDK implementations and host-version certification.
+- The web runtime requires its Emscripten-generated `JoltWasmBridge`; it has
+  not been run in a browser here. Android/iOS JNI/Swift presentation wrappers
+  likewise require their native SDK/toolchain validation.
+- Metal, D3D12, and WebGPU retain the Phase 4 software fallback rather than
+  native GPU dispatch. Public beta distribution/telemetry/support operations
+  are not performed by repository code.
+
+### Follow-up implementation started September 27, 2026
+
+Implemented the platform-gated source surfaces that do not require proprietary
+SDKs: `jfx_web_session` now renders bundled effects to RGBA8 caller memory and
+the TypeScript `EmscriptenJoltBridge` transfers a validated beta effect
+envelope through the real C exports. A new `web_session` CTest covers Core
+rendering; the TypeScript bridge test covers WASM heap transfer and effect
+selection. Android now has a JNI lifecycle/gesture bridge plus a
+`Choreographer`-driven `SurfaceView` activity; iOS has an Objective-C bridge
+for an `MTKView` controller.
+
+Re-probed this Linux environment on September 27, 2026: Emscripten, Android
+SDK/NDK, Xcode, Adobe/Blackmagic SDK headers, the WebGPU C header/library, and
+Metal/D3D12 headers are unavailable. Consequently, host-certified plugins,
+browser/device builds, and true Metal/D3D12/WebGPU GPU dispatch cannot be
+compiled or tested here without those external SDKs. The portable WebGPU,
+Metal, and D3D12 fallback conformance remains intact.
+
+Follow-up verification: an ASan/UBSan Debug build passes all 16 CTests,
+including `web_session`; `npm test` compiles TypeScript and passes both player
+and Emscripten-bridge tests. Leak detection remains disabled under ptrace.

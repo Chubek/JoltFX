@@ -4,13 +4,9 @@
 struct jolt_vm { float stack[JOLT_MAX_STACK]; };
 jolt_vm_t *jolt_vm_create(void) { return tilly_container_calloc(1, sizeof(jolt_vm_t)); }
 void jolt_vm_destroy(jolt_vm_t *vm) { tilly_container_free(vm); }
-jolt_status_t jolt_vm_run(jolt_vm_t *vm, const uint8_t *code, size_t size,
+jolt_status_t jolt_vm_run_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_t size,
     const float *inputs, size_t input_count, float *outputs, size_t output_count) {
     if (!vm || !code || !outputs || (input_count && !inputs)) return JOLT_ERR_ARGUMENT;
-    jolt_status_t status = jolt_bytecode_validate(code, size);
-    if (status != JOLT_OK) return status;
-    if (input_count != jolt_read_u32(code + 8) || output_count != jolt_read_u32(code + 12))
-        return JOLT_ERR_ARGUMENT;
     for (size_t i = 0; i < input_count; ++i) if (!isfinite(inputs[i])) return JOLT_ERR_NUMERIC;
     float result[JOLT_MAX_OUTPUTS]; unsigned n = 0;
     for (size_t pos = 16; pos < size; pos += 8) {
@@ -45,6 +41,16 @@ jolt_status_t jolt_vm_run(jolt_vm_t *vm, const uint8_t *code, size_t size,
     }
     memcpy(outputs, result, output_count * sizeof(float));
     return JOLT_OK;
+}
+jolt_status_t jolt_vm_run(jolt_vm_t *vm, const uint8_t *code, size_t size,
+    const float *inputs, size_t input_count, float *outputs, size_t output_count) {
+    if (!vm || !code || !outputs || (input_count && !inputs)) return JOLT_ERR_ARGUMENT;
+    jolt_status_t status = jolt_bytecode_validate(code, size);
+    if (status != JOLT_OK) return status;
+    if (input_count != jolt_read_u32(code + 8) || output_count != jolt_read_u32(code + 12)) {
+        return JOLT_ERR_ARGUMENT;
+    }
+    return jolt_vm_run_prevalidated(vm, code, size, inputs, input_count, outputs, output_count);
 }
 int jolt_vm_execute(jolt_vm_t *vm, const uint8_t *code, size_t size) {
     if (!vm || !code) return JOLT_ERR_ARGUMENT;

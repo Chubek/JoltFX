@@ -2,6 +2,10 @@
 
 High-performance, cross-platform effects engine for real-time graphics.
 
+**0.5.0-beta.1** is the current public-beta development release. See the
+[Phase 5 production guide](docs/guides/phase5.md) for supported surfaces,
+package verification, and known limitations.
+
 ## Overview
 
 JoltFX is a modular effects processing framework built on:

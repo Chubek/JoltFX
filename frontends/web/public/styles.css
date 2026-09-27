@@ -1,0 +1,3 @@
+body { background: #11151c; color: #e7edf7; font: 16px system-ui, sans-serif; margin: 0; }
+main { margin: 2rem auto; max-width: 1280px; padding: 0 1rem; }
+canvas { background: #000; display: block; max-width: 100%; height: auto; }

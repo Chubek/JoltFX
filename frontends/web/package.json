@@ -1,0 +1,9 @@
+{
+  "name": "@joltfx/web-player",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/player.test.mjs"
+  }
+}

@@ -5,6 +5,7 @@
 - [Quick Start Guide](guides/getting_started.md)
 - [Writing Your First Kernel](guides/writing_kernels.md)
 - [Phase 4 components](guides/phase4.md)
+- [Phase 5 public beta](guides/phase5.md)
 
 ## Architecture
 - [System Architecture](ARCHITECTURE.md)

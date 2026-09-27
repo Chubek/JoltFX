@@ -1,0 +1,3 @@
+add_executable(jfx_engine_benchmark engine_benchmark.c)
+target_link_libraries(jfx_engine_benchmark PRIVATE jfx_core)
+set_project_warnings(jfx_engine_benchmark)

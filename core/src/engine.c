@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 struct jfx_engine {
     tilly_context_t *ctx;
@@ -18,7 +19,15 @@ struct jfx_engine {
     char backend_name[16];
     enum { JFX_BACKEND_VULKAN, JFX_BACKEND_METAL, JFX_BACKEND_D3D12, JFX_BACKEND_WEBGPU } kind;
     void *backend;
+    jfx_engine_metrics_t metrics;
 };
+
+static uint64_t timestamp_ns(void) {
+    struct timespec timestamp;
+    if (timespec_get(&timestamp, TIME_UTC) != TIME_UTC) return 0;
+    return (uint64_t)timestamp.tv_sec * UINT64_C(1000000000) +
+        (uint64_t)timestamp.tv_nsec;
+}
 
 static bool resolve_backend(const char *name, char *out, size_t size) {
     const char *selected = "vulkan";
@@ -49,6 +58,7 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
     if (!engine) {
         return JFX_ERROR_OUT_OF_MEMORY;
     }
+    memset(engine, 0, sizeof(*engine));
 
     tilly_config_t tilly_config = {
         .heap_size = 64 * 1024 * 1024,
@@ -112,6 +122,7 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
 
     memcpy(&engine->config, config, sizeof(jfx_engine_config_t));
     snprintf(engine->backend_name, sizeof(engine->backend_name), "%s", backend_name);
+    engine->metrics.size = sizeof(engine->metrics);
 
     tilly_log_info("jfx_engine", "JoltFX engine initialized");
 
@@ -144,11 +155,21 @@ const char *jfx_engine_backend_name(const jfx_engine_t *engine) {
     return engine ? engine->backend_name : NULL;
 }
 
+jfx_result_t jfx_engine_get_metrics(const jfx_engine_t *engine,
+    jfx_engine_metrics_t *out_metrics) {
+    if (!engine || !out_metrics || out_metrics->size < sizeof(*out_metrics)) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    *out_metrics = engine->metrics;
+    return JFX_SUCCESS;
+}
+
 jfx_result_t jfx_engine_tick(jfx_engine_t *engine) {
     if (!engine) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     
+    uint64_t started_ns = timestamp_ns();
     // Begin frame
     event_publish(JFX_EVENT_FRAME_BEGIN, NULL);
     
@@ -161,5 +182,11 @@ jfx_result_t jfx_engine_tick(jfx_engine_t *engine) {
     // End frame
     event_publish(JFX_EVENT_FRAME_END, NULL);
     
+    uint64_t finished_ns = timestamp_ns();
+    uint64_t elapsed_ns = finished_ns >= started_ns ? finished_ns - started_ns : 0;
+    engine->metrics.frame_count++;
+    engine->metrics.last_frame_ns = elapsed_ns;
+    engine->metrics.total_frame_ns += elapsed_ns;
+    if (elapsed_ns > engine->metrics.max_frame_ns) engine->metrics.max_frame_ns = elapsed_ns;
     return JFX_SUCCESS;
 }

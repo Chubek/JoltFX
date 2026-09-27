@@ -10,6 +10,19 @@ add_executable(test_core
 
 target_link_libraries(test_core PRIVATE jfx_core)
 
+add_library(test_plugin_module MODULE core/test_plugin_module.c)
+target_include_directories(test_plugin_module PRIVATE ${PROJECT_SOURCE_DIR}/core/include)
+if(UNIX AND NOT APPLE)
+    target_link_options(test_plugin_module PRIVATE -Wl,--allow-shlib-undefined)
+endif()
+set_project_warnings(test_plugin_module)
+
+add_executable(test_plugin_host core/test_plugin_host.c)
+target_link_libraries(test_plugin_host PRIVATE jfx_core)
+set_target_properties(test_plugin_host PROPERTIES ENABLE_EXPORTS ON)
+set_project_warnings(test_plugin_host)
+add_test(NAME plugin_host COMMAND test_plugin_host $<TARGET_FILE:test_plugin_module>)
+
 add_executable(test_containers containers/test_containers.c)
 target_link_libraries(test_containers PRIVATE tilly)
 add_test(NAME test_containers COMMAND test_containers)
@@ -44,3 +57,15 @@ add_test(NAME ext_conformance COMMAND test_extensions)
 add_executable(test_desktop_frontend frontends/test_desktop_frontend.cpp)
 target_link_libraries(test_desktop_frontend PRIVATE jfx_desktop_frontend)
 add_test(NAME desktop_frontend COMMAND test_desktop_frontend)
+
+add_executable(test_mobile_frontend frontends/test_mobile_frontend.c)
+target_link_libraries(test_mobile_frontend PRIVATE jfx_mobile_player)
+add_test(NAME mobile_frontend COMMAND test_mobile_frontend)
+
+add_executable(test_host_plugins frontends/test_host_plugins.c)
+target_link_libraries(test_host_plugins PRIVATE jfx_ae_plugin jfx_premiere_plugin jfx_davinci_plugin)
+add_test(NAME host_plugin_contract COMMAND test_host_plugins)
+
+add_executable(test_web_session frontends/test_web_session.c)
+target_link_libraries(test_web_session PRIVATE jfx_web_session)
+add_test(NAME web_session COMMAND test_web_session)

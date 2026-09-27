@@ -45,6 +45,11 @@ int main(void) {
     scheduler_wait_idle();
     assert(atomic_load(&finished) == 1);
     assert(jfx_engine_tick(engine) == JFX_SUCCESS);
+    jfx_engine_metrics_t metrics = {.size = sizeof(metrics)};
+    assert(jfx_engine_get_metrics(engine, &metrics) == JFX_SUCCESS);
+    assert(metrics.frame_count == 1 && metrics.total_frame_ns >= metrics.last_frame_ns);
+    metrics.size = 0;
+    assert(jfx_engine_get_metrics(engine, &metrics) == JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frame_alloc(32, 16));
     assert(jfx_frame_arena_usage() >= 32);
     jfx_frame_reset();
