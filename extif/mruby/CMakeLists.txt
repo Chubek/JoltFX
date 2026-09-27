@@ -1,4 +1,4 @@
-set(JFX_MRUBY_LIBRARY "${PROJECT_SOURCE_DIR}/third_party/mruby/build/host/lib/libmruby.a")
+set(JFX_MRUBY_LIBRARY "${PROJECT_SOURCE_DIR}/third_party/mruby/build/jfx/lib/libmruby.a")
 add_custom_command(
     OUTPUT "${JFX_MRUBY_LIBRARY}"
     COMMAND ${CMAKE_COMMAND} -E env MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
@@ -18,6 +18,7 @@ target_include_directories(jfx_mruby PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_include_directories(jfx_mruby PRIVATE ${PROJECT_SOURCE_DIR}/third_party/mruby/include)
+target_compile_definitions(jfx_mruby PRIVATE MRB_USE_DEBUG_HOOK)
 target_link_libraries(jfx_mruby PUBLIC jfx_extif_common PRIVATE jfx_mruby_runtime tilly)
 if(NOT MSVC)
     target_link_libraries(jfx_mruby PRIVATE m)

@@ -4,6 +4,7 @@
 - [Building from Source](guides/building.md)
 - [Quick Start Guide](guides/getting_started.md)
 - [Writing Your First Kernel](guides/writing_kernels.md)
+- [Phase 4 components](guides/phase4.md)
 
 ## Architecture
 - [System Architecture](ARCHITECTURE.md)
@@ -14,4 +15,3 @@
 ## Contributing
 - [How to Contribute](../CONTRIBUTING.md)
 - [Code of Conduct](../CODE_OF_CONDUCT.md)
-

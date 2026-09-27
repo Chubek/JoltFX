@@ -20,6 +20,9 @@ int main(void) {
     near(result, 1.0);
     assert(jfx_lua_runtime_load(lua, "return os.execute('echo unsafe')", "unsafe.lua") ==
         JFX_SCRIPT_ERROR);
+    assert(jfx_lua_runtime_load(lua,
+        "function exhausted(value) while true do end end", "budget.lua") == JFX_SCRIPT_OK);
+    assert(jfx_lua_runtime_call_number(lua, "exhausted", 0.0, &result) == JFX_SCRIPT_ERROR);
     jfx_lua_runtime_gc_pause(lua);
     jfx_lua_runtime_gc_resume(lua);
     jfx_lua_runtime_gc_collect(lua);
@@ -34,6 +37,9 @@ int main(void) {
     near(result, 1.0);
     assert(jfx_mruby_runtime_load(mruby, "File.open('unsafe')", "unsafe.rb") ==
         JFX_SCRIPT_ERROR);
+    assert(jfx_mruby_runtime_load(mruby,
+        "def exhausted(value)\n  while true\n  end\nend", "budget.rb") == JFX_SCRIPT_OK);
+    assert(jfx_mruby_runtime_call_number(mruby, "exhausted", 0.0, &result) == JFX_SCRIPT_ERROR);
     jfx_mruby_runtime_gc_pause(mruby);
     jfx_mruby_runtime_gc_resume(mruby);
     jfx_mruby_runtime_gc_collect(mruby);

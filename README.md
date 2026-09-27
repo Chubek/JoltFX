@@ -24,6 +24,9 @@ ctest --test-dir build
 
 # Run CLI
 ./build/frontends/cli/joltfx --help
+
+# Compose one desktop Dear ImGui frame without a display server
+./build/frontends/desktop/jfx_desktop --headless-smoke --backend webgpu
 ```
 
 ## Documentation

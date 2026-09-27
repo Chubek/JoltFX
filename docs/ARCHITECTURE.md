@@ -49,11 +49,16 @@ Bytecode VM for executing compiled effects. Handles parameter binding and state 
 Binds JoltScript VM to core engine resources. Marshals calls between script and native code.
 
 ### Backends
-Hardware-specific implementations (Vulkan, Metal, D3D12, WebGPU) adhering to a common HAL.
+Vulkan provides device dispatch. Metal, D3D12, and WebGPU currently share a
+validated CPU fallback adapter so every selected backend preserves the JBC1
+pixel contract while native dispatch work proceeds.
 
 ### Extension Interfaces
-Language bindings allowing effects to be controlled from Lua, mruby, QuickJS, or Python.
+Lua and mruby are embedded sandboxed hosts with Tilly allocation, bounded
+execution, explicit GC controls, and a small `jfx` namespace. They expose no
+filesystem, process, package loading, raw buffer, or kernel-registration API.
 
 ### Frontends
 User-facing applications and plugins providing various interfaces to the engine.
-
+The desktop target uses Dear ImGui to compose its editor frame; platform window
+creation and draw-data presentation remain separate backend integration work.

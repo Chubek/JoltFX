@@ -1,6 +1,7 @@
 #include "jfx/desktop_frontend.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 
 #include "imgui.h"
@@ -21,7 +22,7 @@ struct jfx_desktop_frontend {
 
 static void *imgui_alloc(size_t bytes, void *) {
     return tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), bytes,
-        alignof(std::max_align_t));
+        alignof(max_align_t));
 }
 
 static void imgui_free(void *pointer, void *) {
@@ -57,6 +58,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     }
     ImGui::SetCurrentContext(frontend->imgui);
     ImGui::StyleColorsDark();
+    unsigned char *font_pixels = nullptr;
+    int font_width = 0;
+    int font_height = 0;
+    ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&font_pixels, &font_width, &font_height);
     *out_frontend = frontend;
     return JFX_SUCCESS;
 }

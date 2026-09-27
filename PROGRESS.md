@@ -186,7 +186,55 @@ on Linux.
 
 # Phase 4 expansion progress
 
-Started September 27, 2026. Scope review is complete. The Metal, D3D12,
-Dear ImGui, Lua, and mruby submodules are registered but unpopulated in this
-checkout, so Phase 4 work is being implemented with buildable, tested
-engine-facing fallback paths and explicit native-integration limits.
+Updated September 27, 2026. Phase 4 is **partially implemented with tested
+cross-platform fallbacks**. The missing ImGui, Lua, and mruby submodules were
+initialized during this work; mruby's source build additionally needs Ruby's
+`rake` package.
+
+## Implemented
+
+- Backend expansion: Metal, D3D12, and WebGPU have public lifecycle,
+  capability, source, and JBC1 bytecode APIs. They execute through a shared,
+  validated CPU pipeline and report `software-fallback`; Core now accepts
+  `metal`, `d3d12`, and `webgpu` in addition to `vulkan` and `auto`.
+  `backend_fallback_conformance` verifies identical brightness pixels and
+  error behavior for all three adapters.
+- Desktop frontend: `jfx_desktop_frontend` owns Core and composes a Dear ImGui
+  menu, viewport, timeline, properties, and console frame. The public API
+  supports open-project state, resize, play/pause, seek, and rendering a
+  headless UI frame; `jfx_desktop --headless-smoke --backend webgpu` exercises
+  the executable without a display server.
+- Lua and mruby bindings: both use Tilly-backed allocation, explicit GC
+  controls, `jfx.clamp`/`JFX.clamp`, numeric function calls, source-load
+  errors, and instruction budgets. Lua opens only selected safe libraries.
+  mruby builds with `MRB_NO_STDIO` through `default-no-stdio`, enables its
+  debug instruction hook, and rejects filesystem/process/eval source forms.
+  `ext_conformance` verifies numeric invocation, rejected I/O, and bounded
+  infinite loops in both hosts.
+- Documentation: new Phase 4 guide plus backend, desktop, and extension
+  READMEs document build paths, capability reports, sandbox rules, and the
+  remaining native integrations.
+
+## Verification on Linux
+
+- Clean Debug CMake build passes after initializing the ImGui, Lua, and mruby
+  submodules. The mruby build is invoked through CMake and produces the
+  vendored static library.
+- `ctest --test-dir /tmp/joltfx-phase4 --output-on-failure`: 12/12 pass,
+  including backend fallback, extension sandbox/budget, and desktop ImGui
+  composition tests.
+- ASan/UBSan Debug build (`-DJFX_ASAN=ON -DJFX_UBSAN=ON`,
+  `ASAN_OPTIONS=detect_leaks=0`): 12/12 pass. As in earlier phases, LSan is
+  disabled because it cannot run under this environment's ptrace restriction.
+
+## Remaining Phase 4 work and limitations
+
+- Metal, D3D12, and WebGPU do not yet submit work to native GPUs. They need
+  their platform SDK device setup, SPIR-V translation, resource management,
+  command submission, synchronization, and hardware capability queries.
+- The desktop target creates ImGui draw data but has no native window/input
+  loop or renderer backend. A GLFW/SDL or platform-native host plus a GPU
+  presentation path remains necessary for an interactive editor.
+- Lua/mruby currently expose the intentionally constrained numeric scripting
+  API only. Typed marshalling, buffer/texture wrappers, event callbacks,
+  diagnostics stack traces, and broader extension conformance remain open.
