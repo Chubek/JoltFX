@@ -1,0 +1,97 @@
+[submodule "/mnt/warble/joltfx/third_party/imgui"]
+	path = /mnt/warble/joltfx/third_party/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
+[submodule "/mnt/warble/joltfx/third_party/stb"]
+	path = /mnt/warble/joltfx/third_party/stb
+	url = https://github.com/nothings/stb.git
+[submodule "/mnt/warble/joltfx/third_party/nanosvg"]
+	path = /mnt/warble/joltfx/third_party/nanosvg
+	url = https://github.com/memononen/nanosvg.git
+[submodule "/mnt/warble/joltfx/third_party/lua"]
+	path = /mnt/warble/joltfx/third_party/lua
+	url = https://github.com/lua/lua.git
+[submodule "/mnt/warble/joltfx/third_party/mruby"]
+	path = /mnt/warble/joltfx/third_party/mruby
+	url = https://github.com/mruby/mruby.git
+[submodule "/mnt/warble/joltfx/third_party/micropython"]
+	path = /mnt/warble/joltfx/third_party/micropython
+	url = https://github.com/micropython/micropython.git
+[submodule "/mnt/warble/joltfx/third_party/quickjs"]
+	path = /mnt/warble/joltfx/third_party/quickjs
+	url = https://github.com/bellard/quickjs.git
+[submodule "/mnt/warble/joltfx/third_party/qbe"]
+	path = /mnt/warble/joltfx/third_party/qbe
+	url = git://c9x.me/qbe.git
+[submodule "/mnt/warble/joltfx/third_party/sljit"]
+	path = /mnt/warble/joltfx/third_party/sljit
+	url = https://github.com/zherczeg/sljit.git
+[submodule "/mnt/warble/joltfx/third_party/spirv-cross"]
+	path = /mnt/warble/joltfx/third_party/spirv-cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross.git
+[submodule "/mnt/warble/joltfx/third_party/dxc"]
+	path = /mnt/warble/joltfx/third_party/dxc
+	url = https://github.com/microsoft/DirectXShaderCompiler.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter
+	url = https://github.com/tree-sitter/tree-sitter.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter-c"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter-c
+	url = https://github.com/tree-sitter/tree-sitter-c.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter-cpp"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter-cpp
+	url = https://github.com/tree-sitter/tree-sitter-cpp.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter-rust"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter-rust
+	url = https://github.com/tree-sitter/tree-sitter-rust.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter-python"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter-python
+	url = https://github.com/tree-sitter/tree-sitter-python.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter-go"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter-go
+	url = https://github.com/tree-sitter/tree-sitter-go.git
+[submodule "/mnt/warble/joltfx/third_party/tree-sitter-lua"]
+	path = /mnt/warble/joltfx/third_party/tree-sitter-lua
+	url = https://github.com/tjdevries/tree-sitter-lua
+[submodule "/mnt/warble/joltfx/third_party/yyjson"]
+	path = /mnt/warble/joltfx/third_party/yyjson
+	url = https://github.com/ibireme/yyjson.git
+[submodule "/mnt/warble/joltfx/third_party/cmp"]
+	path = /mnt/warble/joltfx/third_party/cmp
+	url = https://github.com/camgunz/cmp.git
+[submodule "/mnt/warble/joltfx/third_party/zstd"]
+	path = /mnt/warble/joltfx/third_party/zstd
+	url = https://github.com/facebook/zstd.git
+[submodule "/mnt/warble/joltfx/third_party/lz4"]
+	path = /mnt/warble/joltfx/third_party/lz4
+	url = https://github.com/lz4/lz4.git
+[submodule "/mnt/warble/joltfx/third_party/libuv"]
+	path = /mnt/warble/joltfx/third_party/libuv
+	url = https://github.com/libuv/libuv.git
+[submodule "/mnt/warble/joltfx/third_party/nng"]
+	path = /mnt/warble/joltfx/third_party/nng
+	url = https://github.com/nanomsg/nng.git
+[submodule "/mnt/warble/joltfx/third_party/tracy"]
+	path = /mnt/warble/joltfx/third_party/tracy
+	url = https://github.com/wolfpld/tracy.git
+[submodule "/mnt/warble/joltfx/third_party/mimalloc"]
+	path = /mnt/warble/joltfx/third_party/mimalloc
+	url = https://github.com/microsoft/mimalloc.git
+[submodule "/mnt/warble/joltfx/third_party/xxhash"]
+	path = /mnt/warble/joltfx/third_party/xxhash
+	url = https://github.com/Cyan4973/xxHash.git
+[submodule "/mnt/warble/joltfx/third_party/utf8.h"]
+	path = /mnt/warble/joltfx/third_party/utf8.h
+	url = https://github.com/sheredom/utf8.h.git
+[submodule "third_party/vma"]
+	path = third_party/vma
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "third_party/wgpu-native"]
+	path = third_party/wgpu-native
+	url = https://github.com/gfx-rs/webgpu-native
+[submodule "third_party/klib"]
+	path = third_party/klib
+	url = https://github.com/attractivechaos/klib.git
+[submodule "third_party/PCRE2"]
+	path = third_party/PCRE2
+	url = https://github.com/PCRE2Project/PCRE2.git

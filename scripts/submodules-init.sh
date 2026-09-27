@@ -84,6 +84,8 @@ add_submodule "https://github.com/lua/lua.git" \
     "lua" \
     "lua-5.4.7"
 
+add_submodule ""
+
 # MRuby - Ruby extension runtime
 add_submodule "https://github.com/mruby/mruby.git" \
     "mruby" \
@@ -110,7 +112,7 @@ add_submodule "https://github.com/bellard/quickjs.git" \
 # =============================================================================
 
 # QBE - Lightweight compiler backend (Tilly QBE target)
-add_submodule "https://github.com/c42f/qbe.git" \
+add_submodule "git://c9x.me/qbe.git" \
     "qbe" \
     "master"
 
@@ -155,7 +157,7 @@ add_submodule "https://github.com/tree-sitter/tree-sitter-go.git" \
     "tree-sitter-go" \
     "master"
 
-add_submodule "https://github.com/tree-sitter/tree-sitter-lua.git" \
+add_submodule "https://github.com/tjdevries/tree-sitter-lua" \
     "tree-sitter-lua" \
     "master"
 
