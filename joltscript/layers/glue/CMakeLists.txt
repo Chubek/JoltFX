@@ -1,5 +1,6 @@
 add_library(joltscript_glue STATIC
     src/bindings.c
+    src/compiler.c
 )
 
 target_include_directories(joltscript_glue PUBLIC

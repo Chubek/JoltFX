@@ -1,87 +1,87 @@
-[submodule "/mnt/warble/joltfx/third_party/imgui"]
-	path = /mnt/warble/joltfx/third_party/imgui
+[submodule "third_party/imgui"]
+	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git
 	branch = docking
-[submodule "/mnt/warble/joltfx/third_party/stb"]
-	path = /mnt/warble/joltfx/third_party/stb
+[submodule "third_party/stb"]
+	path = third_party/stb
 	url = https://github.com/nothings/stb.git
-[submodule "/mnt/warble/joltfx/third_party/nanosvg"]
-	path = /mnt/warble/joltfx/third_party/nanosvg
+[submodule "third_party/nanosvg"]
+	path = third_party/nanosvg
 	url = https://github.com/memononen/nanosvg.git
-[submodule "/mnt/warble/joltfx/third_party/lua"]
-	path = /mnt/warble/joltfx/third_party/lua
+[submodule "third_party/lua"]
+	path = third_party/lua
 	url = https://github.com/lua/lua.git
-[submodule "/mnt/warble/joltfx/third_party/mruby"]
-	path = /mnt/warble/joltfx/third_party/mruby
+[submodule "third_party/mruby"]
+	path = third_party/mruby
 	url = https://github.com/mruby/mruby.git
-[submodule "/mnt/warble/joltfx/third_party/micropython"]
-	path = /mnt/warble/joltfx/third_party/micropython
+[submodule "third_party/micropython"]
+	path = third_party/micropython
 	url = https://github.com/micropython/micropython.git
-[submodule "/mnt/warble/joltfx/third_party/quickjs"]
-	path = /mnt/warble/joltfx/third_party/quickjs
+[submodule "third_party/quickjs"]
+	path = third_party/quickjs
 	url = https://github.com/bellard/quickjs.git
-[submodule "/mnt/warble/joltfx/third_party/qbe"]
-	path = /mnt/warble/joltfx/third_party/qbe
+[submodule "third_party/qbe"]
+	path = third_party/qbe
 	url = git://c9x.me/qbe.git
-[submodule "/mnt/warble/joltfx/third_party/sljit"]
-	path = /mnt/warble/joltfx/third_party/sljit
+[submodule "third_party/sljit"]
+	path = third_party/sljit
 	url = https://github.com/zherczeg/sljit.git
-[submodule "/mnt/warble/joltfx/third_party/spirv-cross"]
-	path = /mnt/warble/joltfx/third_party/spirv-cross
+[submodule "third_party/spirv-cross"]
+	path = third_party/spirv-cross
 	url = https://github.com/KhronosGroup/SPIRV-Cross.git
-[submodule "/mnt/warble/joltfx/third_party/dxc"]
-	path = /mnt/warble/joltfx/third_party/dxc
+[submodule "third_party/dxc"]
+	path = third_party/dxc
 	url = https://github.com/microsoft/DirectXShaderCompiler.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter
+[submodule "third_party/tree-sitter"]
+	path = third_party/tree-sitter
 	url = https://github.com/tree-sitter/tree-sitter.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter-c"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter-c
+[submodule "third_party/tree-sitter-c"]
+	path = third_party/tree-sitter-c
 	url = https://github.com/tree-sitter/tree-sitter-c.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter-cpp"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter-cpp
+[submodule "third_party/tree-sitter-cpp"]
+	path = third_party/tree-sitter-cpp
 	url = https://github.com/tree-sitter/tree-sitter-cpp.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter-rust"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter-rust
+[submodule "third_party/tree-sitter-rust"]
+	path = third_party/tree-sitter-rust
 	url = https://github.com/tree-sitter/tree-sitter-rust.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter-python"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter-python
+[submodule "third_party/tree-sitter-python"]
+	path = third_party/tree-sitter-python
 	url = https://github.com/tree-sitter/tree-sitter-python.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter-go"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter-go
+[submodule "third_party/tree-sitter-go"]
+	path = third_party/tree-sitter-go
 	url = https://github.com/tree-sitter/tree-sitter-go.git
-[submodule "/mnt/warble/joltfx/third_party/tree-sitter-lua"]
-	path = /mnt/warble/joltfx/third_party/tree-sitter-lua
+[submodule "third_party/tree-sitter-lua"]
+	path = third_party/tree-sitter-lua
 	url = https://github.com/tjdevries/tree-sitter-lua
-[submodule "/mnt/warble/joltfx/third_party/yyjson"]
-	path = /mnt/warble/joltfx/third_party/yyjson
+[submodule "third_party/yyjson"]
+	path = third_party/yyjson
 	url = https://github.com/ibireme/yyjson.git
-[submodule "/mnt/warble/joltfx/third_party/cmp"]
-	path = /mnt/warble/joltfx/third_party/cmp
+[submodule "third_party/cmp"]
+	path = third_party/cmp
 	url = https://github.com/camgunz/cmp.git
-[submodule "/mnt/warble/joltfx/third_party/zstd"]
-	path = /mnt/warble/joltfx/third_party/zstd
+[submodule "third_party/zstd"]
+	path = third_party/zstd
 	url = https://github.com/facebook/zstd.git
-[submodule "/mnt/warble/joltfx/third_party/lz4"]
-	path = /mnt/warble/joltfx/third_party/lz4
+[submodule "third_party/lz4"]
+	path = third_party/lz4
 	url = https://github.com/lz4/lz4.git
-[submodule "/mnt/warble/joltfx/third_party/libuv"]
-	path = /mnt/warble/joltfx/third_party/libuv
+[submodule "third_party/libuv"]
+	path = third_party/libuv
 	url = https://github.com/libuv/libuv.git
-[submodule "/mnt/warble/joltfx/third_party/nng"]
-	path = /mnt/warble/joltfx/third_party/nng
+[submodule "third_party/nng"]
+	path = third_party/nng
 	url = https://github.com/nanomsg/nng.git
-[submodule "/mnt/warble/joltfx/third_party/tracy"]
-	path = /mnt/warble/joltfx/third_party/tracy
+[submodule "third_party/tracy"]
+	path = third_party/tracy
 	url = https://github.com/wolfpld/tracy.git
-[submodule "/mnt/warble/joltfx/third_party/mimalloc"]
-	path = /mnt/warble/joltfx/third_party/mimalloc
+[submodule "third_party/mimalloc"]
+	path = third_party/mimalloc
 	url = https://github.com/microsoft/mimalloc.git
-[submodule "/mnt/warble/joltfx/third_party/xxhash"]
-	path = /mnt/warble/joltfx/third_party/xxhash
+[submodule "third_party/xxhash"]
+	path = third_party/xxhash
 	url = https://github.com/Cyan4973/xxHash.git
-[submodule "/mnt/warble/joltfx/third_party/utf8.h"]
-	path = /mnt/warble/joltfx/third_party/utf8.h
+[submodule "third_party/utf8.h"]
+	path = third_party/utf8.h
 	url = https://github.com/sheredom/utf8.h.git
 [submodule "third_party/vma"]
 	path = third_party/vma

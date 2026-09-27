@@ -1,7 +1,17 @@
-# Kernel compilation will be handled by Zoltan
-
-# Custom target to validate kernels (requires Zoltan)
-add_custom_target(validate_kernels
-    COMMAND echo "Kernel validation requires Zoltan compiler"
-    SOURCES ${KERNEL_SOURCES}
-)
+set(EFFECT_NAMES brightness contrast invert grayscale saturation sepia opacity threshold posterize exposure tint gamma)
+set(EFFECT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/effect_sources.h")
+file(WRITE "${EFFECT_HEADER}" "/* Generated from the bundled Joltscript sources. */\n")
+foreach(name IN LISTS EFFECT_NAMES)
+    set(source "${CMAKE_CURRENT_SOURCE_DIR}/color/${name}.jolt")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
+    file(READ "${source}" text)
+    string(REPLACE "\\" "\\\\" text "${text}")
+    string(REPLACE "\"" "\\\"" text "${text}")
+    string(REPLACE "\n" "\\n\"\n\"" text "${text}")
+    file(APPEND "${EFFECT_HEADER}" "static const char source_${name}[] = \"${text}\";\n")
+endforeach()
+add_library(jolt_effects STATIC src/effects.c)
+target_include_directories(jolt_effects PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include> PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(jolt_effects PUBLIC joltscript_glue)
+set_project_warnings(jolt_effects)

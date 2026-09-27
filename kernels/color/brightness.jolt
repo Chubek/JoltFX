@@ -1,11 +1,14 @@
-// Brightness adjustment kernel
-kernel brightness {
-    input image: Texture2D;
-    output result: Texture2D;
-    param amount: float;
-
-    fn main(coord: vec2) -> vec4 {
-        let color = sample(image, coord);
-        return vec4(color.rgb * amount, color.a);
-    }
-}
+;; @kernel brightness
+;; @category color
+;; @description Brightness on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter amount: default 1, range [0, 4], unitless.
+(defkernel brightness [r g b a amount]
+  (rgba
+    (min a (max 0 (* r amount)))
+    (min a (max 0 (* g amount)))
+    (min a (max 0 (* b amount)))
+    a))

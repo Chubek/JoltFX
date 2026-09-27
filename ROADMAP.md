@@ -7,10 +7,10 @@
 - [ ] Basic CMake build system
 
 ## Phase 2: Core Functionality (Q2 2027)
-- [ ] JoltScript execution and glue layers
-- [ ] Vulkan backend implementation
-- [ ] Essential kernel library (10+ effects)
-- [ ] Zoltan compiler MVP
+- [x] JoltScript execution and glue layers
+- [x] Vulkan backend implementation (JBC1→GLSL codegen + device dispatch verified on RX 580; pipeline caching and async submit remain open, see PROGRESS.md)
+- [x] Essential kernel library (10+ effects)
+- [x] Zoltan compiler MVP
 
 ## Phase 3: Integration (Q3 2027)
 - [ ] CLI frontend

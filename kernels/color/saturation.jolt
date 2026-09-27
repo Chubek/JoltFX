@@ -1,0 +1,14 @@
+;; @kernel saturation
+;; @category color
+;; @description Saturation on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter amount: default 1, range [0, 2], unitless.
+(defkernel saturation [r g b a amount]
+  (rgba
+    (min a (max 0 (+ (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722)) (* (- r (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722))) amount))))
+    (min a (max 0 (+ (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722)) (* (- g (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722))) amount))))
+    (min a (max 0 (+ (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722)) (* (- b (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722))) amount))))
+    a))

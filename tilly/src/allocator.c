@@ -227,40 +227,21 @@ static void default_free(void *ptr, void *user_data) {
     free(ptr);
 }
 
-static tilly_allocator_t default_allocator = {
-    .strategy = TILLY_ALLOC_GENERAL,
-    .state = NULL,
-    .capacity = 0,
-    .used = 0,
-    .peak = 0,
-    .alloc_count = 0,
-    .free_count = 0,
-    .alloc = NULL,  // Use the static functions below
-    .free = NULL,
-    .reset = NULL,
-    .usage = NULL,
-};
-
-// Wrapper functions for default allocator
+// Immutable dispatch table: safe to obtain concurrently during worker startup.
 static void *default_alloc_wrapper(tilly_allocator_t *alloc, size_t size, size_t align) {
-    (void)alloc; (void)align;
-    return default_alloc(size, NULL);
+    (void)alloc;
+    return align <= _Alignof(max_align_t) ? default_alloc(size, NULL) : NULL;
 }
-
 static void default_free_wrapper(tilly_allocator_t *alloc, void *ptr) {
     (void)alloc;
     default_free(ptr, NULL);
 }
-
-const tilly_allocator_t *tilly_default_allocator(void) {
-    static int initialized = 0;
-    if (!initialized) {
-        default_allocator.alloc = default_alloc_wrapper;
-        default_allocator.free = default_free_wrapper;
-        initialized = 1;
-    }
-    return &default_allocator;
-}
+static tilly_allocator_t default_allocator = {
+    .strategy = TILLY_ALLOC_GENERAL,
+    .alloc = default_alloc_wrapper,
+    .free = default_free_wrapper,
+};
+const tilly_allocator_t *tilly_default_allocator(void) { return &default_allocator; }
 
 // ==================== Allocator Factory ====================
 

@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <string.h>
 
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t ready = PTHREAD_COND_INITIALIZER;
@@ -55,6 +56,20 @@ int main(void) {
     jfx_engine_shutdown(engine);
     assert(jfx_engine_init(&cfg, &engine) == JFX_SUCCESS);
     assert(event_subscriber_count(JFX_EVENT_FRAME_BEGIN) == 0);
+    assert(jfx_engine_backend_name(engine) && strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
+    jfx_engine_shutdown(engine);
+    assert(jfx_engine_backend_name(NULL) == NULL);
+    jfx_engine_config_t bogus = {.max_buffers = 1, .backend_name = "directx9"};
+    engine = NULL;
+    assert(jfx_engine_init(&bogus, &engine) == JFX_ERROR_INVALID_ARGUMENT && !engine);
+    jfx_engine_config_t named = {.max_buffers = 1, .backend_name = "vulkan"};
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS && engine);
+    assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
+    assert(jfx_engine_tick(engine) == JFX_SUCCESS);
+    jfx_engine_shutdown(engine);
+    named.backend_name = "auto";
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS && engine);
+    assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
     jfx_engine_shutdown(engine);
     tilly_allocator_t *alloc = tilly_allocator_create(TILLY_ALLOC_GENERAL, 1024);
     assert(alloc);

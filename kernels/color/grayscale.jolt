@@ -1,0 +1,13 @@
+;; @kernel grayscale
+;; @category color
+;; @description Grayscale on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+(defkernel grayscale [r g b a]
+  (rgba
+    (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722))
+    (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722))
+    (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722))
+    a))

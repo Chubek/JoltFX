@@ -1,0 +1,14 @@
+;; @kernel opacity
+;; @category color
+;; @description Opacity on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter amount: default 1, range [0, 1], unitless.
+(defkernel opacity [r g b a amount]
+  (rgba
+    (* r amount)
+    (* g amount)
+    (* b amount)
+    (* a amount)))

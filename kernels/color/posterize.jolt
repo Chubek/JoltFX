@@ -1,0 +1,14 @@
+;; @kernel posterize
+;; @category color
+;; @description Posterize on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter levels: default 4, range [2, 32], unitless.
+(defkernel posterize [r g b a levels]
+  (rgba
+    (min a (max 0 (* a (/ (floor (+ (* (/ r (max a 0.000001)) (- levels 1)) 0.5)) (- levels 1)))))
+    (min a (max 0 (* a (/ (floor (+ (* (/ g (max a 0.000001)) (- levels 1)) 0.5)) (- levels 1)))))
+    (min a (max 0 (* a (/ (floor (+ (* (/ b (max a 0.000001)) (- levels 1)) 0.5)) (- levels 1)))))
+    a))

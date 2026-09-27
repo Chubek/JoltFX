@@ -1,0 +1,14 @@
+;; @kernel gamma
+;; @category color
+;; @description Gamma on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter amount: default 1, range [0.1, 4], unitless.
+(defkernel gamma [r g b a amount]
+  (rgba
+    (min a (max 0 (* a (pow (max 0 (/ r (max a 0.000001))) (/ 1 amount)))))
+    (min a (max 0 (* a (pow (max 0 (/ g (max a 0.000001))) (/ 1 amount)))))
+    (min a (max 0 (* a (pow (max 0 (/ b (max a 0.000001))) (/ 1 amount)))))
+    a))

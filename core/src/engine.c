@@ -2,15 +2,28 @@
 #include "jfx/jfx_memory.h"
 #include "jfx/jfx_scheduler.h"
 #include "jfx/jfx_events.h"
+#include "jfx/vk_backend.h"
 #include "tilly/tilly.h"
 #include "tilly/allocator.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 struct jfx_engine {
     tilly_context_t *ctx;
     jfx_engine_config_t config;
+    char backend_name[16];
+    jfx_vk_backend_t *backend;
 };
+
+static bool resolve_backend(const char *name, char *out, size_t size) {
+    const char *selected = "vulkan";
+    if (name && strcmp(name, "auto") != 0 && strcmp(name, "vulkan") != 0) {
+        return false;
+    }
+    snprintf(out, size, "%s", selected);
+    return true;
+}
 
 jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **out_engine) {
     if (!config || !out_engine) {
@@ -18,6 +31,10 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
     }
 
     *out_engine = NULL;
+    char backend_name[16];
+    if (!resolve_backend(config->backend_name, backend_name, sizeof(backend_name))) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
     jfx_engine_t *engine = malloc(sizeof(jfx_engine_t));
     if (!engine) {
         return JFX_ERROR_OUT_OF_MEMORY;
@@ -54,7 +71,16 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
         return JFX_ERROR_NOT_INITIALIZED;
     }
 
+    // Select the backend last so shutdown unwinds in reverse order.
+    jfx_vk_backend_config_t backend_config = { .probe_gpu = true, .memory_limit = 0 };
+    if (jfx_vk_backend_create(&backend_config, &engine->backend) != JFX_SUCCESS) {
+        event_bus_shutdown(); scheduler_shutdown(); memory_shutdown();
+        tilly_shutdown(engine->ctx); free(engine);
+        return JFX_ERROR_BACKEND_FAILURE;
+    }
+
     memcpy(&engine->config, config, sizeof(jfx_engine_config_t));
+    snprintf(engine->backend_name, sizeof(engine->backend_name), "%s", backend_name);
 
     tilly_log_info("jfx_engine", "JoltFX engine initialized");
 
@@ -67,6 +93,8 @@ void jfx_engine_shutdown(jfx_engine_t *engine) {
         tilly_log_info("jfx_engine", "JoltFX engine shutting down");
         
         // Shutdown subsystems in reverse order
+        jfx_vk_backend_destroy(engine->backend);
+        engine->backend = NULL;
         event_bus_shutdown();
         scheduler_shutdown();
         memory_shutdown();
@@ -74,6 +102,10 @@ void jfx_engine_shutdown(jfx_engine_t *engine) {
         tilly_shutdown(engine->ctx);
         free(engine);
     }
+}
+
+const char *jfx_engine_backend_name(const jfx_engine_t *engine) {
+    return engine ? engine->backend_name : NULL;
 }
 
 jfx_result_t jfx_engine_tick(jfx_engine_t *engine) {

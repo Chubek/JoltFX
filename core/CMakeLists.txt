@@ -13,4 +13,8 @@ target_include_directories(jfx_core PUBLIC
 
 target_link_libraries(jfx_core PUBLIC tilly)
 
+# Engine owns backend selection (see engine.c); the backend must not link
+# back into jfx_core. PRIVATE keeps the dependency out of consumers' link.
+target_link_libraries(jfx_core PRIVATE jfx_backend_vulkan)
+
 set_project_warnings(jfx_core)

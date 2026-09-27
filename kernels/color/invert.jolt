@@ -1,0 +1,13 @@
+;; @kernel invert
+;; @category color
+;; @description Invert on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+(defkernel invert [r g b a]
+  (rgba
+    (- a r)
+    (- a g)
+    (- a b)
+    a))

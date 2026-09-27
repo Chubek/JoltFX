@@ -24,3 +24,84 @@ Updated September 27, 2026. Phase 1 is **partially implemented**. This document 
 - The build still emits warnings in other, unfinished subsystems. CI, cross-platform builds, full leak checks, and a broader concurrency stress suite remain outstanding.
 
 Phase 2 components listed in `ROADMAP.md` are outside this foundation verification.
+
+---
+
+# Phase 2 core functionality progress
+
+Updated September 27, 2026. Phase 2 is **implemented with documented limitations**.
+Results below were reproduced from the current source tree on Linux.
+
+## Implemented
+
+- JoltScript execution layer (`joltscript/layers/execution/`): JBC1 bytecode
+  validator, stack VM (`jolt_vm_run` with explicit input/output bindings),
+  pipeline DAG runner with cycle detection, and per-pipeline memory budgets.
+- Glue layer (`joltscript/layers/glue/`): capability-gated ABI binding
+  registry (`jolt.` symbol namespace, freeze-before-share) and MVP S-expression
+  compiler (`defkernel` with scalar f32 expressions, `(rgba ...)` output form).
+- Essential kernel library: 12 color effects (brightness, contrast, invert,
+  grayscale, saturation, sepia, opacity, threshold, posterize, exposure, tint,
+  gamma) embedded at configure time and executed through the pipeline
+  (`kernels/src/effects.c`, `jolt_effects_apply` with parameter clamping and
+  in-place safety).
+- Vulkan backend (`backends/vulkan/`): always-built `jfx_backend_vulkan`
+  library with a public HAL-style API (`jfx/vk_backend.h`: create/destroy,
+  caps query, source and bytecode execution over RGBA float pixels, plus
+  `jfx_vk_used_gpu()` path reporting). Without a driver, pixels execute
+  through the validated CPU fallback; with a driver they run on the device
+  (see follow-up note below). Driver presence is probed at runtime with
+  `dlopen("libvulkan.so.1")` so no SDK is required at build or run time.
+  The SDK links in only when `find_package(Vulkan)` succeeds.
+- Zoltan compiler MVP (`zoltan/`, std-only Rust so it builds offline):
+  `zoltan compile FILE [-o OUTPUT] [--emit-metadata]` validates a kernel and
+  stages its source; `zoltan verify FILE` only validates. Diagnostics are
+  `file:line:column` form; staged output re-verifies (round-trip checked).
+  All 12 bundled kernels verify, agreeing with the C compiler.
+
+## Verification on Linux
+
+- `cmake -S . -B /tmp/joltfx-phase2 -DCMAKE_BUILD_TYPE=Debug` and
+  `cmake --build /tmp/joltfx-phase2 -j 4`: pass. Remaining warnings are all
+  pre-existing (Tilly/TillyZ conversions, klib macro expansions, an empty
+  CLI translation unit); none originate from the new backend, test, or
+  Zoltan sources. ASan/UBSan build (`-DJFX_ASAN=ON -DJFX_UBSAN=ON`,
+  `ASAN_OPTIONS=detect_leaks=0`): 7/7 pass.
+- `ctest --test-dir /tmp/joltfx-phase2 --output-on-failure`: 7/7 pass
+  (`test_tillyz`, `test_core`, `test_containers`, `test_joltscript`,
+  `test_pipeline`, `kernel_color_conformance`, `test_vulkan_backend`).
+- `cargo build --offline` and `cargo test --offline` in `zoltan/`: pass,
+  7/7 Rust tests; `cargo fmt --check` and `cargo clippy` clean.
+
+## Remaining Phase 2 work and limitations (follow-up status, same day)
+
+- Vulkan device dispatch: **done**. `backends/vulkan/src/vk_compute.c`
+  code-generates JBC1 bytecode to GLSL compute shaders (all 15 opcodes),
+  compiles with `glslc --target-env=vulkan1.0` (SPIR-V cached on disk by
+  FNV-1a hash), and dispatches to the device with host/device barriers and
+  fence wait. Verified on AMD RX 580 (RADV): brightness pixels match at
+  1e-6 and `jfx_vk_used_gpu` confirms the device path. Numeric failures
+  (div-by-zero, overflow) are caught by host finite-checks plus a readback
+  finite-check, so the error contract matches the CPU path. The SDK is
+  still not required: the ABI subset in `vk_minimal.h` is `dlopen`/`dlsym`
+  resolved. Caught during this work: `vkEnumerateInstanceVersion` takes an
+  out-pointer (returns `VkResult`); the earlier `uint32_t (*)(void)`
+  declaration segfaulted and is fixed. Still open: pipeline caching across
+  calls (pipelines compile per call), async submit, other backends.
+- Engine-to-backend selection: **done**. `jfx_engine_init` resolves
+  `backend_name` (NULL/`"auto"`/`"vulkan"`; anything else is
+  `JFX_ERROR_INVALID_ARGUMENT`), owns the backend lifetime, and exposes
+  `jfx_engine_backend_name()`. Covered in `test_core`.
+- Stale kernels: **done**. `examples/hello_world/effect.jolt` migrated to
+  the MVP syntax (identity passthrough, verifies with Zoltan);
+  `kernels/transform/scale.jolt` removed — sampling kernels need an image
+  execution model beyond the point-wise MVP expression set, so the
+  transform category re-lands with sampler support.
+- Submodule hygiene: **done**. `.gitmodules` used absolute paths from the
+  interrupted `submodule add` run, which broke `git submodule status`;
+  rewritten to relative paths, and the missing gitlinks
+  (`imgui`, `lua`, `nanosvg`, `stb`) are staged. Status command works;
+  unpopulated submodules show `-` (expected offline). Staged, uncommitted.
+- Zoltan `clap`/`serde`: **still blocked**. Re-probed 2026-09-27: the
+  sparse index answers but crate downloads stall, so the std-only MVP
+  stays and `Cargo.toml` keeps no dependencies.

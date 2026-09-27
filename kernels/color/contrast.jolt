@@ -1,0 +1,14 @@
+;; @kernel contrast
+;; @category color
+;; @description Contrast on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter amount: default 1, range [0, 4], unitless.
+(defkernel contrast [r g b a amount]
+  (rgba
+    (min a (max 0 (+ (* (- r (* a 0.5)) amount) (* a 0.5))))
+    (min a (max 0 (+ (* (- g (* a 0.5)) amount) (* a 0.5))))
+    (min a (max 0 (+ (* (- b (* a 0.5)) amount) (* a 0.5))))
+    a))

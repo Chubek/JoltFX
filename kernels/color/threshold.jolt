@@ -1,0 +1,14 @@
+;; @kernel threshold
+;; @category color
+;; @description Threshold on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter level: default 0.5, range [0, 1], unitless.
+(defkernel threshold [r g b a level]
+  (rgba
+    (select (< (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722)) (* level a)) 0 a)
+    (select (< (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722)) (* level a)) 0 a)
+    (select (< (+ (+ (* r 0.2126) (* g 0.7152)) (* b 0.0722)) (* level a)) 0 a)
+    a))

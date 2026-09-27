@@ -34,6 +34,9 @@ void jfx_engine_shutdown(jfx_engine_t *engine);
 // Process one frame
 jfx_result_t jfx_engine_tick(jfx_engine_t *engine);
 
+// Resolved backend name ("vulkan" for NULL/"auto"), NULL for a NULL engine.
+const char *jfx_engine_backend_name(const jfx_engine_t *engine);
+
 #ifdef __cplusplus
 }
 #endif

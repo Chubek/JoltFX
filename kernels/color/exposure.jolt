@@ -1,0 +1,14 @@
+;; @kernel exposure
+;; @category color
+;; @description Exposure on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+;; Parameter stops: default 0, range [-8, 8], stops.
+(defkernel exposure [r g b a stops]
+  (rgba
+    (min a (max 0 (* r (pow 2 stops))))
+    (min a (max 0 (* g (pow 2 stops))))
+    (min a (max 0 (* b (pow 2 stops))))
+    a))

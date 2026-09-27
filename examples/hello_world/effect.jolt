@@ -1,9 +1,9 @@
-// Simple passthrough effect
-kernel passthrough {
-    input source: Texture2D;
-    output result: Texture2D;
-
-    fn main(coord: vec2) -> vec4 {
-        return sample(source, coord);
-    }
-}
+;; @kernel passthrough
+;; @category utility
+;; @description Identity passthrough on premultiplied RGBA.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.2.0
+;; Inputs: r g b a; output: premultiplied RGBA.
+(defkernel passthrough [r g b a]
+  (rgba r g b a))
