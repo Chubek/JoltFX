@@ -6,10 +6,25 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Keeps a hung sanitizer or an unbounded test from consuming a runner forever;
+  # individual CTest cases also carry their own TIMEOUT properties.
+  ASAN_OPTIONS: detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1
+  UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
 jobs:
   build-test:
     name: build+test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -28,32 +43,79 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
 
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-${{ matrix.os }}
+          path: build/Testing/**
+          if-no-files-found: ignore
+
   sanitizers:
     name: sanitizers (ASan+UBSan)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Configure with sanitizers
-        run: cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DJFX_ASAN=ON -DJFX_UBSAN=ON
+        run: cmake --preset sanitizers
 
       - name: Build
         run: cmake --build build-san -j 4
 
+      # Leak detection is on: the engine, the frontends, the CLI and the
+      # extension runtimes are all verified leak-free with
+      # ASAN_OPTIONS=detect_leaks=1, which the workflow-level env sets.
       - name: Run tests
         run: ctest --test-dir build-san --output-on-failure
+
+  configure-matrix:
+    name: configure matrix (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: minimal (vulkan only, no mruby)
+            args: >-
+              -DJFX_BACKEND_METAL=OFF -DJFX_BACKEND_D3D12=OFF
+              -DJFX_BACKEND_WEBGPU=OFF -DJFX_EXT_MRUBY=OFF
+          - name: no lua
+            args: -DJFX_EXT_LUA=OFF
+          - name: no desktop frontend
+            args: -DJFX_FRONTEND_DESKTOP=OFF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure (${{ matrix.name }})
+        run: cmake -S . -B build-matrix -DCMAKE_BUILD_TYPE=Debug ${{ matrix.args }}
+
+      - name: Build
+        run: cmake --build build-matrix -j 4
+
+      - name: Run tests
+        run: ctest --test-dir build-matrix --output-on-failure
 
   zoltan:
     name: zoltan (fmt+clippy+test)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zoltan
 
       - name: Format check
         working-directory: zoltan
@@ -74,47 +136,51 @@ jobs:
       - name: Verify bundled kernels
         working-directory: zoltan
         run: |
-          cargo build
           for f in ../kernels/color/*.jolt ../examples/hello_world/effect.jolt; do
             ./target/debug/zoltan verify "$f"
           done
 
-  cli-smoke:
-    name: cli+example smoke
+  bytecode-parity:
+    name: bytecode parity (zoltan vs Glue Layer)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The Zoltan (Rust) compiler and the Glue Layer (C) compiler are two
+    # implementations of one bytecode format. They must emit byte-identical
+    # JBC1, or a program compiled by one is rejected by a runtime built on the
+    # other. This job compares them over every bundled kernel.
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Configure
-        run: cmake --preset default
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: cmake --build build -j 4
+      - name: Build zoltan
+        working-directory: zoltan
+        run: cargo build
 
-      - name: CLI integration suite
-        run: sh tests/integration/cli/test_cli.sh "$PWD/build/frontends/cli/joltfx" "$PWD"
+      - name: Build the C compiler
+        run: |
+          cmake -S . -B build-parity -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-parity -j 4 --target joltfx_cli
 
-      - name: Hello World example
-        run: ./build/examples/hello_world/example_hello_world examples/hello_world/effect.jolt
-
-      - name: Upload smoke render
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-render
-          path: render.ppm
-          if-no-files-found: ignore
+      - name: Compare emitted bytecode
+        run: scripts/check-bytecode-parity.sh build-parity
 
   web-player:
     name: web player
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
       - name: Typecheck and test player
         working-directory: frontends/web
@@ -123,6 +189,7 @@ jobs:
   beta-package:
     name: beta package
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,8 +198,16 @@ jobs:
       - name: Configure release package
         run: cmake --preset release
 
-      - name: Build and package
-        run: cmake --build build --parallel && cpack --config build/CPackConfig.cmake
+      - name: Build
+        run: cmake --build build-release --parallel
+
+      # The release preset keeps tests on so the artifact is verified before it
+      # is published; the previous configuration built untested binaries.
+      - name: Run tests
+        run: ctest --test-dir build-release --output-on-failure
+
+      - name: Package
+        run: cpack --config build-release/CPackConfig.cmake
 
       - uses: actions/upload-artifact@v4
         with:

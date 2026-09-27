@@ -18,6 +18,8 @@ target_include_directories(jfx_backend_vulkan PUBLIC
 
 target_link_libraries(jfx_backend_vulkan PUBLIC
     joltscript_glue
+    jfx_backend_software
+    jfx_api
 )
 
 target_link_libraries(jfx_backend_vulkan PRIVATE
@@ -36,5 +38,13 @@ if(Vulkan_FOUND)
 else()
     message(STATUS "Vulkan SDK not found, building Vulkan backend without SDK headers")
 endif()
+
+# vk_compute.c bounds its SPIR-V cache paths with an explicit length check and
+# refuses to build a path that would not fit (see cache_paths), but GCC reasons
+# about the fixed 4096-byte array rather than that check and still reports
+# -Wformat-truncation on the two snprintf calls it can see. The check is real;
+# the warning is not actionable here, so it is off for this file only.
+set_source_files_properties(src/vk_compute.c PROPERTIES
+    COMPILE_OPTIONS "-Wno-format-truncation")
 
 set_project_warnings(jfx_backend_vulkan)

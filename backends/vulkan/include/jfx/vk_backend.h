@@ -5,7 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "jfx/jfx_engine.h"
+#include "jfx/backend_interface.h"
+#include "jfx/jfx_result.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,26 +14,20 @@ extern "C" {
 
 typedef struct jfx_vk_backend jfx_vk_backend_t;
 
-typedef struct {
-    /* Attempt a Vulkan driver probe with dlopen at create time. The probe
-     * never links the SDK at build time, so the library builds and runs on
-     * machines without Vulkan installed. Defaults to true when zeroed. */
-    bool probe_gpu;
-    /* Per-call scratch budget in bytes for temporary image storage.
-     * 0 selects the default (64 MiB). */
-    size_t memory_limit;
-} jfx_vk_backend_config_t;
+/* The Vulkan probe runs with dlopen at create time and never links the SDK at
+ * build time, so the backend builds and runs on machines without Vulkan
+ * installed. memory_limit bounds the temporary image storage used per call. */
+typedef jfx_backend_config_t jfx_vk_backend_config_t;
 
-typedef struct {
-    bool gpu_available;      /* Vulkan driver with instance API found. */
-    bool cpu_fallback;       /* Always true in Phase 2: pixels run on CPU. */
-    uint32_t api_version;    /* Probed Vulkan instance version, else 0. */
-    char device_name[256];   /* Driver description or "cpu-fallback". */
-} jfx_vk_caps_t;
+typedef jfx_backend_caps_t jfx_vk_caps_t;
 
 #define JFX_VK_DEFAULT_MEMORY_LIMIT ((size_t)64u * 1024u * 1024u)
 
 const char *jfx_vk_backend_name(void);
+
+/* Vulkan implementation of the backend HAL. The returned table is static and
+ * valid for the lifetime of the process. */
+const jfx_backend_ops_t *jfx_vk_backend_ops(void);
 
 jfx_result_t jfx_vk_backend_create(const jfx_vk_backend_config_t *config,
     jfx_vk_backend_t **out_backend);

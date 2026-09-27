@@ -7,8 +7,10 @@ target_include_directories(jfx_backend_software PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(jfx_backend_software PUBLIC joltscript_glue)
-target_link_libraries(jfx_backend_software PRIVATE tilly)
+target_link_libraries(jfx_backend_software PUBLIC joltscript_glue jfx_api)
+# PUBLIC: the shared CPU-path adapter in this target allocates through Tilly,
+# and so do the metal/d3d12/webgpu backends layered on it.
+target_link_libraries(jfx_backend_software PUBLIC tilly)
 if(NOT MSVC)
     target_link_libraries(jfx_backend_software PUBLIC m)
 endif()

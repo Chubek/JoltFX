@@ -32,6 +32,35 @@ const char *jfx_vk_backend_name(void) {
     return "vulkan";
 }
 
+/* ---- HAL ---- */
+
+static void ops_query_caps(jfx_backend_handle_t handle, jfx_backend_caps_t *out_caps) {
+    jfx_vk_query_caps((jfx_vk_backend_t *)handle, out_caps);
+}
+
+static jfx_result_t ops_execute_bytecode(jfx_backend_handle_t handle,
+    const uint8_t *bytecode, size_t bytecode_size, const float *input_rgba,
+    size_t pixels, const float *parameters, size_t parameter_count,
+    float *output_rgba) {
+    return jfx_vk_execute_bytecode((jfx_vk_backend_t *)handle, bytecode,
+        bytecode_size, input_rgba, pixels, parameters, parameter_count, output_rgba);
+}
+
+static void ops_destroy(jfx_backend_handle_t handle) {
+    jfx_vk_backend_destroy((jfx_vk_backend_t *)handle);
+}
+
+static const jfx_backend_ops_t kVulkanOps = {
+    .name = jfx_vk_backend_name,
+    .query_caps = ops_query_caps,
+    .execute_bytecode = ops_execute_bytecode,
+    .destroy = ops_destroy,
+};
+
+const jfx_backend_ops_t *jfx_vk_backend_ops(void) {
+    return &kVulkanOps;
+}
+
 static jfx_result_t map_status(jolt_status_t status) {
     switch (status) {
     case JOLT_OK:
@@ -97,12 +126,12 @@ void jfx_vk_query_caps(const jfx_vk_backend_t *backend, jfx_vk_caps_t *out_caps)
         return;
     }
     memset(out_caps, 0, sizeof(*out_caps));
-    out_caps->cpu_fallback = true;
     if (!backend) {
         snprintf(out_caps->device_name, sizeof(out_caps->device_name), "cpu-fallback");
         return;
     }
     out_caps->gpu_available = backend->gpu_available;
+    out_caps->used_gpu = backend->used_gpu;
     out_caps->api_version = backend->api_version;
     snprintf(out_caps->device_name, sizeof(out_caps->device_name), "%s",
         backend->device_name);

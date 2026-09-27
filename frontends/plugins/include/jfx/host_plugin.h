@@ -17,6 +17,12 @@ typedef enum {
     JFX_HOST_COUNT
 } jfx_host_kind_t;
 
+/* Capability bits a host bridge actually implements.
+ *
+ * A bridge sets a bit only in the same translation unit that implements the
+ * capability. `jfx_host_plugin_get_info` currently reports none, because the
+ * shipped bridges are host-independent stubs: they are identified and
+ * versioned, but no host SDK entry point, import or export is present. */
 typedef enum {
     JFX_HOST_PLUGIN_IMPORT = 1u << 0,
     JFX_HOST_PLUGIN_EXPORT = 1u << 1,
@@ -28,7 +34,10 @@ typedef struct {
     jfx_host_kind_t host;
     const char *host_name;
     const char *plugin_identifier;
+    /* Bitmask of jfx_host_plugin_feature_t, honestly reflecting what exists. */
     uint32_t features;
+    /* Non-zero when the proprietary host SDK is still required before the
+     * bridge can be loaded into its host. */
     uint32_t requires_host_sdk;
 } jfx_host_plugin_info_t;
 

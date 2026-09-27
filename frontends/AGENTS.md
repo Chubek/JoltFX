@@ -173,9 +173,27 @@ typedef struct jfx_frontend_t {
 
 ## Build and Toolchain
 
-### Desktop (Qt6)
+### Desktop (Dear ImGui + SDL2 + OpenGL)
 
-Requires Qt 6.5 or later. On macOS and Windows, download the official Qt installer. On Linux, install via package manager or build from source.
+**The Qt6 design below is not what the code does.** The desktop frontend is
+implemented with Dear ImGui, SDL2 and an OpenGL 3.3 core context; see
+`frontends/desktop/README.md` for the working build and run instructions, and
+`PROGRESS.md` for what the current UI does and does not cover. This section is
+kept as the design target, not as a description of the current build.
+
+The working path today:
+
+```bash
+cmake --preset default
+cmake --build build --target jfx_desktop
+./build/frontends/desktop/jfx_desktop
+```
+
+SDL2 and OpenGL are detected with `find_package(SDL2)` and a `pkg-config sdl2`
+fallback. Without them the target still builds and `--headless-smoke` still
+exercises the UI, so a host with no display toolchain is not blocked.
+
+The Qt6 path below requires Qt 6.5 or later. On macOS and Windows, download the official Qt installer. On Linux, install via package manager or build from source.
 
 ```bash
 # Configure with Qt6
@@ -187,7 +205,7 @@ cmake -DJFX_FRONTEND_DESKTOP=ON \
 cmake --build . --target jfx_desktop
 
 # Run
-./frontends/desktop/jfx_desktop
+./build/frontends/desktop/jfx_desktop
 ```
 
 For development, use Qt Creator or any IDE that supports CMake. The desktop frontend links against the core engine (`libjfx_engine.so`), Zoltan Rust library (`libzoltan.a`), and Qt6 modules (Widgets, OpenGL, Multimedia).
@@ -202,11 +220,24 @@ cmake --build . --target jfx_cli
 ./frontends/cli/jfx_cli --help
 ```
 
-**CLI commands:**
-- `jfx_cli compile <input.jolt> -o <output.joltpkg> [--optimize]`
-- `jfx_cli render <input.joltpkg> -o <output.mp4> --resolution 1920x1080 --fps 60 [--codec h264] [--preset medium] [--start 0.0] [--end 10.0]`
-- `jfx_cli verify <input.joltpkg>`
-- `jfx_cli info <input.joltpkg>` (print metadata, kernels, dependencies)
+**CLI commands shipped today** (binary is `joltfx`, see
+`frontends/cli/README.md`):
+- `joltfx compile FILE [-o OUTPUT]` — validate a `.jolt` kernel, write JBC1
+- `joltfx verify FILE` — validate without writing
+- `joltfx effects` — list the bundled kernels
+- `joltfx info EFFECT|FILE` — describe a kernel, or inspect a compiled `.jbc`
+- `joltfx render [options]` — one frame to a binary PPM (P6)
+- `joltfx export [options]` — a frame range to a PPM sequence
+- `joltfx capabilities` — report what this build actually implements
+- `joltfx version`, `joltfx help [COMMAND]`
+
+`render` and `export` run through the shared frontend contract
+(`frontends/common/include/jfx_frontend.h`) via the headless frontend, so the
+CLI and the GUI frontends execute the same code, and `--backend` selects the
+real execution path.
+
+**Not implemented:** `.joltpkg` packaging, signature verification, and video
+containers (FFmpeg). `render` and `export` write binary PPM.
 
 ### Web (WASM)
 

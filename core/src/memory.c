@@ -7,17 +7,30 @@ static tilly_allocator_t *g_resource_pool = NULL;
 static tilly_allocator_t *g_heap = NULL;
 
 bool memory_init(tilly_allocator_t *heap) {
-    if (!heap || g_heap) return false;
+    if (!heap) {
+        tilly_log_simple(TILLY_LOG_ERROR, "memory_init: no heap allocator supplied");
+        return false;
+    }
+    if (g_heap) {
+        /* The memory subsystem is process-global, so exactly one engine may own
+         * it at a time. Say that plainly rather than failing later with an
+         * out-of-memory that has nothing to do with memory. */
+        tilly_log_simple(TILLY_LOG_ERROR,
+            "memory_init: a memory subsystem is already active; shut down the owning engine first");
+        return false;
+    }
     g_heap = heap;
-    
-    // Create frame arena (1MB per frame)
+
     g_frame_arena = tilly_allocator_create(TILLY_ALLOC_ARENA, 1024 * 1024);
-    
-    // Create resource pool (4KB blocks, 1024 blocks = 4MB)
     g_resource_pool = tilly_allocator_create(TILLY_ALLOC_POOL, 4 * 1024 * 1024);
-    
-    if (!g_frame_arena || !g_resource_pool) { memory_shutdown(); return false; }
-    tilly_log_debug("memory", "Memory subsystem initialized: frame_arena=%p, resource_pool=%p", 
+
+    if (!g_frame_arena || !g_resource_pool) {
+        tilly_log_simple(TILLY_LOG_ERROR,
+            "memory_init: could not create the frame arena and resource pool");
+        memory_shutdown();
+        return false;
+    }
+    tilly_log_debug("memory", "Memory subsystem initialized: frame_arena=%p, resource_pool=%p",
                     (void*)g_frame_arena, (void*)g_resource_pool);
     return true;
 }

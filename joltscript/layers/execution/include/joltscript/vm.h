@@ -13,8 +13,22 @@ extern "C" {
 #define JOLT_MAX_INSTRUCTIONS 4096u
 /* JBC1: little-endian u32 magic, version, input count, output count;
  * followed by pairs of u32 opcode/operand. Float constants are IEEE binary32.
- * No jumps: validation provides a hard execution bound. */
+ * No jumps: validation provides a hard execution bound.
+ *
+ *   offset  size  field
+ *   0       4     magic
+ *   4       4     version
+ *   8       4     input binding count
+ *   12      4     output count
+ *   16      8*n   instruction pairs: u32 opcode, u32 operand
+ *
+ * These constants are the format's definition. zoltan/src/bytecode.rs is a
+ * second implementation of the same emitter and must agree byte for byte;
+ * scripts/check-bytecode-parity.sh enforces that. */
 #define JOLT_BYTECODE_MAGIC UINT32_C(0x3143424a)
+#define JOLT_BYTECODE_VERSION 1u
+#define JOLT_BYTECODE_HEADER_SIZE 16u
+#define JOLT_BYTECODE_INSTRUCTION_SIZE 8u
 typedef enum {
     JOLT_OK = 0, JOLT_ERR_ARGUMENT = -1, JOLT_ERR_MEMORY = -2,
     JOLT_ERR_SYNTAX = -3, JOLT_ERR_BYTECODE = -4, JOLT_ERR_NUMERIC = -5,

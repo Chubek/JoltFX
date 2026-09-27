@@ -5,22 +5,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jfx/jfx_engine.h"
+#include "jfx/backend_interface.h"
+#include "jfx/jfx_result.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct jfx_d3d12_backend jfx_d3d12_backend_t;
-typedef struct { bool probe_gpu; size_t memory_limit; } jfx_d3d12_backend_config_t;
-typedef struct {
-    bool gpu_available;
-    bool cpu_fallback;
-    uint32_t api_version;
-    char device_name[256];
-} jfx_d3d12_caps_t;
+typedef jfx_backend_config_t jfx_d3d12_backend_config_t;
+typedef jfx_backend_caps_t jfx_d3d12_caps_t;
 
 const char *jfx_d3d12_backend_name(void);
+const jfx_backend_ops_t *jfx_d3d12_backend_ops(void);
 jfx_result_t jfx_d3d12_backend_create(const jfx_d3d12_backend_config_t *config,
     jfx_d3d12_backend_t **out_backend);
 void jfx_d3d12_backend_destroy(jfx_d3d12_backend_t *backend);

@@ -74,6 +74,12 @@ int main(int argc, char **argv) {
     if (strcmp(command, "render") == 0) {
         return cmd_render(rest_argc, rest_argv);
     }
+    if (strcmp(command, "export") == 0) {
+        return cmd_export(rest_argc, rest_argv);
+    }
+    if (strcmp(command, "capabilities") == 0 || strcmp(command, "caps") == 0) {
+        return cmd_capabilities();
+    }
     if (strcmp(command, "run") == 0) {
         return cmd_run();
     }

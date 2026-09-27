@@ -1,3 +1,12 @@
+
+/* khash's KHASH_MAP_INIT_STR declares its bucket array with khint32_t sizes
+ * while the macros that follow pass size_t, so instantiating it trips this
+ * project's -Wconversion. Upstream is vendored and not ours to change, and the
+ * narrowing is contained inside the macro, so the diagnostic is suppressed for
+ * this translation unit only rather than for the whole project. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
 #include "joltscript/compiler.h"
 #include "tilly/containers.h"
 #include <ctype.h>
@@ -56,9 +65,11 @@ static void put_u32(uint8_t *p, uint32_t v) {
     for (unsigned i = 0; i < 4; ++i) p[i] = (uint8_t)(v >> (8 * i));
 }
 static bool emit(parser_t *p, uint32_t opcode, uint32_t operand) {
-    if (p->program->bytes.n >= 16 + 8 * JOLT_MAX_INSTRUCTIONS)
+    if (p->program->bytes.n >= JOLT_BYTECODE_HEADER_SIZE +
+        JOLT_BYTECODE_INSTRUCTION_SIZE * JOLT_MAX_INSTRUCTIONS)
         return fail(p, JOLT_ERR_BUDGET, "instruction limit exceeded");
-    if (!tilly_vec_reserve(&p->program->bytes, p->program->bytes.n + 8))
+    if (!tilly_vec_reserve(&p->program->bytes,
+            p->program->bytes.n + JOLT_BYTECODE_INSTRUCTION_SIZE))
         return fail(p, JOLT_ERR_MEMORY, "allocation failed");
     put_u32(p->program->bytes.a + p->program->bytes.n, opcode);
     put_u32(p->program->bytes.a + p->program->bytes.n + 4, operand);
@@ -106,7 +117,7 @@ jolt_status_t jolt_compile(const char *source, jolt_program_t **out, jolt_diagno
     p.symbols = kh_init(symbols);
     if (!p.program || !p.symbols) { p.status = JOLT_ERR_MEMORY; goto done; }
     if (!tilly_vec_reserve(&p.program->bytes,16)) { p.status=JOLT_ERR_MEMORY; goto done; }
-    p.program->bytes.n = 16;
+    p.program->bytes.n = JOLT_BYTECODE_HEADER_SIZE;
     char name[64]; uint32_t count = 0, outputs = 1;
     if (!character(&p,'(') || !word(&p,"defkernel") || !token(&p,name) || !character(&p,'[')) goto done;
     for (;;) {
@@ -140,7 +151,7 @@ jolt_status_t jolt_compile(const char *source, jolt_program_t **out, jolt_diagno
     space(&p);
     if (*p.cursor) { fail(&p,JOLT_ERR_SYNTAX,"trailing source after kernel"); goto done; }
     put_u32(p.program->bytes.a,JOLT_BYTECODE_MAGIC);
-    put_u32(p.program->bytes.a+4,1);
+    put_u32(p.program->bytes.a + 4, JOLT_BYTECODE_VERSION);
     put_u32(p.program->bytes.a+8,count);
     put_u32(p.program->bytes.a+12,outputs);
     p.status = jolt_bytecode_validate(p.program->bytes.a,p.program->bytes.n);
@@ -163,4 +174,15 @@ const uint8_t *jolt_program_data(const jolt_program_t *p, size_t *size) {
 jolt_status_t jolt_program_run(jolt_vm_t *vm, const jolt_program_t *p,
     const float *in, size_t ni, float *out, size_t no) {
     return p ? jolt_vm_run(vm,p->bytes.a,p->bytes.n,in,ni,out,no) : JOLT_ERR_ARGUMENT;
+}
+
+void jolt_diagnostic_format(const jolt_diagnostic_t *d, const char *path, char *out,
+    size_t out_size) {
+    if (!out || !out_size) return;
+    if (!d || !d->message[0]) {
+        snprintf(out, out_size, "%s: compilation failed", path ? path : "<source>");
+        return;
+    }
+    snprintf(out, out_size, "%s:%zu:%zu: %s", path ? path : "<source>", d->line, d->column,
+        d->message);
 }

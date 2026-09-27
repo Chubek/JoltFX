@@ -1,6 +1,7 @@
 #include "jfx/jfx_engine.h"
 #include "jfx/jfx_events.h"
 #include "jfx/jfx_plugin.h"
+#include "jfx_test_backend.h"
 
 #include <assert.h>
 #include <string.h>
@@ -19,7 +20,7 @@ static void event_handler(jfx_event_type_t type, void *data, void *userdata) {
 int main(int argc, char **argv) {
     assert(argc == 2);
     jfx_engine_t *engine = NULL;
-    jfx_engine_config_t config = { .max_buffers = 1, .backend_name = "webgpu" };
+    jfx_engine_config_t config = { .max_buffers = 1, .backend_name = jfx_test_backend() };
     assert(jfx_engine_init(&config, &engine) == JFX_SUCCESS);
     jfx_plugin_host_t *host = NULL;
     assert(jfx_plugin_host_create(engine, &host) == JFX_SUCCESS);

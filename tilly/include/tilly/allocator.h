@@ -47,7 +47,12 @@ void *tilly_alloc(tilly_allocator_t *alloc, size_t size, size_t align);
 // Free memory
 void tilly_free(tilly_allocator_t *alloc, void *ptr);
 
-// Reallocate memory
+/* Reallocate memory.
+ *
+ * Only TILLY_ALLOC_GENERAL can grow a block in place; arena, pool and stack
+ * blocks carry no size header, so growing one returns NULL and logs an error
+ * (it is not an out-of-memory condition). Allocate a new block and copy when
+ * the allocator is not general. `ptr` is left untouched on failure. */
 void *tilly_realloc(tilly_allocator_t *alloc, void *ptr, size_t new_size);
 
 // Reset allocator (for arena/stack)

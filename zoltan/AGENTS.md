@@ -4,11 +4,48 @@
 
 Zoltan is the JoltFX command-line interface and development toolchain. It provides project scaffolding, kernel compilation, live preview, hot-reload, package management, and deployment export. This guide covers contributions to Zoltan's codebase, conventions, and release process.
 
-Zoltan is implemented in **Rust** (stable, 1.70+) and uses the JoltFX Core engine via FFI.
+Zoltan is implemented in **Rust** (stable, 1.70+), standard library only so it
+builds and runs offline.
+
+> **The layout below is the design target, not the current tree.** What exists
+> today is `src/main.rs` (command drivers) and `src/validate.rs` (the
+> validator) plus `src/bytecode.rs` (the JBC1 emitter). There is no FFI to the
+> Core engine, no `context.rs`, and none of the `commands/` or `core/`
+> subdirectories. See `PROGRESS.md` for the verified state.
 
 ---
 
-## Repository Layout
+## Bytecode emission
+
+`src/bytecode.rs` emits JBC1, the format defined in
+`joltscript/layers/execution/include/joltscript/vm.h`. It is a **second
+implementation** of the same emitter as the Glue Layer's C compiler
+(`joltscript/layers/glue/src/compiler.c`), and the two must produce
+byte-identical output, because a program compiled by one has to run on a runtime
+built from the other.
+
+That is enforced, not hoped for:
+
+- `scripts/check-bytecode-parity.sh` compares `zoltan compile` against
+  `joltfx compile` over every bundled kernel;
+- a CI job (`bytecode-parity`) runs it on every push.
+
+If you change one compiler, change the other in the same commit or the parity
+check fails.
+
+The format constants live in `vm.h` (`JOLT_BYTECODE_MAGIC`, `_VERSION`,
+`_HEADER_SIZE`, `_INSTRUCTION_SIZE`) and must be mirrored in `bytecode.rs`.
+
+## Current commands
+
+- `zoltan compile FILE [-o OUTPUT] [--emit-metadata]` — validate and, with
+  `-o`, write JBC1 bytecode.
+- `zoltan verify FILE` — validate only.
+- `zoltan help`, `--version`.
+
+---
+
+## Repository Layout (design target)
 
 ```
 zoltan/

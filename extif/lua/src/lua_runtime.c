@@ -18,23 +18,51 @@ struct jfx_lua_runtime {
     uint64_t instructions;
 };
 
+/* Lua's allocator contract hands over the exact old block size, so the budget
+ * can be tracked without a header. Both the growth test and the adjustment are
+ * written so they cannot underflow: a budget that wraps to a huge value would
+ * silently disable the limit, which is worse than no limit check at all. */
 static void *lua_alloc(void *userdata, void *ptr, size_t old_size, size_t new_size) {
     jfx_lua_runtime_t *runtime = userdata;
-    if (new_size > old_size && new_size - old_size > runtime->memory_limit - runtime->memory_used) {
-        return NULL;
-    }
     if (new_size == 0) {
-        if (old_size <= runtime->memory_used) runtime->memory_used -= old_size;
-        tilly_free((tilly_allocator_t *)tilly_default_allocator(), ptr);
+        if (ptr) {
+            runtime->memory_used = runtime->memory_used >= old_size
+                ? runtime->memory_used - old_size
+                : 0u;
+            tilly_free((tilly_allocator_t *)tilly_default_allocator(), ptr);
+        }
         return NULL;
     }
-    void *next = ptr ? tilly_realloc((tilly_allocator_t *)tilly_default_allocator(), ptr, new_size) :
-        tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), new_size, _Alignof(max_align_t));
-    if (next) {
-        if (new_size >= old_size) runtime->memory_used += new_size - old_size;
-        else runtime->memory_used -= old_size - new_size;
+    if (new_size > old_size) {
+        const size_t growth = new_size - old_size;
+        if (growth > runtime->memory_limit ||
+            runtime->memory_used > runtime->memory_limit - growth) {
+            return NULL;
+        }
+    }
+    void *next = ptr
+        ? tilly_realloc((tilly_allocator_t *)tilly_default_allocator(), ptr, new_size)
+        : tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), new_size,
+            _Alignof(max_align_t));
+    if (!next) {
+        return NULL;
+    }
+    if (new_size >= old_size) {
+        runtime->memory_used += new_size - old_size;
+    } else {
+        runtime->memory_used = runtime->memory_used >= old_size - new_size
+            ? runtime->memory_used - (old_size - new_size)
+            : 0u;
     }
     return next;
+}
+
+size_t jfx_lua_runtime_memory_used(const jfx_lua_runtime_t *runtime) {
+    return runtime ? runtime->memory_used : 0u;
+}
+
+size_t jfx_lua_runtime_memory_limit(const jfx_lua_runtime_t *runtime) {
+    return runtime ? runtime->memory_limit : 0u;
 }
 
 static int lua_clamp(lua_State *state) {

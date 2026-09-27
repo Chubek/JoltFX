@@ -3,6 +3,7 @@
 #include "jfx/jfx_scheduler.h"
 #include "jfx/jfx_events.h"
 #include "tilly/allocator.h"
+#include "jfx_test_backend.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -61,33 +62,61 @@ int main(void) {
     jfx_engine_shutdown(engine);
     assert(jfx_engine_init(&cfg, &engine) == JFX_SUCCESS);
     assert(event_subscriber_count(JFX_EVENT_FRAME_BEGIN) == 0);
-    assert(jfx_engine_backend_name(engine) && strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
+    assert(jfx_engine_backend_name(engine) != NULL);
     jfx_engine_shutdown(engine);
     assert(jfx_engine_backend_name(NULL) == NULL);
     jfx_engine_config_t bogus = {.max_buffers = 1, .backend_name = "directx9"};
     engine = NULL;
     assert(jfx_engine_init(&bogus, &engine) == JFX_ERROR_INVALID_ARGUMENT && !engine);
-    jfx_engine_config_t named = {.max_buffers = 1, .backend_name = "vulkan"};
+    jfx_engine_config_t named = {.max_buffers = 1, .backend_name = jfx_test_backend()};
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS && engine);
-    assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
+    assert(strcmp(jfx_engine_backend_name(engine), jfx_test_backend()) == 0);
     assert(jfx_engine_tick(engine) == JFX_SUCCESS);
     jfx_engine_shutdown(engine);
     named.backend_name = "auto";
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS && engine);
-    assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
+    /* "auto" must resolve to one of the backends this build contains. */
+    assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0 ||
+        strcmp(jfx_engine_backend_name(engine), "metal") == 0 ||
+        strcmp(jfx_engine_backend_name(engine), "d3d12") == 0 ||
+        strcmp(jfx_engine_backend_name(engine), "webgpu") == 0);
     jfx_engine_shutdown(engine);
+    /* A named backend is only offered when it was actually built, so selection
+     * is checked against the backends this configuration contains. */
+    int named_checked = 0;
+#if defined(JFX_BACKEND_VULKAN)
+    named.backend_name = "vulkan";
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
+        strcmp(jfx_engine_backend_name(engine), "vulkan") == 0);
+    jfx_engine_shutdown(engine);
+    ++named_checked;
+#endif
+#if defined(JFX_BACKEND_METAL)
     named.backend_name = "metal";
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
         strcmp(jfx_engine_backend_name(engine), "metal") == 0);
     jfx_engine_shutdown(engine);
+    ++named_checked;
+#endif
+#if defined(JFX_BACKEND_D3D12)
     named.backend_name = "d3d12";
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
         strcmp(jfx_engine_backend_name(engine), "d3d12") == 0);
     jfx_engine_shutdown(engine);
+    ++named_checked;
+#endif
+#if defined(JFX_BACKEND_WEBGPU)
     named.backend_name = "webgpu";
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
         strcmp(jfx_engine_backend_name(engine), "webgpu") == 0);
     jfx_engine_shutdown(engine);
+    ++named_checked;
+#endif
+    assert(named_checked > 0);
+    /* A backend this build does not contain is rejected, not silently mapped. */
+    named.backend_name = "no_such_backend";
+    engine = NULL;
+    assert(jfx_engine_init(&named, &engine) == JFX_ERROR_INVALID_ARGUMENT && !engine);
     tilly_allocator_t *alloc = tilly_allocator_create(TILLY_ALLOC_GENERAL, 1024);
     assert(alloc);
     assert(!tilly_alloc(alloc, 16, 3));

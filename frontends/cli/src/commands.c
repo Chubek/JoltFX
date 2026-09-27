@@ -1,12 +1,16 @@
 #include "commands.h"
 
+#include "headless_frontend.h"
 #include "jfx/jfx_engine.h"
-#include "jfx/vk_backend.h"
+#include "jfx/jfx_result.h"
+#include "jfx_frontend.h"
 #include "joltscript/compiler.h"
+#include "joltscript/vm.h"
 #include "joltscript/effects.h"
 #include "tilly/logger.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +29,9 @@ void print_usage(void) {
     printf("  verify FILE                Validate a .jolt kernel without writing output\n");
     printf("  effects                    List bundled kernels\n");
     printf("  info EFFECT|FILE           Show effect or kernel details\n");
-    printf("  render [options]           Render an effect to a PPM image\n");
+    printf("  render [options]           Render one frame to a binary PPM (P6)\n");
+    printf("  export [options]           Render a frame range to a PPM sequence\n");
+    printf("  capabilities               Report this build's frontend capabilities\n");
     printf("  version                    Show version information\n");
     printf("  help [COMMAND]             Show help\n");
     printf("\nRun 'joltfx help COMMAND' for command-specific options.\n");
@@ -53,13 +59,31 @@ void print_command_help(const char *command) {
         printf("Usage: joltfx render [--effect NAME] [--param VALUE]\n");
         printf("                     [--width W --height H] [-o OUTPUT.ppm]\n");
         printf("                     [--backend NAME]\n\n");
-        printf("Renders a bundled effect over a gradient to a binary PPM (P6).\n");
+        printf("Renders a bundled effect over an animated gradient to a binary PPM (P6)\n");
+        printf("through the Core engine, so --backend selects the real execution path.\n");
         printf("Defaults: --effect brightness --width 64 --height 64 -o render.ppm\n");
-        printf("Backend NAME is validated by the Core engine (vulkan/auto).\n");
+        printf("Backend NAME is one the engine was built with: vulkan, metal, d3d12,\n");
+        printf("webgpu or auto.\n");
+    }
+    if (command == NULL || strcmp(command, "export") == 0) {
+        printf("Usage: joltfx export [--effect NAME] [--param VALUE]\n");
+        printf("                    [--width W --height H] [--start N --end N]\n");
+        printf("                    [-o DIRECTORY] [--backend NAME]\n\n");
+        printf("Renders a frame range to one binary PPM (P6) per frame, named\n");
+        printf("frame_%%06d.ppm, at 24 fps. Frames are inclusive; --start defaults to 0\n");
+        printf("and --end to 47. Defaults: --effect brightness --width 64 --height 64\n");
+        printf("-o frames.\n");
+    }
+    if (command != NULL && strcmp(command, "capabilities") == 0) {
+        printf("Usage: joltfx capabilities\n\n");
+        printf("Reports which shared frontend-contract operations this build provides.\n");
     }
 }
 
-/* Reads a whole file, NUL-terminated. Returns NULL on error. */
+/* Reads a whole file into a NUL-terminated buffer. Returns NULL on error or
+ * when the file exceeds CLI_MAX_SOURCE, which bounds both source text and
+ * compiled bytecode (the compiler caps sources at 1 MiB and a JBC1 program can
+ * only be a little larger than its source). */
 static char *read_source(const char *path, size_t *out_len) {
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
@@ -92,6 +116,33 @@ static char *read_source(const char *path, size_t *out_len) {
         *out_len = len;
     }
     return buf;
+}
+
+/* Same, but reports whether the file begins with a JBC1 magic so callers can
+ * tell a compiled artifact from source without a second read. Returns NULL for
+ * anything that is not JBC1. */
+static uint8_t *read_bytecode(const char *path, size_t *out_len) {
+    size_t len = 0;
+    char *bytes = read_source(path, &len);
+    if (bytes == NULL) {
+        return NULL;
+    }
+    if (len < JOLT_BYTECODE_HEADER_SIZE) {
+        free(bytes);
+        return NULL;
+    }
+    uint32_t magic = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        magic |= (uint32_t)(unsigned char)bytes[i] << (8u * i);
+    }
+    if (magic != JOLT_BYTECODE_MAGIC) {
+        free(bytes);
+        return NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    return (uint8_t *)bytes;
 }
 
 /* Best-effort kernel name extraction for info output. */
@@ -262,7 +313,52 @@ int cmd_effects(int argc, char **argv) {
     return 0;
 }
 
+/* Reports a JBC1 program: the header the VM validates, and the instruction
+ * mix. Accepts anything `compile` produced, including bytecode from the Zoltan
+ * compiler, so a compiled artifact can be inspected without its source. */
+static int info_for_bytecode(const char *path, const uint8_t *bytes, size_t size) {
+    if (size < JOLT_BYTECODE_HEADER_SIZE) {
+        fprintf(stderr, "error: %s: too short to be a JBC1 program\n", path);
+        return 1;
+    }
+    uint32_t read = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        read |= (uint32_t)bytes[i] << (8u * i);
+    }
+    if (read != JOLT_BYTECODE_MAGIC) {
+        fprintf(stderr, "error: %s: not a JBC1 program\n", path);
+        return 1;
+    }
+    uint32_t version = 0, inputs = 0, outputs = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        version |= (uint32_t)bytes[4 + i] << (8u * i);
+        inputs |= (uint32_t)bytes[8 + i] << (8u * i);
+        outputs |= (uint32_t)bytes[12 + i] << (8u * i);
+    }
+    if (version != JOLT_BYTECODE_VERSION) {
+        fprintf(stderr, "error: %s: unsupported JBC1 version %u\n", path, version);
+        return 1;
+    }
+    if (jolt_bytecode_validate(bytes, size) != JOLT_OK) {
+        fprintf(stderr, "error: %s: invalid JBC1 program\n", path);
+        return 1;
+    }
+    const size_t instructions = (size - JOLT_BYTECODE_HEADER_SIZE) / 8u;
+    printf("file: %s\nformat: JBC1 v%u\ninputs: %u\noutputs: %u\ninstructions: %zu\n"
+           "bytecode: %zu bytes\n",
+        path, version, inputs, outputs, instructions, size);
+    return 0;
+}
+
 static int info_for_file(const char *path) {
+    /* A .jbc artifact has no source to compile; inspect the container. */
+    size_t raw_size = 0;
+    uint8_t *raw = read_bytecode(path, &raw_size);
+    if (raw != NULL) {
+        int rc = info_for_bytecode(path, raw, raw_size);
+        free(raw);
+        return rc;
+    }
     char *source = read_source(path, NULL);
     if (source == NULL) {
         fprintf(stderr, "error: cannot read '%s'\n", path);
@@ -326,14 +422,84 @@ int cmd_info(int argc, char **argv) {
     return info_for_effect(argv[0]);
 }
 
-static float clamp01(float v) {
-    if (v < 0.0f) {
-        return 0.0f;
+/* ---- render and export, both driven through the shared frontend contract --
+ *
+ * These commands do not have a private render path: they create the headless
+ * frontend and go through jfx_frontend_render_frame /
+ * jfx_frontend_export_frames, so the CLI and the GUI frontends execute the
+ * same code. The frame still runs on whichever backend the engine resolved. */
+
+typedef struct {
+    jfx_frontend_t *frontend;
+    char backend_name[64];
+} cli_session_t;
+
+static void cli_session_release(cli_session_t *session) {
+    if (!session) {
+        return;
     }
-    if (v > 1.0f) {
-        return 1.0f;
+    jfx_frontend_shutdown(session->frontend);
+    memset(session, 0, sizeof(*session));
+}
+
+/* Creates the headless frontend and selects the effect. */
+static int cli_session_open(cli_session_t *session, const char *effect, float parameter,
+    int have_parameter, const char *backend, uint32_t width, uint32_t height) {
+    memset(session, 0, sizeof(*session));
+    jfx_frontend_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.size = sizeof(desc);
+    desc.name = "cli";
+    desc.width = width;
+    desc.height = height;
+    desc.backend_name = backend;
+    jfx_result_t status = jfx_frontend_init(&jfx_headless_frontend_ops, "cli", &desc,
+        &session->frontend);
+    if (status != JFX_SUCCESS || !session->frontend) {
+        fprintf(stderr, "error: could not start the engine (%s)\n",
+            jfx_result_to_string(status));
+        return 1;
     }
-    return v;
+    if (jfx_headless_set_effect(session->frontend->state, effect,
+            have_parameter ? parameter : 0.0f) != JFX_SUCCESS) {
+        fprintf(stderr, "error: unknown effect '%s' (try 'joltfx effects')\n", effect);
+        cli_session_release(session);
+        return 1;
+    }
+    const char *resolved = jfx_headless_backend_name(session->frontend);
+    snprintf(session->backend_name, sizeof(session->backend_name), "%s",
+        resolved ? resolved : "none");
+    return 0;
+}
+
+/* Writes a tightly packed RGBA8 buffer as a binary PPM (P6), dropping alpha. */
+static int write_ppm(const char *path, const uint8_t *rgba, uint32_t width, uint32_t height) {
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        fprintf(stderr, "error: cannot write '%s'\n", path);
+        return 1;
+    }
+    if (fprintf(file, "P6\n%u %u\n255\n", width, height) < 0) {
+        fprintf(stderr, "error: cannot write the header of '%s'\n", path);
+        fclose(file);
+        return 1;
+    }
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t *row = rgba + (size_t)y * width * 4u;
+        for (uint32_t x = 0; x < width; ++x) {
+            const uint8_t rgb[3] = { row[x * 4u], row[x * 4u + 1u], row[x * 4u + 2u] };
+            if (fwrite(rgb, 1, 3, file) != 3) {
+                fprintf(stderr, "error: short write to '%s'\n", path);
+                fclose(file);
+                return 1;
+            }
+        }
+    }
+    if (fclose(file) != 0) {
+        fprintf(stderr, "error: cannot flush '%s'\n", path);
+        return 1;
+    }
+    return 0;
 }
 
 int cmd_render(int argc, char **argv) {
@@ -359,7 +525,7 @@ int cmd_render(int argc, char **argv) {
             }
             char *end = NULL;
             double v = strtod(argv[i], &end);
-            if (end == argv[i] || *end != '\0') {
+            if (end == argv[i] || *end != '\0' || !isfinite(v)) {
                 fprintf(stderr, "error: invalid --param '%s'\n", argv[i]);
                 return 1;
             }
@@ -403,98 +569,145 @@ int cmd_render(int argc, char **argv) {
         return 1;
     }
 
-    jfx_engine_config_t config;
-    memset(&config, 0, sizeof(config));
-    config.max_buffers = 256;
-    config.max_textures = 64;
-    config.max_kernels = 32;
-    config.backend_name = backend;
-    jfx_engine_t *engine = NULL;
-    jfx_result_t init = jfx_engine_init(&config, &engine);
-    if (init != JFX_SUCCESS || engine == NULL) {
-        fprintf(stderr, "error: engine init failed (%d)\n", (int)init);
+    cli_session_t session;
+    if (cli_session_open(&session, effect, param_value, have_param, backend, (uint32_t)width,
+            (uint32_t)height) != 0) {
         return 1;
     }
 
-    size_t pixels = (size_t)width * (size_t)height;
-    float *input = (float *)malloc(pixels * 4 * sizeof(float));
-    float *out = (float *)malloc(pixels * 4 * sizeof(float));
-    if (input == NULL || out == NULL) {
+    const size_t frame_bytes = (size_t)width * (size_t)height * 4u;
+    uint8_t *frame = malloc(frame_bytes);
+    if (frame == NULL) {
         fprintf(stderr, "error: out of memory\n");
-        free(input);
-        free(out);
-        jfx_engine_shutdown(engine);
+        cli_session_release(&session);
         return 1;
     }
-    for (long y = 0; y < height; y++) {
-        for (long x = 0; x < width; x++) {
-            size_t idx = ((size_t)y * (size_t)width + (size_t)x) * 4;
-            float fx = width > 1 ? (float)x / (float)(width - 1) : 0.0f;
-            float fy = height > 1 ? (float)y / (float)(height - 1) : 0.0f;
-            input[idx] = fx;
-            input[idx + 1] = fy;
-            input[idx + 2] = 0.5f;
-            input[idx + 3] = 1.0f;
-        }
+    jfx_result_t status = jfx_frontend_render_frame(session.frontend, (uint32_t)width,
+        (uint32_t)height, frame, frame_bytes);
+    if (status != JFX_SUCCESS) {
+        fprintf(stderr, "error: render failed for effect '%s' (%s)\n", effect,
+            jfx_result_to_string(status));
+        free(frame);
+        cli_session_release(&session);
+        return 1;
     }
+    const int rc = write_ppm(output, frame, (uint32_t)width, (uint32_t)height);
+    free(frame);
+    if (rc != 0) {
+        cli_session_release(&session);
+        return 1;
+    }
+    printf("rendered %ldx%ld %s -> %s (backend %s)\n", width, height, effect, output,
+        session.backend_name);
+    tilly_log_simple(TILLY_LOG_INFO, "CLI render complete");
+    cli_session_release(&session);
+    return 0;
+}
 
-    jolt_effects_t *effects = jolt_effects_create();
-    if (effects == NULL) {
-        fprintf(stderr, "error: failed to load bundled effects\n");
-        free(input);
-        free(out);
-        jfx_engine_shutdown(engine);
-        return 1;
+static int export_progress(size_t current, size_t total, double elapsed, void *user_data) {
+    (void)user_data;
+    /* A single rewriting line, so a long export does not scroll the terminal. */
+    fprintf(stderr, "\rExporting frame %zu/%zu (%.1fs)", current, total, elapsed);
+    if (current == total) {
+        fputc('\n', stderr);
     }
-    const float *params = have_param ? &param_value : NULL;
-    size_t param_count = have_param ? 1 : 0;
-    jolt_status_t status = jolt_effects_apply(effects, effect, input, pixels, params,
-                                              param_count, CLI_DEFAULT_MEMORY_LIMIT, out);
-    jolt_effects_destroy(effects);
-    if (status != JOLT_OK) {
-        fprintf(stderr, "error: render failed for effect '%s' (status %d)\n", effect,
-                (int)status);
-        free(input);
-        free(out);
-        jfx_engine_shutdown(engine);
-        return 1;
-    }
-    free(input);
+    return 0;
+}
 
-    if (jfx_engine_tick(engine) != JFX_SUCCESS) {
-        fprintf(stderr, "error: engine tick failed\n");
-        free(out);
-        jfx_engine_shutdown(engine);
-        return 1;
-    }
-    const char *backend_name = jfx_engine_backend_name(engine);
+int cmd_export(int argc, char **argv) {
+    const char *effect = "brightness";
+    const char *output = "frames";
+    const char *backend = NULL;
+    float param_value = 0.0f;
+    int have_param = 0;
+    long width = 64;
+    long height = 64;
+    long start_frame = 0;
+    long end_frame = 47;
 
-    FILE *fp = fopen(output, "wb");
-    if (fp == NULL) {
-        fprintf(stderr, "error: cannot write '%s'\n", output);
-        free(out);
-        jfx_engine_shutdown(engine);
-        return 1;
-    }
-    fprintf(fp, "P6\n%ld %ld\n255\n", width, height);
-    for (size_t i = 0; i < pixels; i++) {
-        unsigned char rgb[3];
-        rgb[0] = (unsigned char)(clamp01(out[i * 4]) * 255.0f + 0.5f);
-        rgb[1] = (unsigned char)(clamp01(out[i * 4 + 1]) * 255.0f + 0.5f);
-        rgb[2] = (unsigned char)(clamp01(out[i * 4 + 2]) * 255.0f + 0.5f);
-        if (fwrite(rgb, 1, 3, fp) != 3) {
-            fprintf(stderr, "error: short write to '%s'\n", output);
-            fclose(fp);
-            free(out);
-            jfx_engine_shutdown(engine);
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--effect") == 0 && i + 1 < argc) {
+            effect = argv[++i];
+        } else if (strcmp(argv[i], "--param") == 0 && i + 1 < argc) {
+            char *end = NULL;
+            double v = strtod(argv[++i], &end);
+            if (*end != '\0' || !isfinite(v)) {
+                fprintf(stderr, "error: invalid --param\n");
+                return 1;
+            }
+            param_value = (float)v;
+            have_param = 1;
+        } else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
+            width = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
+            height = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--start") == 0 && i + 1 < argc) {
+            start_frame = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--end") == 0 && i + 1 < argc) {
+            end_frame = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            output = argv[++i];
+        } else if (strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+            backend = argv[++i];
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_command_help("export");
+            return 0;
+        } else {
+            fprintf(stderr, "error: %s expects a value or is unknown\n\n", argv[i]);
+            print_command_help("export");
             return 1;
         }
     }
-    fclose(fp);
-    free(out);
-    printf("rendered %ldx%ld %s -> %s (backend %s)\n", width, height, effect, output,
-           backend_name != NULL ? backend_name : "unknown");
-    tilly_log_simple(TILLY_LOG_INFO, "CLI render complete");
-    jfx_engine_shutdown(engine);
+    if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+        fprintf(stderr, "error: width/height must be in [1, 4096]\n");
+        return 1;
+    }
+    if (start_frame < 0 || end_frame < start_frame || end_frame - start_frame + 1 > 100000) {
+        fprintf(stderr, "error: --start/--end must satisfy 0 <= start <= end <= start+100000\n");
+        return 1;
+    }
+
+    cli_session_t session;
+    if (cli_session_open(&session, effect, param_value, have_param, backend, (uint32_t)width,
+            (uint32_t)height) != 0) {
+        return 1;
+    }
+    jfx_result_t status = jfx_frontend_export_frames(session.frontend, output,
+        (uint32_t)width, (uint32_t)height, (uint32_t)start_frame, (uint32_t)end_frame,
+        export_progress, NULL);
+    if (status != JFX_SUCCESS) {
+        fprintf(stderr, "\nerror: export failed (%s)\n", jfx_result_to_string(status));
+        cli_session_release(&session);
+        return 1;
+    }
+    printf("exported frames %ld-%ld %s %ldx%ld to %s/ (backend %s)\n", start_frame, end_frame,
+        effect, width, height, output, session.backend_name);
+    cli_session_release(&session);
+    return 0;
+}
+
+int cmd_capabilities(void) {
+    printf("joltfx %s frontend capabilities\n\n", JOLTFX_CLI_VERSION);
+    static const char *const kNames[] = { "run", "open_project", "save_project",
+        "close_project", "playback", "loop", "render", "export", "selection",
+        "viewport_state" };
+    jfx_frontend_t *probe = NULL;
+    jfx_frontend_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.size = sizeof(desc);
+    desc.name = "cli";
+    /* A real engine is needed to report honestly, so create one. */
+    if (jfx_frontend_init(&jfx_headless_frontend_ops, "cli", &desc, &probe) != JFX_SUCCESS) {
+        fprintf(stderr, "error: could not start the engine to query capabilities\n");
+        return 1;
+    }
+    const uint32_t capabilities = jfx_frontend_capabilities(probe);
+    for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); ++i) {
+        const uint32_t bit = 1u << i;
+        printf("  %-16s %s\n", kNames[i],
+            (capabilities & bit) ? "yes" : "no (not implemented)");
+    }
+    printf("\nbackend: %s\n", jfx_headless_backend_name(probe));
+    jfx_frontend_shutdown(probe);
     return 0;
 }

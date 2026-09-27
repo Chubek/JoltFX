@@ -464,6 +464,11 @@ static void mkdir_p(const char *path) {
     mkdir(scratch, 0700);
 }
 
+/* Builds the on-disk cache paths for a shader, keyed by its content hash.
+ *
+ * Returns false, writing neither buffer, when the cache root would not fit: a
+ * truncated path would name a different file than intended, and a silently
+ * shortened cache key is worse than no cache at all. */
 static bool cache_paths(char *comp, size_t comp_size, char *spv,
     size_t spv_size, uint64_t hash) {
     char dir[4096];
@@ -474,6 +479,15 @@ static bool cache_paths(char *comp, size_t comp_size, char *spv,
         snprintf(dir, sizeof(dir), "%s/.cache/joltfx", base);
     } else {
         snprintf(dir, sizeof(dir), "/tmp/joltfx-%d", (int)getuid());
+    }
+    const int dir_length = snprintf(NULL, 0, "%s", dir);
+    if (dir_length < 0 || (size_t)dir_length >= sizeof(dir)) {
+        return false;
+    }
+    /* separator + "jfx-" + 16 hex digits + ".comp" + NUL (".spv" is shorter) */
+    const size_t needed = (size_t)dir_length + 1u + 4u + 16u + 5u + 1u;
+    if (needed >= comp_size || needed >= spv_size) {
+        return false;
     }
     mkdir_p(dir);
     snprintf(comp, comp_size, "%s/jfx-%016llx.comp", dir, (unsigned long long)hash);
@@ -505,8 +519,12 @@ static uint8_t *load_spv(const char *glsl, size_t *out_size) {
     tilly_log_simple(TILLY_LOG_ERROR, "Vulkan backend requires POSIX process support");
     return NULL;
 #else
-    char comp[4096], spv[4096];
-    cache_paths(comp, sizeof(comp), spv, sizeof(spv), fnv1a(glsl, strlen(glsl)));
+    char comp[4096] = { 0 }, spv[4096] = { 0 };
+    if (!cache_paths(comp, sizeof(comp), spv, sizeof(spv), fnv1a(glsl, strlen(glsl)))) {
+        tilly_log_simple(TILLY_LOG_ERROR,
+            "Vulkan shader cache path does not fit; set XDG_CACHE_HOME or TMPDIR to a shorter path");
+        return NULL;
+    }
     FILE *hit = fopen(spv, "rb");
     if (!hit) {
         FILE *src = fopen(comp, "wb");

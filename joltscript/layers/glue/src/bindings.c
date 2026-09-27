@@ -1,3 +1,12 @@
+
+/* khash's KHASH_MAP_INIT_STR declares its bucket array with khint32_t sizes
+ * while the macros that follow pass size_t, so instantiating it trips this
+ * project's -Wconversion. Upstream is vendored and not ours to change, and the
+ * narrowing is contained inside the macro, so the diagnostic is suppressed for
+ * this translation unit only rather than for the whole project. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
 #include "joltscript/bindings.h"
 #include "tilly/containers.h"
 #include <math.h>

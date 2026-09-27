@@ -3,7 +3,7 @@ target_include_directories(jfx_mobile_player PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(jfx_mobile_player PUBLIC jfx_core)
+target_link_libraries(jfx_mobile_player PUBLIC jfx_core jolt_effects)
 set_project_warnings(jfx_mobile_player)
 
 # Built by the root project only for an Android NDK toolchain. The Kotlin app

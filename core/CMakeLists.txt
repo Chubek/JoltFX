@@ -1,5 +1,8 @@
 add_library(jfx_core STATIC
     src/engine.c
+    src/buffer.c
+    src/texture.c
+    src/kernel.c
     src/scheduler.c
     src/memory.c
     src/event_bus.c
@@ -12,17 +15,23 @@ target_include_directories(jfx_core PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(jfx_core PUBLIC tilly)
+# The engine compiles Joltscript and dispatches JBC1 bytecode, so the Glue
+# layer sits underneath it. The Glue layer never links back.
+target_link_libraries(jfx_core PUBLIC joltscript_glue jfx_api)
 target_link_libraries(jfx_core PRIVATE ${CMAKE_DL_LIBS})
 set_target_properties(jfx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# Engine owns backend selection (see engine.c); the backend must not link
-# back into jfx_core. PRIVATE keeps the dependency out of consumers' link.
-target_link_libraries(jfx_core PRIVATE
-    jfx_backend_vulkan
-    jfx_backend_metal
-    jfx_backend_d3d12
-    jfx_backend_webgpu
-)
+# Engine owns backend selection (see engine.c); the backends must not link back
+# into jfx_core. PRIVATE keeps the dependency out of consumers' link line.
+#
+# The JFX_BACKEND_<NAME> definitions are PUBLIC so a consumer - including a
+# test - can tell which backends this build actually contains instead of
+# hardcoding a name that may have been switched off.
+get_property(JFX_ENABLED_BACKENDS GLOBAL PROPERTY JFX_ENABLED_BACKENDS)
+foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
+    string(TOUPPER "${backend}" backend_upper)
+    target_link_libraries(jfx_core PRIVATE jfx_backend_${backend})
+    target_compile_definitions(jfx_core PUBLIC JFX_BACKEND_${backend_upper}=1)
+endforeach()
 
 set_project_warnings(jfx_core)

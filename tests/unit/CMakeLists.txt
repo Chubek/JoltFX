@@ -1,14 +1,10 @@
-add_executable(test_tillyz
-    tilly/test_tillyz.c
-)
+include("${CMAKE_CURRENT_SOURCE_DIR}/TestHelpers.cmake")
 
-target_link_libraries(test_tillyz PRIVATE tillyz)
+jfx_test_target(test_tillyz SOURCES tilly/test_tillyz.c LIBRARIES tillyz)
 
-add_executable(test_core
-    core/test_engine.c
-)
-
-target_link_libraries(test_core PRIVATE jfx_core)
+# The engine, its memory/scheduler/event subsystems and the resource objects.
+jfx_test_target(test_core SOURCES core/test_engine.c LIBRARIES jfx_core)
+target_include_directories(test_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(test_plugin_module MODULE core/test_plugin_module.c)
 target_include_directories(test_plugin_module PRIVATE ${PROJECT_SOURCE_DIR}/core/include)
@@ -17,55 +13,124 @@ if(UNIX AND NOT APPLE)
 endif()
 set_project_warnings(test_plugin_module)
 
-add_executable(test_plugin_host core/test_plugin_host.c)
-target_link_libraries(test_plugin_host PRIVATE jfx_core)
+jfx_test_target(test_plugin_host SOURCES core/test_plugin_host.c LIBRARIES jfx_core)
+target_include_directories(test_plugin_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(test_plugin_host PROPERTIES ENABLE_EXPORTS ON)
-set_project_warnings(test_plugin_host)
-add_test(NAME plugin_host COMMAND test_plugin_host $<TARGET_FILE:test_plugin_module>)
 
-add_executable(test_containers containers/test_containers.c)
-target_link_libraries(test_containers PRIVATE tilly)
-add_test(NAME test_containers COMMAND test_containers)
-add_executable(test_joltscript joltscript/test_vm.c)
-target_link_libraries(test_joltscript PRIVATE joltscript_glue)
-add_test(NAME test_joltscript COMMAND test_joltscript)
+jfx_test_target(test_containers SOURCES containers/test_containers.c LIBRARIES tilly)
 
-add_executable(test_pipeline joltscript/test_pipeline.c)
-target_link_libraries(test_pipeline PRIVATE joltscript_glue)
-add_test(NAME test_pipeline COMMAND test_pipeline)
-add_executable(test_effects ../kernels/test_effects.c)
-target_link_libraries(test_effects PRIVATE jolt_effects)
-add_test(NAME kernel_color_conformance COMMAND test_effects)
+jfx_test_target(test_joltscript SOURCES joltscript/test_vm.c LIBRARIES joltscript_glue)
+jfx_test_target(test_pipeline SOURCES joltscript/test_pipeline.c LIBRARIES joltscript_glue)
+
+# The bundled effect catalog, and the custom target that runs it by hand.
+jfx_test_target(test_effects SOURCES ../kernels/test_effects.c LIBRARIES jolt_effects)
 add_custom_target(validate_kernels COMMAND $<TARGET_FILE:test_effects> DEPENDS test_effects)
 
-add_executable(test_vulkan_backend backends/test_vulkan_backend.c)
-target_link_libraries(test_vulkan_backend PRIVATE jfx_backend_vulkan)
-add_test(NAME test_vulkan_backend COMMAND test_vulkan_backend)
+# The reference GPU backend, exercised against a real driver when one exists.
+if(JFX_BACKEND_VULKAN)
+    jfx_test_target(test_vulkan_backend SOURCES backends/test_vulkan_backend.c
+        LIBRARIES jfx_backend_vulkan)
+endif()
 
-add_executable(test_fallback_backends backends/test_fallback_backends.c)
-target_link_libraries(test_fallback_backends PRIVATE
-    jfx_backend_metal
-    jfx_backend_d3d12
-    jfx_backend_webgpu
-)
-add_test(NAME backend_fallback_conformance COMMAND test_fallback_backends)
+# The portable CPU-path adapters. One conformance run covers whichever built.
+set(JFX_FALLBACK_BACKEND_TARGETS "")
+foreach(backend IN ITEMS metal d3d12 webgpu)
+    if(JFX_BACKEND_${backend})
+        list(APPEND JFX_FALLBACK_BACKEND_TARGETS jfx_backend_${backend})
+    endif()
+endforeach()
+if(JFX_FALLBACK_BACKEND_TARGETS)
+    jfx_test_target(test_fallback_backends SOURCES backends/test_fallback_backends.c
+        LIBRARIES jfx_backend_software ${JFX_FALLBACK_BACKEND_TARGETS})
+    target_compile_definitions(test_fallback_backends PRIVATE
+        JFX_TEST_BACKEND_METAL=$<BOOL:${JFX_BACKEND_METAL}>
+        JFX_TEST_BACKEND_D3D12=$<BOOL:${JFX_BACKEND_D3D12}>
+        JFX_TEST_BACKEND_WEBGPU=$<BOOL:${JFX_BACKEND_WEBGPU}>
+    )
+endif()
 
-add_executable(test_extensions extif/test_extensions.c)
-target_link_libraries(test_extensions PRIVATE jfx_lua jfx_mruby)
-add_test(NAME ext_conformance COMMAND test_extensions)
+if(JFX_EXT_LUA AND JFX_EXT_MRUBY)
+    jfx_test_target(test_extensions SOURCES extif/test_extensions.c
+        LIBRARIES jfx_lua jfx_mruby)
+    target_include_directories(test_extensions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 
-add_executable(test_desktop_frontend frontends/test_desktop_frontend.cpp)
-target_link_libraries(test_desktop_frontend PRIVATE jfx_desktop_frontend)
-add_test(NAME desktop_frontend COMMAND test_desktop_frontend)
+if(JFX_FRONTEND_DESKTOP)
+    jfx_test_target(test_desktop_frontend SOURCES frontends/test_desktop_frontend.cpp
+        LIBRARIES jfx_desktop_frontend)
+    target_include_directories(test_desktop_frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 
-add_executable(test_mobile_frontend frontends/test_mobile_frontend.c)
-target_link_libraries(test_mobile_frontend PRIVATE jfx_mobile_player)
-add_test(NAME mobile_frontend COMMAND test_mobile_frontend)
+if(JFX_FRONTEND_MOBILE)
+    jfx_test_target(test_mobile_frontend SOURCES frontends/test_mobile_frontend.c
+        LIBRARIES jfx_mobile_player)
+    target_include_directories(test_mobile_frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 
-add_executable(test_host_plugins frontends/test_host_plugins.c)
-target_link_libraries(test_host_plugins PRIVATE jfx_ae_plugin jfx_premiere_plugin jfx_davinci_plugin)
-add_test(NAME host_plugin_contract COMMAND test_host_plugins)
+if(JFX_PLUGIN_HOST_BRIDGES)
+    jfx_test_target(test_host_plugins SOURCES frontends/test_host_plugins.c
+        LIBRARIES jfx_ae_plugin jfx_premiere_plugin jfx_davinci_plugin)
+endif()
 
-add_executable(test_web_session frontends/test_web_session.c)
-target_link_libraries(test_web_session PRIVATE jfx_web_session)
-add_test(NAME web_session COMMAND test_web_session)
+if(JFX_FRONTEND_WEB)
+    jfx_test_target(test_web_session SOURCES frontends/test_web_session.c
+        LIBRARIES jfx_web_session)
+    target_include_directories(test_web_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
+
+# The shared frontend contract, exercised with a deliberately minimal frontend
+# so the NOT_IMPLEMENTED paths are covered.
+jfx_test_target(test_frontend_contract SOURCES frontends/test_frontend_contract.c
+    LIBRARIES jfx_frontend_common)
+
+# ---- Registration ---------------------------------------------------------
+#
+# Every test is registered here, next to the targets it needs, so a target and
+# its add_test() cannot drift apart. Each carries a label so `ctest -L unit`,
+# `-L conformance` and `-LE frontend` select meaningful subsets, plus a timeout
+# so a hung worker thread or a blocked display server fails the run instead of
+# stalling it.
+function(jfx_register_test name)
+    add_test(NAME ${name} COMMAND ${ARGN})
+    set_property(TEST ${name} APPEND PROPERTY LABELS unit)
+    set_property(TEST ${name} PROPERTY TIMEOUT 120)
+endfunction()
+
+jfx_register_test(test_tillyz test_tillyz)
+jfx_register_test(test_core test_core)
+jfx_register_test(plugin_host test_plugin_host $<TARGET_FILE:test_plugin_module>)
+jfx_register_test(test_containers test_containers)
+jfx_register_test(test_joltscript test_joltscript)
+jfx_register_test(test_pipeline test_pipeline)
+jfx_register_test(kernel_color_conformance test_effects)
+set_property(TEST kernel_color_conformance APPEND PROPERTY LABELS conformance)
+
+if(JFX_BACKEND_VULKAN)
+    jfx_register_test(test_vulkan_backend test_vulkan_backend)
+endif()
+if(JFX_FALLBACK_BACKEND_TARGETS)
+    jfx_register_test(backend_fallback_conformance test_fallback_backends)
+    set_property(TEST backend_fallback_conformance APPEND PROPERTY LABELS conformance)
+endif()
+if(JFX_EXT_LUA AND JFX_EXT_MRUBY)
+    jfx_register_test(ext_conformance test_extensions)
+    set_property(TEST ext_conformance APPEND PROPERTY LABELS conformance)
+endif()
+if(JFX_FRONTEND_DESKTOP)
+    jfx_register_test(desktop_frontend test_desktop_frontend)
+    set_property(TEST desktop_frontend APPEND PROPERTY LABELS frontend)
+endif()
+if(JFX_FRONTEND_MOBILE)
+    jfx_register_test(mobile_frontend test_mobile_frontend)
+    set_property(TEST mobile_frontend APPEND PROPERTY LABELS frontend)
+endif()
+if(JFX_PLUGIN_HOST_BRIDGES)
+    jfx_register_test(host_plugin_contract test_host_plugins)
+    set_property(TEST host_plugin_contract APPEND PROPERTY LABELS conformance)
+endif()
+if(JFX_FRONTEND_WEB)
+    jfx_register_test(web_session test_web_session)
+    set_property(TEST web_session APPEND PROPERTY LABELS frontend)
+endif()
+jfx_register_test(frontend_contract test_frontend_contract)
+set_property(TEST frontend_contract APPEND PROPERTY LABELS conformance)

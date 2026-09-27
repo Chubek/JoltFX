@@ -378,18 +378,23 @@ void *tilly_realloc(tilly_allocator_t *alloc, void *ptr, size_t new_size) {
     if (!alloc) return NULL;
     if (!ptr) return tilly_alloc(alloc, new_size, 8);
     if (new_size == 0) { tilly_free(alloc, ptr); return NULL; }
-    
-    // For now, only general allocator supports realloc properly
-    if (alloc->strategy == TILLY_ALLOC_GENERAL) {
-        void *new_ptr = realloc(ptr, new_size);
-        if (new_ptr) {
-            // Can't track exact size change
-        }
-        return new_ptr;
+
+    // Only the general allocator can grow a block in place: arena, pool and
+    // stack allocations carry no size header, so the old size is unknown and an
+    // in-place grow is impossible. Report that rather than returning NULL with
+    // no explanation, which callers read as "out of memory".
+    if (alloc->strategy != TILLY_ALLOC_GENERAL) {
+        tilly_log_simple(TILLY_LOG_ERROR,
+            "tilly_realloc: strategy %d cannot grow a block in place; "
+            "allocate a new block and copy instead", (int)alloc->strategy);
+        return NULL;
     }
-    
-    // Old allocation size is unavailable for arena, pool and stack.
-    return NULL;
+    void *new_ptr = realloc(ptr, new_size);
+    if (!new_ptr) {
+        tilly_log_simple(TILLY_LOG_ERROR, "tilly_realloc: failed to grow to %zu bytes", new_size);
+        return NULL;
+    }
+    return new_ptr;
 }
 
 void tilly_allocator_reset(tilly_allocator_t *alloc) {

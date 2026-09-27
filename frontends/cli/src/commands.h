@@ -7,6 +7,8 @@ int cmd_verify(int argc, char **argv);
 int cmd_effects(int argc, char **argv);
 int cmd_info(int argc, char **argv);
 int cmd_render(int argc, char **argv);
+int cmd_export(int argc, char **argv);
+int cmd_capabilities(void);
 
 /* Help output shared with main.c. */
 void print_usage(void);

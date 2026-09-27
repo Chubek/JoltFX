@@ -18,6 +18,12 @@ void jolt_program_destroy(jolt_program_t *program);
 const uint8_t *jolt_program_data(const jolt_program_t *program, size_t *out_size);
 jolt_status_t jolt_program_run(jolt_vm_t *vm, const jolt_program_t *program,
     const float *inputs, size_t input_count, float *outputs, size_t output_count);
+
+/* Formats `path:line:column: message` into out, truncating to out_size and
+ * always NUL-terminating. Safe with a NULL diagnostic or an empty message,
+ * in which case it reports a generic compilation failure. */
+void jolt_diagnostic_format(const jolt_diagnostic_t *diagnostic, const char *path,
+    char *out, size_t out_size);
 #ifdef __cplusplus
 }
 #endif

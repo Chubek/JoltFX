@@ -32,6 +32,7 @@ tilly_context_t *tilly_init(const tilly_config_t *config) {
     }
     
     // Initialize logging first
+    tilly_log_init();
     if (default_config.enable_logging) {
         tilly_log_set_level(default_config.log_level);
         tilly_log_info("tilly", "Initializing Tilly runtime (heap: %zu MB)", 

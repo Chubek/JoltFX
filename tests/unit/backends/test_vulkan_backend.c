@@ -23,11 +23,12 @@ int main(void) {
     jfx_vk_caps_t caps;
     memset(&caps, 0, sizeof(caps));
     jfx_vk_query_caps(backend, &caps);
-    assert(caps.cpu_fallback);
     assert(!caps.gpu_available && caps.api_version == 0);
+    assert(!caps.used_gpu);
     assert(strcmp(caps.device_name, "cpu-fallback") == 0);
     jfx_vk_query_caps(NULL, &caps);
-    assert(caps.cpu_fallback);
+    assert(!caps.gpu_available && strcmp(caps.device_name, "cpu-fallback") == 0);
+    jfx_vk_query_caps(backend, NULL);
 
     float input[8] = {0.1f, 0.2f, 0.3f, 0.5f, 0.4f, 0.3f, 0.2f, 1.0f};
     float out[8] = {0};
@@ -86,7 +87,16 @@ int main(void) {
     near(gpu_out[7], 1.0f);
     if (caps.gpu_available) {
         assert(strcmp(caps.device_name, "cpu-fallback") != 0);
+        assert(caps.api_version != 0);
         assert(jfx_vk_used_gpu(backend));
+        /* The HAL must agree with the typed entry point. */
+        const jfx_backend_ops_t *ops = jfx_vk_backend_ops();
+        assert(ops && strcmp(ops->name(), "vulkan") == 0);
+        jfx_backend_caps_t hal_caps;
+        memset(&hal_caps, 0, sizeof(hal_caps));
+        ops->query_caps(backend, &hal_caps);
+        assert(hal_caps.gpu_available && hal_caps.used_gpu);
+        assert(strcmp(hal_caps.device_name, caps.device_name) == 0);
     } else {
         assert(!jfx_vk_used_gpu(backend));
     }

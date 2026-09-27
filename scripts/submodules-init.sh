@@ -22,6 +22,11 @@ add_submodule() {
     local commit="${3:-}"
     local branch="${4:-}"
 
+    if [[ -z "${url}" || -z "${path}" ]]; then
+        echo "error: add_submodule needs a url and a path" >&2
+        return 1
+    fi
+
     local full_path="${THIRD_PARTY_DIR}/${path}"
 
     if [[ -d "${full_path}" ]]; then
@@ -83,8 +88,6 @@ add_submodule "https://github.com/memononen/nanosvg.git" \
 add_submodule "https://github.com/lua/lua.git" \
     "lua" \
     "lua-5.4.7"
-
-add_submodule ""
 
 # MRuby - Ruby extension runtime
 add_submodule "https://github.com/mruby/mruby.git" \
@@ -233,8 +236,8 @@ add_submodule "https://github.com/sheredom/utf8.h.git" \
     "master"
 
 # PCRE2 - Regular expression engine
-add_submodule "https://github.com/PCRE2Project/pcre2.git" \
-    "pcre2" \
+add_submodule "https://github.com/PCRE2Project/PCRE2.git" \
+    "PCRE2" \
     "pcre2-10.44"
 
 # Klib - Multi-purpose simple lightweight libraries
@@ -247,7 +250,7 @@ add_submodule "https://github.com/attractivechaos/klib.git" \
 # =============================================================================
 
 # wgpu-native - WebGPU native implementation (WebGPU backend)
-add_submodule "https://github.com/gfx-rs/wgpu-native.git" \
+add_submodule "https://github.com/gfx-rs/webgpu-native" \
     "wgpu-native" \
     "master"
 

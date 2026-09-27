@@ -208,7 +208,7 @@ int tillyz_snprintf(char *buf, size_t size, const char *fmt, ...) {
                         d = -d;
                     }
                     while (d > 0 && len < 31) {
-                        tmp[len++] = '0' + (d % 10);
+                        tmp[len++] = (char)('0' + (d % 10));
                         d /= 10;
                     }
                     for (int j = len - 1; j >= 0 && i < size - 1; j--) {
@@ -223,7 +223,7 @@ int tillyz_snprintf(char *buf, size_t size, const char *fmt, ...) {
                     tmp[len++] = '0';
                 } else {
                     while (u > 0 && len < 31) {
-                        tmp[len++] = '0' + (u % 10);
+                        tmp[len++] = (char)('0' + (u % 10));
                         u /= 10;
                     }
                     for (int j = len - 1; j >= 0 && i < size - 1; j--) {
@@ -239,7 +239,7 @@ int tillyz_snprintf(char *buf, size_t size, const char *fmt, ...) {
                 } else {
                     while (x > 0 && len < 31) {
                         int digit = x & 0xF;
-                        tmp[len++] = (digit < 10) ? '0' + digit : 'a' + (digit - 10);
+                        tmp[len++] = (char)((digit < 10) ? '0' + digit : 'a' + (digit - 10));
                         x >>= 4;
                     }
                     for (int j = len - 1; j >= 0 && i < size - 1; j--) {
@@ -260,7 +260,7 @@ int tillyz_snprintf(char *buf, size_t size, const char *fmt, ...) {
                 } else {
                     while (addr > 0 && len < 31) {
                         int digit = addr & 0xF;
-                        tmp[len++] = (digit < 10) ? '0' + digit : 'a' + (digit - 10);
+                        tmp[len++] = (char)((digit < 10) ? '0' + digit : 'a' + (digit - 10));
                         addr >>= 4;
                     }
                     for (int j = len - 1; j >= 0 && i < size - 1; j--) {

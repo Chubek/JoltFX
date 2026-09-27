@@ -1,3 +1,299 @@
+# Phase 6 correctness and de-stubbing progress
+
+Updated September 27, 2026. This pass was a correctness and de-stubbing sweep
+driven by one reported defect and a review of the whole tree. Everything below
+was reproduced from the current source on Linux with a display server present
+(`DISPLAY=:0`, X11, AMD Radeon RX 580 / RADV).
+
+## The reported defect: the Desktop frontend exited on launch
+
+`frontends/desktop/src/main.cpp` created the frontend, composed exactly one
+ImGui frame, printed a line and returned. `jfx_desktop_frontend_draw` called
+`ImGui::Render()` and then threw the draw data away: the target linked only the
+four core ImGui sources, with no platform or renderer backend, so there was no
+way to present anything even if it had tried. `--headless-smoke` was not a
+smoke test of a working program; it was the whole program.
+
+Fixed. The frontend now:
+
+- opens a real OS window through SDL2 with an OpenGL 3.3 core context
+  (`frontends/desktop/src/host_window.cpp`), stepping down through 3.2 and 3.0
+  compatibility for drivers that refuse a core profile;
+- runs a frame loop with an SDL event pump, HiDPI-aware drawable sizing, and
+  quit handling from both the window close button and the File menu;
+- rasterizes and presents through the vendored Dear ImGui SDL2 and OpenGL3
+  backends;
+- previews the selected effect by rendering it through the engine's backend and
+  uploading the result as a GL texture;
+- advances the engine clock while playing, looping at the end of the range;
+- binds a live effect combo and parameter slider in the properties panel;
+- shows real engine events and Tilly log output in the console, captured through
+  a log sink and engine event subscriptions rather than a fixed string;
+- persists its panel layout in the platform's per-user config directory instead
+  of writing `imgui.ini` into the source tree.
+
+The SDL2 and ImGui backends are optional at configure time. Without SDL2 the
+frontend still builds and `--headless-smoke` still exercises the UI path, so a
+host with no display toolchain is not blocked.
+
+Three real defects were found and fixed while making the windowed path work:
+
+- the frontend built the ImGui font atlas before the renderer backend existed,
+  which trips `ImFontAtlas::Build`'s `RendererHasTextures` assertion on the
+  first frame; the backend owns font texture creation, so the manual build is
+  now done only on the headless path, where there is no backend;
+- the OpenGL3 backend was shut down twice, asserting on the second call;
+- `main` read a string owned by the frontend after destroying it. AddressSanitizer
+  caught this one (`heap-use-after-free` at `main.cpp:157`).
+
+Verified by screenshot: a 1200x760 window showing a menu bar, a viewport
+rendering the selected effect, a timeline with a frame counter, a properties
+panel reporting `Device: AMD Radeon RX 580 Series (RADV POLARIS10)` /
+`GPU available: yes` / `Last frame on GPU: yes`, and a console with captured
+engine events. `desktop_window` is a CTest case that drives 30 real frames and
+fails if the loop does not run; it skips (exit 77) where there is no display.
+
+## The engine had no render path
+
+The engine created a backend, stored it, and never called it. `jfx_engine_tick`
+published two events, reset the frame arena and drained the scheduler. Every
+frontend therefore rendered through its own private CPU path while *printing* a
+backend name: `joltfx render --backend vulkan` reported Vulkan while the pixels
+came from `jolt_effects_apply`.
+
+Fixed. `jfx_engine_execute_bytecode` and `jfx_engine_execute_source` dispatch
+JBC1 through the engine's backend, and the CLI, web, mobile and desktop
+frontends all render through the engine. The CLI now reports the device the
+frame actually ran on, and `joltfx render` on this host produces the gradient
+on the Radeon through Vulkan, not on the CPU.
+
+This required breaking a dependency cycle: `joltscript_glue` linked `jfx_core`
+without using a single `jfx_` symbol, which prevented the engine from linking
+the compiler it needs to run kernels. The Glue layer now sits below the engine.
+
+## Backend HAL
+
+`backends/common/include/jfx/backend_interface.h` (moved to
+`core/include/jfx/`, because the engine owns the contract and the backends
+implement it) defines one `jfx_backend_ops_t`. All four backends implement it
+and the engine drives it through an erased handle, so engine code never sees a
+backend's concrete type.
+
+Four identical copies of the caps struct and four identical copies of the config
+struct collapsed into `jfx_backend_caps_t` and `jfx_backend_config_t`; the
+per-backend names are typedefs. The CPU-path backends' ~45 near-identical lines
+each collapsed into one `jfx_software_adapter` in `backends/common`.
+
+Two capability reports were wrong and are fixed: Vulkan reported
+`cpu_fallback = true` even with a device present, and the CPU-path adapters
+reported a device name that did not identify which backend it was.
+
+## Public API that did not link
+
+`jfx_buffer_create`, `jfx_buffer_destroy`, `jfx_buffer_write`, `jfx_buffer_read`,
+`jfx_texture_create`, `jfx_texture_destroy`, `jfx_kernel_load`,
+`jfx_kernel_destroy` and `jfx_kernel_execute` were declared in the public
+headers and defined nowhere, so any caller failed to link. They are now real
+engine-owned objects, and the `max_buffers`, `max_textures` and `max_kernels`
+configuration fields that were read by nothing are enforced. `max_buffers` was
+additionally being used as the scheduler's worker-thread count; worker sizing
+now has its own `max_worker_threads` field and defaults to the hardware
+concurrency.
+
+`jfx_texture` implements RGBA8, f32 and f16 storage with real conversion
+(including IEEE binary16 encode/decode), so `JFX_FORMAT_R16G16B16A16_SFLOAT` is
+a format rather than a decoration.
+
+## Other correctness fixes
+
+- `tilly_realloc` returned `NULL` with no explanation for arena, pool and stack
+  allocators, which reads as out-of-memory. It now logs that an in-place grow is
+  impossible and names the strategy.
+- The Tilly logger invoked sinks while holding the registry lock, so a sink that
+  logged or registered a sink deadlocked. It also indexed its level-name table
+  out of bounds for a negative level, and its default sink printed
+  `unknown:0 [legacy]` for every call without a source location. All fixed;
+  `tilly_log_init` is now idempotent instead of an empty body, and a full sink
+  registry reports itself instead of dropping the sink.
+- mruby stored a script memory limit and never enforced it: the allocator
+  ignored it entirely. It now enforces it with a per-block size header, so the
+  accounting is exact and returns to its starting figure after a collection.
+- mruby's sandbox was a substring blocklist on script text
+  (`"File"`, `"system"`, `"eval"`, backtick), which missed indirect access and
+  rejected innocent identifiers such as `evaluate`. Replaced with capability
+  removal: the build has no stdio or filesystem, and the process-control methods
+  are undefined. A test now asserts that `evaluate` works and `File.open`,
+  `Dir.entries` and `system` do not.
+- The Lua allocator's budget test could underflow `size_t` and silently disable
+  the limit. Rewritten so it cannot.
+- `memory_init` failed with an unrelated out-of-memory when a second engine was
+  created; it now says the subsystem is already owned.
+- The host-application bridges advertised `IMPORT | EXPORT | EFFECT`, none of
+  which exists in the shipped SDK-independent stubs. They now advertise
+  nothing, and the conformance test pins it.
+- `scripts/submodules-init.sh` aborted partway through on a bare `add_submodule`
+  call, and its PCRE2 and wgpu-native URLs and paths disagreed with
+  `.gitmodules`.
+- `scripts/format.sh` walked `third_party/` and would have rewritten 30+
+  vendored libraries. It now formats git-tracked files only.
+- `scripts/scaffold.sh` is deleted. With `--force` it overwrote the entire
+  repository, including the working engine, backend and CLI sources, with 1951
+  lines of stale stubs.
+- `CompilerWarnings.cmake` selected flags on `CMAKE_C_COMPILER_ID` for a project
+  with C and CXX, so a split toolchain left C++ targets warning-free, and it
+  passed Clang-only flags to MSVC. Now selected per language and per compiler.
+- `jfx_result_to_string` did not cover the codes it could be given; the enum
+  gained `JFX_ERROR_NOT_IMPLEMENTED` and the table covers every value.
+
+## De-stubbing
+
+- `frontends/common` was a five-line log function behind an empty include
+  directory. It now holds the frontend contract the guides specify: a vtable, a
+  capability bitmask derived from that vtable, and dispatchers that turn a
+  missing operation into `JFX_ERROR_NOT_IMPLEMENTED`. The CLI implements it
+  (`frontends/cli/src/headless_frontend.c`) and drives `render` and the new
+  `export` through it, so the CLI and the GUI run the same code.
+- `zoltan compile -o` wrote its input back with a comment header. It now emits
+  real JBC1 bytecode, byte-identical to the C compiler's.
+- The mobile player advanced a clock and produced no pixels. It now has
+  `jfx_mobile_player_set_effect` and `jfx_mobile_player_render_rgba8`, so the
+  Android and iOS surfaces have a real render to bind.
+- The effect catalog moved from khash to a flat array with a linear scan: 12
+  immutable entries built once, where the map was indirection without benefit.
+
+## Build and CI
+
+- The `JFX_BACKEND_*`, `JFX_EXT_*`, `JFX_FRONTEND_*`,
+  `JFX_PLUGIN_HOST_BRIDGES` and `JFX_DESKTOP_WINDOW` options the subsystem
+  guides document now exist. A backend that is switched off is not built and is
+  not offered by the engine; `jfx_core` learns the set through
+  `JFX_BACKEND_<NAME>` compile definitions, so tests select a backend the build
+  actually contains instead of hardcoding one.
+- `cmake/toolchains/` is no longer an empty directory: it holds Emscripten and
+  Android toolchain files matching the documented workflows.
+- Presets: added `sanitizers` and `minimal`, plus `unit` and `conformance` test
+  presets. `JOLTFX_BUILD_DOCS` now builds something.
+- Install rules ship the engine, the Joltscript layers, the backends and
+  `jfx_desktop`; the previous rules omitted the runtime the engine dispatches
+  through, so a package could not run a kernel. A `JoltFXTargets.cmake` export
+  set is installed alongside.
+- Every CTest case carries labels and a timeout.
+- CI: job timeouts, a concurrency group, a build matrix that exercises the
+  option combinations, Rust caching, a bytecode-parity job, and leak detection
+  enabled rather than disabled. The release artifact is tested before it is
+  published.
+
+## Two defects found while verifying, both silent
+
+**Every test was being compiled with `NDEBUG` in RelWithDebInfo and Release.**
+The tests are plain `assert()` programs, and several of them rely on `assert()`
+for the *side effect* of its expression (`assert(jfx_frame_alloc(32, 16))`).
+With `NDEBUG` defined, `assert(expr)` expands to `((void)0)`: the call is deleted
+outright. `test_containers` and `test_core` therefore segfaulted on an
+unoptimized build and, in a Release build that happened to survive, would have
+passed while asserting almost nothing. In other words the suite's coverage was
+silently zero in exactly the configurations most likely to ship.
+
+Fixed structurally rather than case by case: `tests/unit/TestHelpers.cmake`
+defines `jfx_test_target`, which is now the only way a test executable is
+created and which always passes `-UNDEBUG` (`/UNDEBUG` on MSVC).
+`test_containers` additionally has a `#error` if `NDEBUG` is defined, so a
+regression is a *build* failure rather than a silently empty test run.
+
+**The CLI integration script only failed for relative binary paths.** Several of
+its checks run the CLI from inside its temporary directory, so passing a
+relative path (which is what a developer does by hand) broke exactly one check
+and passed under CTest, which substitutes an absolute `$<TARGET_FILE:...>`. The
+script now resolves the binary to an absolute path up front and fails loudly if
+it is not executable. Its failure message also reported `exit 0` for a failing
+check, because `$?` was read after the `if`; the status is now captured
+explicitly.
+
+Both are in the class of defect that does not announce itself, which is why the
+release configuration is now part of the verification matrix rather than only
+Debug and sanitizers.
+
+## Verification on Linux
+
+Configuration: Debug, `-j$(nproc)`, X11 display available, Vulkan driver
+present (AMD Radeon RX 580 Series, RADV, instance version reported by the
+loader).
+
+- Clean Debug build: **0 warnings** across every target. Before this pass the
+  same build emitted 214, all of which were either our own defects or vendored
+  sources being held to our warning set.
+- `ctest --test-dir build --output-on-failure`: **18/18 pass** (was 16; added
+  `desktop_headless`, `desktop_window` and `frontend_contract`).
+- ASan + UBSan Debug build (`cmake --preset sanitizers`): **0 warnings**,
+  **18/18 pass** with `ASAN_OPTIONS=detect_leaks=1`. Every test binary and
+  both shipped executables were additionally run individually under
+  `detect_leaks=1` and are leak-free. The earlier phases recorded that
+  LeakSanitizer "does not work under ptrace" in this environment; that no
+  longer holds, and leak checking is now on in CI.
+- Four CMake configurations build and pass: full; Vulkan-only with no mruby;
+  no Lua; and a minimal configuration with the desktop frontend, mobile player,
+  web session, plugin bridges and examples all off. A configuration with no
+  backend at all fails at configure time with an actionable message.
+- `cmake --install` and `cpack` both produce a complete package
+  (`JoltFX-0.5.0-beta.1.tar.gz` and `.zip`).
+- `scripts/check-bytecode-parity.sh`: **13/13 kernels** produce byte-identical
+  JBC1 from the Zoltan and C compilers.
+- `zoltan`: `cargo fmt --check` clean, `cargo clippy --all-targets -- -D
+  warnings` clean, **23/23 tests pass** (was 7).
+- CLI integration suite: **45 checks pass** (was 38), covering the new
+  `export` and `capabilities` commands and the accuracy of the capability
+  report.
+- `bash -n` clean on every script in `scripts/`; `submodules-init.sh` and
+  `format.sh` run to completion.
+- **Release (`RelWithDebInfo`) configuration: 0 warnings, 18/18 pass.** This is
+  the configuration that exposed the `NDEBUG` problem; it is verified because
+  optimisations changed behaviour, not only Debug.
+- Six option combinations build clean and pass, matching the CI matrix: Vulkan
+  only with no mruby; no Lua; no desktop frontend; no mobile or web frontend;
+  no plugin bridges; and `-DJFX_DESKTOP_WINDOW=OFF` (headless-only desktop
+  build, which is the path a host with no SDL2 would take).
+- The CLI suite passes with both an absolute and a relative binary path.
+
+## Remaining work and limitations
+
+- **Metal, D3D12 and WebGPU still run the CPU pipeline.** They are honest
+  about it (`gpu_available` false, `device_name` names the backend and the
+  fallback), and each is one function away from native dispatch: replace
+  `ops_execute_bytecode` and make `ops_query_caps` report the real device. The
+  proprietary SDKs and wgpu-native are not available in this environment, so
+  they were not attempted.
+- **The engine is single-instance.** Memory, the scheduler and the event
+  registry are process-global, so a second concurrent engine is refused. This
+  is now reported clearly rather than surfacing as a confusing -3, but the
+  underlying design is unchanged.
+- **The desktop frontend has no docking, no undo/redo and no node editor.** The
+  panel layout is a fixed default that the user can move; it is not a dockable
+  workspace. `--project` records a path and the File > Open Project dialog
+  records one, but neither loads a node graph, because there is no project
+  format yet.
+- **No `.joltpkg` container, packaging or signature verification.** The web
+  player accepts a JSON effect envelope, which `frontends/AGENTS.md` marks as a
+  security requirement. This is the most significant outstanding correctness
+  gap: an untrusted blob still selects a kernel by name.
+- **Host application bridges** still need the After Effects, Premiere and
+  DaVinci SDKs.
+- **The web player has no shipped WASM bridge**, so it has not been run in a
+  browser. Emscripten is not available here.
+- **QuickJS and MicroPython are absent.** Enabling their options is a configure
+  error rather than a silent no-op.
+- **The kernel catalog is 12 colour effects** out of the ~300 rows in
+  `kernels/JoltFX-Kernels.csv`. The `js_*` intrinsics in `kernels/AGENTS.md` do
+  not exist.
+- **Vulkan recompiles its compute shader per call** (cached by content hash on
+  disk, but not in memory), and there is no async submit. The GPU path is
+  correct but not fast; the benchmark numbers in `tests/perf` measure an
+  empty frame and should not be read as performance.
+- **`cmake --preset default` writes into the source tree** at
+  `<sourceDir>/build`. This is the pre-existing preset layout and was left
+  alone to avoid surprising anyone with a script that depends on it.
+- **Cross-platform builds are unverified.** The macOS and Windows CI lanes are
+  YAML-valid but were not executed here.
+
 # Phase 1 foundation progress
 
 Updated September 27, 2026. Phase 1 is **partially implemented**. This document replaces the earlier completion claim with results reproduced from the current source tree. The roadmap dates Phase 1 to Q1 2027.

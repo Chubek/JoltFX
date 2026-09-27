@@ -20,8 +20,14 @@ jfx_result_t jfx_host_plugin_get_info(jfx_host_kind_t host,
     out_info->host = host;
     out_info->host_name = definitions[host].name;
     out_info->plugin_identifier = definitions[host].identifier;
-    out_info->features = JFX_HOST_PLUGIN_IMPORT | JFX_HOST_PLUGIN_EXPORT |
-        JFX_HOST_PLUGIN_EFFECT;
+    /* Advertise nothing. This translation unit ships the host-independent
+     * bridge only: no host SDK entry point, no AEGP/Fusion/OpenFX registration
+     * and no import or export is implemented, so claiming those features would
+     * make a host accept a plugin that cannot do the job. Features are added
+     * here by the same file that implements them. */
+    out_info->features = 0u;
+    /* The proprietary host SDK (AE SDK, Premiere SDK, Fusion/OpenFX) is required
+     * before any of these bridges can be loaded into a host. */
     out_info->requires_host_sdk = 1u;
     return JFX_SUCCESS;
 }

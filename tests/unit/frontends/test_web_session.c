@@ -1,10 +1,11 @@
 #include "jfx/web_session.h"
+#include "jfx_test_backend.h"
 
 #include <assert.h>
 
 int main(void) {
     jfx_web_session_t *session = NULL;
-    assert(jfx_web_session_create("webgpu", &session) == JFX_SUCCESS);
+    assert(jfx_web_session_create(jfx_test_backend(), &session) == JFX_SUCCESS);
     unsigned char pixels[16];
     assert(jfx_web_session_set_effect(session, "brightness", 0.1f) == JFX_SUCCESS);
     assert(jfx_web_session_render_rgba(session, 0.25, 2, 2, pixels, sizeof(pixels)) == JFX_SUCCESS);

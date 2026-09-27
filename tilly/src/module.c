@@ -47,8 +47,12 @@ tilly_module_t *tilly_module_load(struct tilly_context *ctx, const char *path) {
         return NULL;
     }
     
-    // Get registration function
-    tilly_module_api_t *(*register_fn)(void) = dlsym(handle, "tilly_module_register");
+    // Get the registration function. ISO C has no implicit conversion from
+    // void* to a function pointer, so the round trip goes through a union
+    // rather than a cast that -Wpedantic rejects.
+    union { void *object; tilly_module_api_t *(*function)(void); } symbol;
+    symbol.object = dlsym(handle, "tilly_module_register");
+    tilly_module_api_t *(*register_fn)(void) = symbol.function;
     if (!register_fn) {
         dlclose(handle);
         tilly_log_error("module", "Module %s missing tilly_module_register", path);

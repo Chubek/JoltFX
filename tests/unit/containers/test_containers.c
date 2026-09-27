@@ -1,5 +1,21 @@
 #include "tilly/containers.h"
 #include <assert.h>
+/* These tests are plain assert() programs, and several rely on assert() for
+ * the side effect of its expression, not only for checking. A build that
+ * defined NDEBUG would delete those calls and report success while testing
+ * nothing. CMake passes -UNDEBUG to every test target; this turns a regression
+ * into a build failure rather than a silently empty test run. */
+#ifdef NDEBUG
+#error "test targets must be compiled with assertions enabled (see tests/unit/TestHelpers.cmake)"
+#endif
+/* khash's initialiser dereferences a bucket pointer it has just memset, which
+ * -Wnull-dereference flags once the macro is inlined at -O2. Upstream is
+ * vendored, so the diagnostic is suppressed here rather than in the project
+ * warning set, where it would hide real null dereferences. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
 KHASH_MAP_INIT_STR(test, int)
 int main(void) {
     kvec_t(int) v; kv_init(v);

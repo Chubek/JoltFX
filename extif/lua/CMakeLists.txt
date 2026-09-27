@@ -30,6 +30,15 @@ set(JFX_LUA_SOURCES
 )
 
 add_library(jfx_lua STATIC src/lua_runtime.c ${JFX_LUA_SOURCES})
+
+# The vendored Lua sources are compiled here but are not our code, and upstream
+# is not clean under this project's warning set: its jump-table macro takes the
+# address of a label, it formats through non-literals, and its collector
+# dereferences pointers it has just proved may be null. Our adapter
+# (src/lua_runtime.c) still gets the full set, where a real null dereference
+# would be worth seeing.
+set_source_files_properties(${JFX_LUA_SOURCES} PROPERTIES
+    COMPILE_OPTIONS "-Wno-pedantic;-Wno-format-nonliteral;-Wno-null-dereference")
 target_include_directories(jfx_lua PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
