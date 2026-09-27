@@ -1,5 +1,7 @@
 # AGENTS.md — JoltFX
 
+**Note to Agents**: Write your progress in `PROGRESS.md`.
+
 ## Overview
 
 JoltFX is a professional-grade, extensible graphical suite for the creation and authoring of motion graphics. It is designed around a layered, composable architecture that separates concerns cleanly across its runtime, language, API, and interface tiers.

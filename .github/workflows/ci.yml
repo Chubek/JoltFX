@@ -2,25 +2,106 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  build:
+  build-test:
+    name: build+test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Configure CMake
-      run: cmake --preset default
-      
-    - name: Build
-      run: cmake --build build
-      
-    - name: Run Tests
-      run: ctest --test-dir build --output-on-failure
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure (default preset)
+        run: cmake --preset default
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: sanitizers (ASan+UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure with sanitizers
+        run: cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DJFX_ASAN=ON -DJFX_UBSAN=ON
+
+      - name: Build
+        run: cmake --build build-san -j 4
+
+      - name: Run tests
+        run: ctest --test-dir build-san --output-on-failure
+
+  zoltan:
+    name: zoltan (fmt+clippy+test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format check
+        working-directory: zoltan
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: zoltan
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        working-directory: zoltan
+        run: cargo build
+
+      - name: Test
+        working-directory: zoltan
+        run: cargo test
+
+      - name: Verify bundled kernels
+        working-directory: zoltan
+        run: |
+          cargo build
+          for f in ../kernels/color/*.jolt ../examples/hello_world/effect.jolt; do
+            ./target/debug/zoltan verify "$f"
+          done
+
+  cli-smoke:
+    name: cli+example smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake --preset default
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: CLI integration suite
+        run: sh tests/integration/cli/test_cli.sh "$PWD/build/frontends/cli/joltfx" "$PWD"
+
+      - name: Hello World example
+        run: ./build/examples/hello_world/example_hello_world examples/hello_world/effect.jolt
+
+      - name: Upload smoke render
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-render
+          path: render.ppm
+          if-no-files-found: ignore

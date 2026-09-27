@@ -13,10 +13,10 @@
 - [x] Zoltan compiler MVP
 
 ## Phase 3: Integration (Q3 2027)
-- [ ] CLI frontend
-- [ ] Unit and integration tests
-- [ ] CI/CD pipeline
-- [ ] Hello World example
+- [x] CLI frontend (`compile`/`verify`/`effects`/`info`/`render` + `version`/`help`/`run`, PPM render path)
+- [x] Unit and integration tests (9/9 CTest: 7 existing + `cli_integration` + `example_hello_world`)
+- [x] CI/CD pipeline (build-test matrix, ASan/UBSan, Zoltan fmt/clippy/test, CLI smoke)
+- [x] Hello World example (engine + compile + pipeline run + PPM-equivalent pixel check)
 
 ## Phase 4: Expansion (Q4 2027)
 - [ ] Additional backends (Metal, D3D12, WebGPU)

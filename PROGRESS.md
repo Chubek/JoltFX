@@ -105,3 +105,79 @@ Results below were reproduced from the current source tree on Linux.
 - Zoltan `clap`/`serde`: **still blocked**. Re-probed 2026-09-27: the
   sparse index answers but crate downloads stall, so the std-only MVP
   stays and `Cargo.toml` keeps no dependencies.
+
+---
+
+# Phase 3 integration progress
+
+Updated September 27, 2026. Phase 3 is **implemented with documented
+limitations**. Results below were reproduced from the current source tree
+on Linux.
+
+## Phase 2 remainder check (no work left)
+
+- Vulkan device dispatch, engine-to-backend selection, stale-kernel cleanup
+  (`kernels/transform/scale.jolt` still absent; `examples/hello_world/effect.jolt`
+  still MVP syntax), and submodule hygiene all still hold: `vk_compute.c`
+  present, `test_core` covers backend-name selection, `git submodule status`
+  runs with unpopulated entries showing `-` (expected offline).
+- Zoltan `clap`/`serde` remains network-blocked (`Cargo.toml` std-only);
+  nothing actionable offline. No other Phase 2 remainder found.
+
+## Implemented
+
+- CLI frontend (`frontends/cli/`, `frontends/cli/README.md`): `compile FILE
+  [-o OUTPUT]` (validates via `jolt_compile`, writes JBC1 bytecode),
+  `verify FILE` (validate only), `effects` (lists the 12 bundled kernels),
+  `info EFFECT|FILE` (sample render for an effect; kernel/bytecode size for
+  a file), `render [--effect NAME] [--param VALUE] [--width W --height H]
+  [-o OUTPUT.ppm] [--backend NAME]` (gradient input, validated CPU pixel
+  path, engine init + tick, binary PPM output), plus `version`,
+  `help [COMMAND]`, `--help`/`-h`, and the legacy `run` entry point.
+  Invalid backends, unknown effects, bad dimensions, and missing files exit
+  1 with a stderr diagnostic. Links `joltscript_glue`, `jolt_effects`,
+  `jfx_backend_vulkan`; builds warning-free.
+- Unit and integration tests: existing 7 unit tests untouched; new
+  `tests/integration/cli/test_cli.sh` (38 checks: help/version,
+  compile/verify incl. missing/broken inputs, all 12 effects listed and
+  rendered, info, render error paths, P6 magic, legacy `run`) registered as
+  CTest `cli_integration`, plus `example_hello_world` running the example
+  against `effect.jolt`. Total 9/9 CTest.
+- CI/CD pipeline (`.github/workflows/ci.yml`, validated YAML): `build-test`
+  matrix (ubuntu/macos/windows, default preset), `sanitizers` job
+  (ASan+UBSan on Ubuntu), `zoltan` job (fmt check, clippy `-D warnings`,
+  build, test, verify of all bundled kernels + hello effect), `cli-smoke`
+  job (integration suite, hello example, render artifact upload).
+- Hello World example (`examples/hello_world/`): `main.c` now initializes
+  the engine, compiles `effect.jolt` (or an embedded passthrough fallback),
+  runs a 2x2 gradient through a single-stage pipeline, prints per-channel
+  in/out values, verifies identity, ticks, and shuts down; new `README.md`
+  with build/run instructions and CLI equivalents.
+
+## Verification on Linux
+
+- `cmake -S . -B <dir> -DCMAKE_BUILD_TYPE=Debug` +
+  `cmake --build <dir> -j 4`: pass; no new warnings (remaining warnings are
+  pre-existing in `kernels/src/effects.c`, Tilly/TillyZ, klib).
+- `ctest --test-dir <dir> --output-on-failure`: 9/9 pass
+  (`test_tillyz`, `test_core`, `test_containers`, `test_joltscript`,
+  `test_pipeline`, `kernel_color_conformance`, `test_vulkan_backend`,
+  `cli_integration`, `example_hello_world`).
+- ASan/UBSan build (`-DJFX_ASAN=ON -DJFX_UBSAN=ON`,
+  `ASAN_OPTIONS=detect_leaks=0`): 9/9 pass. LSan still disabled here
+  (`ptrace` restriction, as in Phase 1).
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test --offline` in `zoltan/`: all clean, 7/7 Rust tests.
+
+## Remaining Phase 3 work and limitations
+
+- `render` writes binary PPM (P6) only: no FFmpeg/MP4/MOV/GIF export, no
+  resolution/FPS/codec flags from the frontend spec — video export is a
+  Phase 4+ item pending codec wiring.
+- No `.joltpkg` packaging, signing, or `export` command; `compile -o`
+  writes raw JBC1 bytecode, not a staged package.
+- CI is config-only verification here: the macOS/Windows lanes and the
+  artifact upload were YAML-validated, not executed; cross-platform and
+  WASM builds remain unverified locally.
+- Phase 2 carry-overs unchanged: per-call Vulkan pipeline compilation
+  (no cross-call cache), async submit, and non-Vulkan backends.
