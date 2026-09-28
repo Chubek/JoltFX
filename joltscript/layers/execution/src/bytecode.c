@@ -21,9 +21,9 @@ jolt_status_t jolt_bytecode_validate(const uint8_t *code, size_t size) {
             if (stack != 1 || arg != written) return JOLT_ERR_BYTECODE;
             --stack; ++written;
         } else {
-            if (arg || op < JOLT_OP_ADD || op > JOLT_OP_SELECT) return JOLT_ERR_BYTECODE;
+            if (arg || op < JOLT_OP_ADD || op > JOLT_OP_SHR) return JOLT_ERR_BYTECODE;
             unsigned arity = op == JOLT_OP_SELECT ? 3u :
-                (op == JOLT_OP_ABS || op == JOLT_OP_FLOOR || op == JOLT_OP_SQRT ? 1u : 2u);
+                (op == JOLT_OP_ABS || op == JOLT_OP_FLOOR || op == JOLT_OP_SQRT || op == JOLT_OP_NOT ? 1u : 2u);
             if (stack < arity) return JOLT_ERR_BYTECODE;
             stack = stack - arity + 1;
         }

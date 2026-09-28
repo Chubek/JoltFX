@@ -49,6 +49,20 @@ const OP_SQRT: u32 = 12;
 const OP_LT: u32 = 13;
 const OP_SELECT: u32 = 14;
 const OP_OUTPUT: u32 = 15;
+// Extended operations (ABI 0.3)
+const OP_GT: u32 = 16;
+const OP_LE: u32 = 17;
+const OP_GE: u32 = 18;
+const OP_EQ: u32 = 19;
+const OP_NE: u32 = 20;
+const OP_AND: u32 = 21;
+const OP_OR: u32 = 22;
+const OP_NOT: u32 = 23;
+const OP_BITWISE_AND: u32 = 24;
+const OP_BITWISE_OR: u32 = 25;
+const OP_BITWISE_XOR: u32 = 26;
+const OP_SHL: u32 = 27;
+const OP_SHR: u32 = 28;
 
 /// A compilation failure with source position.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +91,19 @@ const OPERATIONS: &[(&str, u32, u32)] = &[
     ("pow", OP_POW, 2),
     ("sqrt", OP_SQRT, 1),
     ("<", OP_LT, 2),
+    (">", OP_GT, 2),
+    ("<=", OP_LE, 2),
+    (">=", OP_GE, 2),
+    ("=", OP_EQ, 2),
+    ("!=", OP_NE, 2),
+    ("and", OP_AND, 2),
+    ("or", OP_OR, 2),
+    ("not", OP_NOT, 1),
+    ("bitwise-and", OP_BITWISE_AND, 2),
+    ("bitwise-or", OP_BITWISE_OR, 2),
+    ("bitwise-xor", OP_BITWISE_XOR, 2),
+    ("shl", OP_SHL, 2),
+    ("shr", OP_SHR, 2),
     ("select", OP_SELECT, 3),
 ];
 

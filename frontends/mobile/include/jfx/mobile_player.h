@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "jfx/jfx_engine.h"
+#include "jfx/jfx_editor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,6 +61,15 @@ const char *jfx_mobile_player_effect_name(const jfx_mobile_player_t *player);
 jfx_result_t jfx_mobile_player_render_rgba8(jfx_mobile_player_t *player,
     double elapsed_seconds, uint8_t *out_rgba, size_t out_size);
 
+
+/* The borrowed session is shared by NLE, layer effects, grading and nodes. */
+jfx_editor_t *jfx_mobile_player_editor(jfx_mobile_player_t *player);
+jfx_result_t jfx_mobile_player_load_document(jfx_mobile_player_t *player, const char *text, size_t length,
+    char *out_error, size_t error_size);
+jfx_result_t jfx_mobile_player_save_document(jfx_mobile_player_t *player, char *out_text, size_t capacity, size_t *out_written);
+
+jfx_result_t jfx_mobile_player_edit(jfx_mobile_player_t *player, const char *op, uint32_t a,
+    uint32_t b, uint32_t c, double value, const char *text);
 #ifdef __cplusplus
 }
 #endif

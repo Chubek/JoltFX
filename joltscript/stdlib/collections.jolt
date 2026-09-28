@@ -1,0 +1,207 @@
+;; jolt.collections — Collection operations for Joltscript
+;; Lists, vectors, maps, sets, and sequences.
+
+(module jolt.collections)
+
+;; List operations
+(defn list [& args] args)
+(defn empty? [coll] (= (length coll) 0))
+(defn not-empty? [coll] (> (length coll) 0))
+(defn first [coll] (nth coll 0))
+(defn rest [coll] (slice coll 1))
+(defn last [coll] (nth coll (- (length coll) 1)))
+(defn butlast [coll] (slice coll 0 (- (length coll) 1)))
+(defn take [n coll] (slice coll 0 n))
+(defn drop [n coll] (slice coll n))
+(defn take-while [pred coll]
+  (let result [])
+  (for [i 0 (length coll)]
+    (let item (nth coll i))
+    (if (pred item)
+      (set! result (concat result [item]))
+      (break))))
+  result)
+(defn drop-while [pred coll]
+  (let i 0)
+  (while (and (< i (length coll)) (pred (nth coll i)))
+    (set! i (+ i 1)))
+  (slice coll i))
+(defn partition [n coll]
+  (let result [])
+  (for [i 0 (length coll) n]
+    (set! result (concat result [(slice coll i (+ i n))])))
+  result)
+(defn partition-all [n coll]
+  (let result [])
+  (for [i 0 (length coll) n]
+    (set! result (concat result [(slice coll i (min (+ i n) (length coll)))])))
+  result)
+(defn interpose [sep coll]
+  (let result [])
+  (for [i 0 (length coll)]
+    (if (> i 0)
+      (set! result (concat result [sep])))
+    (set! result (concat result [(nth coll i)])))
+  result)
+(defn interleave [& colls]
+  (let result [])
+  (let max-len (apply max (map length colls)))
+  (for [i 0 max-len]
+    (for [j 0 (length colls)]
+      (let coll (nth colls j))
+      (if (< i (length coll))
+        (set! result (concat result [(nth coll i)])))))
+  result)
+(defn zipmap [keys vals]
+  (let result {})
+  (for [i 0 (min (length keys) (length vals))]
+    (set! result (assoc result (nth keys i) (nth vals i))))
+  result)
+(defn frequencies [coll]
+  (let result {})
+  (for [i 0 (length coll)]
+    (let item (nth coll i))
+    (set! result (assoc result item (+ (get result item 0) 1))))
+  result)
+(defn group-by [key-fn coll]
+  (let result {})
+  (for [i 0 (length coll)]
+    (let item (nth coll i))
+    (let key (key-fn item))
+    (set! result (assoc key (concat (get result key []) [item]))))
+  result)
+
+;; Vector operations
+(defn vector [& args] args)
+(defn vec-get [v i] (nth v i))
+(defn vec-set [v i x]
+  (let result [])
+  (for [j 0 (length v)]
+    (set! result (concat result [(if (= j i) x (nth v j))])))
+  result)
+(defn vec-push [v x] (concat v [x]))
+(defn vec-pop [v] (slice v 0 (- (length v) 1)))
+(defn vec-peek [v] (nth v (- (length v) 1)))
+
+;; Map operations
+(defn map-get [m k] (get m k))
+(defn map-get-in [m ks]
+  (let result m)
+  (for [i 0 (length ks)]
+    (set! result (get result (nth ks i))))
+  result)
+(defn map-keys [m]
+  (let result [])
+  (for [i 0 (length m)]
+    (set! result (concat result [(nth (nth m i) 0)])))
+  result)
+(defn map-vals [m]
+  (let result [])
+  (for [i 0 (length m)]
+    (set! result (concat result [(nth (nth m i) 1)])))
+  result)
+(defn map-merge [& maps]
+  (let result {})
+  (for [i 0 (length maps)]
+    (let m (nth maps i))
+    (for [j 0 (length m)]
+      (set! result (assoc result (nth (nth m j) 0) (nth (nth m j) 1)))))
+  result)
+(defn map-invert [m]
+  (let result {})
+  (for [i 0 (length m)]
+    (set! result (assoc result (nth (nth m j) 1) (nth (nth m j) 0))))
+  result)
+
+;; Set operations
+(defn set-union [s1 s2]
+  (let result s1)
+  (for [i 0 (length s2)]
+    (let item (nth s2 i))
+    (if (not (some #(= % item) result))
+      (set! result (concat result [item]))))
+  result)
+(defn set-intersection [s1 s2]
+  (let result [])
+  (for [i 0 (length s1)]
+    (let item (nth s1 i))
+    (if (some #(= % item) s2)
+      (set! result (concat result [item]))))
+  result)
+(defn set-difference [s1 s2]
+  (let result [])
+  (for [i 0 (length s1)]
+    (let item (nth s1 i))
+    (if (not (some #(= % item) s2))
+      (set! result (concat result [item]))))
+  result)
+
+;; Sequence operations
+(defn lazy-seq [f]
+  (let state nil)
+  (fn []
+    (if state
+      (let result (f state)]
+      (set! state (nth result 1))
+      (nth result 0))
+      (let result (f nil)]
+      (set! state (nth result 1))
+      (nth result 0)))))
+(defn iterate [f x]
+  (lazy-seq (fn [state]
+    (let val (if state (f state) x)]
+    [val (f val)])))
+(defn repeatedly [f]
+  (lazy-seq (fn [state] [(f) nil])))
+(defn cycle [coll]
+  (lazy-seq (fn [state]
+    (let i (if state (mod (+ state 1) (length coll)) 0)]
+    [(nth coll i) i])))
+(defn range-seq [start end step]
+  (lazy-seq (fn [state]
+    (let i (if state state start)]
+    (if (< i end)
+      [i (+ i step)]
+      nil))))
+
+;; Higher-order functions
+(defn map-indexed [f coll]
+  (let result [])
+  (for [i 0 (length coll)]
+    (set! result (concat result [(f i (nth coll i))])))
+  result)
+(defn keep [f coll]
+  (let result [])
+  (for [i 0 (length coll)]
+    (let val (f (nth coll i)))
+    (if val
+      (set! result (concat result [val]))))
+  result)
+(defn remove [pred coll]
+  (let result [])
+  (for [i 0 (length coll)]
+    (let item (nth coll i))
+    (if (not (pred item))
+      (set! result (concat result [item]))))
+  result)
+(defn reduce-kv [f init m]
+  (let result init)
+  (for [i 0 (length m)]
+    (let entry (nth m i))
+    (set! result (f result (nth entry 0) (nth entry 1))))
+  result)
+(defn apply-kv [f m]
+  (let args [])
+  (for [i 0 (length m)]
+    (let entry (nth m i))
+    (set! args (concat args [(nth entry 0) (nth entry 1)])))
+  (apply f args))
+
+(export list empty? not-empty? first rest last butlast
+        take drop take-while drop-while partition partition-all
+        interpose interleave zipmap frequencies group-by
+        vector vec-get vec-set vec-push vec-pop vec-peek
+        map-get map-get-in map-keys map-vals map-merge map-invert
+        set-union set-intersection set-difference
+        lazy-seq iterate repeatedly cycle range-seq
+        map-indexed keep remove reduce-kv apply-kv)

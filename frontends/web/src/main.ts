@@ -11,3 +11,5 @@ export function mountJoltPlayer(canvasId = "jolt-canvas"): JoltPlayer {
   if (!window.joltWasmBridge) throw new Error("load the JoltFX WASM bridge before mounting the player");
   return new JoltPlayer(canvas, window.joltWasmBridge);
 }
+
+export { JoltEditor } from "./editor.js";

@@ -6,6 +6,9 @@
 #include <stdint.h>
 
 #include "jfx/jfx_engine.h"
+#include "jfx/jfx_timeline.h"
+#include "jfx/jfx_compose.h"
+#include "jfx/jfx_lut.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,14 +16,32 @@ extern "C" {
 
 typedef struct jfx_desktop_frontend jfx_desktop_frontend_t;
 
+/* Panel identifiers for show/hide and layout persistence. */
+typedef enum {
+    JFX_DESKTOP_PANEL_VIEWPORT = 0,
+    JFX_DESKTOP_PANEL_TIMELINE,
+    JFX_DESKTOP_PANEL_LAYER_EFFECTS,   /* replaces the old Properties panel */
+    JFX_DESKTOP_PANEL_COLOR_GRADING,
+    JFX_DESKTOP_PANEL_NODE_COMPOSITING,
+    JFX_DESKTOP_PANEL_CONSOLE,
+    JFX_DESKTOP_PANEL_STATISTICS,
+    JFX_DESKTOP_PANEL_COUNT
+} jfx_desktop_panel_t;
+
 typedef struct {
     size_t size;                   /* set to sizeof(jfx_desktop_frontend_config_t) */
     uint32_t width;                /* 0 selects 1280 */
     uint32_t height;               /* 0 selects 720 */
     const char *backend_name;      /* "vulkan"/"metal"/"d3d12"/"webgpu"/"auto"/NULL */
-    const char *project_path;      /* optional .jolt kernel to load at startup */
+    const char *project_path;      /* optional .jolt kernel or .jfx project to load at startup */
     const char *effect_name;       /* optional bundled effect to preview */
     float effect_parameter;        /* effect parameter, clamped by the catalog */
+    bool show_timeline;            /* initial panel visibility */
+    bool show_layer_effects;
+    bool show_color_grading;
+    bool show_node_compositing;
+    bool show_console;
+    bool show_statistics;
 } jfx_desktop_frontend_config_t;
 
 #define JFX_DESKTOP_DEFAULT_WIDTH 1280u
@@ -33,6 +54,9 @@ void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend);
 
 jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t *frontend,
     const char *path);
+jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *frontend,
+    const char *path);
+jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_resize(jfx_desktop_frontend_t *frontend,
     uint32_t width, uint32_t height);
 jfx_result_t jfx_desktop_frontend_play(jfx_desktop_frontend_t *frontend);
@@ -40,8 +64,76 @@ jfx_result_t jfx_desktop_frontend_pause(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_seek(jfx_desktop_frontend_t *frontend,
     double time_seconds);
 
-/* Selects the previewed bundled effect. parameter is clamped to the effect's
- * documented range. Rejects unknown effect names. */
+/* Panel management */
+jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *frontend,
+    jfx_desktop_panel_t panel, bool visible);
+bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *frontend,
+    jfx_desktop_panel_t panel);
+
+/* Timeline control (delegates to the internal timeline) */
+jfx_result_t jfx_desktop_frontend_timeline_play(jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_timeline_pause(jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_timeline_seek(jfx_desktop_frontend_t *frontend, double time_seconds);
+jfx_result_t jfx_desktop_frontend_timeline_set_loop(jfx_desktop_frontend_t *frontend, bool loop);
+double jfx_desktop_frontend_timeline_duration(const jfx_desktop_frontend_t *frontend);
+uint64_t jfx_desktop_frontend_timeline_current_frame(const jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_timeline_set_current_frame(jfx_desktop_frontend_t *frontend, uint64_t frame);
+
+/* Layer-based Effects panel (per-clip effect stack) */
+jfx_result_t jfx_desktop_frontend_layer_effects_add(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, const char *kind_name);
+jfx_result_t jfx_desktop_frontend_layer_effects_remove(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect);
+jfx_result_t jfx_desktop_frontend_layer_effects_move(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, uint32_t to_index);
+jfx_result_t jfx_desktop_frontend_layer_effects_set_enabled(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, bool enabled);
+jfx_result_t jfx_desktop_frontend_layer_effects_set_opacity(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, float opacity);
+jfx_result_t jfx_desktop_frontend_layer_effects_set_blend(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, jfx_blend_mode_t mode);
+jfx_result_t jfx_desktop_frontend_layer_effects_set_param(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, size_t param, float value);
+jfx_result_t jfx_desktop_frontend_layer_effects_set_string(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, size_t index, const char *text);
+jfx_result_t jfx_desktop_frontend_layer_effects_add_key(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, size_t param, uint64_t frame, float value);
+jfx_result_t jfx_desktop_frontend_layer_effects_remove_key(jfx_desktop_frontend_t *frontend,
+    uint32_t track, uint32_t clip, uint32_t effect, size_t param, uint64_t frame);
+
+/* Color Grading panel (LUT-based) */
+jfx_result_t jfx_desktop_frontend_color_grading_load_lut(jfx_desktop_frontend_t *frontend,
+    const char *path);
+jfx_result_t jfx_desktop_frontend_color_grading_set_lut_mix(jfx_desktop_frontend_t *frontend,
+    float mix);
+float jfx_desktop_frontend_color_grading_lut_mix(const jfx_desktop_frontend_t *frontend);
+const jfx_lut_t *jfx_desktop_frontend_color_grading_lut(const jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_color_grading_set_lift_gamma_gain(jfx_desktop_frontend_t *frontend,
+    const float lift[3], const float gamma[3], const float gain[3]);
+jfx_result_t jfx_desktop_frontend_color_grading_get_lift_gamma_gain(const jfx_desktop_frontend_t *frontend,
+    float lift[3], float gamma[3], float gain[3]);
+
+/* Node Compositing panel */
+jfx_result_t jfx_desktop_frontend_node_compositing_new_graph(jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_node_compositing_add_node(jfx_desktop_frontend_t *frontend,
+    const char *kind_name, const char *label, uint32_t *out_node);
+jfx_result_t jfx_desktop_frontend_node_compositing_remove_node(jfx_desktop_frontend_t *frontend,
+    uint32_t node);
+jfx_result_t jfx_desktop_frontend_node_compositing_connect(jfx_desktop_frontend_t *frontend,
+    uint32_t from_node, size_t from_port, uint32_t to_node, size_t to_port);
+jfx_result_t jfx_desktop_frontend_node_compositing_disconnect(jfx_desktop_frontend_t *frontend,
+    uint32_t to_node, size_t to_port);
+jfx_result_t jfx_desktop_frontend_node_compositing_set_param(jfx_desktop_frontend_t *frontend,
+    uint32_t node, size_t param, float value);
+jfx_result_t jfx_desktop_frontend_node_compositing_set_string(jfx_desktop_frontend_t *frontend,
+    uint32_t node, size_t index, const char *text);
+jfx_result_t jfx_desktop_frontend_node_compositing_set_output(jfx_desktop_frontend_t *frontend,
+    uint32_t node);
+uint32_t jfx_desktop_frontend_node_compositing_output(const jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_node_compositing_render(jfx_desktop_frontend_t *frontend,
+    uint32_t width, uint32_t height, uint8_t *out_rgba, size_t out_size);
+
+/* Legacy effect preview (kept for compatibility) */
 jfx_result_t jfx_desktop_frontend_set_effect(jfx_desktop_frontend_t *frontend,
     const char *effect_name, float parameter);
 
@@ -81,4 +173,4 @@ jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t *frontend,
 }
 #endif
 
-#endif
+#endif /* JFX_DESKTOP_FRONTEND_H */

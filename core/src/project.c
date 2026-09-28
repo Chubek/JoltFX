@@ -520,7 +520,7 @@ jfx_result_t jfx_project_load_sequence(const char *text, size_t length, jfx_time
                 return JFX_ERROR_INVALID_ARGUMENT;
             }
             char path[512] = { 0 };
-            if (desc.source == JFX_CLIP_IMAGE) {
+            if ((desc.source == JFX_CLIP_IMAGE || desc.source == JFX_CLIP_VIDEO)) {
                 if (!read_word(&cursor, end, path, sizeof(path))) {
                     goto bad_line;
                 }

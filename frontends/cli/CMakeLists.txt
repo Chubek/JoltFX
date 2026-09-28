@@ -2,6 +2,7 @@ add_executable(joltfx_cli
     src/main.c
     src/commands.c
     src/compose_commands.c
+    src/editor_commands.c
     src/headless_frontend.c
 )
 

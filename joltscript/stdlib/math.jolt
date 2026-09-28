@@ -1,0 +1,140 @@
+;; jolt.math — Mathematical functions for Joltscript
+;; Trigonometry, linear algebra, interpolation, and random numbers.
+
+(module jolt.math)
+
+;; Trigonometry
+(defn sin [x] (extern-c "math.h" (sin [f64] -> f64)))
+(defn cos [x] (extern-c "math.h" (cos [f64] -> f64)))
+(defn tan [x] (extern-c "math.h" (tan [f64] -> f64)))
+(defn asin [x] (extern-c "math.h" (asin [f64] -> f64)))
+(defn acos [x] (extern-c "math.h" (acos [f64] -> f64)))
+(defn atan [x] (extern-c "math.h" (atan [f64] -> f64)))
+(defn atan2 [y x] (extern-c "math.h" (atan2 [f64 f64] -> f64)))
+
+;; Exponential and logarithmic
+(defn exp [x] (extern-c "math.h" (exp [f64] -> f64)))
+(defn log [x] (extern-c "math.h" (log [f64] -> f64)))
+(defn log10 [x] (extern-c "math.h" (log10 [f64] -> f64)))
+(defn log2 [x] (extern-c "math.h" (log2 [f64] -> f64)))
+(defn exp2 [x] (extern-c "math.h" (exp2 [f64] -> f64)))
+
+;; Power and root
+(defn pow [x y] (extern-c "math.h" (pow [f64 f64] -> f64)))
+(defn sqrt [x] (extern-c "math.h" (sqrt [f64] -> f64)))
+(defn cbrt [x] (extern-c "math.h" (cbrt [f64] -> f64)))
+(defn hypot [x y] (extern-c "math.h" (hypot [f64 f64] -> f64)))
+
+;; Rounding
+(defn floor [x] (extern-c "math.h" (floor [f64] -> f64)))
+(defn ceil [x] (extern-c "math.h" (ceil [f64] -> f64)))
+(defn round [x] (extern-c "math.h" (round [f64] -> f64)))
+(defn trunc [x] (extern-c "math.h" (trunc [f64] -> f64)))
+
+;; Absolute value and sign
+(defn abs [x] (extern-c "math.h" (fabs [f64] -> f64)))
+(defn sign [x] (if (< x 0.0) -1.0 (if (> x 0.0) 1.0 0.0)))
+
+;; Min/max
+(defn min [x y] (extern-c "math.h" (fmin [f64 f64] -> f64)))
+(defn max [x y] (extern-c "math.h" (fmax [f64 f64] -> f64)))
+
+;; Clamp
+(defn clamp [x lo hi] (min (max x lo) hi))
+
+;; Linear interpolation
+(defn lerp [a b t] (+ a (* t (- b a))))
+
+;; Smoothstep interpolation
+(defn smoothstep [edge0 edge1 x]
+  (let t (clamp (/ (- x edge0) (- edge1 edge0)) 0.0 1.0))
+  (* t t (* 3.0 (* 2.0 t))))
+
+;; Map value from one range to another
+(defn map-range [x in-min in-max out-min out-max]
+  (+ out-min (* (/ (- x in-min) (- in-min in-max)) (- out-max out-min))))
+
+;; Degrees/radians conversion
+(defn deg->rad [deg] (* deg (/ 3.141592653589793 180.0)))
+(defn rad->deg [rad] (* rad (/ 180.0 3.141592653589793)))
+
+;; Constants
+(defconst PI 3.141592653589793)
+(defconst TWO-PI 6.283185307179586)
+(defconst HALF-PI 1.5707963267948966)
+(defconst E 2.718281828459045)
+(defconst SQRT2 1.4142135623730951)
+(defconst SQRT1_2 0.7071067811865476)
+
+;; Random numbers (simple LCG)
+(defconst RANDOM-MULTIPLIER 1103515245)
+(defconst RANDOM-INCREMENT 12345)
+(defconst RANDOM-MODULUS 2147483648)
+
+(defn random-seed [seed]
+  (var state seed)
+  (fn []
+    (set! state (mod (+ (* state RANDOM-MULTIPLIER) RANDOM-INCREMENT) RANDOM-MODULUS))
+    (/ state RANDOM-MODULUS)))
+
+;; Vector operations
+(defn dot [v1 v2]
+  (reduce + 0.0 (map * v1 v2)))
+
+(defn length [v]
+  (sqrt (dot v v)))
+
+(defn normalize [v]
+  (let len (length v))
+  (if (> len 0.0)
+    (map (fn [x] (/ x len)) v)
+    v))
+
+(defn cross [v1 v2]
+  (let a (nth v1 0) b (nth v1 1) c (nth v1 2))
+  (let d (nth v2 0) e (nth v2 1) f (nth v2 2))
+  [(- (* b f) (* c e))
+   (- (* c d) (* a f))
+   (- (* a e) (* b d))])
+
+;; Matrix operations (2x2)
+(defn mat2-mul [m1 m2]
+  (let a (nth m1 0) b (nth m1 1) c (nth m1 2) d (nth m1 3))
+  (let e (nth m2 0) f (nth m2 1) g (nth m2 2) h (nth m2 3))
+  [(- (* a e) (* b g))
+   (- (* a f) (* b h))
+   (- (* c e) (* d g))
+   (- (* c f) (* d h))])
+
+(defn mat2-det [m]
+  (let a (nth m 0) b (nth m 1) c (nth m 2) d (nth m 3))
+  (- (* a d) (* b c)))
+
+;; Easing functions
+(defn ease-in-quad [t] (* t t))
+(defn ease-out-quad [t] (* t (- 2.0 t)))
+(defn ease-in-out-quad [t]
+  (if (< t 0.5)
+    (* 2.0 t t)
+    (- 1.0 (pow -2.0 (+ (* 2.0 t) 1.0) 2.0))))
+
+(defn ease-in-cubic [t] (* t t t))
+(defn ease-out-cubic [t] (- (pow (- t 1.0) 3.0) 1.0))
+(defn ease-in-out-cubic [t]
+  (if (< t 0.5)
+    (* 4.0 t t t)
+    (- 1.0 (pow -2.0 (+ (* 2.0 t) 2.0) 3.0))))
+
+(export sin cos tan asin acos atan atan2
+        exp log log10 log2 exp2
+        pow sqrt cbrt hypot
+        floor ceil round trunc
+        abs sign min max clamp
+        lerp smoothstep map-range
+        deg->rad rad->deg
+        PI TWO-PI HALF-PI E SQRT2 SQRT1_2
+        random-seed
+        dot length normalize cross
+        mat2-mul mat2-det
+        ease-in-quad ease-out-quad ease-in-out-quad
+        ease-in-cubic ease-out-cubic ease-in-out-cubic)

@@ -51,6 +51,7 @@ typedef enum {
     JFX_CLIP_CHECKER,
     JFX_CLIP_SWEEP,       /* a test pattern */
     JFX_CLIP_IMAGE,       /* a still image on disk */
+    JFX_CLIP_VIDEO,       /* local video file; requires FFmpeg */
     JFX_CLIP_SOURCE_COUNT
 } jfx_clip_source_t;
 
@@ -270,5 +271,9 @@ jfx_result_t jfx_timeline_render_image(const jfx_timeline_t *timeline, uint64_t 
 /* A one-line summary of a track for a UI header: "3 clips, 0:00:02:04". */
 jfx_result_t jfx_timeline_describe_track(const jfx_timeline_t *timeline, uint32_t track,
     char *out_text, size_t out_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* JFX_TIMELINE_H */

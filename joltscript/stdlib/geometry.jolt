@@ -1,0 +1,206 @@
+;; jolt.geometry — Geometric operations for Joltscript
+;; Points, vectors, matrices, quaternions, and splines.
+
+(module jolt.geometry)
+
+(import jolt.math (clamp lerp sqrt pow))
+
+;; 2D Point operations
+(defn point2d [x y] [x y])
+(defn point2d-x [p] (nth p 0))
+(defn point2d-y [p] (nth p 1))
+(defn point2d-add [p1 p2] [(+ (point2d-x p1) (point2d-x p2))
+                            (+ (point2d-y p1) (point2d-y p2))])
+(defn point2d-sub [p1 p2] [(- (point2d-x p1) (point2d-x p2))
+                            (- (point2d-y p1) (point2d-y p2))])
+(defn point2d-scale [p s] [(* (point2d-x p) s) (* (point2d-y p) s)])
+(defn point2d-dist [p1 p2]
+  (let dx (- (point2d-x p1) (point2d-x p2)))
+  (let dy (- (point2d-y p1) (point2d-y p2)))
+  (sqrt (+ (* dx dx) (* dy dy))))
+(defn point2d-lerp [p1 p2 t]
+  [(lerp (point2d-x p1) (point2d-x p2) t)
+   (lerp (point2d-y p1) (point2d-y p2) t)])
+
+;; 3D Point operations
+(defn point3d [x y z] [x y z])
+(defn point3d-x [p] (nth p 0))
+(defn point3d-y [p] (nth p 1))
+(defn point3d-z [p] (nth p 2))
+(defn point3d-add [p1 p2] [(+ (point3d-x p1) (point3d-x p2))
+                            (+ (point3d-y p1) (point3d-y p2))
+                            (+ (point3d-z p1) (point3d-z p2))])
+(defn point3d-sub [p1 p2] [(- (point3d-x p1) (point3d-x p2))
+                            (- (point3d-y p1) (point3d-y p2))
+                            (- (point3d-z p1) (point3d-z p2))])
+(defn point3d-scale [p s] [(* (point3d-x p) s) (* (point3d-y p) s) (* (point3d-z p) s)])
+(defn point3d-dist [p1 p2]
+  (let dx (- (point3d-x p1) (point3d-x p2)))
+  (let dy (- (point3d-y p1) (point3d-y p2)))
+  (let dz (- (point3d-z p1) (point3d-z p2)))
+  (sqrt (+ (* dx dx) (* dy dy) (* dz dz))))
+(defn point3d-lerp [p1 p2 t]
+  [(lerp (point3d-x p1) (point3d-x p2) t)
+   (lerp (point3d-y p1) (point3d-y p2) t)
+   (lerp (point3d-z p1) (point3d-z p2) t)])
+
+;; Vector operations
+(defn vec2 [x y] [x y])
+(defn vec3 [x y z] [x y z])
+(defn vec4 [x y z w] [x y z w])
+
+(defn vec-dot [v1 v2]
+  (reduce + 0.0 (map * v1 v2)))
+
+(defn vec-length [v]
+  (sqrt (vec-dot v v)))
+
+(defn vec-normalize [v]
+  (let len (vec-length v))
+  (if (> len 0.0)
+    (map (fn [x] (/ x len)) v)
+    v))
+
+(defn vec-cross [v1 v2]
+  (let a (nth v1 0) b (nth v1 1) c (nth v1 2))
+  (let d (nth v2 0) e (nth v2 1) f (nth v2 2))
+  [(- (* b f) (* c e))
+   (- (* c d) (* a f))
+   (- (* a e) (* b d))])
+
+(defn vec-lerp [v1 v2 t]
+  (map (fn [a b] (lerp a b t)) v1 v2))
+
+;; 2D transformations
+(defn translate2d [p tx ty]
+  (point2d-add p [tx ty]))
+
+(defn scale2d [p sx sy]
+  (point2d-scale p sx))
+
+(defn rotate2d [p angle]
+  (let c (cos angle))
+  (let s (sin angle))
+  (let x (point2d-x p))
+  (let y (point2d-y p))
+  [(- (* x c) (* y s))
+   (+ (* x s) (* y c))])
+
+;; 3D transformations
+(defn translate3d [p tx ty tz]
+  (point3d-add p [tx ty tz]))
+
+(defn scale3d [p sx sy sz]
+  (point3d-scale p sx))
+
+(defn rotate3d-x [p angle]
+  (let c (cos angle))
+  (let s (sin angle))
+  (let y (point3d-y p))
+  (let z (point3d-z p))
+  [(point3d-x p) (- (* y c) (* z s)) (+ (* y s) (* z c))])
+
+(defn rotate3d-y [p angle]
+  (let c (cos angle))
+  (let s (sin angle))
+  (let x (point3d-x p))
+  (let z (point3d-z p))
+  [(+ (* x c) (* z s)) (point3d-y p) (- (* z c) (* x s))])
+
+(defn rotate3d-z [p angle]
+  (let c (cos angle))
+  (let s (sin angle))
+  (let x (point3d-x p))
+  (let y (point3d-y p))
+  [(- (* x c) (* y s)) (+ (* x s) (* y c)) (point3d-z p)])
+
+;; Quaternion operations
+(defn quat [x y z w] [x y z w])
+(defn quat-identity [0 0 0 1])
+(defn quat-mul [q1 q2]
+  (let x1 (nth q1 0) y1 (nth q1 1) z1 (nth q1 2) w1 (nth q1 3))
+  (let x2 (nth q2 0) y2 (nth q2 1) z2 (nth q2 2) w2 (nth q2 3))
+  [(- (* w1 x2) (* x1 w2) (* y1 z2) (* z1 y2))
+   (- (* w1 y2) (* y1 w2) (* z1 x2) (* x1 z2))
+   (- (* w1 z2) (* z1 w2) (* x1 y2) (* y1 x2))
+   (- (* w1 w2) (* x1 x2) (* y1 y2) (* z1 z2))])
+(defn quat-normalize [q]
+  (let len (vec-length q))
+  (if (> len 0.0)
+    (map (fn [x] (/ x len)) q)
+    q))
+(defn quat-from-axis-angle [axis angle]
+  (let half-angle (/ angle 2.0))
+  (let s (sin half-angle))
+  (let axis-len (vec-length axis))
+  (if (> axis-len 0.0)
+    (let n (vec-normalize axis))
+    [(nth n 0) (nth n 1) (nth n 2) (cos half-angle)])
+    [0 0 0 1]))
+(defn quat-rotate [q v]
+  (let qv [(nth q 0) (nth q 1) (nth q 2)])
+  (let uv (vec-cross qv v))
+  (let uuv (vec-cross qv uv))
+  (vec3-add v (vec3-scale (vec3-add (vec3-scale uv (nth q 3)) uuv) 2.0)))
+
+;; Spline operations
+(defn catmull-rom-spline [p0 p1 p2 p3 t]
+  (let t2 (* t t))
+  (let t3 (* t2 t))
+  (let v0 (vec3-scale (vec3-sub p2 p0) 0.5))
+  (let v1 (vec3-scale (vec3-sub p3 p1) 0.5))
+  (let a (vec3-scale (vec3-sub (vec3-scale p2 2.0) (vec3-scale p1 2.0)) 1.0))
+  (let b (vec3-sub (vec3-scale p1 2.0) (vec3-scale p0 2.0)))
+  (let c (vec3-scale (vec3-sub p2 p0) 1.0))
+  (let d p1)
+  (vec3-add (vec3-add (vec3-scale a t3) (vec3-scale b t2)) (vec3-add (vec3-scale c t) d))))
+
+(defn bezier-spline [p0 p1 p2 p3 t]
+  (let u (- 1.0 t))
+  (let tt (* t t))
+  (let uu (* u u))
+  (let uuu (* uu u))
+  (let ttt (* tt t))
+  (vec3-add (vec3-scale p0 uuu)
+    (vec3-add (vec3-scale (vec3-scale p1 3.0) (* uu t))
+      (vec3-add (vec3-scale (vec3-scale p2 3.0) (* u tt))
+        (vec3-scale p3 ttt)))))
+
+;; Bounding box
+(defn bbox2d [points]
+  (let xs (map point2d-x points))
+  (let ys (map point2d-y points))
+  [(apply min xs) (apply min ys) (apply max xs) (apply max ys)])
+
+(defn bbox3d [points]
+  (let xs (map point3d-x points))
+  (let ys (map point3d-y points))
+  (let zs (map point3d-z points))
+  [(apply min xs) (apply min ys) (apply min zs)
+   (apply max xs) (apply max ys) (apply max zs)])
+
+(defn point-in-bbox2d [p bbox]
+  (let x (point2d-x p))
+  (let y (point2d-y p))
+  (let min-x (nth bbox 0)) (let min-y (nth bbox 1))
+  (let max-x (nth bbox 2)) (let max-y (nth bbox 3))
+  (and (>= x min-x) (<= x max-x) (>= y min-y) (<= y max-y)))
+
+(defn point-in-bbox3d [p bbox]
+  (let x (point3d-x p))
+  (let y (point3d-y p))
+  (let z (point3d-z p))
+  (let min-x (nth bbox 0)) (let min-y (nth bbox 1)) (let min-z (nth bbox 2))
+  (let max-x (nth bbox 3)) (let max-y (nth bbox 4)) (let max-z (nth bbox 5))
+  (and (>= x min-x) (<= x max-x) (>= y min-y) (<= y max-y) (>= z min-z) (<= z max-z)))
+
+(export point2d point2d-x point2d-y point2d-add point2d-sub point2d-scale
+        point2d-dist point2d-lerp
+        point3d point3d-x point3d-y point3d-z point3d-add point3d-sub point3d-scale
+        point3d-dist point3d-lerp
+        vec2 vec3 vec4 vec-dot vec-length vec-normalize vec-cross vec-lerp
+        translate2d scale2d rotate2d
+        translate3d scale3d rotate3d-x rotate3d-y rotate3d-z
+        quat quat-identity quat-mul quat-normalize quat-from-axis-angle quat-rotate
+        catmull-rom-spline bezier-spline
+        bbox2d bbox3d point-in-bbox2d point-in-bbox3d)

@@ -19,6 +19,7 @@ jolt_status_t jolt_vm_run_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_
         case JOLT_OP_ABS: vm->stack[n-1] = fabsf(vm->stack[n-1]); break;
         case JOLT_OP_FLOOR: vm->stack[n-1] = floorf(vm->stack[n-1]); break;
         case JOLT_OP_SQRT: vm->stack[n-1] = sqrtf(vm->stack[n-1]); break;
+        case JOLT_OP_NOT: vm->stack[n-1] = vm->stack[n-1] == 0.f ? 1.f : 0.f; break;
         case JOLT_OP_SELECT:
             b = vm->stack[--n]; a = vm->stack[--n];
             vm->stack[n-1] = vm->stack[n-1] != 0.f ? a : b; break;
@@ -33,6 +34,18 @@ jolt_status_t jolt_vm_run_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_
             case JOLT_OP_MAX: a = fmaxf(a, b); break;
             case JOLT_OP_POW: a = powf(a, b); break;
             case JOLT_OP_LT: a = a < b ? 1.f : 0.f; break;
+            case JOLT_OP_GT: a = a > b ? 1.f : 0.f; break;
+            case JOLT_OP_LE: a = a <= b ? 1.f : 0.f; break;
+            case JOLT_OP_GE: a = a >= b ? 1.f : 0.f; break;
+            case JOLT_OP_EQ: a = a == b ? 1.f : 0.f; break;
+            case JOLT_OP_NE: a = a != b ? 1.f : 0.f; break;
+            case JOLT_OP_AND: a = (a != 0.f && b != 0.f) ? 1.f : 0.f; break;
+            case JOLT_OP_OR: a = (a != 0.f || b != 0.f) ? 1.f : 0.f; break;
+            case JOLT_OP_BITWISE_AND: a = (float)((uint32_t)a & (uint32_t)b); break;
+            case JOLT_OP_BITWISE_OR: a = (float)((uint32_t)a | (uint32_t)b); break;
+            case JOLT_OP_BITWISE_XOR: a = (float)((uint32_t)a ^ (uint32_t)b); break;
+            case JOLT_OP_SHL: a = (float)((uint32_t)a << ((uint32_t)b & 31)); break;
+            case JOLT_OP_SHR: a = (float)((uint32_t)a >> ((uint32_t)b & 31)); break;
             default: return JOLT_ERR_BYTECODE;
             }
             vm->stack[n-1] = a;

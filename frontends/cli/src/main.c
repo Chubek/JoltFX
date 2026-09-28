@@ -77,6 +77,7 @@ int main(int argc, char **argv) {
     if (strcmp(command, "export") == 0) {
         return cmd_export(rest_argc, rest_argv);
     }
+    if (strcmp(command, "edit") == 0) return cmd_edit(rest_argc, rest_argv);
     if (strcmp(command, "nodes") == 0) {
         return cmd_nodes(rest_argc, rest_argv);
     }

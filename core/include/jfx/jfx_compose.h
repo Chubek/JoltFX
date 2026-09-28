@@ -228,4 +228,8 @@ void jfx_blend_rgba8(uint8_t *dst, const uint8_t *src, size_t count, jfx_blend_m
 jfx_result_t jfx_graph_describe(const jfx_graph_t *graph, char *out_text, size_t out_size,
     size_t *out_written);
 
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* JFX_COMPOSE_H */

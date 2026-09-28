@@ -1,3 +1,11 @@
 body { background: #11151c; color: #e7edf7; font: 16px system-ui, sans-serif; margin: 0; }
 main { margin: 2rem auto; max-width: 1280px; padding: 0 1rem; }
 canvas { background: #000; display: block; max-width: 100%; height: auto; }
+
+.jolt-editor { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; padding: 1rem; }
+.jolt-editor nav, .jolt-editor > p { grid-column: 1 / -1; }
+.jolt-editor section { border: 1px solid #345; border-radius: 6px; padding: 1rem; background: #172330; }
+.jolt-editor label { display: block; margin: .35rem 0; }
+.jolt-editor input, .jolt-editor select, .jolt-editor button { margin: .2rem; padding: .35rem; max-width: 95%; }
+.jolt-editor canvas { width: 100%; object-fit: contain; background: #101820; }
+.jolt-editor > p { color: #ffcc88; }

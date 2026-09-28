@@ -6,6 +6,7 @@
  * the graph so that destroying it is sufficient. */
 
 #include "jfx/jfx_compose.h"
+#include "joltscript/video_io.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -265,6 +266,9 @@ static const jfx_node_kind_t kKindSweep = { "sweep", "Test Pattern", "Source", 0
 static const jfx_node_kind_t kKindImage = { "image", "Image", "Source", 0, kNoPorts, 1, kImageOut, 0,
     NULL, 1, (const char *const[]){ "path" } };
 
+static const jfx_node_kind_t kKindVideo = { "video", "Video", "Source", 0, kNoPorts, 1, kImageOut, 0,
+    NULL, 1, (const char *const[]){ "path" } };
+
 /* --- Colour grading --- */
 
 static const jfx_node_kind_t kKindExposure = { "exposure", "Exposure", "Color", 1, kImageIn, 1,
@@ -384,7 +388,7 @@ static const jfx_node_kind_t kKindInvert = { "invert", "Invert", "Adjust", 1, kI
 
 /* The library, in the order a UI should offer it. */
 static const jfx_node_kind_t *const kKinds[] = {
-    &kKindColor, &kKindFloat, &kKindSolid, &kKindGradient, &kKindChecker, &kKindSweep, &kKindImage,
+    &kKindColor, &kKindFloat, &kKindSolid, &kKindGradient, &kKindChecker, &kKindSweep, &kKindImage, &kKindVideo,
     &kKindExposure, &kKindContrast, &kKindSaturation, &kKindVibrance, &kKindWhiteBalance,
     &kKindLiftGammaGain, &kKindLevels, &kKindCurves, &kKindWhiteClip, &kKindChannelMixer, &kKindLut,
     &kKindCurvesLut, &kKindTransform, &kKindLumaKey, &kKindChromaKey, &kKindBlend, &kKindOpacity,
@@ -793,6 +797,7 @@ typedef struct {
      * references the same file on several nodes decodes it once per render. */
     jfx_image_t *images;
     jfx_lut_t **luts;
+    jfx_result_t error;
 } eval_ctx_t;
 
 static void ctx_release(eval_ctx_t *ctx);
@@ -912,7 +917,7 @@ static void write_rgb(float *px, float r, float g, float b) {
 
 /* The per-kind pixel work. `in` is the primary image input, which for a
  * single-input node is port 0. */
-static void eval_node(const eval_ctx_t *ctx, uint32_t index, const node_t *node, frame_t *out) {
+static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame_t *out) {
     const size_t count = ctx->pixel_count;
     const char *kind_name = node->kind->name;
     const frame_t *in = node->kind->input_count > 0 ? input_frame(ctx, node, 0) : NULL;
@@ -1006,6 +1011,14 @@ static void eval_node(const eval_ctx_t *ctx, uint32_t index, const node_t *node,
             }
         }
         return;
+    }
+    if (strcmp(kind_name, "video") == 0) {
+        uint8_t *pixels=alloc_bytes(count*4);
+        if (!pixels) { ctx->error=JFX_ERROR_OUT_OF_MEMORY; return; }
+        int r=jolt_video_io_frame(node->value.strings[0],(double)ctx->time_seconds,ctx->width,ctx->height,pixels,count*4);
+        if (r) { ctx->error=r==-2 ? JFX_ERROR_NOT_IMPLEMENTED : JFX_ERROR_NOT_FOUND; }
+        else for (size_t i=0;i<count*4;++i) out->pixels[i]=(float)pixels[i]/255.0f;
+        free_bytes(pixels); return;
     }
     if (strcmp(kind_name, "image") == 0) {
         const jfx_image_t *image = node_image(ctx, index, node);
@@ -1537,6 +1550,7 @@ jfx_result_t jfx_graph_render_node(const jfx_graph_t *graph, uint32_t node, uint
         return init;
     }
     ensure_evaluated(&ctx, node);
+    if (ctx.error != JFX_SUCCESS) { jfx_result_t r=ctx.error; ctx_release(&ctx); return r; }
     const size_t bytes = ctx.pixel_count * 4u;
     uint8_t *pixels = alloc_bytes(bytes);
     if (!pixels) {
@@ -1586,6 +1600,7 @@ jfx_result_t jfx_graph_render(const jfx_graph_t *graph, uint32_t output, uint32_
         return status;
     }
     ensure_evaluated(&ctx, output);
+    if (ctx.error != JFX_SUCCESS) { status=ctx.error; ctx_release(&ctx); return status; }
     const size_t pixels = ctx.pixel_count;
     for (size_t i = 0; i < pixels; ++i) {
         const float *p = ctx.cache[output].pixels + i * 4u;

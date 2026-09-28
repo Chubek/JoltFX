@@ -123,7 +123,7 @@ static void clip_release(clip_t *clip) {
 /* ---- Source names -------------------------------------------------------- */
 
 static const char *const kSourceNames[JFX_CLIP_SOURCE_COUNT] = { "solid", "gradient", "checker",
-    "sweep", "image" };
+    "sweep", "image", "video" };
 
 const char *jfx_clip_source_name(jfx_clip_source_t source) {
     if (source < 0 || source >= JFX_CLIP_SOURCE_COUNT) {
@@ -382,7 +382,7 @@ uint32_t jfx_timeline_add_clip(jfx_timeline_t *timeline, uint32_t track,
     if (desc->source < 0 || desc->source >= JFX_CLIP_SOURCE_COUNT || !desc->length_frames) {
         return UINT32_MAX;
     }
-    if (desc->source == JFX_CLIP_IMAGE && (!desc->image_path || !desc->image_path[0])) {
+    if ((desc->source == JFX_CLIP_IMAGE || desc->source == JFX_CLIP_VIDEO) && (!desc->image_path || !desc->image_path[0])) {
         return UINT32_MAX;
     }
     if (desc->blend_mode < 0 || desc->blend_mode >= JFX_BLEND_COUNT) {
@@ -1081,6 +1081,7 @@ static jfx_result_t build_clip_graph(const clip_t *clip, uint64_t frame, jfx_gra
     case JFX_CLIP_GRADIENT: status = jfx_graph_add_node(graph, "linear_gradient", NULL, &source); break;
     case JFX_CLIP_CHECKER: status = jfx_graph_add_node(graph, "checker", NULL, &source); break;
     case JFX_CLIP_SWEEP: status = jfx_graph_add_node(graph, "sweep", NULL, &source); break;
+    case JFX_CLIP_VIDEO: status = jfx_graph_add_node(graph, "video", NULL, &source); break;
     case JFX_CLIP_IMAGE: status = jfx_graph_add_node(graph, "image", NULL, &source); break;
     case JFX_CLIP_SOLID:
     default: status = jfx_graph_add_node(graph, "solid", NULL, &source); break;
@@ -1090,7 +1091,7 @@ static jfx_result_t build_clip_graph(const clip_t *clip, uint64_t frame, jfx_gra
         return status;
     }
 
-    if (clip->source == JFX_CLIP_IMAGE) {
+    if (clip->source == JFX_CLIP_IMAGE || clip->source == JFX_CLIP_VIDEO) {
         if (!clip->image_path) {
             jfx_graph_destroy(graph);
             return JFX_ERROR_INVALID_ARGUMENT;
@@ -1238,7 +1239,8 @@ jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame,
                 return JFX_ERROR_OUT_OF_MEMORY;
             }
             const jfx_result_t status =
-                jfx_graph_render(graph, output, width, height, time_seconds, clip_pixels);
+                jfx_graph_render(graph, output, width, height,
+                    clip->source == JFX_CLIP_VIDEO ? (float)((double)(frame - clip->start_frame + clip->in_point) / jfx_timeline_fps(timeline)) : time_seconds, clip_pixels);
             jfx_graph_destroy(graph);
             if (status != JFX_SUCCESS) {
                 free_bytes(clip_pixels);

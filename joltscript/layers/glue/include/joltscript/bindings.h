@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 #define JOLT_GLUE_ABI_MAJOR 0
-#define JOLT_GLUE_ABI_MINOR 2
+#define JOLT_GLUE_ABI_MINOR 3
 #define JOLT_GLUE_ABI_PATCH 0
 #define JOLT_CAP_COMPUTE UINT64_C(1)
 typedef struct jolt_registry jolt_registry_t;

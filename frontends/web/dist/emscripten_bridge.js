@@ -36,7 +36,53 @@ export class EmscriptenJoltBridge {
         if (!this.session)
             throw new Error("WASM session creation returned a null handle");
     }
+    loadDocument(text) {
+        const bytes = new TextEncoder().encode(text);
+        if (!bytes.length || bytes.length > 8 * 1024 * 1024)
+            throw new RangeError("Project exceeds 8 MiB");
+        const load = this.module.cwrap("jfx_web_session_load_document", "number", ["number", "string", "number", "number", "number"]);
+        const result = load(this.session, text, bytes.length, 0, 0);
+        if (result !== 0)
+            throw new Error(`Project rejected (${result})`);
+    }
+    saveDocument() {
+        const save = this.module.cwrap("jfx_web_session_save_document", "number", ["number", "number", "number", "number"]);
+        const capacity = 8 * 1024 * 1024;
+        const pointer = this.module._malloc(capacity + 4);
+        if (!pointer)
+            throw new Error("WASM heap allocation failed");
+        try {
+            const result = save(this.session, pointer, capacity, pointer + capacity);
+            if (result !== 0)
+                throw new Error(`Unable to save project (${result})`);
+            const length = new DataView(this.module.HEAPU8.buffer).getUint32(pointer + capacity, true);
+            return new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, pointer + length));
+        }
+        finally {
+            this.module._free(pointer);
+        }
+    }
+    edit(op, a = 0, b = 0, c = 0, value = 0, text = "") {
+        const command = this.module.cwrap("jfx_web_session_edit", "number", ["number", "string", "number", "number", "number", "number", "string"]);
+        const result = command(this.session, op, a, b, c, value, text);
+        if (result !== 0)
+            throw new Error(`Edit rejected (${result})`);
+    }
+    importAsset(name, bytes) {
+        if (!this.module.FS)
+            throw new Error("This WASM build has no virtual filesystem");
+        if (bytes.length > 64 * 1024 * 1024)
+            throw new RangeError("Asset exceeds 64 MiB");
+        const path = "/" + name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        this.module.FS.writeFile(path, bytes);
+        return path;
+    }
     async loadPackage(bytes) {
+        const document = new TextDecoder().decode(bytes);
+        if (!document.trimStart().startsWith("{")) {
+            this.loadDocument(document);
+            return;
+        }
         let manifest;
         try {
             manifest = JSON.parse(new TextDecoder().decode(bytes));

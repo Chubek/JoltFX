@@ -9,6 +9,8 @@
 
 struct jfx_web_session {
     jfx_engine_t *engine;
+    jfx_editor_t *editor;
+    bool editing;
     jolt_effects_t *effects;
     double time_seconds;
     char effect_name[32];
@@ -51,12 +53,15 @@ jfx_result_t jfx_web_session_create(const char *backend_name,
     snprintf(session->effect_name, sizeof(session->effect_name), "%s", "brightness");
     session->parameter = 0.0f;
     session->has_parameter = 1;
+    session->editor = jfx_editor_create(320, 180);
+    if (!session->editor) { jfx_web_session_destroy(session); return JFX_ERROR_OUT_OF_MEMORY; }
     *out_session = session;
     return JFX_SUCCESS;
 }
 
 void jfx_web_session_destroy(jfx_web_session_t *session) {
     if (!session) return;
+    jfx_editor_destroy(session->editor);
     jolt_effects_destroy(session->effects);
     jfx_engine_shutdown(session->engine);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), session);
@@ -97,6 +102,7 @@ jfx_result_t jfx_web_session_render_rgba(jfx_web_session_t *session,
         out_size < (size_t)width * (size_t)height * 4u) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    if (session->editing) return jfx_editor_render(session->editor, time_seconds, width, height, out_rgba, out_size);
     size_t pixels = (size_t)width * (size_t)height;
     if (pixels > SIZE_MAX / (4u * sizeof(float))) return JFX_ERROR_OUT_OF_MEMORY;
     size_t float_bytes = pixels * 4u * sizeof(float);
@@ -132,4 +138,29 @@ jfx_result_t jfx_web_session_render_rgba(jfx_web_session_t *session,
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), output);
     if (status != JOLT_OK) return JFX_ERROR_BACKEND_FAILURE;
     return jfx_web_session_render(session, time_seconds);
+}
+
+/* Enabling the editor switches this surface's preview to its active document. */
+jfx_editor_t *jfx_web_session_editor(jfx_web_session_t *session) {
+    if (!session) return NULL;
+    session->editing = true;
+    return session->editor;
+}
+jfx_result_t jfx_web_session_load_document(jfx_web_session_t *session, const char *text, size_t length,
+    char *out_error, size_t error_size) {
+    if (!session) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_result_t r = jfx_editor_load(session->editor, text, length, out_error, error_size);
+    if (r == JFX_SUCCESS) session->editing = true;
+    return r;
+}
+jfx_result_t jfx_web_session_save_document(jfx_web_session_t *session, char *out_text, size_t capacity, size_t *out_written) {
+    return session ? jfx_editor_save(session->editor, out_text, capacity, out_written) : JFX_ERROR_INVALID_ARGUMENT;
+}
+
+jfx_result_t jfx_web_session_edit(jfx_web_session_t *session, const char *op, uint32_t a, uint32_t b,
+    uint32_t c, double value, const char *text) {
+    if (!session) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_result_t r=jfx_editor_command(session->editor,op,a,b,c,value,text);
+    if (r==JFX_SUCCESS) session->editing=true;
+    return r;
 }

@@ -1,2 +1,7 @@
 add_subdirectory(layers/execution)
 add_subdirectory(layers/glue)
+add_subdirectory(tools/joltc)
+add_subdirectory(tools/jolti)
+add_subdirectory(tools/joltfmt)
+add_subdirectory(tools/joltdoc)
+add_subdirectory(tools/joltscript-lsp)

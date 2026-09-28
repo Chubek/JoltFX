@@ -6,3 +6,4 @@ declare global {
     }
 }
 export declare function mountJoltPlayer(canvasId?: string): JoltPlayer;
+export { JoltEditor } from "./editor.js";

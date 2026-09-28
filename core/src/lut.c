@@ -6,6 +6,7 @@
 #include "jfx/jfx_lut.h"
 
 #include "jfx/jfx_image.h"
+#include "joltscript/color_io.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -1395,6 +1396,21 @@ jfx_result_t jfx_lut_create_curve(const float *points, size_t point_count, size_
 jfx_result_t jfx_lut_load_auto(const char *path, jfx_lut_t **out_lut, char *out_error,
     size_t out_error_size) {
     if (!path || !out_lut) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    /* Native .cube/Hald retain their exact samples. Other production formats
+     * use OCIO when available, baked to the engine's bounded display domain. */
+    const char *extension = strrchr(path, '.');
+    if (jolt_color_io_available() && extension && strcmp(extension, ".cube") != 0 &&
+        strcmp(extension, ".png") != 0 && strcmp(extension, ".ppm") != 0) {
+        jfx_lut_t *candidate = NULL;
+        jfx_result_t r = jfx_lut_create(JFX_LUT_SHAPE_3D, 65, 65, 65, 3, &candidate);
+        if (r != JFX_SUCCESS) return r;
+        if (jolt_color_io_bake(path, 65, candidate->entries, out_error, out_error_size) == 0) {
+            snprintf(candidate->description, sizeof(candidate->description), "OpenColorIO: 65-cube baked over [0,1]");
+            *out_lut = candidate; return JFX_SUCCESS;
+        }
+        jfx_lut_destroy(candidate);
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     size_t size = 0;

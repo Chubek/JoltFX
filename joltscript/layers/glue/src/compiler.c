@@ -79,7 +79,12 @@ static const struct { const char *name; uint32_t op; unsigned arity; } operation
     {"+",JOLT_OP_ADD,2}, {"-",JOLT_OP_SUB,2}, {"*",JOLT_OP_MUL,2}, {"/",JOLT_OP_DIV,2},
     {"min",JOLT_OP_MIN,2}, {"max",JOLT_OP_MAX,2}, {"abs",JOLT_OP_ABS,1},
     {"floor",JOLT_OP_FLOOR,1}, {"pow",JOLT_OP_POW,2}, {"sqrt",JOLT_OP_SQRT,1},
-    {"<",JOLT_OP_LT,2}, {"select",JOLT_OP_SELECT,3}
+    {"<",JOLT_OP_LT,2}, {">",JOLT_OP_GT,2}, {"<=",JOLT_OP_LE,2}, {">=",JOLT_OP_GE,2},
+    {"=",JOLT_OP_EQ,2}, {"!=",JOLT_OP_NE,2},
+    {"and",JOLT_OP_AND,2}, {"or",JOLT_OP_OR,2}, {"not",JOLT_OP_NOT,1},
+    {"bitwise-and",JOLT_OP_BITWISE_AND,2}, {"bitwise-or",JOLT_OP_BITWISE_OR,2},
+    {"bitwise-xor",JOLT_OP_BITWISE_XOR,2}, {"shl",JOLT_OP_SHL,2}, {"shr",JOLT_OP_SHR,2},
+    {"select",JOLT_OP_SELECT,3}
 };
 static bool expression(parser_t *p, unsigned depth) {
     if (depth >= 64) return fail(p, JOLT_ERR_BUDGET, "expression nesting limit exceeded");

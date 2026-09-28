@@ -1,0 +1,172 @@
+;; jolt.time — Time and animation functions for Joltscript
+;; Curves, easing functions, and keyframe interpolation.
+
+(module jolt.time)
+
+(import jolt.math (clamp lerp smoothstep))
+
+;; Time conversion
+(defn fps->frame-time [fps] (/ 1.0 fps))
+(defn frame-time->fps [frame-time] (/ 1.0 frame-time))
+(defn seconds->frames [seconds fps] (* seconds fps))
+(defn frames->seconds [frames fps] (/ frames fps))
+
+;; Keyframe interpolation
+(defn keyframe-value [keyframes time]
+  (let sorted (sort keyframes (fn [a b] (< (nth a 0) (nth b 0)))))
+  (let n (length sorted))
+  (if (= n 0) 0.0
+    (if (= n 1) (nth (nth sorted 0) 1)
+      (let first-kf (nth sorted 0))
+      (let last-kf (nth sorted (- n 1)))
+      (if (<= time (nth first-kf 0)) (nth first-kf 1)
+        (if (>= time (nth last-kf 0)) (nth last-kf 1)
+          (let prev (nth sorted 0))
+          (let next (nth sorted 1))
+          (for [i 0 (- n 1)]
+            (let kf (nth sorted i))
+            (let next-kf (nth sorted (+ i 1)))
+            (if (and (>= time (nth kf 0)) (<= time (nth next-kf 0)))
+              (let t (/ (- time (nth kf 0)) (- (nth next-kf 0) (nth kf 0))))
+              (lerp (nth kf 1) (nth next-kf 1) t)
+              (if (< i (- n 2))
+                (set! prev kf)
+                (set! next next-kf)))))))))))
+
+;; Easing functions
+(defn ease-linear [t] t)
+(defn ease-in-quad [t] (* t t))
+(defn ease-out-quad [t] (* t (- 2.0 t)))
+(defn ease-in-out-quad [t]
+  (if (< t 0.5)
+    (* 2.0 t t)
+    (- 1.0 (pow -2.0 (+ (* 2.0 t) 1.0) 2.0))))
+(defn ease-in-cubic [t] (* t t t))
+(defn ease-out-cubic [t] (- (pow (- t 1.0) 3.0) 1.0))
+(defn ease-in-out-cubic [t]
+  (if (< t 0.5)
+    (* 4.0 t t t)
+    (- 1.0 (pow -2.0 (+ (* 2.0 t) 2.0) 3.0))))
+(defn ease-in-quart [t] (* t t t t))
+(defn ease-out-quart [t] (- 1.0 (pow (- t 1.0) 4.0)))
+(defn ease-in-out-quart [t]
+  (if (< t 0.5)
+    (* 8.0 t t t t)
+    (- 1.0 (* 8.0 (pow (- t 1.0) 4.0)))))
+(defn ease-in-quint [t] (* t t t t t))
+(defn ease-out-quint [t] (- 1.0 (pow (- t 1.0) 5.0)))
+(defn ease-in-out-quint [t]
+  (if (< t 0.5)
+    (* 16.0 t t t t t)
+    (- 1.0 (* 16.0 (pow (- t 1.0) 5.0)))))
+(defn ease-in-sine [t] (- 1.0 (cos (* t 1.5707963267948966))))
+(defn ease-out-sine [t] (sin (* t 1.5707963267948966)))
+(defn ease-in-out-sine [t] (- 0.5 (cos (* 3.141592653589793 t))))
+(defn ease-in-expo [t] (if (= t 0.0) 0.0 (pow 2.0 (* 10.0 (- t 1.0)))))
+(defn ease-out-expo [t] (if (= t 1.0) 1.0 (- 1.0 (pow 2.0 (* -10.0 t)))))
+(defn ease-in-out-expo [t]
+  (if (= t 0.0) 0.0
+    (if (= t 1.0) 1.0
+      (if (< t 0.5)
+        (/ (pow 2.0 (* 20.0 t - 10.0)) 2.0)
+        (/ (- 2.0 (pow 2.0 (* -20.0 t 10.0))) 2.0)))))
+(defn ease-in-circ [t] (- 1.0 (sqrt (- 1.0 (* t t)))))
+(defn ease-out-circ [t] (sqrt (- 1.0 (* (- t 1.0) (- t 1.0)))))
+(defn ease-in-out-circ [t]
+  (if (< t 0.5)
+    (/ (- 1.0 (sqrt (- 1.0 (* 4.0 t t)))) 2.0)
+    (/ (sqrt (- 1.0 (* 4.0 (- t 1.0) (- t 1.0)))) 2.0)))
+(defn ease-in-elastic [t]
+  (if (= t 0.0) 0.0
+    (if (= t 1.0) 1.0
+      (- (pow 2.0 (* 10.0 (- t 1.0))) (sin (* (- t 0.1) 20.0 3.141592653589793))))))
+(defn ease-out-elastic [t]
+  (if (= t 0.0) 0.0
+    (if (= t 1.0) 1.0
+      (+ (pow 2.0 (* -10.0 t)) (sin (* (- t 0.1) 20.0 3.141592653589793))))))
+(defn ease-in-out-elastic [t]
+  (if (= t 0.0) 0.0
+    (if (= t 1.0) 1.0
+      (if (< t 0.5)
+        (/ (- (pow 2.0 (* 20.0 t - 10.0)) (sin (* (- t 0.1) 20.0 3.141592653589793))) 2.0)
+        (/ (+ (pow 2.0 (* -20.0 t 10.0)) (sin (* (- t 0.1) 20.0 3.141592653589793))) 2.0)))))
+(defn ease-in-back [t]
+  (let c1 1.70158)
+  (let c3 (+ c1 1.0))
+  (- (* c3 t t t) (* c1 t t))))
+(defn ease-out-back [t]
+  (let c1 1.70158)
+  (let c3 (+ c1 1.0))
+  (+ 1.0 (* c3 (pow (- t 1.0) 3.0)) (* c1 (pow (- t 1.0) 2.0)))))
+(defn ease-in-out-back [t]
+  (let c1 1.70158)
+  (let c2 (* c1 1.525))
+  (if (< t 0.5)
+    (/ (* (+ (* c2 2.0) 1.0) t t) 2.0)
+    (/ (+ (* (+ (* c2 2.0) 1.0) (- t 1.0) (- t 1.0)) (* c2 2.0)) 2.0))))
+(defn ease-in-bounce [t] (- 1.0 (ease-out-bounce (- 1.0 t))))
+(defn ease-out-bounce [t]
+  (let n1 7.5625)
+  (let d1 2.75)
+  (if (< t (/ 1.0 d1))
+    (* n1 t t)
+    (if (< t (/ 2.0 d1))
+      (- (* n1 (- t (/ 1.5 d1)) t) 0.75)
+      (if (< t (/ 2.5 d1))
+        (- (* n1 (- t (/ 2.25 d1)) t) 0.9375)
+        (- (* n1 (- t (/ 2.625 d1)) t) 0.984375)))))
+(defn ease-in-out-bounce [t]
+  (if (< t 0.5)
+    (/ (ease-in-bounce (* 2.0 t)) 2.0)
+    (/ (+ 1.0 (ease-out-bounce (- (* 2.0 t) 1.0))) 2.0)))
+
+;; Animation curves
+(defn linear-curve [t] t)
+(defn bezier-curve [t p0 p1 p2 p3]
+  (let u (- 1.0 t))
+  (let tt (* t t))
+  (let uu (* u u))
+  (let uuu (* uu u))
+  (let ttt (* tt t))
+  (+ (* uuu p0) (* 3.0 uu t p1) (* 3.0 u tt p2) (* ttt p3)))
+
+(defn catmull-rom-curve [t p0 p1 p2 p3]
+  (let t2 (* t t))
+  (let t3 (* t2 t))
+  (let v0 (* 0.5 (- p2 p0)))
+  (let v1 (* 0.5 (- p3 p1)))
+  (let a (- (* 2.0 p2) (* 2.0 p1) p0 p3))
+  (let b (- (* 3.0 p1) (* 3.0 p0) (* 2.0 p2) p3))
+  (let c (* 2.0 (- p2 p0)))
+  (let d p1)
+  (+ (* a t3) (* b t2) (* c t) d)))
+
+;; Time-based animation
+(defn animate [duration time easing-fn]
+  (let t (clamp (/ time duration) 0.0 1.0))
+  (easing-fn t))
+
+(defn ping-pong [t]
+  (let t (mod t 2.0))
+  (if (< t 1.0) t (- 2.0 t)))
+
+(defn loop-time [t duration]
+  (mod t duration))
+
+(defn repeat-count [t duration]
+  (floor (/ t duration)))
+
+(export fps->frame-time frame-time->fps seconds->frames frames->seconds
+        keyframe-value
+        ease-linear ease-in-quad ease-out-quad ease-in-out-quad
+        ease-in-cubic ease-out-cubic ease-in-out-cubic
+        ease-in-quart ease-out-quart ease-in-out-quart
+        ease-in-quint ease-out-quint ease-in-out-quint
+        ease-in-sine ease-out-sine ease-in-out-sine
+        ease-in-expo ease-out-expo ease-in-out-expo
+        ease-in-circ ease-out-circ ease-in-out-circ
+        ease-in-elastic ease-out-elastic ease-in-out-elastic
+        ease-in-back ease-out-back ease-in-out-back
+        ease-in-bounce ease-out-bounce ease-in-out-bounce
+        linear-curve bezier-curve catmull-rom-curve
+        animate ping-pong loop-time repeat-count)

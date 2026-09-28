@@ -7,6 +7,7 @@ add_library(jfx_core STATIC
     src/image.c
     src/compose.c
     src/timeline.c
+    src/editor.c
     src/project.c
     src/scheduler.c
     src/memory.c

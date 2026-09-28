@@ -1,0 +1,240 @@
+;; jolt.strings — String manipulation for Joltscript
+;; Manipulation, parsing, formatting, and regex.
+
+(module jolt.strings)
+
+;; String manipulation
+(defn str-length [s] (length s))
+(defn str-empty? [s] (= (length s) 0))
+(defn str-not-empty? [s] (> (length s) 0))
+(defn str-trim [s]
+  (let start 0)
+  (let end (length s))
+  (while (and (< start end) (whitespace? (nth s start)))
+    (set! start (+ start 1)))
+  (while (and (> start end) (whitespace? (nth s (- end 1))))
+    (set! end (- end 1)))
+  (slice s start end))
+(defn str-trim-left [s]
+  (let start 0)
+  (while (and (< start (length s)) (whitespace? (nth s start)))
+    (set! start (+ start 1)))
+  (slice s start))
+(defn str-trim-right [s]
+  (let end (length s))
+  (while (and (> end 0) (whitespace? (nth s (- end 1))))
+    (set! end (- end 1)))
+  (slice s 0 end))
+(defn str-upper [s]
+  (let result [])
+  (for [i 0 (length s)]
+    (let c (nth s i))
+    (set! result (concat result [(if (and (>= c 97) (<= c 122))
+                                 (- c 32)
+                                 c)])))
+  result)
+(defn str-lower [s]
+  (let result [])
+  (for [i 0 (length s)]
+    (let c (nth s i))
+    (set! result (concat result [(if (and (>= c 65) (<= c 90))
+                                 (+ c 32)
+                                 c)])))
+  result)
+(defn str-capitalize [s]
+  (if (str-empty? s)
+    s
+    (concat [(str-upper (slice s 0 1))) (slice s 1)]))
+(defn str-replace [s old new]
+  (let result [])
+  (let i 0)
+  (let old-len (length old))
+  (while (< i (length s))
+    (if (and (<= (+ i old-len) (length s))
+             (slice s i (+ i old-len)) old)
+      (set! result (concat result [new]))
+      (set! i (+ i old-len))
+      (set! result (concat result [(nth s i)]))
+      (set! i (+ i 1))))
+  result)
+(defn str-replace-all [s old new]
+  (let result s)
+  (while (str-contains? result old)
+    (set! result (str-replace result old new)))
+  result)
+(defn str-split [s sep]
+  (let result [])
+  (let start 0)
+  (let i 0)
+  (let sep-len (length sep))
+  (while (< i (length s))
+    (if (and (<= (+ i sep-len) (length s))
+             (slice s i (+ i sep-len)) sep)
+      (set! result (concat result [(slice s start i)]))
+      (set! start (+ i sep-len))
+      (set! i (+ i sep-len))
+      (set! i (+ i 1))))
+  (concat result [(slice s start)]))
+(defn str-join [sep strs]
+  (let result [])
+  (for [i 0 (length strs)]
+    (if (> i 0)
+      (set! result (concat result [sep])))
+    (set! result (concat result [(nth strs i)])))
+  result)
+(defn str-concat [& strs]
+  (str-join "" strs))
+
+;; String predicates
+(defn str-contains? [s substr]
+  (let i 0)
+  (let sub-len (length substr))
+  (while (<= (+ i sub-len) (length s))
+    (if (slice s i (+ i sub-len)) substr
+      (return true))
+    (set! i (+ i 1)))
+  false)
+(defn str-starts-with? [s prefix]
+  (and (>= (length s) (length prefix))
+       (slice s 0 (length prefix)) prefix))
+(defn str-ends-with? [s suffix]
+  (and (>= (length s) (length suffix))
+       (slice s (- (length s) (length suffix))) suffix))
+
+;; String parsing
+(defn parse-int [s]
+  (let result 0)
+  (let sign 1)
+  (let i 0)
+  (if (and (> (length s) 0) (= (nth s 0) 45))
+    (set! sign -1)
+    (set! i 1))
+  (while (< i (length s))
+    (let c (nth s i))
+    (if (and (>= c 48) (<= c 57))
+      (set! result (+ (* result 10) (- c 48)))
+      (return nil))
+    (set! i (+ i 1)))
+  (* sign result))
+(defn parse-float [s]
+  (let result 0.0)
+  (let sign 1.0)
+  (let i 0)
+  (let decimal false)
+  (let decimal-place 1.0))
+  (if (and (> (length s) 0) (= (nth s 0) 45))
+    (set! sign -1.0)
+    (set! i 1))
+  (while (< i (length s))
+    (let c (nth s i))
+    (if (and (>= c 48) (<= c 57))
+      (if decimal
+        (set! decimal-place (* decimal_place 0.1))
+        (set! result (+ result (* decimal_place (- c 48)))))
+        (set! result (+ (* result 10) (- c 48))))
+      (if (= c 46)
+        (set! decimal true)
+        (return nil))
+      (set! i (+ i 1)))
+  (* sign result))
+(defn parse-bool [s]
+  (let lower (str-lower s))
+  (if (or (= lower "true") (= lower "t") (= lower "yes") (= lower "1"))
+    true
+    (if (or (= lower "false") (= lower "f") (= lower "no") (= lower "0"))
+      false
+      nil)))
+
+;; String formatting
+(defn format [fmt & args]
+  (let result [])
+  (let i 0)
+  (let arg-idx 0)
+  (while (< i (length fmt))
+    (let c (nth fmt i))
+    (if (and (= c 123) (< (+ i 1) (length fmt)))
+      (let c2 (nth fmt (+ i 1)))
+      (if (and (>= c2 48) (<= c2 57))
+        (let idx (- c2 48))
+        (if (< idx (length args))
+          (set! result (concat result [(nth args idx)]))
+          (set! result (concat result [(nth fmt i) (nth fmt (+ i 1))])))
+        (set! i (+ i 1)))
+      (set! result (concat result [c])))
+    (set! i (+ i 1)))
+  result)
+(defn format-int [n]
+  (if (= n 0)
+    "0"
+    (let result [])
+    (let n (if (< n 0) (- n) n))
+    (while (> n 0)
+      (set! result (concat [(+ 48 (mod n 10))] result))
+      (set! n (floor (/ n 10))))
+    (if (< n 0)
+      (set! result (concat [45] result)))
+    (str-join "" result)))
+(defn format-float [n precision]
+  (let int-part (floor n))
+  (let frac-part (abs (- n int-part)))
+  (let result (format-int int-part))
+  (set! result (concat result [46]))
+  (for [i 0 precision]
+    (set! frac-part (* frac-part 10))
+    (let digit (floor frac-part))
+    (set! result (concat result [(+ 48 digit)]))
+    (set! frac-part (- frac-part digit)))
+  (str-join "" result))
+
+;; String slicing and accessing
+(defn char-at [s i] (nth s i))
+(defn substring [s start end] (slice s start end))
+(defn str-reverse [s]
+  (let result [])
+  (for [i (- (length s) 1) 0 -1]
+    (set! result (concat result [(nth s i)])))
+  result)
+(defn str-repeat [s n]
+  (let result [])
+  (for [i 0 n]
+    (set! result (concat result [s])))
+  result)
+(defn str-pad-left [s len char]
+  (let pad-len (- len (length s)))
+  (if (> pad-len 0)
+    (concat (str-repeat char pad-len) s)
+    s))
+(defn str-pad-right [s len char]
+  (let pad-len (- len (length s)))
+  (if (> pad-len 0)
+    (concat s (str-repeat char pad-len))
+    s))
+
+;; Whitespace predicate
+(defn whitespace? [c]
+  (or (= c 32) (= c 9) (= c 10) (= c 13) (= c 12) (= c 11)))
+
+;; String comparison
+(defn str-compare [s1 s2]
+  (let len (min (length s1) (length s2)))
+  (for [i 0 len]
+    (let c1 (nth s1 i))
+    (let c2 (nth s2 i))
+    (if (< c1 c2) (return -1))
+    (if (> c1 c2) (return 1)))
+  (if (< (length s1) (length s2)) -1
+    (if (> (length s1) (length s2)) 1
+      0)))
+(defn str-equals? [s1 s2] (= (str-compare s1 s2) 0))
+(defn str-less? [s1 s2] (< (str-compare s1 s2) 0))
+(defn str-greater? [s1 s2] (> (str-compare s1 s2) 0))
+
+(export str-length str-empty? str-not-empty? str-trim str-trim-left str-trim-right
+        str-upper str-lower str-capitalize str-replace str-replace-all
+        str-split str-join str-concat
+        str-contains? str-starts-with? str-ends-with?
+        parse-int parse-float parse-bool
+        format format-int format-float
+        char-at substring str-reverse str-repeat str-pad-left str-pad-right
+        whitespace?
+        str-compare str-equals? str-less? str-greater?)

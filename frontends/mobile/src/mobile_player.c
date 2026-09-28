@@ -18,6 +18,8 @@
 
 struct jfx_mobile_player {
     jfx_engine_t *engine;
+    jfx_editor_t *editor;
+    bool editing;
     jolt_effects_t *effects;
     char effect_name[MOBILE_EFFECT_NAME_MAX];
     float effect_parameter;
@@ -76,12 +78,15 @@ jfx_result_t jfx_mobile_player_create(const jfx_mobile_player_config_t *config,
     snprintf(player->effect_name, sizeof(player->effect_name), "%s", "brightness");
     player->has_parameter =
         jolt_effects_parameter_count(player->effects, player->effect_name) > 0;
+    player->editor = jfx_editor_create(320, 180);
+    if (!player->editor) { jfx_mobile_player_destroy(player); return JFX_ERROR_OUT_OF_MEMORY; }
     *out_player = player;
     return JFX_SUCCESS;
 }
 
 void jfx_mobile_player_destroy(jfx_mobile_player_t *player) {
     if (!player) return;
+    jfx_editor_destroy(player->editor);
     jolt_effects_destroy(player->effects);
     jfx_engine_shutdown(player->engine);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), player);
@@ -183,6 +188,12 @@ jfx_result_t jfx_mobile_player_render_rgba8(jfx_mobile_player_t *player,
     const size_t pixels = width * height;
     if (out_size < pixels * 4u) return JFX_ERROR_INVALID_ARGUMENT;
 
+    if (player->editing) {
+        jfx_result_t r = jfx_editor_render(player->editor, player->time_seconds,
+            (uint32_t)width, (uint32_t)height, out_rgba, out_size);
+        if (r == JFX_SUCCESS) { advance(player, elapsed_seconds); r = jfx_engine_tick(player->engine); }
+        return r;
+    }
     size_t bytecode_size = 0;
     const uint8_t *bytecode =
         jolt_effects_bytecode(player->effects, player->effect_name, &bytecode_size);
@@ -239,4 +250,29 @@ jfx_result_t jfx_mobile_player_get_state(const jfx_mobile_player_t *player,
     out_state->viewport_scale = player->viewport_scale;
     out_state->playing = (uint32_t)player->playing;
     return JFX_SUCCESS;
+}
+
+/* Enabling the editor switches this surface's preview to its active document. */
+jfx_editor_t *jfx_mobile_player_editor(jfx_mobile_player_t *player) {
+    if (!player) return NULL;
+    player->editing = true;
+    return player->editor;
+}
+jfx_result_t jfx_mobile_player_load_document(jfx_mobile_player_t *player, const char *text, size_t length,
+    char *out_error, size_t error_size) {
+    if (!player) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_result_t r = jfx_editor_load(player->editor, text, length, out_error, error_size);
+    if (r == JFX_SUCCESS) player->editing = true;
+    return r;
+}
+jfx_result_t jfx_mobile_player_save_document(jfx_mobile_player_t *player, char *out_text, size_t capacity, size_t *out_written) {
+    return player ? jfx_editor_save(player->editor, out_text, capacity, out_written) : JFX_ERROR_INVALID_ARGUMENT;
+}
+
+jfx_result_t jfx_mobile_player_edit(jfx_mobile_player_t *player, const char *op, uint32_t a, uint32_t b,
+    uint32_t c, double value, const char *text) {
+    if (!player) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_result_t r=jfx_editor_command(player->editor,op,a,b,c,value,text);
+    if (r==JFX_SUCCESS) player->editing=true;
+    return r;
 }

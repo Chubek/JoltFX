@@ -15,6 +15,7 @@ int cmd_nodes(int argc, char **argv);
 int cmd_lut(int argc, char **argv);
 int cmd_render_graph(int argc, char **argv);
 int cmd_render_sequence(int argc, char **argv);
+int cmd_edit(int argc, char **argv);
 int cmd_project(int argc, char **argv);
 
 /* Help output shared with main.c. */

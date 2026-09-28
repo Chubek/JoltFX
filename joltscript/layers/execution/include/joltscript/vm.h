@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 #define JOLT_EXEC_ABI_MAJOR 0
-#define JOLT_EXEC_ABI_MINOR 2
+#define JOLT_EXEC_ABI_MINOR 3
 #define JOLT_MAX_INPUTS 32u
 #define JOLT_MAX_OUTPUTS 4u
 #define JOLT_MAX_STACK 128u
@@ -39,7 +39,12 @@ typedef enum {
     JOLT_OP_CONST = 1, JOLT_OP_INPUT, JOLT_OP_ADD, JOLT_OP_SUB,
     JOLT_OP_MUL, JOLT_OP_DIV, JOLT_OP_MIN, JOLT_OP_MAX,
     JOLT_OP_ABS, JOLT_OP_FLOOR, JOLT_OP_POW, JOLT_OP_SQRT,
-    JOLT_OP_LT, JOLT_OP_SELECT, JOLT_OP_OUTPUT
+    JOLT_OP_LT, JOLT_OP_SELECT, JOLT_OP_OUTPUT,
+    /* Extended operations (ABI 0.3) */
+    JOLT_OP_GT = 16, JOLT_OP_LE, JOLT_OP_GE, JOLT_OP_EQ, JOLT_OP_NE,
+    JOLT_OP_AND, JOLT_OP_OR, JOLT_OP_NOT,
+    JOLT_OP_BITWISE_AND, JOLT_OP_BITWISE_OR, JOLT_OP_BITWISE_XOR,
+    JOLT_OP_SHL, JOLT_OP_SHR
 } jolt_opcode_t;
 typedef struct jolt_vm jolt_vm_t;
 jolt_vm_t *jolt_vm_create(void);

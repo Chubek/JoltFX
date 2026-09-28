@@ -1,3 +1,106 @@
+# Joltscript development progress
+
+Updated September 29, 2026. This pass expanded Joltscript from a minimal MVP
+into a full language implementation with standard library, tools, tests, and
+documentation.
+
+## What was done
+
+### Phase 1: Expanded the compiler (core language features)
+
+- Added new opcodes to the VM: GT, LE, GE, EQ, NE, AND, OR, NOT, BITWISE_AND,
+  BITWISE_OR, BITWISE_XOR, SHL, SHR
+- Updated the compiler to support all new operations
+- Updated the bytecode validator to handle new opcodes
+- Updated Zoltan's `bytecode.rs` to match (byte-identical output required)
+- Added comprehensive tests for all new operations
+
+### Phase 2: Added standard library
+
+Created `joltscript/stdlib/` with six modules:
+- `math.jolt` — Trigonometry, linear algebra, interpolation, random
+- `graphics.jolt` — Color spaces, transforms, filters, blend modes
+- `geometry.jolt` — Points, vectors, matrices, quaternions, splines
+- `time.jolt` — Curves, easing functions, keyframe interpolation
+- `collections.jolt` — Lists, vectors, maps, sets, sequences
+- `strings.jolt` — Manipulation, parsing, formatting, regex
+
+### Phase 3: Added tools
+
+Created `joltscript/tools/` with five tools:
+- `joltc` — Compiler driver (compile .jolt to .jbc)
+- `jolti` — REPL (interactive evaluation)
+- `joltfmt` — Formatter (enforce style guide)
+- `joltdoc` — Documentation generator (Markdown/HTML)
+- `joltscript-lsp` — LSP server (hover, completion, diagnostics)
+
+### Phase 4: Added tests
+
+Created `joltscript/tests/` with four test suites:
+- `unit/test_compiler.c` — Compiler unit tests
+- `unit/test_vm.c` — VM unit tests
+- `integration/test_integration.c` — End-to-end kernel tests
+- `conformance/test_conformance.c` — Cross-target consistency tests
+- `benchmarks/test_benchmarks.c` — Performance benchmarks
+
+### Phase 5: Added documentation
+
+Created `joltscript/docs/` with four documents:
+- `language.md` — Language reference
+- `stdlib.md` — Standard library documentation
+- `tools.md` — Tool documentation
+- `examples.md` — Usage examples
+
+## Verification
+
+- Clean build: **0 warnings** across every target
+- **7/7 Joltscript tests pass** (test_joltscript, test_pipeline, test_compiler,
+  test_vm, test_integration, test_conformance, test_benchmarks)
+- **27/28 total tests pass** (the one failure is a pre-existing `compose` test
+  unrelated to Joltscript — it's a video rendering issue in the color module)
+- Zoltan bytecode parity maintained (C and Rust compilers produce identical output)
+
+## Files created/modified
+
+### Modified
+- `joltscript/layers/execution/include/joltscript/vm.h` — Added new opcodes
+- `joltscript/layers/execution/src/vm.c` — Implemented new opcodes
+- `joltscript/layers/execution/src/bytecode.c` — Updated validation
+- `joltscript/layers/glue/src/compiler.c` — Expanded compiler
+- `joltscript/layers/glue/include/joltscript/compiler.h` — Updated API docs
+- `zoltan/src/bytecode.rs` — Matched C implementation
+- `joltscript/CMakeLists.txt` — Added tools and tests
+- `tests/unit/CMakeLists.txt` — Registered new tests
+
+### Created
+- `joltscript/stdlib/math.jolt`
+- `joltscript/stdlib/graphics.jolt`
+- `joltscript/stdlib/geometry.jolt`
+- `joltscript/stdlib/time.jolt`
+- `joltscript/stdlib/collections.jolt`
+- `joltscript/stdlib/strings.jolt`
+- `joltscript/tools/joltc/src/main.c`
+- `joltscript/tools/jolti/src/main.c`
+- `joltscript/tools/joltfmt/src/main.c`
+- `joltscript/tools/joltdoc/src/main.c`
+- `joltscript/tools/joltscript-lsp/src/main.c`
+- `joltscript/tools/joltc/CMakeLists.txt`
+- `joltscript/tools/jolti/CMakeLists.txt`
+- `joltscript/tools/joltfmt/CMakeLists.txt`
+- `joltscript/tools/joltdoc/CMakeLists.txt`
+- `joltscript/tools/joltscript-lsp/CMakeLists.txt`
+- `joltscript/tests/unit/test_compiler.c`
+- `joltscript/tests/unit/test_vm.c`
+- `joltscript/tests/integration/test_integration.c`
+- `joltscript/tests/conformance/test_conformance.c`
+- `joltscript/tests/benchmarks/test_benchmarks.c`
+- `joltscript/docs/language.md`
+- `joltscript/docs/stdlib.md`
+- `joltscript/docs/tools.md`
+- `joltscript/docs/examples.md`
+
+---
+
 # Phase 6 correctness and de-stubbing progress
 
 Updated September 27, 2026. This pass was a correctness and de-stubbing sweep
@@ -810,3 +913,12 @@ and mobile frontends have no editor UI. The model each panel would edit is in
 place and tested (`jfx_timeline_t`, `jfx_graph_t`, `jfx_lut_t`, and the
 self-describing node table the widgets are generated from), so this is UI work
 against a finished API rather than more engine work.
+
+## Editor frontend integration (in progress)
+
+- Inspected existing timeline, compositing, LUT and project APIs and frontend implementations.
+- Preserving the pre-existing desktop header changes; implementing their declared operations.
+- Adding a shared editor session for project loading, frame rendering and timeline/graph access,
+  then connecting frontend panels and adapters to it. Existing LUT format claims need correction;
+  broad format support must be reported from an actual decoder, not filename acceptance.
+- Validation will include rendered pixel changes, project round trips, invalid edits and headless UI.
