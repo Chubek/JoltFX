@@ -121,3 +121,203 @@ UTILITY,format_convert,Converts a frame to a requested pixel format and color re
 UTILITY,channel_split,Extracts selected channels from a frame into separate output frames.,"Frame, String[]",Frame[],frame:Frame; channels:String[]; output_format:String; normalize:Bool,Low,Partial
 UTILITY,channel_merge,Combines separate channel frames into a single multi-channel frame.,"Frame[], String[]",Frame,channels:Frame[]; channel_names:String[]; outputBool,Low,Partial
 UTILITY,channel_merge,Combines separate channel frames into a single multi-channel frame.,"Frame[], String[]",Frame,channels:Frame[]; channel_names:String[]; output_format:String; alpha_mode:String,Low,Partial
+VIDEO_EFFECTS,video_glitch_pixel_sort,Sorts pixels within rows based on luminance threshold for glitch effect.,"Frame, Float",Frame,threshold:Float; direction:String; seed:Int; strength:Float,Medium,Yes
+VIDEO_EFFECTS,video_glitch_rgb_split,Splits RGB channels with horizontal offset for chromatic glitch.,"Frame, Vec2",Frame,offset:Vec2; angle:Float; intensity:Float; animate:Bool,Medium,Yes
+VIDEO_EFFECTS,video_glitch_scanline_shift,Shifts individual scanlines horizontally for digital glitch.,"Frame, Float",Frame,amount:Float; frequency:Float; seed:Int; animate:Bool,Medium,Yes
+VIDEO_EFFECTS,video_glitch_digital_noise,Adds digital noise artifacts and block corruption.,"Frame, Float",Frame,amount:Float; block_size:Int; seed:Int; color_noise:Bool,Medium,Yes
+VIDEO_EFFECTS,video_glitch_datamosh,Simulates datamoshing compression artifacts.,"Frame, Frame, Float",Frame,previous:Frame; current:Frame; strength:Float; blend_mode:String,High,Partial
+VIDEO_EFFECTS,video_glitch_vhs_tracking,Adds VHS tracking distortion lines.,"Frame, Float",Frame,position:Float; width:Float; softness:Float; animate:Bool,Medium,Yes
+VIDEO_EFFECTS,video_glitch_vhs_chroma,Simulates VHS chroma bleed and color smearing.,"Frame, Float",Frame,amount:Float; blur_radius:Float; saturation:Float; animate:Bool,Medium,Yes
+VIDEO_EFFECTS,video_glitch_crt_scanlines,Overlays CRT monitor scanlines on the frame.,"Frame, Float",Frame,spacing:Int; intensity:Float; brightness:Float; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_glitch_crt_curvature,Applies CRT screen curvature distortion.,"Frame, Float",Frame,curvature:Float; corner_radius:Float; vignette:Float; border_color:Color,Medium,Yes
+VIDEO_EFFECTS,video_glitch_analog_degradation,Simulates analog signal degradation and noise.,"Frame, Float",Frame,noise:Float; ghosting:Float; distortion:Float; seed:Int,Medium,Yes
+VIDEO_EFFECTS,video_strobe,Creates strobe flashing effect by alternating frames.,"Frame, Float",Frame,rate:Float; duty_cycle:Float; phase:Float; color:Color,Low,Yes
+VIDEO_EFFECTS,video_frame_hold,Holds specific frames for strobe or freeze effect.,"Frame[], Int",Frame,frames:Frame[]; hold_frame:Int; duration:Float; loop:Bool,Low,Partial
+VIDEO_EFFECTS,video_echo,Creates temporal echo effect with decaying frames.,"Frame[], Int",Frame,frames:Frame[]; count:Int; decay:Float; blend_mode:String,Medium,Partial
+VIDEO_EFFECTS,video_ghosting,Creates ghosting afterimage effect.,"Frame, Frame, Float",Frame,current:Frame; previous:Frame; opacity:Float; blend_mode:String,Low,Yes
+VIDEO_EFFECTS,video_interlace,Simulates interlaced video with alternating fields.,"Frame, Bool",Frame,frame:Frame; odd_field:Bool; blend_fields:Bool; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_deinterlace,Deinterlaces video by blending or discarding fields.,"Frame, String",Frame,frame:Frame; method:String; field_order:String; motion_adaptive:Bool,Medium,Yes
+VIDEO_EFFECTS,video_noise_grain,Adds film grain noise to the frame.,"Frame, Float",Frame,amount:Float; size:Float; monochrome:Bool; seed:Int; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_dust_scratches,Overlays film dust and scratches artifacts.,"Frame, Float",Frame,density:Float; scratch_count:Int; seed:Int; animate:Bool; intensity:Float,Medium,Yes
+VIDEO_EFFECTS,video_flicker,Creates frame brightness flicker effect.,"Frame, Float",Frame,amount:Float; frequency:Float; seed:Int; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_jitter,Creates frame position jitter effect.,"Frame, Float",Frame,amount:Float; frequency:Float; seed:Int; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_roll,Creates vertical roll bar effect.,"Frame, Float",Frame,position:Float; width:Float; softness:Float; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_chroma_shift,Shifts chroma channels for chromatic aberration.,"Frame, Vec2",Frame,offset:Vec2; angle:Float; intensity:Float; radial:Bool,Medium,Yes
+VIDEO_EFFECTS,video_pixelate,Creates pixelation effect with block size.,"Frame, Int",Frame,block_size:Int; shape:String; animate:Bool,Low,Yes
+VIDEO_EFFECTS,video_mosaic,Creates mosaic block effect with configurable size.,"Frame, Int",Frame,block_size:Int; grout_width:Float; grout_color:Color; shape:String,Low,Yes
+VIDEO_EFFECTS,video_halftone,Creates halftone print effect with dot pattern.,"Frame, Float",Frame,dot_size:Float; angle:Float; shape:String; contrast:Float,Medium,Yes
+NLE,nle_cut,Performs hard cut between two frame sources.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; cut_point:Float,Low,Yes
+NLE,nle_j_cut,Performs J-cut where audio leads video transition.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; audio_lead:Float,Low,Yes
+NLE,nle_l_cut,Performs L-cut where video leads audio transition.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; video_lead:Float,Low,Yes
+NLE,nle_split_edit,Performs split edit at a specified point.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; split_point:Float,Low,Yes
+NLE,nle_ripple_delete,Removes frames and ripples subsequent frames forward.,"Frame[], Int",Frame,frames:Frame[]; start:Int; count:Int; ripple:Bool,Low,Partial
+NLE,nle_ripple_insert,Inserts frames and ripples subsequent frames backward.,"Frame[], Frame, Int",Frame,frames:Frame[]; insert:Frame; position:Int; count:Int,Low,Partial
+NLE,nle_slip_edit,Adjusts in and out points while maintaining duration.,"Frame[], Vec2",Frame,frames:Frame[]; slip:Vec2; duration:Float; boundary_mode:String,Low,Partial
+NLE,nle_slide_edit,Moves a clip while maintaining adjacent clip positions.,"Frame[], Vec2",Frame,frames:Frame[]; slide:Vec2; duration:Float; boundary_mode:String,Low,Partial
+NLE,nle_roll_edit,Adjusts cut point between two adjacent clips.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; roll_amount:Float,Low,Yes
+NLE,nle_rate_stretch,Stretches or compresses clip duration.,"Frame[], Float",Frame,frames:Frame[]; rate:Float; interpolation:String; pitch_correct:Bool,Medium,Partial
+NLE,nle_speed_ramp,Creates variable speed ramp over time.,"Frame[], Curve",Frame,frames:Frame[]; speed_curve:Curve; interpolation:String; duration:Float,Medium,Partial
+NLE,nle_reverse_playback,Reverses playback direction of frames.,"Frame[], Bool",Frame,frames:Frame[]; reverse:Bool; maintain_duration:Bool,Low,Partial
+NLE,nle_frame_interpolation,Interpolates frames for smooth slow motion.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; method:String; optical_flow:Bool,High,Partial
+NLE,nle_timecode_overlay,Overlays timecode display on video.,"Frame, Float",Frame,frame:Frame; timecode:Float; format:String; position:Vec2; font:String,Low,Partial
+NLE,nle_safe_title_overlay,Overlays safe title area guides.,"Frame, Float",Frame,frame:Frame; safe_margin:Float; show_center:Bool; show_grid:Bool,Low,Yes
+NLE,nle_lower_third,Overlays lower third graphic on video.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; style:String; position:Vec2,Medium,Partial
+NLE,nle_chapter_marker,Inserts chapter marker at specified frame.,"Frame[], Int",Frame,frames:Frame[]; marker_frame:Int; label:String; color:Color,Low,Partial
+NLE,nle_audio_crossfade,Creates audio crossfade between two audio sources.,"AudioBuffer, AudioBuffer, Float",AudioBuffer,from:AudioBuffer; to:AudioBuffer; progress:Float; curve:Float,Low,Yes
+NLE,nle_audio_ducking,Ducks audio level under dialogue or other audio.,"AudioBuffer, Float",AudioBuffer,audio:AudioBuffer; threshold:Float; ratio:Float; attack:Float; release:Float,Medium,Yes
+NLE,nle_multicam_sync,Synchronizes multiple camera angles by timecode.,"Frame[], Float",Frame,frames:Frame[]; timecode:Float; angles:Int; sync_method:String,High,Partial
+COLOR_CALIBRATION,calib_white_balance,Corrects white balance using temperature and tint.,"Frame, Vec2",Frame,temperature:Float; tint:Float; strength:Float; color_space:String,Medium,Yes
+COLOR_CALIBRATION,calib_black_level,Calibrates black level to correct offset.,"Frame, Float",Frame,black_level:Float; channel:String; clamp:Bool; preserve_shadows:Bool,Low,Yes
+COLOR_CALIBRATION,calib_white_point,Calibrates white point to correct gain.,"Frame, Float",Frame,white_point:Float; channel:String; clamp:Bool; preserve_highlights:Bool,Low,Yes
+COLOR_CALIBRATION,calib_gamma_curve,Applies gamma curve for display calibration.,"Frame, Float",Frame,gamma:Float; channel:String; pivot:Float; clamp:Bool,Low,Yes
+COLOR_CALIBRATION,calib_color_space_transform,Converts between color spaces.,"Frame, String, String",Frame,input_space:String; output_space:String; adaptation:String; clamp:Bool,Medium,Yes
+COLOR_CALIBRATION,calib_rec709_to_rec2020,Converts Rec.709 to Rec.2020 color space.,"Frame, Bool",Frame,frame:Frame; clamp:Bool; preserve_luma:Bool,Low,Yes
+COLOR_CALIBRATION,calib_srgb_to_display_p3,Converts sRGB to Display P3 color space.,"Frame, Bool",Frame,frame:Frame; clamp:Bool; preserve_luma:Bool,Low,Yes
+COLOR_CALIBRATION,calib_hdr_tone_map,Tone maps HDR content for SDR display.,"Frame, Float",Frame,peak_nits:Float; tone_curve:String; saturation:Float; preserve_hues:Bool,Medium,Yes
+COLOR_CALIBRATION,calib_hdr_maxcll,Calibrates MaxCLL metadata for HDR.,"Frame, Float",Frame,frame:Frame; maxcll:Float; preserve_highlights:Bool,Low,Yes
+COLOR_CALIBRATION,calib_hdr_maxfall,Calibrates MaxFALL metadata for HDR.,"Frame, Float",Frame,frame:Frame; maxfall:Float; preserve_highlights:Bool,Low,Yes
+COLOR_CALIBRATION,calib_luminance_match,Matches luminance between two sources.,"Frame, Frame",Frame,source:Frame; target:Frame; method:String; preserve_hues:Bool,Medium,Yes
+COLOR_CALIBRATION,calib_chroma_match,Matches chroma between two sources.,"Frame, Frame",Frame,source:Frame; target:Frame; method:String; preserve_luma:Bool,Medium,Yes
+COLOR_CALIBRATION,calib_monitor_profile,Applies monitor profile for calibration.,"Frame, String",Frame,profile:String; intent:String; black_point_compensation:Bool,Low,Yes
+COLOR_CALIBRATION,calib_primaries_adjust,Adjusts color primaries for calibration.,"Frame, Vec3",Frame,red:Vec3; green:Vec3; blue:Vec3; white:Vec3; clamp:Bool,Medium,Yes
+COLOR_CALIBRATION,calib_matrix_transform,Applies color matrix transform for calibration.,"Frame, Matrix3",Frame,matrix:Matrix3; clamp:Bool; preserve_luma:Bool,Low,Yes
+COLOR_CALIBRATION,calib_1d_lut_calib,Applies 1D LUT for calibration.,"Frame, LUT",Frame,lut:LUT; channel:String; interpolation:String; clamp:Bool,Low,Yes
+COLOR_CALIBRATION,calib_3d_lut_calib,Applies 3D LUT for calibration.,"Frame, LUT",Frame,lut:LUT; interpolation:String; input_space:String; output_space:String,Medium,Yes
+COLOR_CALIBRATION,calib_legal_to_full,Converts legal range to full range.,"Frame, Vec2",Frame,frame:Frame; legal_range:Vec2; clamp:Bool,Low,Yes
+COLOR_CALIBRATION,calib_full_to_legal,Converts full range to legal range.,"Frame, Vec2",Frame,frame:Frame; legal_range:Vec2; clamp:Bool,Low,Yes
+COLOR_CALIBRATION,calib_log_to_linear,Converts log encoding to linear.,"Frame, String",Frame,log_curve:String; black_offset:Float; clamp:Bool,Low,Yes
+COLOR_GRADING,grade_split_toning,Applies split toning to shadows and highlights.,"Frame, Color, Color",Frame,shadow_color:Color; highlight_color:Color; balance:Float; preserve_luma:Bool,Medium,Yes
+COLOR_GRADING,grade_shadows_highlights,Recovers shadow and highlight detail.,"Frame, Float, Float",Frame,shadows:Float; highlights:Float; radius:Float; mask:Mask,Medium,Yes
+COLOR_GRADING,grade_black_and_white,Converts frame to black and white.,"Frame, Float",Frame,frame:Frame; method:String; tint:Color; preserve_luma:Bool,Low,Yes
+COLOR_GRADING,grade_sepia,Applies sepia tone effect.,"Frame, Float",Frame,frame:Frame; intensity:Float; color:Color; preserve_luma:Bool,Low,Yes
+COLOR_GRADING,grade_cross_process,Applies cross process film effect.,"Frame, Float",Frame,frame:Frame; intensity:Float; channel_shift:Vec3; preserve_luma:Bool,Medium,Yes
+COLOR_GRADING,grade_film_emulation,Emulates film stock characteristics.,"Frame, String",Frame,film_stock:String; intensity:Float; grain:Float; halation:Float,Medium,Yes
+COLOR_GRADING,grade_kodachrome,Emulates Kodachrome film stock.,"Frame, Float",Frame,frame:Frame; intensity:Float; grain:Float; saturation:Float,Medium,Yes
+COLOR_GRADING,grade_velvia,Emulates Velvia film stock.,"Frame, Float",Frame,frame:Frame; intensity:Float; grain:Float; contrast:Float,Medium,Yes
+COLOR_GRADING,grade_portra,Emulates Portra film stock.,"Frame, Float",Frame,frame:Frame; intensity:Float; grain:Float; warmth:Float,Medium,Yes
+COLOR_GRADING,grade_bleach_bypass,Applies bleach bypass film effect.,"Frame, Float",Frame,frame:Frame; intensity:Float; contrast:Float; saturation:Float,Medium,Yes
+COLOR_GRADING,grade_teal_orange,Applies teal and orange color grading.,"Frame, Float",Frame,frame:Frame; intensity:Float; teal_hue:Float; orange_hue:Float,Medium,Yes
+COLOR_GRADING,grade_color_wash,Applies color wash overlay.,"Frame, Color",Frame,frame:Frame; color:Color; intensity:Float; blend_mode:String,Low,Yes
+COLOR_GRADING,grade_duotone,Applies duotone effect with two colors.,"Frame, Color, Color",Frame,frame:Frame; shadow_color:Color; highlight_color:Color; blend_mode:String,Low,Yes
+COLOR_GRADING,grade_tritone,Applies tritone effect with three colors.,"Frame, Color, Color, Color",Frame,frame:Frame; shadow_color:Color; midtone_color:Color; highlight_color:Color,Low,Yes
+COLOR_GRADING,grade_gradient_map,Applies gradient map for color grading.,"Frame, ColorMap",Frame,frame:Frame; gradient:ColorMap; blend_mode:String; intensity:Float,Low,Yes
+COLOR_GRADING,grade_photo_filter,Applies photo filter color effect.,"Frame, Color",Frame,frame:Frame; filter_color:Color; density:Float; preserve_luma:Bool,Low,Yes
+COLOR_GRADING,grade_color_lookup,Applies color lookup table for grading.,"Frame, LUT",Frame,frame:Frame; lut:LUT; intensity:Float; blend_mode:String,Low,Yes
+COLOR_GRADING,grade_hue_vs_hue,Adjusts hue based on source hue.,"Frame, Curve",Frame,frame:Frame; curve:Curve; channel:String; intensity:Float,Medium,Yes
+COLOR_GRADING,grade_hue_vs_sat,Adjusts saturation based on source hue.,"Frame, Curve",Frame,frame:Frame; curve:Curve; channel:String; intensity:Float,Medium,Yes
+COLOR_GRADING,grade_hue_vs_luma,Adjusts luminance based on source hue.,"Frame, Curve",Frame,frame:Frame; curve:Curve; channel:String; intensity:Float,Medium,Yes
+COLOR_GRADING,grade_sat_vs_sat,Adjusts saturation based on source saturation.,"Frame, Curve",Frame,frame:Frame; curve:Curve; channel:String; intensity:Float,Medium,Yes
+COLOR_GRADING,grade_luma_vs_sat,Adjusts saturation based on source luminance.,"Frame, Curve",Frame,frame:Frame; curve:Curve; channel:String; intensity:Float,Medium,Yes
+COLOR_GRADING,grade_rgb_curves,Applies RGB curves adjustment.,"Frame, Curve, Curve, Curve",Frame,red_curve:Curve; green_curve:Curve; blue_curve:Curve; master_curve:Curve,Medium,Yes
+COLOR_GRADING,grade_luma_curves,Applies luminance curves adjustment.,"Frame, Curve",Frame,frame:Frame; curve:Curve; channel:String; intensity:Float,Medium,Yes
+COLOR_GRADING,grade_color_wheels,Applies color wheels grading.,"Frame, Vec3, Vec3, Vec3",Frame,shadows:Vec3; midtones:Vec3; highlights:Vec3; preserve_luma:Bool,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_stack,Stacks multiple layers in z-order.,"Frame[], String",Frame,layers:Frame[]; blend_modes:String[]; opacities:Float[]; mask:Mask,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_blend,Blends two layers with specified mode.,"Frame, Frame, String",Frame,base:Frame; blend:Frame; mode:String; opacity:Float; mask:Mask,Low,Yes
+VIDEO_COMPOSITING,comp_layer_opacity,Controls layer opacity.,"Frame, Float",Frame,frame:Frame; opacity:Float; mask:Mask; premultiplied:Bool,Low,Yes
+VIDEO_COMPOSITING,comp_layer_mask,Applies mask to layer.,"Frame, Mask",Frame,frame:Frame; mask:Mask; invert:Bool; feather:Float,Low,Yes
+VIDEO_COMPOSITING,comp_layer_track_matte,Uses track matte for layer compositing.,"Frame, Frame, String",Frame,frame:Frame; matte:Frame; mode:String; invert:Bool,Low,Yes
+VIDEO_COMPOSITING,comp_layer_parenting,Parents layer to another for transform inheritance.,"Frame, Frame, Vec3",Frame,child:Frame; parent:Frame; offset:Vec3; inherit_rotation:Bool,Medium,Partial
+VIDEO_COMPOSITING,comp_layer_precompose,Pre-composes layers into single frame.,"Frame[], String",Frame,layers:Frame[]; blend_modes:String[]; opacities:Float[]; background:Color,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_adjustment,Applies adjustment layer to underlying layers.,"Frame[], Kernel",Frame,layers:Frame[]; adjustment:Kernel; intensity:Float; mask:Mask,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_null,Creates null object for parenting.,"Vec2, Vec3",Frame,position:Vec2; rotation:Vec3; scale:Vec3; width:Int; height:Int,Low,Yes
+VIDEO_COMPOSITING,comp_layer_camera,Simulates camera layer with 3D transform.,"Frame, Vec3, Vec3",Frame,frame:Frame; position:Vec3; rotation:Vec3; focal_length:Float; depth_of_field:Float,High,Partial
+VIDEO_COMPOSITING,comp_layer_light,Simulates light layer for illumination.,"Frame, Vec2, Color",Frame,frame:Frame; position:Vec2; color:Color; intensity:Float; falloff:Float,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_3d_transform,Applies 3D transform to layer.,"Frame, Vec3, Vec3, Vec3",Frame,frame:Frame; position:Vec3; rotation:Vec3; scale:Vec3; perspective:Float,High,Partial
+VIDEO_COMPOSITING,comp_layer_motion_blur,Applies per-layer motion blur.,"Frame[], Float",Frame,frames:Frame[]; shutter_angle:Float; samples:Int; blur_amount:Float,High,Partial
+VIDEO_COMPOSITING,comp_layer_time_remap,Applies per-layer time remapping.,"Frame[], Curve",Frame,frames:Frame[]; time_curve:Curve; interpolation:String; boundary_mode:String,Medium,Partial
+VIDEO_COMPOSITING,comp_layer_stabilize,Stabilizes layer motion.,"Frame[], Float",Frame,frames:Frame[]; smoothing:Float; crop:Float; method:String,High,Partial
+VIDEO_COMPOSITING,comp_layer_warp_stabilize,Applies warp stabilization to layer.,"Frame[], Float",Frame,frames:Frame[]; smoothing:Float; crop:Float; method:String,High,Partial
+VIDEO_COMPOSITING,comp_layer_rolling_shutter,Corrects rolling shutter distortion.,"Frame, Float",Frame,frame:Frame; scan_time:Float; method:String; strength:Float,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_frame_blend,Blends frames with motion blur.,"Frame[], Float",Frame,frames:Frame[]; blend_amount:Float; method:String; samples:Int,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_pixel_motion,Applies pixel motion blur.,"Frame, FlowField",Frame,frame:Frame; flow:FlowField; samples:Int; shutter:Float,High,Partial
+VIDEO_COMPOSITING,comp_layer_cc_sphere,Applies CC sphere distortion.,"Frame, Vec2, Float",Frame,frame:Frame; center:Vec2; radius:Float; rotation:Vec3; light:Vec3,High,Partial
+VIDEO_COMPOSITING,comp_layer_cc_cylinder,Applies CC cylinder distortion.,"Frame, Vec2, Float",Frame,frame:Frame; center:Vec2; radius:Float; rotation:Vec3; light:Vec3,High,Partial
+VIDEO_COMPOSITING,comp_layer_fractal_noise,Generates fractal noise layer.,"Int, Float, Int, Int",Frame,seed:Int; scale:Float; octaves:Int; width:Int; height:Int; color:Color,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_card_wipe,Applies card wipe transition.,"Frame, Frame, Float",Frame,from:Frame; to:Frame; progress:Float; direction:Vec2; softness:Float,Low,Yes
+VIDEO_COMPOSITING,comp_layer_gradient_wipe,Applies gradient wipe transition.,"Frame, Frame, Frame, Float",Frame,from:Frame; to:Frame; gradient:Frame; progress:Float; softness:Float,Medium,Yes
+VIDEO_COMPOSITING,comp_layer_luma_key,Keys out layer based on luminance.,"Frame, Float, Float",Frame,frame:Frame; low:Float; high:Float; softness:Float; invert:Bool,Low,Yes
+STYLIZE,stylize_oil_paint,Applies oil painting effect.,"Frame, Int",Frame,frame:Frame; radius:Int; intensity:Float; color_space:String,Medium,Yes
+STYLIZE,stylize_watercolor,Applies watercolor painting effect.,"Frame, Float",Frame,frame:Frame; wetness:Float; pigment_density:Float; paper_texture:Float,Medium,Yes
+STYLIZE,stylize_pencil_sketch,Applies pencil sketch effect.,"Frame, Float",Frame,frame:Frame; contrast:Float; edge_threshold:Float; paper_color:Color,Medium,Yes
+STYLIZE,stylize_ink_outline,Applies ink outline effect.,"Frame, Float",Frame,frame:Frame; threshold:Float; line_width:Float; color:Color,Medium,Yes
+STYLIZE,stylize_cartoon,Applies cartoon/cel shading effect.,"Frame, Int",Frame,frame:Frame; levels:Int; edge_threshold:Float; saturation:Float,Medium,Yes
+STYLIZE,stylize_comic_book,Applies comic book effect.,"Frame, Float",Frame,frame:Frame; dot_size:Float; edge_threshold:Float; color_reduction:Int,Medium,Yes
+STYLIZE,stylize_mosaic_stained,Applies stained glass mosaic effect.,"Frame, Int",Frame,frame:Frame; cell_size:Int; grout_width:Float; grout_color:Color,Medium,Yes
+STYLIZE,stylize_pointillism,Applies pointillism painting effect.,"Frame, Float",Frame,frame:Frame; dot_size:Float; dot_spacing:Float; color_variation:Float,Medium,Yes
+STYLIZE,stylize_low_poly,Applies low poly art effect.,"Frame, Int",Frame,frame:Frame; triangle_size:Int; color_reduction:Int; edge_preservation:Float,High,Partial
+STYLIZE,stylize_pixel_art,Applies pixel art effect.,"Frame, Int",Frame,frame:Frame; pixel_size:Int; color_palette:Int; dithering:String,Low,Yes
+STYLIZE,stylize_8bit,Applies 8-bit retro effect.,"Frame, Int",Frame,frame:Frame; color_palette:Int; dithering:String; scanlines:Bool,Low,Yes
+STYLIZE,stylize_duotone_art,Applies duotone art effect.,"Frame, Color, Color",Frame,frame:Frame; dark_color:Color; light_color:Color; contrast:Float,Low,Yes
+STYLIZE,stylize_line_art,Applies line art effect.,"Frame, Float",Frame,frame:Frame; edge_threshold:Float; line_width:Float; color:Color,Medium,Yes
+STYLIZE,stylize_contour,Applies contour line effect.,"Frame, Float",Frame,frame:Frame; threshold:Float; line_width:Float; color:Color,Medium,Yes
+STYLIZE,stylize_relief,Applies relief/emboss effect.,"Frame, Float",Frame,frame:Frame; angle:Float; depth:Float; highlight:Color; shadow:Color,Medium,Yes
+STYLIZE,stylize_metal,Applies metallic effect.,"Frame, Float",Frame,frame:Frame; shininess:Float; specular:Float; color:Color,Medium,Yes
+STYLIZE,stylize_neon,Applies neon glow effect.,"Frame, Float",Frame,frame:Frame; threshold:Float; glow_radius:Float; color:Color; intensity:Float,Medium,Yes
+STYLIZE,stylize_thermal,Applies thermal camera effect.,"Frame, ColorMap",Frame,frame:Frame; palette:ColorMap; intensity:Float; noise:Float,Medium,Yes
+STYLIZE,stylize_night_vision,Applies night vision effect.,"Frame, Float",Frame,frame:Frame; intensity:Float; noise:Float; green_tint:Color,Medium,Yes
+STYLIZE,stylize_xray,Applies X-ray effect.,"Frame, Float",Frame,frame:Frame; intensity:Float; invert:Bool; color:Color,Medium,Yes
+TEMPORAL,temporal_frame_average,Averages frames over time.,"Frame[], Int",Frame,frames:Frame[]; window:Int; weights:Float[]; normalize:Bool,Low,Yes
+TEMPORAL,temporal_frame_median,Computes median of frames over time.,"Frame[], Int",Frame,frames:Frame[]; window:Int; channel:String; normalize:Bool,Medium,Yes
+TEMPORAL,temporal_temporal_denoise,Reduces noise using temporal information.,"Frame[], Float",Frame,frames:Frame[]; strength:Float; motion_threshold:Float; method:String,High,Partial
+TEMPORAL,temporal_temporal_smooth,Smooths frames over time.,"Frame[], Float",Frame,frames:Frame[]; strength:Float; method:String; preserve_edges:Bool,Medium,Yes
+TEMPORAL,temporal_motion_compensate,Compensates motion between frames.,"Frame, Frame, FlowField",Frame,reference:Frame; target:Frame; flow:FlowField; interpolation:String,High,Partial
+TEMPORAL,temporal_frame_rate_up,Increases frame rate by interpolation.,"Frame[], Int",Frame,frames:Frame[]; factor:Int; method:String; optical_flow:Bool,High,Partial
+TEMPORAL,temporal_frame_rate_down,Decreases frame rate by decimation.,"Frame[], Int",Frame,frames:Frame[]; factor:Int; method:String; blend:Bool,Low,Partial
+TEMPORAL,temporal_optical_flow_blur,Applies blur based on optical flow.,"Frame, FlowField",Frame,frame:Frame; flow:FlowField; samples:Int; shutter:Float,High,Partial
+TEMPORAL,temporal_warp_stabilizer,Stabilizes video using warp transformation.,"Frame[], Float",Frame,frames:Frame[]; smoothing:Float; crop:Float; method:String,High,Partial
+TEMPORAL,temporal_rolling_shutter_fix,Fixes rolling shutter distortion.,"Frame, Float",Frame,frame:Frame; scan_time:Float; method:String; strength:Float,Medium,Yes
+TEMPORAL,temporal_flicker_reduction,Reduces temporal flicker.,"Frame[], Float",Frame,frames:Frame[]; strength:Float; method:String; preserve_motion:Bool,Medium,Yes
+TEMPORAL,temporal_judder_reduction,Reduces temporal judder.,"Frame[], Float",Frame,frames:Frame[]; strength:Float; method:String; preserve_motion:Bool,Medium,Yes
+TEMPORAL,temporal_dejudder,Removes judder from video.,"Frame[], Float",Frame,frames:Frame[]; strength:Float; method:String; preserve_motion:Bool,Medium,Yes
+TEMPORAL,temporal_interlace_blend,Blends interlaced fields.,"Frame, String",Frame,frame:Frame; field_order:String; method:String; motion_adaptive:Bool,Medium,Yes
+TEMPORAL,temporal_field_weave,Weaves fields together.,"Frame, String",Frame,frame:Frame; field_order:String; method:String; motion_adaptive:Bool,Medium,Yes
+TEMPORAL,temporal_field_blend,Blends fields together.,"Frame, String",Frame,frame:Frame; field_order:String; method:String; motion_adaptive:Bool,Medium,Yes
+TEMPORAL,temporal_motion_adaptive,Applies motion adaptive processing.,"Frame[], Float",Frame,frames:Frame[]; motion_threshold:Float; method:String; strength:Float,Medium,Yes
+TEMPORAL,temporal_super_resolution,Enhances resolution using temporal information.,"Frame[], Int",Frame,frames:Frame[]; factor:Int; method:String; alignment:String,High,Partial
+TEMPORAL,temporal_hdr_merge,Merges HDR frames with different exposures.,"Frame[], Float[]",Frame,frames:Frame[]; exposures:Float[]; method:String; ghost_removal:Bool,High,Partial
+TEMPORAL,temporal_exposure_blend,Blends frames with different exposures.,"Frame[], Float[]",Frame,frames:Frame[]; exposures:Float[]; method:String; ghost_removal:Bool,High,Partial
+KEYING,keying_luma_keyer,Keys out based on luminance values.,"Frame, Float, Float",Frame,frame:Frame; low:Float; high:Float; softness:Float; invert:Bool,Low,Yes
+KEYING,keying_chroma_keyer,Keys out based on chroma values.,"Frame, Color",Frame,frame:Frame; key_color:Color; tolerance:Float; softness:Float; despill:Bool,Medium,Yes
+KEYING,keying_color_keyer,Keys out based on color range.,"Frame, Color, Float",Frame,frame:Frame; key_color:Color; tolerance:Float; softness:Float; despill:Bool,Medium,Yes
+KEYING,keying_difference_keyer,Keys out based on difference from background.,"Frame, Frame",Frame,frame:Frame; background:Frame; threshold:Float; softness:Float; despill:Bool,Medium,Yes
+KEYING,keying_inner_outer,Keys using inner and outer masks.,"Frame, Mask, Mask",Frame,frame:Frame; inner_mask:Mask; outer_mask:Mask; softness:Float; despill:Bool,Medium,Yes
+KEYING,keying_extract_keyer,Keys out using histogram extraction.,"Frame, Float",Frame,frame:Frame; threshold:Float; softness:Float; channel:String; invert:Bool,Low,Yes
+KEYING,keying_linear_color,Keys using linear color keying.,"Frame, Color, Float",Frame,frame:Frame; key_color:Color; tolerance:Float; softness:Float; despill:Bool,Medium,Yes
+KEYING,keying_color_difference,Keys using color difference method.,"Frame, Color, Float",Frame,frame:Frame; key_color:Color; tolerance:Float; softness:Float; despill:Bool,Medium,Yes
+KEYING,keying_screen_matte,Creates screen matte from keyed layer.,"Frame, Float",Frame,frame:Frame; threshold:Float; softness:Float; despill:Bool; clip_black:Float,Medium,Yes
+KEYING,keying_refine_hard,Refines hard matte edges.,"Frame, Float",Frame,frame:Frame; erode:Float; dilate:Float; softness:Float; contrast:Float,Medium,Yes
+KEYING,keying_refine_soft,Refines soft matte edges.,"Frame, Float",Frame,frame:Frame; erode:Float; dilate:Float; softness:Float; blur:Float,Medium,Yes
+KEYING,keying_matte_choker,Chokes or spreads matte edges.,"Frame, Float",Frame,frame:Frame; choke:Float; softness:Float; contrast:Float; shift:Float,Medium,Yes
+KEYING,keying_despill,Removes color spill from keyed edges.,"Frame, Color",Frame,frame:Frame; spill_color:Color; amount:Float; method:String; preserve_luma:Bool,Medium,Yes
+KEYING,keying_edge_blend,Blends keyed edges with background.,"Frame, Frame, Float",Frame,foreground:Frame; background:Frame; blend_radius:Float; method:String; color_correct:Bool,Medium,Yes
+KEYING,keying_garbage_matte,Applies garbage matte to remove unwanted areas.,"Frame, Mask",Frame,frame:Frame; garbage_matte:Mask; invert:Bool; feather:Float,Low,Yes
+TRACKING,track_point_tracker,Tracks point features across frames.,"Frame[], Vec2",Point[],frames:Frame[]; seed_point:Vec2; search_radius:Int; method:String,High,Partial
+TRACKING,track_planar_tracker,Tracks planar surfaces across frames.,"Frame[], Path",Path,frames:Frame[]; region:Path; method:String; refinement:String,High,Partial
+TRACKING,track_camera_tracker,Estimates camera motion across frames.,"Frame[], Vec3",Vec3,frames:Frame[]; method:String; refinement:String; smoothing:Float,High,Partial
+TRACKING,track_face_tracker,Tracks facial features across frames.,"Frame[], Int",Point[],frames:Frame[]; face_id:Int; landmarks:Int; method:String; smoothing:Float,High,Partial
+TRACKING,track_object_tracker,Tracks objects across frames.,"Frame[], Mask",Point[],frames:Frame[]; object_mask:Mask; method:String; smoothing:Float,High,Partial
+TRACKING,track_motion_tracker,Tracks motion vectors across frames.,"Frame[], FlowField",FlowField,frames:Frame[]; method:String; block_size:Int; search_range:Int,High,Partial
+TRACKING,track_stabilize_track,Tracks features for stabilization.,"Frame[], Float",Point[],frames:Frame[]; smoothing:Float; method:String; refinement:String,High,Partial
+TRACKING,track_corner_pin_track,Tracks four corners for corner pin.,"Frame[], Vec2[]",Vec2[],frames:Frame[]; corners:Vec2[]; method:String; refinement:String,High,Partial
+TRACKING,track_transform_track,Tracks transform across frames.,"Frame[], Vec3",Vec3,frames:Frame[]; method:String; refinement:String; smoothing:Float,High,Partial
+TRACKING,track_scale_track,Tracks scale changes across frames.,"Frame[], Float",Float,frames:Frame[]; method:String; refinement:String; smoothing:Float,High,Partial
+TRACKING,track_rotate_track,Tracks rotation across frames.,"Frame[], Float",Float,frames:Frame[]; method:String; refinement:String; smoothing:Float,High,Partial
+TRACKING,track_position_track,Tracks position across frames.,"Frame[], Vec2",Vec2,frames:Frame[]; method:String; refinement:String; smoothing:Float,High,Partial
+TRACKING,track_blur_track,Tracks blur amount across frames.,"Frame[], Float",Float,frames:Frame[]; method:String; refinement:String; smoothing:Float,High,Partial
+TRACKING,track_warp_track,Tracks warp transformation across frames.,"Frame[], Vec2[]",Vec2[],frames:Frame[]; control_points:Vec2[]; method:String; refinement:String,High,Partial
+TRACKING,track_mesh_track,Tracks mesh deformation across frames.,"Frame[], Vec2[]",Vec2[],frames:Frame[]; mesh_points:Vec2[]; method:String; refinement:String,High,Partial
+TEXT_OVERLAY,text_title_safe,Overlays title safe area guides.,"Frame, Float",Frame,frame:Frame; safe_margin:Float; show_center:Bool; show_grid:Bool,Low,Yes
+TEXT_OVERLAY,text_lower_third,Overlays lower third text graphic.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; style:String; position:Vec2,Medium,Partial
+TEXT_OVERLAY,text_crawl,Overlays news crawl text.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; speed:Float; position:Vec2,Medium,Partial
+TEXT_OVERLAY,text_roll,Overlays rolling credits text.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; speed:Float; position:Vec2,Medium,Partial
+TEXT_OVERLAY,text_subtitle,Overlays subtitle text.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; style:String; position:Vec2,Low,Partial
+TEXT_OVERLAY,text_caption,Overlays caption text.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; style:String; position:Vec2,Low,Partial
+TEXT_OVERLAY,text_timecode,Overlays timecode display.,"Frame, Float",Frame,frame:Frame; timecode:Float; format:String; position:Vec2; font:String,Low,Partial
+TEXT_OVERLAY,text_watermark,Overlays watermark on video.,"Frame, String, Float",Frame,frame:Frame; text:String; opacity:Float; position:Vec2; tiling:Bool,Low,Yes
+TEXT_OVERLAY,text_bug,Overlays broadcast bug graphic.,"Frame, String, Float",Frame,frame:Frame; text:String; opacity:Float; position:Vec2; style:String,Low,Partial
+TEXT_OVERLAY,text_chyron,Overlays chyron text graphic.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; style:String; position:Vec2,Medium,Partial
+TEXT_OVERLAY,text_supers,Overlays supers text graphic.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; style:String; position:Vec2,Medium,Partial
+TEXT_OVERLAY,text_karaoke,Overlays karaoke text with highlighting.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; highlight_color:Color; style:String,Medium,Partial
+TEXT_OVERLAY,text_caption_608,Overlays CEA-608 closed caption.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; channel:Int; style:String,Low,Partial
+TEXT_OVERLAY,text_caption_708,Overlays CEA-708 closed caption.,"Frame, String, Float",Frame,frame:Frame; text:String; progress:Float; channel:Int; style:String,Low,Partial
+TEXT_OVERLAY,text_teletext,Overlays teletext graphics.,"Frame, Int, Int",Frame,frame:Frame; page:Int; subpage:Int; style:String; position:Vec2,Low,Partial
