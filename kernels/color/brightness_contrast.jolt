@@ -1,0 +1,23 @@
+;; @kernel       brightness_contrast
+;; @category     color
+;; @description  Adjusts image brightness and contrast while preserving the frame layout.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; additive straight RGB offset; range [-1, 1].
+(param brightness 0 -1 1 0)
+;; contrast multiplier; range [0, 8].
+(param contrast 1 0 8 0)
+;; contrast pivot in straight RGB; range [0, 1].
+(param pivot 0.5 0 1 0)
+;; Clamp straight RGB to unit range; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel brightness_contrast [x y c]
+  (if (= c 3) (pixel x y 3)
+    (finish (+ pivot (* contrast (- (straight x y c) pivot)) brightness) (pixel x y 3) clamp)))

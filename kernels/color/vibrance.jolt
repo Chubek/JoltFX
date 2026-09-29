@@ -1,0 +1,32 @@
+;; @kernel       vibrance
+;; @category     color
+;; @description  Boosts muted colors with reduced effect on already saturated colors.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; adaptive saturation adjustment; range [-1, 1].
+(param amount 0 -1 1 0)
+;; attenuate adjustment near warm skin hues; range [0, 1].
+(param skin_protection 1 0 1 1)
+;; 0 encoded RGB, 1 linear-light RGB; range [0, 1].
+(param color_space 0 0 1 1)
+;; Clamp straight RGB to unit range; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel vibrance [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (if color_space (decode (straight x y 0)) (straight x y 0))
+          g (if color_space (decode (straight x y 1)) (straight x y 1))
+          b (if color_space (decode (straight x y 2)) (straight x y 2))
+          hi (max r (max g b)) lo (min r (min g b))
+          saturation (if (> hi 0) (/ (- hi lo) hi) 0)
+          hue-distance (abs (- (hue r g b) .5))
+          skin (if skin_protection (- 1 (* .75 (max 0 (- 1 (/ hue-distance .6))))) 1)
+          gain (+ 1 (* amount (- 1 saturation) skin))
+          value (mix (luma r g b) (channel c r g b) gain)]
+      (finish (if color_space (encode value) value) (pixel x y 3) clamp))))

@@ -1,0 +1,29 @@
+;; @kernel       radial_blur
+;; @category     blur_sharpen
+;; @description  Creates a blur radiating toward or away from a chosen center.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.blur_sharpen; shared functions: common/image.jolt.
+;; normalized image coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+;; angular exposure span in degrees; range [-360, 360].
+(param amount 10 -360 360 0)
+;; uniform sample count; range [1, 64].
+(param samples 16 1 64 1)
+;; radial exposure span multiplier; range [-2, 2].
+(param zoom 0 -2 2 0)
+
+
+(defkernel radial_blur [x y c]
+  (let [cx (- (* center_x width) .5) cy (- (* center_y height) .5) dx (- x cx) dy (- y cy)]
+    (if (= samples 1) (pixel x y c)
+      (/ (sum i 0 samples
+           (let [t (- (/ i (- samples 1)) .5) a (radians (* amount t)) scale (+ 1 (* zoom t))]
+             (sample (+ cx (* scale (- (* dx (cos a)) (* dy (sin a)))))
+                     (+ cy (* scale (+ (* dx (sin a)) (* dy (cos a))))) c 1 1))) samples))))

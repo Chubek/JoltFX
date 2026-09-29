@@ -1,0 +1,6 @@
+;; Helpers for executable CPU image-profile tests. Assertion failure returns
+;; JOLT_ERR_ARGUMENT; tests run on the actual rendered frame as their src.
+(defn assert-near [actual expected]
+  (require (<= (abs (- actual expected)) .0002)))
+(defn assert-pixel [x y c expected]
+  (assert-near (sample x y c 0 1) expected))

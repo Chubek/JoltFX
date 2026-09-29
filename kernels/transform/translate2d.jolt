@@ -1,0 +1,22 @@
+;; @kernel       translate2d
+;; @category     transform
+;; @description  Moves a frame in two-dimensional space by a horizontal and vertical offset.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; translation in pixels; range [-16384, 16384].
+(param offset_x 0 -16384 16384 0)
+;; translation in pixels; range [-16384, 16384].
+(param offset_y 0 -16384 16384 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 0 0 3 1)
+
+
+(defkernel translate2d [x y c]
+  (sample (- x offset_x) (- y offset_y) c interpolation border_mode))

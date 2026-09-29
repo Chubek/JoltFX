@@ -1,0 +1,29 @@
+;; @kernel       gaussian_blur
+;; @category     blur_sharpen
+;; @description  Softens an image with a Gaussian blur kernel.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.blur_sharpen; shared functions: common/image.jolt.
+;; support radius in pixels; rounded upward; range [0, 64].
+(param radius 2 0 64 0)
+;; Gaussian standard deviation in pixels; range [0.01, 64].
+(param sigma 1 0.01 64 0)
+;; number of full-frame passes; range [1, 8].
+(param iterations 1 1 8 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param edge_mode 1 0 3 1)
+;; Two separable passes per iteration: horizontal, then vertical.
+(passes (* 2 iterations))
+
+
+(defkernel gaussian_blur [x y c]
+  (let [r (ceil radius)]
+    (if (= (mod pass 2) 0)
+      (gaussian-row x y c r sigma edge_mode)
+      (/ (sum j (- r) (+ r 1)
+           (* (gaussian-weight j sigma) (sample x (+ y j) c 0 edge_mode)))
+         (sum j (- r) (+ r 1) (gaussian-weight j sigma))))))

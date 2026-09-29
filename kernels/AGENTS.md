@@ -392,3 +392,19 @@ Don't assume `f32` precision is sufficient for accumulation. Use `f64` locals fo
 - **Execution Layer integration**: `#joltfx-engine`
 - **Backend-specific issues**: `#joltfx-backend-vulkan`, `#joltfx-backend-metal`, etc.
 - **Performance tuning**: `#joltfx-perf`
+## Implemented CPU image profile (first CSV batch)
+
+The first 20 missing CSV entries execute through `jolt_image_kernels_apply`;
+see `README.md` for the exact parameter/resource contract. Their algorithms
+are in `.jolt`, with shared functions in `common/image.jolt`. The image profile
+uses `(param name default min max integer)` and scalar `(defkernel ... [x y c]
+...)` forms, not the illustrative `input/param/kernel {}` syntax above. Logical
+vectors/matrices flatten to named scalar fields at the C boundary.
+
+Validate these sources with `joltc --check --image-library
+kernels/common/image.jolt PATH`. `cmake --build build --target validate_kernels`
+runs the legacy effects tests and the image-profile/runtime tests. Executable
+per-kernel `.test.jolt` assertions use `tests/helpers.jolt` and are invoked by
+`tests/kernels/test_image_kernels.c`. Image-profile GPU dispatch is not yet
+implemented: preserve the CSV suitability metadata, but do not claim GPU
+conformance. Preserve the separate, existing 12-effect JBC1 catalog.

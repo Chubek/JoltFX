@@ -1,0 +1,27 @@
+;; @kernel       lut_apply
+;; @category     color
+;; @description  Applies a lookup table to transform image colors.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; LUT mix amount; range [0, 1].
+(param strength 1 0 1 0)
+;; 0 nearest, 1 trilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; input pixels: 0 sRGB, 1 linear; range [0, 1].
+(param input_space 0 0 1 1)
+;; output pixels: 0 sRGB, 1 linear; LUT is evaluated in linear domain; range [0, 1].
+(param output_space 0 0 1 1)
+
+
+(defkernel lut_apply [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (if input_space (straight x y 0) (decode (straight x y 0)))
+          g (if input_space (straight x y 1) (decode (straight x y 1)))
+          b (if input_space (straight x y 2) (decode (straight x y 2)))
+          value (mix (channel c r g b) (lut-value r g b c interpolation) strength)]
+      (finish (if output_space value (encode value)) (pixel x y 3) 0))))

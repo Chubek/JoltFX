@@ -1,0 +1,32 @@
+;; @kernel       polar_transform
+;; @category     transform
+;; @description  Converts image coordinates between Cartesian and polar layouts.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; 0 Cartesian to polar, 1 polar to Cartesian; range [0, 1].
+(param inverse 0 0 1 1)
+;; normalized image coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+;; radius as fraction of shorter image dimension; range [0.0001, 4].
+(param radius 0.5 0.0001 4 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+
+
+(defkernel polar_transform [x y c]
+  (let [cx (- (* center_x width) .5) cy (- (* center_y height) .5)
+        rr (* radius (min width height))]
+    (if inverse
+      (let [dx (- x cx) dy (- y cy)
+            angle (wrap (atan2 dy dx) (* 2 pi))]
+        (sample (- (* width (/ angle (* 2 pi))) .5)
+                (- (* height (/ (sqrt (+ (* dx dx) (* dy dy))) rr)) .5) c interpolation 1))
+      (let [angle (* 2 pi (/ (+ x .5) width)) distance (* rr (/ (+ y .5) height))]
+        (sample (+ cx (* distance (cos angle))) (+ cy (* distance (sin angle))) c interpolation 1)))))

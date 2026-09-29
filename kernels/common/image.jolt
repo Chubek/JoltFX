@@ -1,0 +1,98 @@
+;; Shared Joltscript functions for the bounded CPU image execution profile.
+;; Coordinates of texel centers are integer pixels; transforms use normalized
+;; edge coordinates (x + 0.5)/width. All accumulation uses runtime f64 locals.
+(defn clamp01 [v] (min 1 (max 0 v)))
+(defn mix [a b t] (+ a (* t (- b a))))
+(defn radians [v] (* v (/ pi 180)))
+(defn smooth [a b x]
+  (let [t (clamp01 (/ (- x a) (- b a)))] (* t t (- 3 (* 2 t)))))
+(defn pixel [x y c] (sample x y c 0 1))
+(defn straight [x y c]
+  (let [a (pixel x y 3)] (if (> a 0) (/ (pixel x y c) a) 0)))
+(defn luma [r g b] (+ (* .2126 r) (* .7152 g) (* .0722 b)))
+(defn luminance [x y] (luma (straight x y 0) (straight x y 1) (straight x y 2)))
+(defn channel [c r g b] (if (= c 0) r (if (= c 1) g b)))
+(defn finish [value alpha clip] (* alpha (if clip (clamp01 value) value)))
+(defn decode [v] (if (<= v .04045) (/ v 12.92) (pow (/ (+ v .055) 1.055) 2.4)))
+(defn encode [v] (if (<= v .0031308) (* v 12.92) (- (* 1.055 (pow v (/ 1 2.4))) .055)))
+(defn wrap [x n] (mod (+ (mod x n) n) n))
+;; Inverse homography via adjugate. Parameters describe source -> destination.
+(defn warp-one [x y c a b d e f g h i j interpolation border]
+  (let [aa (- (* f j) (* g i)) bb (- (* d i) (* b j)) dd (- (* b g) (* d f))
+        ee (- (* g h) (* e j)) ff (- (* a j) (* d h)) gg (- (* d e) (* a g))
+        hh (- (* e i) (* f h)) ii (- (* b h) (* a i)) jj (- (* a f) (* b e))
+        determinant (+ (* a aa) (* b ee) (* d hh))
+        valid (require (> (abs determinant) .000000000001))
+        u (/ (+ x .5) width) v (/ (+ y .5) height)
+        w (+ (* hh u) (* ii v) jj)]
+    (if (< (abs w) .000000000001) 0
+      (sample (- (* width (/ (+ (* aa u) (* bb v) dd) w)) .5)
+              (- (* height (/ (+ (* ee u) (* ff v) gg) w)) .5)
+              c interpolation border))))
+(defn warp [x y c a b d e f g h i j interpolation border antialias]
+  (if antialias
+    (/ (+ (warp-one (- x .25) (- y .25) c a b d e f g h i j interpolation border)
+          (warp-one (+ x .25) (- y .25) c a b d e f g h i j interpolation border)
+          (warp-one (- x .25) (+ y .25) c a b d e f g h i j interpolation border)
+          (warp-one (+ x .25) (+ y .25) c a b d e f g h i j interpolation border)) 4)
+    (warp-one x y c a b d e f g h i j interpolation border)))
+;; Hue in [0,6); chroma-sector reconstruction works for both HSV and HSL.
+(defn hue [r g b]
+  (let [hi (max r (max g b)) lo (min r (min g b)) d (- hi lo)]
+    (if (<= d .000000000001) 0
+      (wrap (if (= hi r) (/ (- g b) d)
+              (if (= hi g) (+ 2 (/ (- b r) d)) (+ 4 (/ (- r g) d)))) 6))))
+(defn hue-component [h c]
+  (let [k (wrap (+ h (if (= c 0) 0 (if (= c 1) 4 2))) 6)]
+    (clamp01 (- (abs (- k 3)) 1))))
+(defn rotated [x y c angle]
+  (let [r (straight x y 0) g (straight x y 1) b (straight x y 2)
+        lo (min r (min g b)) hi (max r (max g b))
+        h (wrap (+ (hue r g b) (/ angle 60)) 6)]
+    (+ lo (* (- hi lo) (hue-component h c)))))
+(defn balance-value [x y c sr sg sb mr mg mb hr hg hb]
+  (let [l (luminance x y) shadow (- 1 (smooth 0 .5 l)) highlight (smooth .5 1 l)
+        mid (- 1 shadow highlight)]
+    (+ (straight x y c) (* shadow (channel c sr sg sb))
+       (* mid (channel c mr mg mb)) (* highlight (channel c hr hg hb)))))
+;; Curve data: increasing (x,y) pairs. Hermite tangents are finite differences.
+(defn curve-x [i] (data (* 2 i)))
+(defn curve-y [i] (data (+ 1 (* 2 i))))
+(defn curve-slope [i n]
+  (let [a (max 0 (- i 1)) b (min (- n 1) (+ i 1))]
+    (/ (- (curve-y b) (curve-y a)) (- (curve-x b) (curve-x a)))))
+(defn curve-segment [v i n method]
+  (let [x0 (curve-x i) x1 (curve-x (+ i 1))
+        valid (require (> x1 x0))
+        t (/ (- v x0) (- x1 x0)) y0 (curve-y i) y1 (curve-y (+ i 1))]
+    (if (and (>= v x0) (< v x1))
+      (if (= method 0) (mix y0 y1 t)
+        (+ (* (+ (* 2 t t t) (- (* 3 t t)) 1) y0)
+           (* (+ (* t t t) (- (* 2 t t)) t) (- x1 x0) (curve-slope i n))
+           (* (+ (- (* 2 t t t)) (* 3 t t)) y1)
+           (* (- (* t t t) (* t t)) (- x1 x0) (curve-slope (+ i 1) n)))) 0)))
+(defn curve-value [v method]
+  (if (= (data-count) 0) v
+    (let [n (/ (data-count) 2) valid (require (and (>= n 2) (= n (floor n))))
+          ordered (sum i 0 (- n 1) (require (> (curve-x (+ i 1)) (curve-x i))))]
+      (if (<= v (curve-x 0)) (curve-y 0)
+        (if (>= v (curve-x (- n 1))) (curve-y (- n 1))
+          (sum i 0 (- n 1) (curve-segment v i n method)))))))
+;; LUT data is RGB triples, red index fastest, then green, then blue.
+(defn lut-at [r g b c n] (data (+ (* 3 (+ r (* n (+ g (* n b))))) c)))
+(defn lut-slice [r g b c n]
+  (let [ri (floor r) gi (floor g) rj (min (+ ri 1) (- n 1)) gj (min (+ gi 1) (- n 1))]
+    (mix (mix (lut-at ri gi b c n) (lut-at rj gi b c n) (- r ri))
+         (mix (lut-at ri gj b c n) (lut-at rj gj b c n) (- r ri)) (- g gi))))
+(defn lut-value [r g b c method]
+  (if (= (data-count) 0) (channel c r g b)
+    (let [n (round (pow (/ (data-count) 3) (/ 1 3)))
+          valid (require (and (>= n 2) (= (* 3 n n n) (data-count))))
+          rr (* (clamp01 r) (- n 1)) gg (* (clamp01 g) (- n 1)) bb (* (clamp01 b) (- n 1))]
+      (if (= method 0) (lut-at (round rr) (round gg) (round bb) c n)
+        (mix (lut-slice rr gg (floor bb) c n)
+             (lut-slice rr gg (min (+ 1 (floor bb)) (- n 1)) c n) (- bb (floor bb)))))))
+(defn gaussian-weight [i sigma] (exp (- (/ (* i i) (* 2 sigma sigma)))))
+(defn gaussian-row [x y c radius sigma border]
+  (/ (sum i (- radius) (+ radius 1) (* (gaussian-weight i sigma) (sample (+ x i) y c 0 border)))
+     (sum i (- radius) (+ radius 1) (gaussian-weight i sigma))))

@@ -1,0 +1,33 @@
+;; @kernel       color_temperature
+;; @category     color
+;; @description  Shifts image white balance using temperature and tint controls.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; white temperature in kelvin; neutral at 6500K; range [1000, 40000].
+(param temperature 6500 1000 40000 0)
+;; green-magenta tint; range [-1, 1].
+(param tint 0 -1 1 0)
+;; white-balance mix; range [0, 1].
+(param strength 1 0 1 0)
+;; 0 sRGB input/output, 1 linear input/output; range [0, 1].
+(param color_space 0 0 1 1)
+
+(defn blackbody [t c]
+  (/ (min 255 (max 1
+    (if (= c 0) (if (<= t 66) 255 (* 329.698727446 (pow (- t 60) -.1332047592)))
+      (if (= c 1) (if (<= t 66) (- (* 99.4708025861 (log t)) 161.1195681661)
+                                      (* 288.1221695283 (pow (- t 60) -.0755148492)))
+        (if (>= t 66) 255 (if (<= t 19) 0 (- (* 138.5177312231 (log (- t 10))) 305.0447927307))))))) 255))
+
+(defkernel color_temperature [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [value (if color_space (straight x y c) (decode (straight x y c)))
+          gain (/ (decode (blackbody (/ temperature 100) c)) (decode (blackbody 65 c)))
+          tint-gain (pow 2 (* tint (if (= c 1) -.5 .25)))
+          balanced (mix value (* value gain tint-gain) strength)]
+      (finish (if color_space balanced (encode balanced)) (pixel x y 3) 0))))

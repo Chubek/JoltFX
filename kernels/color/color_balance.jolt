@@ -1,0 +1,40 @@
+;; @kernel       color_balance
+;; @category     color
+;; @description  Adjusts color casts in shadows, midtones, and highlights.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; straight RGB tonal correction; range [-1, 1].
+(param shadows_r 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param shadows_g 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param shadows_b 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param midtones_r 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param midtones_g 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param midtones_b 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param highlights_r 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param highlights_g 0 -1 1 0)
+;; straight RGB tonal correction; range [-1, 1].
+(param highlights_b 0 -1 1 0)
+;; preserve Rec.709 luminance before gamut clipping; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel color_balance [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [value (balance-value x y c shadows_r shadows_g shadows_b midtones_r midtones_g midtones_b highlights_r highlights_g highlights_b)
+          correction (if preserve_luma (- (luminance x y)
+            (luma (balance-value x y 0 shadows_r shadows_g shadows_b midtones_r midtones_g midtones_b highlights_r highlights_g highlights_b)
+                  (balance-value x y 1 shadows_r shadows_g shadows_b midtones_r midtones_g midtones_b highlights_r highlights_g highlights_b)
+                  (balance-value x y 2 shadows_r shadows_g shadows_b midtones_r midtones_g midtones_b highlights_r highlights_g highlights_b))) 0)]
+      (finish (+ value correction) (pixel x y 3) 1))))

@@ -922,3 +922,66 @@ against a finished API rather than more engine work.
   then connecting frontend panels and adapters to it. Existing LUT format claims need correction;
   broad format support must be reported from an actual decoder, not filename acceptance.
 - Validation will include rendered pixel changes, project round trips, invalid edits and headless UI.
+
+## CSV kernel implementation — 2026-09-29
+
+- User requires kernel implementations in Joltscript, grouped by CSV category.
+- Audited 322 inventory entries across 29 categories: exposure, invert, and
+  saturation already exist; 319 entries are missing. Existing sources unchanged.
+- Read kernels/AGENTS.md and inspected the compiler, VM, and standard library.
+- Runtime prerequisite: the actual compiler accepts one scalar defkernel with
+  up to 32 float inputs and one or four float outputs. It has no frame sampling,
+  arrays, loops, function calls, imports, strings, or structured output support.
+  The richer standard-library sources and documented kernel examples are not
+  supported by this compiler. Full CSV implementations need language/runtime
+  work before they can compile and execute.
+- No new kernels implemented or tests run yet. Resolving whether the user's
+  Joltscript requirement permits necessary C compiler/runtime extensions.
+
+### First batch of 20 — implementation and validation
+
+- User authorized C runtime extensions and limited this batch to the first 20
+  missing CSV entries. Added 8 transform, 9 color, and 3 blur kernels in their
+  category directories, preserving all existing kernel sources.
+- Effect algorithms and shared helpers are implemented in Joltscript. Added a
+  bounded CPU image-profile interpreter providing scalar expressions, lexical
+  functions/bindings, loops, sampling, resource reads, and full-frame passes.
+- Added a separate frame-aware catalog/API so callers provide real dimensions,
+  resource arrays, named uniforms, and memory/evaluation budgets. Legacy JBC1
+  bytecode and the existing 12-effect catalog remain unchanged.
+- Added 20 executable .test.jolt regression files and C tests for all defaults,
+  transparent inputs, non-default transforms/color operations, curve/LUT data,
+  blur impulses and iterations, in-place operation, invalid inputs, and budgets.
+  Initial normal-build image tests pass. Sanitizer/regression runs are pending.
+- Added compiler-driver image-source checking and documented parameter units,
+  enum values, flattened vector/matrix groups, resource layouts, and limits.
+  GPU execution and frontend wiring are outside this CPU batch; no GPU parity
+  claim is made. 299 CSV entries remain after this batch.
+
+### First batch validation complete
+
+- Confirmed the new source set is exactly the first 20 missing CSV names, with
+  required metadata and an executable `.test.jolt` file for each. All original
+  `.jolt` implementations are unchanged.
+- `cmake --build build --target validate_kernels`: passed, including legacy
+  effects and both new image test executables. Gaussian uses two separable
+  Joltscript passes per iteration, selected by the generic `pass` binding.
+- Normal CTest kernel selection: 23/23 passed (legacy effects, image behavior,
+  image runtime, and 20 compiler-driver source checks).
+- ASan + UBSan + LeakSanitizer selection: 26/26 passed, including compiler, VM,
+  and bytecode conformance regressions. LeakSanitizer initially failed under
+  sandbox ptrace supervision; rerunning through the approved unsandboxed CTest
+  command passed without disabling leak detection.
+- Full normal build succeeded. Full suite: 44/50 passed. The six failures were
+  reproduced in a separate HEAD baseline under `/tmp/jolt-kernel-baseline-i_464u89`:
+  `test_core`, `compose`, `cli_integration`, `example_hello_world`,
+  `desktop_headless`, and `desktop_window`. Existing engine teardown double
+  frees, an unconfigured video-node expectation, and missing window-device
+  access account for the reported failures; these are not introduced by this
+  batch. Logs: `/tmp/jolt-tests.log` and `/tmp/jolt-baseline-tests.log`.
+- No warnings in the new kernel/runtime targets. The full build reports two
+  pre-existing integer-to-double conversion warnings in
+  `joltscript/tests/benchmarks/test_benchmarks.c:18`.
+- `git diff --check`: clean. CPU execution and verification are complete for
+  this batch. Remaining CSV work: 299 kernels. GPU compilation/dispatch and
+  UI integration for the image profile remain explicitly unsupported.

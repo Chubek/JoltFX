@@ -1,0 +1,44 @@
+;; @kernel       transform3d
+;; @category     transform
+;; @description  Applies a three-dimensional position, rotation, and scale to a frame.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; position in image-plane units; range [-16, 16].
+(param position_x 0 -16 16 0)
+;; position in image-plane units; range [-16, 16].
+(param position_y 0 -16 16 0)
+;; position in image-plane units; range [-16, 16].
+(param position_z 0 -16 16 0)
+;; XYZ Euler rotation in degrees; range [-3600, 3600].
+(param rotation_x 0 -3600 3600 0)
+;; XYZ Euler rotation in degrees; range [-3600, 3600].
+(param rotation_y 0 -3600 3600 0)
+;; XYZ Euler rotation in degrees; range [-3600, 3600].
+(param rotation_z 0 -3600 3600 0)
+;; axis scale; local plane z is zero; range [-64, 64].
+(param scale_x 1 -64 64 0)
+;; axis scale; local plane z is zero; range [-64, 64].
+(param scale_y 1 -64 64 0)
+;; axis scale; local plane z is zero; range [-64, 64].
+(param scale_z 1 -64 64 0)
+;; pinhole focal distance in image-plane units; range [0.01, 100].
+(param camera 1 0.01 100 0)
+
+
+(defkernel transform3d [x y c]
+  (let [rx (radians rotation_x) ry (radians rotation_y) rz (radians rotation_z)
+        cx (cos rx) sx (sin rx) cy (cos ry) sy (sin ry) cz (cos rz) sz (sin rz)
+        m00 (* scale_x cz cy) m01 (* scale_y (- (* cz sy sx) (* sz cx)))
+        m10 (* scale_x sz cy) m11 (* scale_y (+ (* sz sy sx) (* cz cx)))
+        m20 (* scale_x (- sy)) m21 (* scale_y cy sx)
+        zz (- (+ camera position_z) (* .5 (+ m20 m21)))
+        xx (- position_x (* .5 (+ m00 m01))) yy (- position_y (* .5 (+ m10 m11)))
+        valid (require (> (+ camera position_z) .000001))]
+    (warp x y c (+ (* camera m00) (* .5 m20)) (+ (* camera m01) (* .5 m21)) (+ (* camera xx) (* .5 zz))
+          (+ (* camera m10) (* .5 m20)) (+ (* camera m11) (* .5 m21)) (+ (* camera yy) (* .5 zz))
+          m20 m21 zz 1 0 0)))

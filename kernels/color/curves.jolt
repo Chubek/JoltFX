@@ -1,0 +1,23 @@
+;; @kernel       curves
+;; @category     color
+;; @description  Applies a channel curve to remap image tone values.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; 0 RGB, 1 red, 2 green, 3 blue, 4 alpha; range [0, 4].
+(param channel 0 0 4 1)
+;; 0 linear, 1 cubic Hermite; range [0, 1].
+(param interpolation 0 0 1 1)
+;; Clamp straight RGB to unit range; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel curves [x y c]
+  (let [alpha (pixel x y 3)
+        new-alpha (if (= channel 4) (clamp01 (curve-value alpha interpolation)) alpha)]
+    (if (= c 3) new-alpha
+      (finish (if (or (= channel 0) (= channel (+ c 1))) (curve-value (straight x y c) interpolation) (straight x y c)) new-alpha clamp))))

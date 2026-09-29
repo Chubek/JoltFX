@@ -631,3 +631,13 @@ int main(void) {
 - **Extension host**: `#joltfx-ext-core`
 - **Language bindings**: `#joltfx-bindings`
 - **Error handling**: `#joltfx-diagnostics`
+## CPU image source execution
+
+`src/image_program.c` and `include/joltscript/image_program.h` implement a
+bounded Joltscript image profile with independently versioned `JOLT_IMAGE_ABI`
+(initial 0.1.0). This additive API leaves JBC1 and the existing ABI registry
+unchanged. It supplies language/sampling primitives only; image effect
+algorithms belong in `kernels/*.jolt` category directories. Keep programs
+immutable, use engine allocation, validate expressions before execution, bound
+recursion/loops/steps, and publish output only after successful completion.
+See `kernels/README.md` and `tests/kernels/test_image_program.c` for the contract.

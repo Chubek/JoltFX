@@ -174,3 +174,28 @@ set_property(TEST frontend_contract APPEND PROPERTY LABELS conformance)
 
 jfx_test_target(test_editor SOURCES color/test_editor.c LIBRARIES jfx_core)
 jfx_register_test(editor test_editor)
+
+jfx_test_target(test_image_kernels SOURCES ../kernels/test_image_kernels.c LIBRARIES jolt_effects)
+jfx_register_test(kernel_image_batch test_image_kernels)
+jfx_test_target(test_image_program SOURCES ../kernels/test_image_program.c LIBRARIES joltscript_glue)
+jfx_register_test(kernel_image_program test_image_program)
+target_compile_definitions(test_image_kernels PRIVATE JOLT_TEST_ROOT="${PROJECT_SOURCE_DIR}")
+
+# Verify every new source using the shipping compiler driver as well.
+foreach(image_kernel IN ITEMS
+    transform/translate2d transform/scale2d transform/rotate2d transform/skew2d
+    transform/transform3d transform/perspective_warp transform/affine_transform
+    transform/polar_transform color/brightness_contrast color/hue_rotate
+    color/color_balance color/levels color/curves color/lut_apply
+    color/channel_mixer color/vibrance color/color_temperature
+    blur_sharpen/gaussian_blur blur_sharpen/motion_blur blur_sharpen/radial_blur)
+    string(REPLACE "/" "_" test_name "${image_kernel}")
+    jfx_register_test(kernel_verify_${test_name} joltc --check
+        --image-library "${PROJECT_SOURCE_DIR}/kernels/common/image.jolt"
+        "${PROJECT_SOURCE_DIR}/kernels/${image_kernel}.jolt")
+endforeach()
+add_dependencies(test_image_kernels joltc)
+add_dependencies(validate_kernels test_image_kernels test_image_program)
+add_custom_command(TARGET validate_kernels POST_BUILD
+    COMMAND $<TARGET_FILE:test_image_kernels>
+    COMMAND $<TARGET_FILE:test_image_program>)

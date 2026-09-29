@@ -1,0 +1,27 @@
+;; @kernel       rotate2d
+;; @category     transform
+;; @description  Rotates a frame around a pivot point in the image plane.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; rotation in degrees; range [-3600, 3600].
+(param angle 0 -3600 3600 0)
+;; normalized image coordinates; range [-4, 4].
+(param pivot_x 0.5 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param pivot_y 0.5 -4 4 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 0 0 3 1)
+
+
+(defkernel rotate2d [x y c]
+  (let [a (radians angle) co (cos a) si (sin a)
+        px (- (* pivot_x width) .5) py (- (* pivot_y height) .5)
+        dx (- x px) dy (- y py)]
+    (sample (+ px (* co dx) (* si dy)) (+ py (- (* co dy) (* si dx))) c interpolation border_mode)))

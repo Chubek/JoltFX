@@ -1,0 +1,28 @@
+;; @kernel       motion_blur
+;; @category     blur_sharpen
+;; @description  Blurs image samples along a direction and motion distance.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.blur_sharpen; shared functions: common/image.jolt.
+;; direction vector, normalized at execution; range [-1, 1].
+(param direction_x 1 -1 1 0)
+;; direction vector, normalized at execution; range [-1, 1].
+(param direction_y 0 -1 1 0)
+;; full motion span in pixels; range [0, 1024].
+(param distance 8 0 1024 0)
+;; uniform sample count; range [1, 64].
+(param samples 16 1 64 1)
+;; exposure duration multiplier; range [0, 2].
+(param shutter 1 0 2 0)
+
+
+(defkernel motion_blur [x y c]
+  (let [len (sqrt (+ (* direction_x direction_x) (* direction_y direction_y)))]
+    (if (or (= samples 1) (= len 0)) (pixel x y c)
+      (/ (sum i 0 samples
+           (let [t (* (- (/ i (- samples 1)) .5) distance shutter)]
+             (sample (+ x (/ (* direction_x t) len)) (+ y (/ (* direction_y t) len)) c 1 1))) samples))))

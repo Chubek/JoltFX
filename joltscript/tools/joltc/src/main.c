@@ -13,16 +13,19 @@
  */
 
 #include "joltscript/compiler.h"
+#include "joltscript/image_program.h"
+#include "tilly/containers.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
-#define JOLTC_VERSION "0.1.0"
+#define JOLTC_VERSION "0.2.0"
 
 typedef struct {
     const char *input_path;
     const char *output_path;
+    const char *image_library;
     bool check_only;
     bool dump_disasm;
 } joltc_options_t;
@@ -34,6 +37,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  -h, --help           Show this help message\n");
     fprintf(stderr, "  -v, --version        Show version information\n");
     fprintf(stderr, "      --check          Validate only, don't emit bytecode\n");
+    fprintf(stderr, "      --image-library <path>  Check CPU image source with this Joltscript library\n");
     fprintf(stderr, "      --dump           Dump disassembly to stdout\n");
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s kernel.jolt -o kernel.jbc\n", prog);
@@ -47,13 +51,14 @@ static void print_version(void) {
 static char *read_file(const char *path, size_t *out_size) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
+    if(fseek(f, 0, SEEK_END)!=0) { fclose(f); return NULL; }
     long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (size < 0) { fclose(f); return NULL; }
-    char *buf = malloc((size_t)size + 1);
+    if(fseek(f, 0, SEEK_SET)!=0) { fclose(f); return NULL; }
+    if (size < 0 || size > 1024*1024) { fclose(f); return NULL; }
+    char *buf = tilly_container_alloc((size_t)size + 1);
     if (!buf) { fclose(f); return NULL; }
     size_t read = fread(buf, 1, (size_t)size, f);
+    if(read!=(size_t)size || ferror(f)) { tilly_container_free(buf); fclose(f); return NULL; }
     buf[read] = 0;
     fclose(f);
     if (out_size) *out_size = read;
@@ -151,6 +156,9 @@ static int parse_args(int argc, char **argv, joltc_options_t *opts) {
             exit(0);
         } else if (strcmp(argv[i], "--check") == 0) {
             opts->check_only = true;
+        } else if (strcmp(argv[i], "--image-library") == 0) {
+            if(i+1>=argc) { fprintf(stderr,"error: --image-library requires a path\n"); return -1; }
+            opts->image_library=argv[++i];
         } else if (strcmp(argv[i], "--dump") == 0) {
             opts->dump_disasm = true;
         } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
@@ -176,6 +184,10 @@ static int parse_args(int argc, char **argv, joltc_options_t *opts) {
         print_usage(argv[0]);
         return -1;
     }
+    if(opts->image_library && (!opts->check_only || opts->dump_disasm || opts->output_path)) {
+        fprintf(stderr,"error: --image-library requires --check and cannot emit JBC1 or disassembly\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -190,6 +202,17 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if(opts.image_library) {
+        char *library=read_file(opts.image_library,NULL);
+        if(!library) { fprintf(stderr,"error: cannot read '%s'\n",opts.image_library); tilly_container_free(source); return 1; }
+        jolt_image_program_t *image=NULL;
+        jolt_diagnostic_t diagnostic={.size=sizeof(diagnostic)};
+        jolt_status_t result=jolt_image_compile(library,source,&image,&diagnostic);
+        if(result==JOLT_OK) printf("OK (CPU image): %s\n",opts.input_path);
+        else { char message[256]; jolt_diagnostic_format(&diagnostic,opts.input_path,message,sizeof(message)); fprintf(stderr,"%s\n",message); }
+        jolt_image_program_destroy(image); tilly_container_free(library); tilly_container_free(source);
+        return result==JOLT_OK ? 0 : 1;
+    }
     jolt_program_t *program = NULL;
     jolt_diagnostic_t diag = {.size = sizeof(diag)};
     jolt_status_t status = jolt_compile(source, &program, &diag);
@@ -197,7 +220,7 @@ int main(int argc, char **argv) {
         char msg[256];
         jolt_diagnostic_format(&diag, opts.input_path, msg, sizeof(msg));
         fprintf(stderr, "%s\n", msg);
-        free(source);
+        tilly_container_free(source);
         return 1;
     }
 
@@ -210,7 +233,7 @@ int main(int argc, char **argv) {
     if (opts.check_only) {
         printf("OK: %s\n", opts.input_path);
         jolt_program_destroy(program);
-        free(source);
+        tilly_container_free(source);
         return 0;
     }
 
@@ -226,12 +249,12 @@ int main(int argc, char **argv) {
     if (write_file(opts.output_path, data, size) != 0) {
         fprintf(stderr, "error: cannot write '%s'\n", opts.output_path);
         jolt_program_destroy(program);
-        free(source);
+        tilly_container_free(source);
         return 1;
     }
 
     printf("Compiled %s -> %s (%zu bytes)\n", opts.input_path, opts.output_path, size);
     jolt_program_destroy(program);
-    free(source);
+    tilly_container_free(source);
     return 0;
 }

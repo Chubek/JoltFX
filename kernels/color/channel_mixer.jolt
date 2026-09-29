@@ -1,0 +1,43 @@
+;; @kernel       channel_mixer
+;; @category     color
+;; @description  Recombines input color channels using a configurable mixing matrix.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; row-major matrix coefficient; range [-64, 64].
+(param m00 1 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m01 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m02 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m10 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m11 1 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m12 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m20 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m21 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m22 1 -64 64 0)
+;; preserve input alpha; 0 makes output opaque; range [0, 1].
+(param preserve_alpha 1 0 1 1)
+;; Clamp straight RGB to unit range; range [0, 1].
+(param clamp 1 0 1 1)
+;; 0 retain RGB encoding, 1 decode mixed sRGB to linear; range [0, 1].
+(param output_space 0 0 1 1)
+
+
+(defkernel channel_mixer [x y c]
+  (let [alpha (if preserve_alpha (pixel x y 3) 1)]
+    (if (= c 3) alpha
+      (let [value (+ (* (channel c m00 m10 m20) (straight x y 0))
+                     (* (channel c m01 m11 m21) (straight x y 1))
+                     (* (channel c m02 m12 m22) (straight x y 2)))]
+        (finish (if output_space (decode value) value) alpha clamp)))))

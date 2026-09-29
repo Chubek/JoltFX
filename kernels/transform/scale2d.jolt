@@ -1,0 +1,28 @@
+;; @kernel       scale2d
+;; @category     transform
+;; @description  Resizes a frame around a selected anchor point.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; scale multiplier; zero rejected; range [-64, 64].
+(param scale_x 1 -64 64 0)
+;; scale multiplier; zero rejected; range [-64, 64].
+(param scale_y 1 -64 64 0)
+;; normalized image coordinates; range [-4, 4].
+(param anchor_x 0.5 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param anchor_y 0.5 -4 4 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 0 0 3 1)
+
+
+(defkernel scale2d [x y c]
+  (let [valid (require (and (!= scale_x 0) (!= scale_y 0)))
+        ax (- (* anchor_x width) .5) ay (- (* anchor_y height) .5)]
+    (sample (+ ax (/ (- x ax) scale_x)) (+ ay (/ (- y ay) scale_y)) c interpolation border_mode)))

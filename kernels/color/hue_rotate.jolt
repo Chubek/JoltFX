@@ -1,0 +1,26 @@
+;; @kernel       hue_rotate
+;; @category     color
+;; @description  Rotates hue values around the color wheel.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; hue rotation in degrees; range [-3600, 3600].
+(param angle 0 -3600 3600 0)
+;; 0 HSV, 1 HSL; hue-only rotation preserves chroma and minimum in both spaces; range [0, 1].
+(param color_space 0 0 1 1)
+;; preserve Rec.709 luminance by additive correction; range [0, 1].
+(param preserve_luma 0 0 1 1)
+;; Clamp straight RGB to unit range; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel hue_rotate [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [value (rotated x y c angle)
+          correction (if preserve_luma (- (luminance x y)
+            (luma (rotated x y 0 angle) (rotated x y 1 angle) (rotated x y 2 angle))) 0)]
+      (finish (+ value correction) (pixel x y 3) clamp))))

@@ -1,0 +1,38 @@
+;; @kernel       affine_transform
+;; @category     transform
+;; @description  Applies a general two-dimensional affine matrix to a frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; row-major matrix coefficient; range [-64, 64].
+(param m00 1 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m01 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m02 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m10 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m11 1 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m12 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m20 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m21 0 -64 64 0)
+;; row-major matrix coefficient; range [-64, 64].
+(param m22 1 -64 64 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 0 0 3 1)
+;; 0 single sample, 1 four-sample coverage; range [0, 1].
+(param antialias 0 0 1 1)
+
+
+(defkernel affine_transform [x y c]
+  (warp x y c m00 m01 m02 m10 m11 m12 m20 m21 m22 interpolation border_mode antialias))

@@ -1,0 +1,29 @@
+;; @kernel       skew2d
+;; @category     transform
+;; @description  Shears a frame along horizontal and vertical axes.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; shear angle in degrees; range [-80, 80].
+(param skew_x 0 -80 80 0)
+;; shear angle in degrees; range [-80, 80].
+(param skew_y 0 -80 80 0)
+;; normalized image coordinates; range [-4, 4].
+(param pivot_x 0.5 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param pivot_y 0.5 -4 4 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 0 0 3 1)
+
+
+(defkernel skew2d [x y c]
+  (let [sx (tan (radians skew_x)) sy (tan (radians skew_y)) det (- 1 (* sx sy))
+        valid (require (> (abs det) .000000001))
+        px (- (* pivot_x width) .5) py (- (* pivot_y height) .5) dx (- x px) dy (- y py)]
+    (sample (+ px (/ (- dx (* sx dy)) det)) (+ py (/ (- dy (* sy dx)) det)) c interpolation border_mode)))

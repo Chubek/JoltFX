@@ -228,3 +228,14 @@ offset  size  field
 - **Maximum nesting depth:** 64
 - **Maximum source size:** 1 MiB
 - **Maximum token size:** 63 bytes
+
+## CPU image profile
+
+The additive `jolt_image_compile` / `jolt_image_program_run` API supports
+frame-aware Joltscript, including reusable scalar functions, sequential lexical
+`let` bindings, lazy `if`, bounded `sum` loops, image sampling, named uniforms,
+and read-only resource arrays. These programs run on the CPU AST interpreter;
+they are not serialized as JBC1 or accepted by the existing GPU bytecode path.
+The exact grammar, limits, and examples are in `kernels/README.md`.
+Use `joltc --check --image-library kernels/common/image.jolt KERNEL.jolt` to
+check a bundled source. Existing single-expression JBC1 compilation is unchanged.

@@ -1,0 +1,45 @@
+;; @kernel       perspective_warp
+;; @category     transform
+;; @description  Maps a frame between four-point perspective quadrilaterals.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transform; shared functions: common/image.jolt.
+;; normalized image coordinates; range [-4, 4].
+(param corner0_x 0 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner0_y 0 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner1_x 1 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner1_y 0 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner2_x 1 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner2_y 1 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner3_x 0 -4 4 0)
+;; normalized image coordinates; range [-4, 4].
+(param corner3_y 1 -4 4 0)
+;; 0 nearest, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 0 0 3 1)
+;; 0 single sample, 1 four-sample coverage; range [0, 1].
+(param antialias 0 0 1 1)
+
+
+(defkernel perspective_warp [x y c]
+  (let [dx1 (- corner1_x corner2_x) dx2 (- corner3_x corner2_x)
+        dy1 (- corner1_y corner2_y) dy2 (- corner3_y corner2_y)
+        dx3 (+ corner0_x (- corner1_x) corner2_x (- corner3_x))
+        dy3 (+ corner0_y (- corner1_y) corner2_y (- corner3_y))
+        den (- (* dx1 dy2) (* dx2 dy1))
+        valid (require (> (abs den) .000000000001))
+        g (/ (- (* dx3 dy2) (* dx2 dy3)) den) h (/ (- (* dx1 dy3) (* dx3 dy1)) den)]
+    (warp x y c (+ (- corner1_x corner0_x) (* g corner1_x)) (+ (- corner3_x corner0_x) (* h corner3_x)) corner0_x
+          (+ (- corner1_y corner0_y) (* g corner1_y)) (+ (- corner3_y corner0_y) (* h corner3_y)) corner0_y
+          g h 1 interpolation border_mode antialias)))

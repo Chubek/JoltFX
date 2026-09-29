@@ -1,0 +1,27 @@
+;; @kernel       levels
+;; @category     color
+;; @description  Remaps input tonal ranges to an output range.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color; shared functions: common/image.jolt.
+;; input black point; range [0, 1].
+(param input_black 0 0 1 0)
+;; input white point; must exceed black; range [0, 1].
+(param input_white 1 0 1 0)
+;; midtone gamma; range [0.01, 10].
+(param gamma 1 0.01 10 0)
+;; output black point; range [0, 1].
+(param output_black 0 0 1 0)
+;; output white point; range [0, 1].
+(param output_white 1 0 1 0)
+
+
+(defkernel levels [x y c]
+  (let [valid (require (> input_white input_black))]
+    (if (= c 3) (pixel x y 3)
+      (finish (mix output_black output_white
+        (pow (clamp01 (/ (- (straight x y c) input_black) (- input_white input_black))) (/ 1 gamma))) (pixel x y 3) 0))))
