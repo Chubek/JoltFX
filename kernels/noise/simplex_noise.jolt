@@ -1,0 +1,33 @@
+;; @kernel       simplex_noise
+;; @category     noise
+;; @description  Generates continuous simplex noise with configurable frequency and seed.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.noise; shared functions: common/image.jolt.
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+;; noise scale factor; range [0.01, 10].
+(param scale 0.02 0.01 10 0)
+;; number of octaves; range [1, 8].
+(param octaves 4 1 8 1)
+;; amplitude multiplier; range [0, 1].
+(param amplitude 0.5 0 1 0)
+;; width in pixels; derived from src.
+(param width 256 1 8192 1)
+;; height in pixels; derived from src.
+(param height 256 1 8192 1)
+
+
+(defkernel simplex_noise [x y c]
+  (let [sx (* x scale)
+        sy (* y scale)
+        val (sum i 0 octaves
+              (let [sc (pow 2 i)
+                    amp (* amplitude (pow 0.5 i))]
+                (* amp (simplex2 (* sx sc) (* sy sc) (+ seed i)))))]
+    (if (= c 3) 1
+      (clamp01 (* 0.5 (+ val 1))))))

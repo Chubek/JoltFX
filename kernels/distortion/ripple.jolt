@@ -1,0 +1,36 @@
+;; @kernel       ripple
+;; @category     distortion
+;; @description  Creates concentric wave displacement around a center point.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; normalized center coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized center coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+;; wave amplitude in pixels; range [0, 64].
+(param amplitude 10 0 64 0)
+;; wavelength in pixels; range [1, 256].
+(param wavelength 32 1 256 0)
+;; wave phase offset; range [0, 360].
+(param phase 0 0 360 0)
+;; amplitude damping with distance; range [0, 1].
+(param damping 0 0 1 0)
+
+
+(defkernel ripple [x y c]
+  (let [cx (- (* center_x width) .5)
+        cy (- (* center_y height) .5)
+        dx (- x cx)
+        dy (- y cy)
+        dist (sqrt (+ (* dx dx) (* dy dy)))
+        phase_rad (radians phase)
+        wave (* amplitude (sin (+ (* (/ (* 2 pi) wavelength) dist) phase_rad)))
+        damp (exp (- (* damping dist)))]
+    (if (= dist 0) (pixel x y c)
+      (let [scale (+ 1 (* wave damp))]
+        (sample (+ cx (* scale dx)) (+ cy (* scale dy)) c 1 1)))))

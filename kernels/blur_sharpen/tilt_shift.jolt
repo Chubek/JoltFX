@@ -1,0 +1,32 @@
+;; @kernel       tilt_shift
+;; @category     blur_sharpen
+;; @description  Combines blur and a focus band to simulate a miniature-depth effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.blur_sharpen; shared functions: common/image.jolt.
+;; focus band center in normalized coordinates; range [0, 1].
+(param focus_center_x 0.5 0 1 0)
+;; focus band center in normalized coordinates; range [0, 1].
+(param focus_center_y 0.5 0 1 0)
+;; focus band half-width in pixels; range [0.01, 1].
+(param focus_width 0.2 0.01 1 0)
+;; maximum blur radius in pixels; range [0.5, 64].
+(param blur_radius 8 0.5 64 0)
+;; blur transition width in pixels; range [0.01, 1].
+(param transition 0.1 0.01 1 0)
+
+
+(defkernel tilt_shift [x y c]
+  (let [cx (- (* focus_center_x width) .5)
+        cy (- (* focus_center_y height) .5)
+        dist (sqrt (+ (* (- x cx) (- x cx)) (* (- y cy) (- y cy))))
+        t (clamp01 (/ (- dist focus_width) transition))
+        r (ceil (* blur_radius t))]
+    (if (= r 0) (pixel x y c)
+      (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+           (sample (+ x i) (+ y j) c 0 1)))
+         (* 4 r r)))))

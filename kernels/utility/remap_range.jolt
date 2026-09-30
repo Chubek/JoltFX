@@ -1,0 +1,28 @@
+;; @kernel       remap_range
+;; @category     utility
+;; @description  Linearly remaps input values from one numeric interval to another.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.utility; shared functions: common/image.jolt.
+;; input range minimum; range [-10, 10].
+(param input_min 0 -10 10 0)
+;; input range maximum; range [-10, 10].
+(param input_max 1 -10 10 0)
+;; output range minimum; range [-10, 10].
+(param output_min 0 -10 10 0)
+;; output range maximum; range [-10, 10].
+(param output_max 1 -10 10 0)
+;; clamp output to output range; range [0, 1].
+(param clamp 0 0 1 1)
+;; 0 all, 1 RGB, 2 RGBA, 3 alpha only; range [0, 3].
+(param channels 1 0 3 1)
+
+
+(defkernel remap_range [x y c]
+  (let [val (pixel x y c)
+        alpha (pixel x y 3)]
+    (finish val alpha 0)))

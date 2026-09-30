@@ -1,0 +1,29 @@
+;; @kernel       wave_distort
+;; @category     distortion
+;; @description  Displaces image coordinates with periodic wave motion.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; wave amplitude in pixels; range [0, 128].
+(param amplitude 10 0 128 0)
+;; wave frequency in cycles per image; range [0.01, 32].
+(param frequency 1 0.01 32 0)
+;; wave phase offset; range [0, 360].
+(param phase 0 0 360 0)
+;; 0 horizontal (displace x), 1 vertical (displace y); range [0, 1].
+(param axis 0 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 1 0 3 1)
+
+
+(defkernel wave_distort [x y c]
+  (let [f (* frequency (* 2 pi))
+        p (radians phase)
+        disp (* amplitude (sin (+ (* f (if (= axis 0) y x)) p)))]
+    (if (= axis 0)
+      (sample (+ x disp) y c 1 border_mode)
+      (sample x (+ y disp) c 1 border_mode))))

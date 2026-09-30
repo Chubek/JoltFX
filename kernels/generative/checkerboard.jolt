@@ -1,0 +1,41 @@
+;; @kernel       checkerboard
+;; @category     generative
+;; @description  Generates a repeating checker pattern with two colors.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; color A red; range [0, 1].
+(param color_a_r 0 0 1 0)
+;; color A green; range [0, 1].
+(param color_a_g 0 0 1 0)
+;; color A blue; range [0, 1].
+(param color_a_b 0 0 1 0)
+;; color A alpha; range [0, 1].
+(param color_a_a 1 0 1 0)
+;; color B red; range [0, 1].
+(param color_b_r 1 0 1 0)
+;; color B green; range [0, 1].
+(param color_b_g 1 0 1 0)
+;; color B blue; range [0, 1].
+(param color_b_b 1 0 1 0)
+;; color B alpha; range [0, 1].
+(param color_b_a 1 0 1 0)
+;; cell width in pixels; range [1, 256].
+(param cell_width 16 1 256 1)
+;; cell height in pixels; range [1, 256].
+(param cell_height 16 1 256 1)
+
+
+(defkernel checkerboard [x y c]
+  (let [cx (floor (/ x cell_width))
+        cy (floor (/ y cell_height))
+        parity (mod (+ cx cy) 2)
+        r (if (= parity 0) color_a_r color_b_r)
+        g (if (= parity 0) color_a_g color_b_g)
+        b (if (= parity 0) color_a_b color_b_b)
+        a (if (= parity 0) color_a_a color_b_a)]
+    (if (= c 0) r (if (= c 1) g (if (= c 2) b a)))))

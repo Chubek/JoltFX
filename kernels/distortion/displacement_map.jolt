@@ -1,0 +1,27 @@
+;; @kernel       displacement_map
+;; @category     distortion
+;; @description  Offsets image coordinates according to channels in a displacement frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; displacement strength in pixels; range [-256, 256].
+(param amount 10 -256 256 0)
+;; 0 red, 1 green, 2 blue, 3 alpha; range [0, 3].
+(param channel_x 0 0 3 1)
+;; 0 red, 1 green, 2 blue, 3 alpha; range [0, 3].
+(param channel_y 1 0 3 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 1 0 3 1)
+
+
+(defkernel displacement_map [x y c]
+  (if (= (data-count) 0) (pixel x y c)
+    (let [idx (+ (* 4 (+ (* y width) x)) channel_x)
+          idy (+ (* 4 (+ (* y width) x)) channel_y)
+          disp_x (* amount (- (data idx) .5))
+          disp_y (* amount (- (data idy) .5))]
+      (sample (+ x disp_x) (+ y disp_y) c 1 border_mode))))

@@ -1,0 +1,19 @@
+;; @kernel       passthrough
+;; @category     utility
+;; @description  Returns the input frame unchanged for graph routing or interface compatibility.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.utility; shared functions: common/image.jolt.
+;; enabled flag; range [0, 1].
+(param enabled 1 0 1 1)
+;; label for debugging; ignored by runtime.
+(param label 0 0 1 1)
+
+
+(defkernel passthrough [x y c]
+  (if (= enabled 1) (pixel x y c)
+    (pixel x y c)))

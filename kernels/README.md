@@ -8,8 +8,18 @@ The first CSV batch adds these **20 missing kernels** in inventory order:
 | `color` | `brightness_contrast`, `hue_rotate`, `color_balance`, `levels`, `curves`, `lut_apply`, `channel_mixer`, `vibrance`, `color_temperature` |
 | `blur_sharpen` | `gaussian_blur`, `motion_blur`, `radial_blur` |
 
+The second CSV batch adds these **30 missing kernels** (28 with full test coverage, 2 with minimal implementations):
+
+| Category | Kernels |
+| --- | --- |
+| `blur_sharpen` | `box_blur`, `unsharp_mask`, `bilateral_filter`, `lens_blur`, `tilt_shift` |
+| `distortion` | `wave_distort`, `ripple`, `bulge_pinch`, `lens_distortion`, `displacement_map`, `turbulence_warp`, `polar_coords`, `twist` |
+| `generative` | `solid_color`, `gradient_linear`, `gradient_radial`, `checkerboard`, `grid`, `plasma`, `cell_noise`, `voronoi`, `mandelbrot` |
+| `noise` | `perlin_noise`, `simplex_noise`, `worley_noise`, `fractal_noise`, `white_noise` |
+| `utility` | `passthrough`, `clamp_values` (minimal), `remap_range` (minimal) |
+
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 299 CSV entries left after this batch.
+the original 12-effect catalog. There are 239 CSV entries left after this batch.
 
 ## Execution and verification
 
@@ -180,7 +190,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all twenty sources as separate CTest cases.
+all forty-eight sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend

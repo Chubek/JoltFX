@@ -1,0 +1,47 @@
+;; @kernel       grid
+;; @category     generative
+;; @description  Generates a regular grid pattern with configurable spacing and line styling.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; background red; range [0, 1].
+(param background_r 0 0 1 0)
+;; background green; range [0, 1].
+(param background_g 0 0 1 0)
+;; background blue; range [0, 1].
+(param background_b 0 0 1 0)
+;; background alpha; range [0, 1].
+(param background_a 1 0 1 0)
+;; line color red; range [0, 1].
+(param line_r 1 0 1 0)
+;; line color green; range [0, 1].
+(param line_g 1 0 1 0)
+;; line color blue; range [0, 1].
+(param line_b 1 0 1 0)
+;; line color alpha; range [0, 1].
+(param line_a 1 0 1 0)
+;; grid spacing x in pixels; range [1, 256].
+(param spacing_x 16 1 256 1)
+;; grid spacing y in pixels; range [1, 256].
+(param spacing_y 16 1 256 1)
+;; line width in pixels; range [0.5, 16].
+(param line_width 1 0.5 16 0)
+
+
+(defkernel grid [x y c]
+  (let [mx (mod x spacing_x)
+        my (mod y spacing_y)
+        on_x (if (< mx line_width) 1 (if (> mx (- spacing_x line_width)) 1 0))
+        on_y (if (< my line_width) 1 (if (> my (- spacing_y line_width)) 1 0))
+        on_line (+ on_x on_y)
+        r_val (if (> on_line 0) line_r background_r)
+        g_val (if (> on_line 0) line_g background_g)
+        b_val (if (> on_line 0) line_b background_b)
+        a_val (if (> on_line 0) line_a background_a)]
+    (if (= c 3) a_val
+      (if (= c 0) r_val
+        (if (= c 1) g_val b_val)))))

@@ -1,0 +1,41 @@
+;; @kernel       gradient_radial
+;; @category     generative
+;; @description  Generates a radial color gradient centered on a point.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; normalized center coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized center coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+;; radius as fraction of min dimension; range [0.01, 4].
+(param radius 1 0.01 4 0)
+
+
+(defkernel gradient_radial [x y c]
+  (let [cx (- (* center_x width) .5)
+        cy (- (* center_y height) .5)
+        dx (- x cx)
+        dy (- y cy)
+        dist (sqrt (+ (* dx dx) (* dy dy)))
+        r_max (* radius (min width height) .5)
+        t (if (= r_max 0) 0 (clamp01 (/ dist r_max)))]
+    (if (= (data-count) 0)
+      (let [r (mix 1 0 t)
+            g (mix 1 0 t)
+            b (mix 1 0 t)
+            a 1]
+        (if (= c 0) r (if (= c 1) g (if (= c 2) b a))))
+      (let [n (/ (data-count) 5)
+            valid (require (and (>= n 2) (= n (floor n))))
+            idx (floor (* t (- n 1)))
+            f (- (* t (- n 1)) idx)
+            i (* idx 5)
+            r0 (data i) g0 (data (+ i 1)) b0 (data (+ i 2)) a0 (data (+ i 3))
+            r1 (data (+ i 5)) g1 (data (+ i 6)) b1 (data (+ i 7)) a1 (data (+ i 8))
+            r (mix r0 r1 f) g (mix g0 g1 f) b (mix b0 b1 f) a (mix a0 a1 f)]
+        (if (= c 0) r (if (= c 1) g (if (= c 2) b a)))))))

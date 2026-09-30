@@ -1,0 +1,38 @@
+;; @kernel       lens_distortion
+;; @category     distortion
+;; @description  Corrects or adds radial and tangential lens distortion.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; radial distortion coefficient k1; range [-1, 1].
+(param k1 0 -1 1 0)
+;; radial distortion coefficient k2; range [-1, 1].
+(param k2 0 -1 1 0)
+;; tangential distortion coefficient p1; range [-1, 1].
+(param p1 0 -1 1 0)
+;; tangential distortion coefficient p2; range [-1, 1].
+(param p2 0 -1 1 0)
+;; normalized center coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized center coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+
+
+(defkernel lens_distortion [x y c]
+  (let [cx (- (* center_x width) .5)
+        cy (- (* center_y height) .5)
+        dx (- x cx)
+        dy (- y cy)
+        r2 (+ (* dx dx) (* dy dy))
+        r (sqrt r2)
+        k_r (clamp01 (/ r (max width height)))]
+    (if (= r 0) (pixel x y c)
+      (let [radial (+ 1 (* k1 k_r) (* k2 k_r k_r))
+            tangential_x (+ (* 2 p1 dx dy) (* p2 (+ r2 (* 2 dx dx))))
+            tangential_y (+ (* p1 (+ r2 (* 2 dy dy))) (* 2 p2 dx dy))
+            ux (* dx radial) vy (* dy radial)]
+        (sample (+ cx ux tangential_x) (+ cy vy tangential_y) c 1 1)))))

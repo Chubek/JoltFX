@@ -1,0 +1,36 @@
+;; @kernel       bilateral_filter
+;; @category     blur_sharpen
+;; @description  Smooths local noise while reducing blur across strong edges.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.blur_sharpen; shared functions: common/image.jolt.
+;; spatial Gaussian standard deviation in pixels; range [0.5, 32].
+(param spatial_sigma 2 0.5 32 0)
+;; range Gaussian standard deviation in color units; range [0.01, 1].
+(param range_sigma 0.1 0.01 1 0)
+;; support radius in pixels; range [1, 16].
+(param radius 3 1 16 1)
+;; number of full-frame passes; range [1, 4].
+(param iterations 1 1 4 1)
+(passes iterations)
+
+
+(defkernel bilateral_filter [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (ceil radius)
+          center (pixel x y c)
+          num (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+               (let [neighbor (sample (+ x i) (+ y j) c 0 1)
+                     spatial_w (exp (- (/ (+ (* i i) (* j j)) (* 2 spatial_sigma spatial_sigma))))
+                     range_w (exp (- (/ (* (- neighbor center) (- neighbor center)) (* 2 range_sigma range_sigma))))]
+                 (* neighbor spatial_w range_w))))
+          den (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+               (let [neighbor (sample (+ x i) (+ y j) c 0 1)
+                     spatial_w (exp (- (/ (+ (* i i) (* j j)) (* 2 spatial_sigma spatial_sigma))))
+                     range_w (exp (- (/ (* (- neighbor center) (- neighbor center)) (* 2 range_sigma range_sigma))))]
+                 (* spatial_w range_w))))]
+      (finish (/ num den) (pixel x y 3) 0))))

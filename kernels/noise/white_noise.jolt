@@ -1,0 +1,29 @@
+;; @kernel       white_noise
+;; @category     noise
+;; @description  Generates independent random noise values for each pixel.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.noise; shared functions: common/image.jolt.
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+;; noise amplitude; range [0, 1].
+(param amplitude 1 0 1 0)
+;; 0 RGB, 1 grayscale; range [0, 1].
+(param monochrome 0 0 1 1)
+;; width in pixels; derived from src.
+(param width 256 1 8192 1)
+;; height in pixels; derived from src.
+(param height 256 1 8192 1)
+
+
+(defkernel white_noise [x y c]
+  (let [h (hash2 x y seed)
+        val (* amplitude h)]
+    (if (= c 3) 1
+      (if (= monochrome 1) val
+        (if (= c 0) val
+          (if (= c 1) (hash2 (+ x 1) y seed) (hash2 x (+ y 1) seed)))))))

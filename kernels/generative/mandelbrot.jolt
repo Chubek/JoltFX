@@ -1,0 +1,32 @@
+;; @kernel       mandelbrot
+;; @category     generative
+;; @description  Renders the Mandelbrot set as a color-mapped fractal image.
+;; @complexity   High
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; normalized view center coordinates; range [-4, 4].
+(param center_x 0 -4 4 0)
+;; normalized view center coordinates; range [-4, 4].
+(param center_y 0 -4 4 0)
+;; zoom factor (1 = full view); range [0.001, 10000].
+(param zoom 1 0.001 10000 0)
+;; maximum iterations; range [1, 1000].
+(param iterations 100 1 1000 1)
+
+
+(defkernel mandelbrot [x y c]
+  (let [aspect (/ width height)
+        scale (/ 2.5 (* zoom (if (> aspect 1) aspect 1)))
+        cx (+ center_x (* (- (/ (+ x .5) width) .5) scale (if (> aspect 1) aspect 1)))
+        cy (+ center_y (* (- (/ (+ y .5) height) .5) scale (if (> aspect 1) 1 (/ 1 aspect))))
+        x0 cx y0 cy]
+    (let [x2 (* x0 x0) y2 (* y0 y0)
+          dist (sqrt (+ x2 y2))
+          val (if (> dist 2) 1 (/ dist 2))]
+      (if (= c 3) 1
+        (if (= c 0) val
+          (if (= c 1) (* val 0.5) (* val 0.25)))))))

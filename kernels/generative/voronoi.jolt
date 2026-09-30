@@ -1,0 +1,37 @@
+;; @kernel       voronoi
+;; @category     generative
+;; @description  Generates a Voronoi diagram or feature-distance texture.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+;; cell size in pixels; range [1, 256].
+(param cell_scale 32 1 256 0)
+;; 0 euclidean, 1 manhattan, 2 chebyshev; range [0, 2].
+(param metric 0 0 2 1)
+;; edge width in pixels; range [0, 16].
+(param edge_width 1 0 16 0)
+
+
+(defkernel voronoi [x y c]
+  (let [sx (/ x cell_scale)
+        sy (/ y cell_scale)
+        xi (floor sx) yi (floor sy)
+        fx (- sx xi) fy (- sy yi)
+        cx xi cy yi
+        hx (hash2 cx cy seed)
+        hy (hash2 cx cy (+ seed 1))
+        px (+ cx hx) py (+ cy hy)
+        dx (- fx hx) dy (- fy hy)
+        d (if (= metric 0) (sqrt (+ (* dx dx) (* dy dy)))
+            (if (= metric 1) (+ (abs dx) (abs dy))
+              (max (abs dx) (abs dy))))
+        edge (max 0 (- d edge_width))
+        val (if (> d 0) (/ edge d) 1)]
+    (if (= c 3) 1
+      (if (= c 0) val 0))))

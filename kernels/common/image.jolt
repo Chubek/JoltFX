@@ -96,3 +96,74 @@
 (defn gaussian-row [x y c radius sigma border]
   (/ (sum i (- radius) (+ radius 1) (* (gaussian-weight i sigma) (sample (+ x i) y c 0 border)))
      (sum i (- radius) (+ radius 1) (gaussian-weight i sigma))))
+
+;; Hash function for procedural noise. Returns pseudo-random value in [0,1).
+(defn hash2 [x y seed]
+  (let [h (+ (* x 374761393.0) (* y 668265263.0) (* seed 1013904223.0))
+        h (mod (+ h 4294967296.0) 4294967296.0)]
+    (/ h 4294967296.0)))
+
+;; Value noise (Perlin-style) with smooth interpolation.
+(defn value-noise [x y seed]
+  (let [xi (floor x) yi (floor y)
+        xf (- x xi) yf (- y yi)
+        u (* xf xf (- 3 (* 2 xf)))
+        v (* yf yf (- 3 (* 2 yf)))
+        aa (hash2 xi yi seed)
+        ab (hash2 xi (+ yi 1) seed)
+        ba (hash2 (+ xi 1) yi seed)
+        bb (hash2 (+ xi 1) (+ yi 1) seed)]
+    (mix (mix aa ba u) (mix ab bb u) v)))
+
+;; Fractal Brownian motion - multiple octaves of value noise.
+(defn fractal-noise [x y seed octaves persistence lacunarity]
+  (let [total (sum i 0 octaves
+              (let [scale (pow lacunarity i)
+                    amp (pow persistence i)]
+                (* amp (value-noise (* x scale) (* y scale) (+ seed i)))))
+        norm (sum i 0 octaves (pow persistence i))]
+    (/ total norm)))
+
+;; Worley (cellular) noise distance to nearest feature point.
+(defn worley-cell [x y cx cy seed]
+  (let [px (+ cx (hash2 cx cy seed))
+        py (+ cy (hash2 cx cy (+ seed 1)))]
+    (sqrt (+ (* (- x px) (- x px)) (* (- y py) (- y py))))))
+
+(defn worley-dist [x y seed]
+  (let [xi (floor x) yi (floor y)
+        d00 (worley-cell x y xi yi seed)
+        d10 (worley-cell x y (+ xi 1) yi seed)
+        d01 (worley-cell x y xi (+ yi 1) seed)
+        d11 (worley-cell x y (+ xi 1) (+ yi 1) seed)
+        dm10 (worley-cell x y (- xi 1) yi seed)
+        d0m1 (worley-cell x y xi (- yi 1) seed)
+        dm1m1 (worley-cell x y (- xi 1) (- yi 1) seed)
+        d1m1 (worley-cell x y (+ xi 1) (- yi 1) seed)
+        dm11 (worley-cell x y (- xi 1) (+ yi 1) seed)]
+    (min d00 (min d10 (min d01 (min d11 (min dm10 (min d0m1 (min dm1m1 (min d1m1 dm11))))))))))
+
+;; Simplex noise (2D) - simplified value noise on skewed grid.
+(defn simplex2 [x y seed]
+  (let [f2 0.5773502691896258
+        s (* (+ x y) f2)
+        i (floor (+ x s))
+        j (floor (+ y s))
+        t (* (+ i j) f2)
+        x0 (- (- x i) t)
+        y0 (- (- y j) t)
+        i1 (if (> x0 y0) 1 0)
+        j1 (if (> x0 y0) 0 1)
+        x1 (- (- x0 i1) f2)
+        y1 (- (- y0 j1) f2)
+        x2 (- (- x0 1) (* 2 f2))
+        y2 (- (- y0 1) (* 2 f2))
+        n0 (simplex-corner x0 y0 i j seed)
+        n1 (simplex-corner x1 y1 (+ i i1) (+ j j1) seed)
+        n2 (simplex-corner x2 y2 (+ i 1) (+ j 1) seed)]
+    (* 70.0 (+ n0 n1 n2))))
+
+(defn simplex-corner [x y i j seed]
+  (let [t (- 0.5 (+ (* x x) (* y y)))
+        t (max t 0)]
+    (* t t t t (hash2 i j seed))))

@@ -1,0 +1,49 @@
+;; @kernel       plasma
+;; @category     generative
+;; @description  Generates an animated, smoothly varying color field from periodic functions.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; palette as color stops in resource data; range [0, 1] per component.
+;; time in seconds for animation; range [0, 1000].
+(param time 0 0 1000 0)
+;; scale factor; range [0.01, 10].
+(param scale 0.02 0.01 10 0)
+
+
+(defkernel plasma [x y c]
+  (let [sx (* x scale)
+        sy (* y scale)
+        t time
+        v1 (sin (+ sx t))
+        v2 (sin (+ sy t))
+        v3 (sin (+ (* 0.70710678118 (+ sx sy)) t))
+        v4 (sin (+ (* 0.70710678118 (- sx sy)) t))
+        val (* 0.25 (+ v1 v2 v3 v4))
+        val (/ (+ val 1) 2)
+        val (clamp01 val)]
+    (if (= (data-count) 0)
+      ;; Default plasma palette: rainbow
+      (let [h (* val 6)
+            i (floor h)
+            f (- h i)
+            p (if (= (mod i 2) 0) f (- 1 f))
+            r (if (or (= i 0) (= i 5)) 1 (if (= i 1) p 0))
+            g (if (or (= i 1) (= i 2)) 1 (if (= i 0) p 0))
+            b (if (or (= i 3) (= i 4)) 1 (if (= i 2) p 0))
+            a 1]
+        (if (= c 0) r (if (= c 1) g (if (= c 2) b a))))
+      ;; Use resource data as color stops
+      (let [n (/ (data-count) 5)
+            valid (require (and (>= n 2) (= n (floor n))))
+            idx (floor (* val (- n 1)))
+            f (- (* val (- n 1)) idx)
+            i (* idx 5)
+            r0 (data i) g0 (data (+ i 1)) b0 (data (+ i 2)) a0 (data (+ i 3))
+            r1 (data (+ i 5)) g1 (data (+ i 6)) b1 (data (+ i 7)) a1 (data (+ i 8))
+            r (mix r0 r1 f) g (mix g0 g1 f) b (mix b0 b1 f) a (mix a0 a1 f)]
+        (if (= c 0) r (if (= c 1) g (if (= c 2) b a)))))))

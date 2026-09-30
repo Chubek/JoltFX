@@ -1,0 +1,31 @@
+;; @kernel       cell_noise
+;; @category     generative
+;; @description  Generates a cellular pattern from seeded feature points.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+;; cell size in pixels; range [1, 256].
+(param cell_scale 32 1 256 0)
+;; 0 euclidean, 1 manhattan, 2 chebyshev; range [0, 2].
+(param metric 0 0 2 1)
+;; 0 distance, 1 cell id, 2 nearest center; range [0, 2].
+(param output_mode 0 0 2 1)
+
+
+(defkernel cell_noise [x y c]
+  (let [sx (/ x cell_scale)
+        sy (/ y cell_scale)
+        d (worley-dist sx sy seed)]
+    (if (= output_mode 0)
+      (if (= c 3) 1
+        (clamp01 (* d 2)))
+      (if (= output_mode 1)
+        (if (= c 3) 1
+          (if (= c 0) d 0))
+      (if (= c 3) 1 0)))))

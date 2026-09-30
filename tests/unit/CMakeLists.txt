@@ -188,7 +188,18 @@ foreach(image_kernel IN ITEMS
     transform/polar_transform color/brightness_contrast color/hue_rotate
     color/color_balance color/levels color/curves color/lut_apply
     color/channel_mixer color/vibrance color/color_temperature
-    blur_sharpen/gaussian_blur blur_sharpen/motion_blur blur_sharpen/radial_blur)
+    blur_sharpen/gaussian_blur blur_sharpen/motion_blur blur_sharpen/radial_blur
+    blur_sharpen/box_blur blur_sharpen/unsharp_mask blur_sharpen/bilateral_filter
+    blur_sharpen/lens_blur blur_sharpen/tilt_shift
+    distortion/wave_distort distortion/ripple distortion/bulge_pinch
+    distortion/lens_distortion distortion/displacement_map
+    distortion/turbulence_warp distortion/polar_coords distortion/twist
+    generative/solid_color generative/gradient_linear generative/gradient_radial
+    generative/checkerboard generative/grid generative/plasma
+    generative/cell_noise generative/voronoi generative/mandelbrot
+    noise/perlin_noise noise/simplex_noise noise/worley_noise
+    noise/fractal_noise noise/white_noise
+    utility/passthrough)
     string(REPLACE "/" "_" test_name "${image_kernel}")
     jfx_register_test(kernel_verify_${test_name} joltc --check
         --image-library "${PROJECT_SOURCE_DIR}/kernels/common/image.jolt"

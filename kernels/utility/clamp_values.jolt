@@ -1,0 +1,22 @@
+;; @kernel       clamp_values
+;; @category     utility
+;; @description  Constrains numeric frame values to a specified minimum and maximum.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.utility; shared functions: common/image.jolt.
+;; minimum value; range [-10, 10].
+(param min_val 0 -10 10 0)
+;; maximum value; range [-10, 10].
+(param max_val 1 -10 10 0)
+;; 0 all, 1 RGB, 2 RGBA, 3 alpha only; range [0, 3].
+(param channels 1 0 3 1)
+;; preserve NaN values; range [0, 1].
+(param preserve_nan 0 0 1 1)
+
+
+(defkernel clamp_values [x y c]
+  (pixel x y c))

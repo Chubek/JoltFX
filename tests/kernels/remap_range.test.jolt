@@ -1,0 +1,10 @@
+;; Executable Joltscript regression on a 4x4 coordinate ramp.
+;; The C harness applies these named uniforms, then passes the rendered frame
+;; to this assertion kernel. Defaults, transparency and further edge cases
+;; are also covered by test_image_kernels.c.
+(param input_min 0 0 0 0)
+(param input_max 1 1 1 0)
+(param output_min 0 0 0 0)
+(param output_max 2 2 2 0)
+(defkernel test_remap_range [x y c]
+  (assert-pixel 3 3 0 1.875))

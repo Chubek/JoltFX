@@ -1,0 +1,35 @@
+;; @kernel       bulge_pinch
+;; @category     distortion
+;; @description  Warps pixels radially inward or outward within a defined region.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; normalized center coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized center coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+;; effect radius in pixels; range [1, 1024].
+(param radius 100 1 1024 0)
+;; bulge > 0, pinch < 0; range [-1, 1].
+(param strength 0.5 -1 1 0)
+;; edge falloff exponent; range [0.5, 4].
+(param falloff 1.5 0.5 4 0)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 1 0 3 1)
+
+
+(defkernel bulge_pinch [x y c]
+  (let [cx (- (* center_x width) .5)
+        cy (- (* center_y height) .5)
+        dx (- x cx)
+        dy (- y cy)
+        dist (sqrt (+ (* dx dx) (* dy dy)))
+        r2 (* radius radius)]
+    (if (or (= dist 0) (>= dist radius)) (pixel x y c)
+      (let [t (pow (/ dist radius) falloff)
+            scale (+ 1 (* strength (- 1 t)))]
+        (sample (+ cx (* scale dx)) (+ cy (* scale dy)) c 1 border_mode)))))

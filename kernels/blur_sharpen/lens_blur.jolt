@@ -1,0 +1,27 @@
+;; @kernel       lens_blur
+;; @category     blur_sharpen
+;; @description  Simulates depth-dependent defocus using an aperture shape.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.blur_sharpen; shared functions: common/image.jolt.
+;; maximum blur radius in pixels; range [0.5, 64].
+(param radius 8 0.5 64 0)
+;; 0 circle, 1 hexagon, 2 blade; range [0, 2].
+(param aperture 0 0 2 1)
+;; aperture blade count; range [3, 12].
+(param blade_count 6 3 12 1)
+;; aperture rotation in degrees; range [0, 360].
+(param rotation 0 0 360 0)
+
+
+(defkernel lens_blur [x y c]
+  (let [depth (if (> (data-count) 0) (data (+ (* y width) x)) 0.5)
+        r (ceil (* radius depth))]
+    (if (= r 0) (pixel x y c)
+      (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+           (sample (+ x i) (+ y j) c 0 1)))
+         (* 4 r r)))))

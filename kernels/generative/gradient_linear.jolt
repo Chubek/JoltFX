@@ -1,0 +1,46 @@
+;; @kernel       gradient_linear
+;; @category     generative
+;; @description  Generates a linear color gradient between configured stops.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
+;; start point x in normalized coordinates; range [-4, 4].
+(param start_x 0 -4 4 0)
+;; start point y in normalized coordinates; range [-4, 4].
+(param start_y 0 -4 4 0)
+;; end point x in normalized coordinates; range [-4, 4].
+(param end_x 1 -4 4 0)
+;; end point y in normalized coordinates; range [-4, 4].
+(param end_y 1 -4 4 0)
+
+
+(defkernel gradient_linear [x y c]
+  (let [sx (- (* start_x width) .5)
+        sy (- (* start_y height) .5)
+        ex (- (* end_x width) .5)
+        ey (- (* end_y height) .5)
+        dx (- ex sx)
+        dy (- ey sy)
+        len2 (+ (* dx dx) (* dy dy))
+        t (if (= len2 0) 0 (/ (+ (* (- x sx) dx) (* (- y sy) dy)) len2))
+        t (clamp01 t)]
+    (if (= (data-count) 0)
+      (let [r (mix 0 1 t)
+            g (mix 0 1 t)
+            b (mix 0 1 t)
+            a 1]
+        (if (= c 0) r (if (= c 1) g (if (= c 2) b a))))
+      ;; Use resource data as color stops: pairs of (position, r, g, b, a)
+      (let [n (/ (data-count) 5)
+            valid (require (and (>= n 2) (= n (floor n))))
+            idx (floor (* t (- n 1)))
+            f (- (* t (- n 1)) idx)
+            i (* idx 5)
+            r0 (data i) g0 (data (+ i 1)) b0 (data (+ i 2)) a0 (data (+ i 3))
+            r1 (data (+ i 5)) g1 (data (+ i 6)) b1 (data (+ i 7)) a1 (data (+ i 8))
+            r (mix r0 r1 f) g (mix g0 g1 f) b (mix b0 b1 f) a (mix a0 a1 f)]
+        (if (= c 0) r (if (= c 1) g (if (= c 2) b a)))))))

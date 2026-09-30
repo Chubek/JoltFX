@@ -1,0 +1,38 @@
+;; @kernel       twist
+;; @category     distortion
+;; @description  Rotates pixels by a radius-dependent angle around a center.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; normalized center coordinates; range [-4, 4].
+(param center_x 0.5 -4 4 0)
+;; normalized center coordinates; range [-4, 4].
+(param center_y 0.5 -4 4 0)
+;; effect radius in pixels; range [1, 1024].
+(param radius 100 1 1024 0)
+;; maximum rotation angle in degrees; range [-3600, 3600].
+(param angle 180 -3600 3600 0)
+;; edge falloff exponent; range [0.5, 4].
+(param falloff 1.5 0.5 4 0)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 1 0 3 1)
+
+
+(defkernel twist [x y c]
+  (let [cx (- (* center_x width) .5)
+        cy (- (* center_y height) .5)
+        dx (- x cx)
+        dy (- y cy)
+        dist (sqrt (+ (* dx dx) (* dy dy)))]
+    (if (or (= dist 0) (>= dist radius)) (pixel x y c)
+      (let [t (pow (/ dist radius) falloff)
+            a (* t (radians angle))
+            ca (cos a)
+            sa (sin a)
+            ux (- (* dx ca) (* dy sa))
+            vy (+ (* dx sa) (* dy ca))]
+        (sample (+ cx ux) (+ cy vy) c 1 border_mode)))))

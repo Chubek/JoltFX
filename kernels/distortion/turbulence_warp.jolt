@@ -1,0 +1,29 @@
+;; @kernel       turbulence_warp
+;; @category     distortion
+;; @description  Warps an image using a multiscale procedural turbulence field.
+;; @complexity   High
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.distortion; shared functions: common/image.jolt.
+;; turbulence scale factor; range [0.01, 10].
+(param scale 0.05 0.01 10 0)
+;; warp strength in pixels; range [0, 128].
+(param strength 10 0 128 0)
+;; number of octaves; range [1, 8].
+(param octaves 4 1 8 1)
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+;; time evolution for animation; range [0, 1000].
+(param evolution 0 0 1000 0)
+
+
+(defkernel turbulence_warp [x y c]
+  (let [sx (* x scale)
+        sy (* y scale)
+        e evolution
+        disp_x (* strength (fractal-noise (+ sx e) sy seed octaves 0.5 2))
+        disp_y (* strength (fractal-noise sx (+ sy e) seed octaves 0.5 2))]
+    (sample (+ x disp_x) (+ y disp_y) c 1 1)))
