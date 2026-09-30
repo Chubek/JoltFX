@@ -96,8 +96,20 @@ The eighth CSV batch adds these **20 missing kernels**:
 | `geometry` | `shape_morph` |
 | `temporal` | `temporal_frame_average` |
 
+The ninth CSV batch adds these **20 missing kernels**:
+
+| Category | Kernels |
+| --- | --- |
+| `color_calibration` | `calib_rec709_to_rec2020`, `calib_srgb_to_display_p3`, `calib_matrix_transform`, `calib_full_to_legal` |
+| `color_grading` | `grade_film_emulation`, `grade_kodachrome`, `grade_velvia`, `grade_portra`, `grade_bleach_bypass`, `grade_color_wash` |
+| `stylize` | `stylize_comic_book`, `stylize_duotone_art`, `stylize_contour`, `stylize_xray` |
+| `keying` | `keying_difference_keyer`, `keying_matte_choker` |
+| `video_effects` | `video_echo`, `video_interlace` |
+| `nle` | `nle_cut` |
+| `temporal` | `temporal_frame_median` |
+
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 185 CSV entries left after these batches.
+the original 12-effect catalog. There are 165 CSV entries left after these batches.
 
 ## Execution and verification
 
@@ -268,7 +280,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all one hundred thirty-seven sources as separate CTest cases.
+all one hundred fifty-seven sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend

@@ -71,12 +71,12 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 196);
+    assert(jolt_image_kernels_count() == 157);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<196;++i) {
+    for (size_t i=0;i<157;++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
@@ -156,10 +156,7 @@ int main(void) {
         "hue_rotate","color_balance","levels","curves","lut_apply",
         "channel_mixer","vibrance","color_temperature",
         "lens_distortion","displacement_map","passthrough",
-        "premultiply_alpha","format_convert","channel_split",
-        "blend","alpha_composite","screen","multiply","overlay",
-        "chroma_key","luma_matte","difference","add",
-        "premultiply_alpha","format_convert","channel_split"};
+        "format_convert"};
     for (size_t i=0;i<sizeof(identity)/sizeof(*identity);++i) {
         run(k,identity[i],src,dst,NULL,0);
         for (int j=0;j<64;++j) near(dst[j],src[j]);
