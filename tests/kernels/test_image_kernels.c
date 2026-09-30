@@ -87,9 +87,9 @@ int main(void) {
             "gradient_linear", "gradient_radial", "grid",
             "histogram_compute", "ifs_fractal", "julia_set",
             "keying_chroma_keyer", "keying_color_keyer", "luma_matte",
-            "mandelbrot", "perlin_noise", "plasma", "simplex_noise",
-            "solid_color", "video_strobe", "voronoi", "white_noise",
-            "worley_noise",};
+            "mandelbrot", "perlin_noise", "plasma", "rect_mask",
+            "simplex_noise", "solid_color", "video_noise_grain",
+            "video_strobe", "voronoi", "white_noise", "worley_noise",};
         int is_gen_noise = 0;
         for (size_t g=0; g<sizeof(gen_noise)/sizeof(*gen_noise); ++g) {
             if (strcmp(name, gen_noise[g]) == 0) { is_gen_noise = 1; break; }
