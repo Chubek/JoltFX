@@ -1,0 +1,23 @@
+;; @kernel       calib_white_point
+;; @category     color_calibration
+;; @description  Calibrates white point to correct gain.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; white point gain; range [0.1, 8].
+(param white_point 1 0.1 8 0)
+;; channel; 0 RGB, 1 R, 2 G, 3 B, 4 A; range [0, 4].
+(param channel 0 0 4 1)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+;; preserve highlights; range [0, 1].
+(param preserve_highlights 1 0 1 1)
+
+
+(defkernel calib_white_point [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

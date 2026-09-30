@@ -56,8 +56,35 @@ The fifth CSV batch adds these **15 missing kernels**:
 | `color_grading` | `grade_sepia` |
 | `stylize` | `stylize_oil_paint` |
 
+These sources were authored in the fifth batch and wired into the build,
+verify tests, and behavioral harness in the seventh batch below.
+
+The sixth CSV batch adds these **20 missing kernels**:
+
+| Category | Kernels |
+| --- | --- |
+| `compositing` | `chroma_key`, `luma_matte`, `difference`, `add` |
+| `time` | `motion_trail` |
+| `light` | `point_light`, `lens_flare`, `shadow_cast` |
+| `geometry` | `stroke_path`, `boolean_op`, `offset_path` |
+| `data_analysis` | `motion_detect`, `histogram_compute` |
+| `transition` | `zoom_transition`, `slide_transition` |
+| `color_calibration` | `calib_gamma_curve`, `calib_black_level` |
+| `keying` | `keying_chroma_keyer` |
+| `color_grading` | `grade_split_toning` |
+| `stylize` | `stylize_watercolor` |
+
+The seventh CSV batch wires in the fifth batch's 17 sources and adds these
+**3 brand-new kernels** (20 new registrations total):
+
+| Category | Kernels |
+| --- | --- |
+| `color_calibration` | `calib_white_point` |
+| `color_grading` | `grade_duotone` |
+| `stylize` | `stylize_pencil_sketch` |
+
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 179 CSV entries left after these batches.
+the original 12-effect catalog. There are 205 CSV entries left after these batches.
 
 ## Execution and verification
 
@@ -228,7 +255,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all ninety-seven sources as separate CTest cases.
+all one hundred seventeen sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend

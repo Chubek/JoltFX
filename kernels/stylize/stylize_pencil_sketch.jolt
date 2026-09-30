@@ -1,0 +1,25 @@
+;; @kernel       stylize_pencil_sketch
+;; @category     stylize
+;; @description  Applies pencil sketch effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; contrast; range [0, 4].
+(param contrast 1.5 0 4 0)
+;; edge threshold; range [0, 1].
+(param edge_threshold 0.2 0 1 0)
+;; paper color red; range [0, 1].
+(param paper_r 0.95 0 1 0)
+;; paper color green; range [0, 1].
+(param paper_g 0.93 0 1 0)
+;; paper color blue; range [0, 1].
+(param paper_b 0.88 0 1 0)
+
+
+(defkernel stylize_pencil_sketch [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

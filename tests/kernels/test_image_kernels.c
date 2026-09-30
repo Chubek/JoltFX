@@ -71,12 +71,12 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 97);
+    assert(jolt_image_kernels_count() == 117);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<97;++i) {
+    for (size_t i=0;i<117;++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
@@ -95,7 +95,7 @@ int main(void) {
             "stylize_thermal","stylize_night_vision",
             "cross_dissolve","wipe",
             "rect_mask","ellipse_mask","feather_mask","track_matte",
-            "stroke_path"};
+            "stroke_path","bezier_mask","ifs_fractal","fill_shape","edge_detect"};
         int is_gen_noise = 0;
         for (size_t g=0; g<sizeof(gen_noise)/sizeof(*gen_noise); ++g) {
             if (strcmp(name, gen_noise[g]) == 0) { is_gen_noise = 1; break; }

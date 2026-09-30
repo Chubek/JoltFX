@@ -205,23 +205,36 @@ foreach(image_kernel IN ITEMS
     light/bloom light/glow
     video_effects/video_noise_grain video_effects/video_pixelate
     keying/luma_keyer keying/keying_chroma_keyer
+    compositing/blend compositing/alpha_composite compositing/screen
+    compositing/multiply compositing/overlay
     compositing/chroma_key compositing/luma_matte compositing/difference
     compositing/add
     color_calibration/calib_white_balance color_calibration/calib_hdr_tone_map
     color_calibration/calib_gamma_curve color_calibration/calib_black_level
+    color_calibration/calib_white_point
     color_grading/grade_teal_orange color_grading/grade_black_and_white
-    color_grading/grade_split_toning
+    color_grading/grade_split_toning color_grading/grade_duotone
+    color_grading/grade_sepia
     stylize/stylize_cartoon stylize/stylize_pixel_art stylize/stylize_neon
     stylize/stylize_thermal stylize/stylize_night_vision
-    stylize/stylize_watercolor
+    stylize/stylize_watercolor stylize/stylize_pencil_sketch
+    stylize/stylize_oil_paint
     transition/cross_dissolve transition/wipe
     transition/zoom_transition transition/slide_transition
+    transition/luma_wipe
     mask_matte/rect_mask mask_matte/ellipse_mask mask_matte/feather_mask
     mask_matte/track_matte mask_matte/bezier_mask
     time/frame_delay time/time_remap time/motion_trail
+    time/frame_blend time/freeze_frame
     light/point_light light/lens_flare light/shadow_cast
+    light/directional_light
+    fractal/ifs_fractal
     geometry/stroke_path geometry/boolean_op geometry/offset_path
-    data_analysis/motion_detect data_analysis/histogram_compute)
+    geometry/fill_shape
+    data_analysis/motion_detect data_analysis/histogram_compute
+    data_analysis/edge_detect
+    video_effects/video_strobe
+    utility/channel_merge)
     string(REPLACE "/" "_" test_name "${image_kernel}")
     jfx_register_test(kernel_verify_${test_name} joltc --check
         --image-library "${PROJECT_SOURCE_DIR}/kernels/common/image.jolt"

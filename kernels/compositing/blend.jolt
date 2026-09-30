@@ -20,5 +20,4 @@
 
 (defkernel blend [x y c]
   (if (= c 3) (pixel x y 3)
-    (let [base (straight x y c)]
-      (finish (* base opacity) (pixel x y 3) 0)))))
+    (finish (* (straight x y c) opacity) (pixel x y 3) 0)))
