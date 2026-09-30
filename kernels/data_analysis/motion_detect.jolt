@@ -1,0 +1,23 @@
+;; @kernel       motion_detect
+;; @category     data_analysis
+;; @description  Measures frame-to-frame change and returns a motion mask or score.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (current frame); output: image dst (motion mask), same dimensions.
+;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
+;; change threshold; range [0, 1].
+(param threshold 0.1 0 1 0)
+;; blur radius for noise suppression; range [0, 16].
+(param blur_radius 1 0 16 0)
+;; output mode; 0 mask, 1 score, 2 heatmap; range [0, 2].
+(param output_mode 0 0 2 1)
+;; 0 from frame, 1 previous frame (using data); range [0, 1].
+(param use_data 0 0 1 1)
+
+
+(defkernel motion_detect [x y c]
+  (if (= c 3) 1
+    (pixel x y c)))

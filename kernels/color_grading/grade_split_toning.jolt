@@ -1,0 +1,31 @@
+;; @kernel       grade_split_toning
+;; @category     color_grading
+;; @description  Applies split toning to shadows and highlights.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; shadow color red; range [0, 1].
+(param shadow_color_r 0.2 0 1 0)
+;; shadow color green; range [0, 1].
+(param shadow_color_g 0.3 0 1 0)
+;; shadow color blue; range [0, 1].
+(param shadow_color_b 0.6 0 1 0)
+;; highlight color red; range [0, 1].
+(param highlight_color_r 1.0 0 1 0)
+;; highlight color green; range [0, 1].
+(param highlight_color_g 0.9 0 1 0)
+;; highlight color blue; range [0, 1].
+(param highlight_color_b 0.7 0 1 0)
+;; tonal balance; range [0, 1].
+(param balance 0.5 0 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_split_toning [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

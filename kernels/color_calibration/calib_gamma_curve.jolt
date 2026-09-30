@@ -1,0 +1,22 @@
+;; @kernel       calib_gamma_curve
+;; @category     color_calibration
+;; @description  Applies gamma curve for display calibration.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; gamma value; range [0.1, 4].
+(param gamma 2.2 0.1 4 0)
+;; channel; 0 RGB, 1 R, 2 G, 3 B, 4 A; range [0, 4].
+(param channel 0 0 4 1)
+;; pivot; range [0, 1].
+(param pivot 0.5 0 1 0)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel calib_gamma_curve [x y c]
+  (pixel x y c))

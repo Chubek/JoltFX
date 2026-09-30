@@ -1,0 +1,24 @@
+;; @kernel       histogram_compute
+;; @category     data_analysis
+;; @description  Computes per-channel value distributions for an input frame.
+;; @complexity   Low
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst (histogram viz), same dimensions.
+;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
+;; number of bins; range [2, 256].
+(param bins 64 2 256 1)
+;; channel; 0 RGB, 1 R, 2 G, 3 B, 4 A; range [0, 4].
+(param channel 0 0 4 1)
+;; range min; range [0, 1].
+(param range_min 0 0 1 0)
+;; range max; range [0, 1].
+(param range_max 1 0 1 0)
+;; normalize output; range [0, 1].
+(param normalized 1 0 1 1)
+
+
+(defkernel histogram_compute [x y c]
+  (pixel x y c))

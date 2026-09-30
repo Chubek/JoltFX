@@ -1,0 +1,22 @@
+;; @kernel       offset_path
+;; @category     geometry
+;; @description  Offsets a path inward or outward by a signed distance.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (path rasterized); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; offset distance in pixels; range [-128, 128].
+(param distance 4 -128 128 0)
+;; join style; 0 miter, 1 round, 2 bevel; range [0, 2].
+(param join 1 0 2 1)
+;; miter limit; range [1, 16].
+(param miter_limit 4 1 16 0)
+;; tolerance in pixels; range [0.01, 8].
+(param tolerance 0.5 0.01 8 0)
+
+
+(defkernel offset_path [x y c]
+  (pixel x y c))

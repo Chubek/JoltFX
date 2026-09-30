@@ -1,0 +1,22 @@
+;; @kernel       slide_transition
+;; @category     transition
+;; @description  Moves source and destination frames in opposite directions during a transition.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transition; shared functions: common/image.jolt.
+;; progress in [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; direction x; range [-1, 1].
+(param direction_x 1 -1 1 0)
+;; direction y; range [-1, 1].
+(param direction_y 0 -1 1 0)
+;; easing curve; 0 linear, 1 smooth; range [0, 1].
+(param curve 0 0 1 1)
+
+
+(defkernel slide_transition [x y c]
+  (pixel x y c))

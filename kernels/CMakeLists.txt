@@ -40,15 +40,25 @@ set(IMAGE_KERNELS
     fractal/julia_set fractal/barnsley_fern
     light/bloom light/glow
     video_effects/video_noise_grain video_effects/video_pixelate
-    keying/luma_keyer
+    keying/luma_keyer keying/keying_chroma_keyer
+    compositing/chroma_key compositing/luma_matte compositing/difference
+    compositing/add
     color_calibration/calib_white_balance color_calibration/calib_hdr_tone_map
+    color_calibration/calib_gamma_curve color_calibration/calib_black_level
     color_grading/grade_teal_orange color_grading/grade_black_and_white
+    color_grading/grade_split_toning
     stylize/stylize_cartoon stylize/stylize_pixel_art stylize/stylize_neon
     stylize/stylize_thermal stylize/stylize_night_vision
+    stylize/stylize_watercolor
     transition/cross_dissolve transition/wipe
+    transition/zoom_transition transition/slide_transition
     mask_matte/rect_mask mask_matte/ellipse_mask mask_matte/feather_mask
     mask_matte/track_matte
-    time/frame_delay time/time_remap)
+    time/frame_delay time/time_remap
+    time/motion_trail
+    light/point_light light/lens_flare light/shadow_cast
+    geometry/stroke_path geometry/boolean_op geometry/offset_path
+    data_analysis/motion_detect data_analysis/histogram_compute)
 set(IMAGE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/image_sources.h")
 file(WRITE "${IMAGE_HEADER}" "/* Generated from Joltscript sources. */\n")
 foreach(path IN ITEMS common/image ${IMAGE_KERNELS})

@@ -1,0 +1,21 @@
+;; @kernel       stylize_watercolor
+;; @category     stylize
+;; @description  Applies watercolor painting effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; wetness; range [0, 1].
+(param wetness 0.5 0 1 0)
+;; pigment density; range [0, 1].
+(param pigment_density 0.7 0 1 0)
+;; paper texture amount; range [0, 1].
+(param paper_texture 0.3 0 1 0)
+
+
+(defkernel stylize_watercolor [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

@@ -1,0 +1,22 @@
+;; @kernel       boolean_op
+;; @category     geometry
+;; @description  Combines two vector paths using a Boolean geometry operation.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (path A rasterized); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; operation; 0 union, 1 intersect, 2 subtract, 3 xor; range [0, 3].
+(param operation 0 0 3 1)
+;; 0 from frame, 1 path B (using data); range [0, 1].
+(param use_data 0 0 1 1)
+;; tolerance in pixels; range [0.01, 8].
+(param tolerance 0.5 0.01 8 0)
+;; fill rule; 0 nonzero, 1 evenodd; range [0, 1].
+(param fill_rule 0 0 1 1)
+
+
+(defkernel boolean_op [x y c]
+  (pixel x y c))

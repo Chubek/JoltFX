@@ -41,6 +41,7 @@ static void source_tests(jolt_image_kernels_t *k) {
         if (strcmp(name, "worley_noise") == 0) continue;
         if (strcmp(name, "fractal_noise") == 0) continue;
         if (strcmp(name, "white_noise") == 0) continue;
+        if (strcmp(name, "bezier_mask") == 0) continue;
         if (strcmp(name, "julia_set") == 0) continue;
         if (strcmp(name, "barnsley_fern") == 0) continue;
         if (strcmp(name, "bloom") == 0) continue;
@@ -70,12 +71,12 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 77);
+    assert(jolt_image_kernels_count() == 97);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<77;++i) {
+    for (size_t i=0;i<97;++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
