@@ -1,0 +1,27 @@
+;; @kernel       fill_shape
+;; @category     geometry
+;; @description  Fills a closed path with a solid or mapped color.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; fill color red; range [0, 1].
+(param color_r 1 0 1 0)
+;; fill color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; fill color blue; range [0, 1].
+(param color_b 1 0 1 0)
+;; fill color alpha; range [0, 1].
+(param color_a 1 0 1 0)
+;; fill rule; 0 nonzero, 1 evenodd; range [0, 1].
+(param fill_rule 0 0 1 1)
+;; antialias; range [0, 1].
+(param antialias 1 0 1 1)
+
+
+(defkernel fill_shape [x y c]
+  (if (= c 3) color_a
+    (if (= c 0) color_r (if (= c 1) color_g color_b))))

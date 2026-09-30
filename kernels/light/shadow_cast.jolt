@@ -1,0 +1,31 @@
+;; @kernel       shadow_cast
+;; @category     light
+;; @description  Creates a soft offset shadow from a frame alpha or mask.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.light; shared functions: common/image.jolt.
+;; shadow offset x in pixels; range [-128, 128].
+(param offset_x 4 -128 128 0)
+;; shadow offset y in pixels; range [-128, 128].
+(param offset_y 4 -128 128 0)
+;; shadow color red; range [0, 1].
+(param color_r 0 0 1 0)
+;; shadow color green; range [0, 1].
+(param color_g 0 0 1 0)
+;; shadow color blue; range [0, 1].
+(param color_b 0 0 1 0)
+;; blur radius; range [0, 64].
+(param blur_radius 4 0 64 0)
+;; shadow opacity; range [0, 1].
+(param opacity 0.5 0 1 0)
+;; shadow spread; range [0, 1].
+(param spread 0 0 1 0)
+
+
+(defkernel shadow_cast [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

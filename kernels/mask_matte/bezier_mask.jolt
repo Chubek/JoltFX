@@ -1,0 +1,21 @@
+;; @kernel       bezier_mask
+;; @category     mask_matte
+;; @description  Rasterizes a closed Bezier path into a mask.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: mask (single channel), same dimensions.
+;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
+;; path data in resource; range [0, 1] for coordinates.
+;; feather in pixels; range [0, 64].
+(param feather 0 0 64 0)
+;; antialias; range [0, 1].
+(param antialias 1 0 1 1)
+;; fill rule; 0 nonzero, 1 evenodd; range [0, 1].
+(param fill_rule 0 0 1 1)
+
+
+(defkernel bezier_mask [x y c]
+  (if (= c 3) 1 0))

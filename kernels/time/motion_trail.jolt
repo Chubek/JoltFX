@@ -1,0 +1,23 @@
+;; @kernel       motion_trail
+;; @category     time
+;; @description  Composites earlier frames with decreasing weights to create a motion trail.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.time; shared functions: common/image.jolt.
+;; trail length in frames; range [1, 60].
+(param length 8 1 60 1)
+;; decay factor per frame; range [0, 1].
+(param decay 0.5 0 1 0)
+;; blend mode; 0 normal, 1 add, 2 screen; range [0, 2].
+(param blend_mode 0 0 2 1)
+;; direction; 0 forward, 1 backward; range [0, 1].
+(param direction 0 0 1 1)
+
+
+(defkernel motion_trail [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

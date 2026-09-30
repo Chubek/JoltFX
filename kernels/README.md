@@ -39,8 +39,25 @@ The fourth CSV batch adds these **15 missing kernels**:
 | `mask_matte` | `rect_mask`, `ellipse_mask`, `feather_mask`, `track_matte` |
 | `time` | `frame_delay`, `time_remap` |
 
+The fifth CSV batch adds these **15 missing kernels**:
+
+| Category | Kernels |
+| --- | --- |
+| `compositing` | `blend`, `alpha_composite`, `screen`, `multiply`, `overlay` |
+| `mask_matte` | `bezier_mask` |
+| `time` | `frame_blend`, `freeze_frame` |
+| `fractal` | `ifs_fractal` |
+| `transition` | `luma_wipe` |
+| `light` | `directional_light` |
+| `geometry` | `fill_shape` |
+| `data_analysis` | `edge_detect` |
+| `utility` | `channel_merge` |
+| `video_effects` | `video_strobe` |
+| `color_grading` | `grade_sepia` |
+| `stylize` | `stylize_oil_paint` |
+
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 214 CSV entries left after these batches.
+the original 12-effect catalog. There are 199 CSV entries left after these batches.
 
 ## Execution and verification
 

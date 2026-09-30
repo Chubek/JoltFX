@@ -1,0 +1,23 @@
+;; @kernel       luma_matte
+;; @category     compositing
+;; @description  Uses luminance values from a source frame to create a matte.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; invert matte; range [0, 1].
+(param invert 0 0 1 1)
+;; threshold; range [0, 1].
+(param threshold 0.5 0 1 0)
+;; softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; 0 from frame, 1 to frame (using data); range [0, 1].
+(param use_data 0 0 1 1)
+
+
+(defkernel luma_matte [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

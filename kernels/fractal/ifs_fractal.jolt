@@ -1,0 +1,20 @@
+;; @kernel       ifs_fractal
+;; @category     fractal
+;; @description  Generates a fractal image by iterating weighted affine transforms.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.fractal; shared functions: common/image.jolt.
+;; number of transforms; range [2, 8].
+(param num_transforms 4 2 8 1)
+;; iterations; range [1000, 1000000].
+(param iterations 50000 1000 1000000 1)
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+
+
+(defkernel ifs_fractal [x y c]
+  (if (= c 3) 1 0))

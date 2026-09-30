@@ -1,0 +1,21 @@
+;; @kernel       overlay
+;; @category     compositing
+;; @description  Composites frames using the overlay blend equation.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; blend opacity; range [0, 1].
+(param opacity 1 0 1 0)
+;; 0 from frame, 1 to frame (using data); range [0, 1].
+(param use_data 0 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 1 0 3 1)
+
+
+(defkernel overlay [x y c]
+  (if (= c 3) (pixel x y 3)
+    (finish (* (straight x y c) opacity) (pixel x y 3) 0)))

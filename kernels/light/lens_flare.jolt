@@ -1,0 +1,31 @@
+;; @kernel       lens_flare
+;; @category     light
+;; @description  Generates a lens-flare overlay aligned to a light position.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.light; shared functions: common/image.jolt.
+;; flare position x in normalized coordinates; range [-2, 2].
+(param position_x 0.5 -2 2 0)
+;; flare position y in normalized coordinates; range [-2, 2].
+(param position_y 0.5 -2 2 0)
+;; flare intensity; range [0, 1].
+(param intensity 0.5 0 1 0)
+;; flare color red; range [0, 1].
+(param color_r 1 0 1 0)
+;; flare color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; flare color blue; range [0, 1].
+(param color_b 1 0 1 0)
+;; flare scale; range [0.1, 10].
+(param scale 1 0.1 10 0)
+;; number of ghost elements; range [1, 10].
+(param ghost_count 3 1 10 1)
+
+
+(defkernel lens_flare [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

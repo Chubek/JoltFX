@@ -1,0 +1,31 @@
+;; @kernel       directional_light
+;; @category     light
+;; @description  Applies uniform directional illumination to a frame or normal map.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.light; shared functions: common/image.jolt.
+;; light direction x; range [-1, 1].
+(param direction_x 0 -1 1 0)
+;; light direction y; range [-1, 1].
+(param direction_y 0 -1 1 0)
+;; light direction z; range [-1, 1].
+(param direction_z 1 -1 1 0)
+;; light color red; range [0, 1].
+(param color_r 1 0 1 0)
+;; light color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; light color blue; range [0, 1].
+(param color_b 1 0 1 0)
+;; light intensity; range [0, 4].
+(param intensity 1 0 4 0)
+;; ambient light; range [0, 1].
+(param ambient 0.1 0 1 0)
+
+
+(defkernel directional_light [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

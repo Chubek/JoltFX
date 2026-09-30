@@ -1,0 +1,26 @@
+;; @kernel       add
+;; @category     compositing
+;; @description  Adds corresponding frame channels with configurable intensity and clipping.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; add amount; range [0, 2].
+(param amount 1 0 2 0)
+;; clamp result; range [0, 1].
+(param clamp 1 0 1 1)
+;; 0 from frame, 1 to frame (using data); range [0, 1].
+(param use_data 0 0 1 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border_mode 1 0 3 1)
+
+
+(defkernel add [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [base (straight x y c)
+          add_val (if (= use_data 1) (data (+ (* 4 (+ (* y width) x)) c)) (pixel x y c))
+          result (+ base (* amount add_val))]
+      (finish (* result (if (= clamp 1) (clamp01 1) 1)) (pixel x y 3) 0))))

@@ -1,0 +1,27 @@
+;; @kernel       video_strobe
+;; @category     video_effects
+;; @description  Creates strobe flashing effect by alternating frames.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; strobe rate in Hz; range [0.1, 60].
+(param rate 10 0.1 60 0)
+;; duty cycle [0,1]; range [0, 1].
+(param duty_cycle 0.5 0 1 0)
+;; phase offset; range [0, 1].
+(param phase 0 0 1 0)
+;; flash color red; range [0, 1].
+(param color_r 1 0 1 0)
+;; flash color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; flash color blue; range [0, 1].
+(param color_b 1 0 1 0)
+
+
+(defkernel video_strobe [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

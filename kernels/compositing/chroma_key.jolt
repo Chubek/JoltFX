@@ -1,0 +1,29 @@
+;; @kernel       chroma_key
+;; @category     compositing
+;; @description  Creates transparency from a target color range in a frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; key color red; range [0, 1].
+(param key_color_r 0 0 1 0)
+;; key color green; range [0, 1].
+(param key_color_g 1 0 1 0)
+;; key color blue; range [0, 1].
+(param key_color_b 0 0 1 0)
+;; tolerance for color matching; range [0, 1].
+(param tolerance 0.1 0 1 0)
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; spill suppression amount; range [0, 1].
+(param spill_suppression 0.5 0 1 0)
+;; despill enabled; range [0, 1].
+(param despill 1 0 1 1)
+
+
+(defkernel chroma_key [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

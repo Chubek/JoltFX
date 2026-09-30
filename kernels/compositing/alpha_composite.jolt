@@ -1,0 +1,25 @@
+;; @kernel       alpha_composite
+;; @category     compositing
+;; @description  Composites a foreground frame over a background using alpha.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; opacity of foreground; range [0, 1].
+(param opacity 1 0 1 0)
+;; 0 straight, 1 premultiplied; range [0, 1].
+(param premultiplied 1 0 1 1)
+;; 0 normal, 1 linear; range [0, 1].
+(param blend_space 0 0 1 1)
+;; 0 from frame, 1 to frame (using data); range [0, 1].
+(param use_data 0 0 1 1)
+
+
+(defkernel alpha_composite [x y c]
+  (if (= c 3)
+    (let [fg_a (if (= use_data 1) (data (+ (* 4 (+ (* y width) x)) 3)) (pixel x y 3))]
+      (+ (* fg_a opacity) (* (pixel x y 3) (- 1 (* fg_a opacity)))))
+    (pixel x y c)))

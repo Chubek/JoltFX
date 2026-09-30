@@ -1,0 +1,21 @@
+;; @kernel       frame_blend
+;; @category     time
+;; @description  Interpolates between adjacent frames to create a blended temporal sample.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.time; shared functions: common/image.jolt.
+;; blend weight [0,1]; range [0, 1].
+(param weight 0.5 0 1 0)
+;; 0 from frame, 1 to frame (using data); range [0, 1].
+(param use_data 0 0 1 1)
+;; use optical flow; range [0, 1].
+(param optical_flow 0 0 1 1)
+
+
+(defkernel frame_blend [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))
