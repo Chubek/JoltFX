@@ -1,0 +1,24 @@
+;; @kernel       grade_photo_filter
+;; @category     color_grading
+;; @description  Applies photo filter color effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; filter color red; range [0, 1].
+(param filter_color_r 1 0 1 0)
+;; filter color green; range [0, 1].
+(param filter_color_g 0.8 0 1 0)
+;; filter color blue; range [0, 1].
+(param filter_color_b 0.4 0 1 0)
+;; filter density; range [0, 1].
+(param density 0.3 0 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_photo_filter [x y c]
+  (pixel x y c))

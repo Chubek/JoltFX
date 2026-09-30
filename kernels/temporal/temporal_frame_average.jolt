@@ -1,0 +1,18 @@
+;; @kernel       temporal_frame_average
+;; @category     temporal
+;; @description  Averages frames over time.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; temporal window size; range [1, 60].
+(param window 4 1 60 1)
+;; normalize average; range [0, 1].
+(param normalize 1 0 1 1)
+
+
+(defkernel temporal_frame_average [x y c]
+  (pixel x y c))

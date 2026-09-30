@@ -1,0 +1,26 @@
+;; @kernel       keying_despill
+;; @category     keying
+;; @description  Removes color spill from keyed edges.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; spill color red; range [0, 1].
+(param spill_color_r 0 0 1 0)
+;; spill color green; range [0, 1].
+(param spill_color_g 1 0 1 0)
+;; spill color blue; range [0, 1].
+(param spill_color_b 0 0 1 0)
+;; despill amount; range [0, 1].
+(param amount 0.5 0 1 0)
+;; method; 0 green, 1 average, 2 limit; range [0, 2].
+(param method 0 0 2 1)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel keying_despill [x y c]
+  (pixel x y c))

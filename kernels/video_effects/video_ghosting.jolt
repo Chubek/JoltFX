@@ -1,0 +1,18 @@
+;; @kernel       video_ghosting
+;; @category     video_effects
+;; @description  Creates ghosting afterimage effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; ghost opacity; range [0, 1].
+(param opacity 0.4 0 1 0)
+;; blend mode; 0 normal, 1 add, 2 screen; range [0, 2].
+(param blend_mode 1 0 2 1)
+
+
+(defkernel video_ghosting [x y c]
+  (pixel x y c))

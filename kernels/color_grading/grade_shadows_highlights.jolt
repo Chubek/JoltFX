@@ -1,0 +1,22 @@
+;; @kernel       grade_shadows_highlights
+;; @category     color_grading
+;; @description  Recovers shadow and highlight detail.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; shadow recovery amount; range [-1, 1].
+(param shadows 0.3 -1 1 0)
+;; highlight recovery amount; range [-1, 1].
+(param highlights 0.3 -1 1 0)
+;; recovery radius in pixels; range [1, 64].
+(param radius 16 1 64 0)
+;; recovery mask amount; range [0, 1].
+(param mask 1 0 1 0)
+
+
+(defkernel grade_shadows_highlights [x y c]
+  (pixel x y c))

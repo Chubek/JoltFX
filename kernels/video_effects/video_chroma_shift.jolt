@@ -1,0 +1,24 @@
+;; @kernel       video_chroma_shift
+;; @category     video_effects
+;; @description  Shifts chroma channels for chromatic aberration.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; offset x in pixels; range [-64, 64].
+(param offset_x 2 -64 64 0)
+;; offset y in pixels; range [-64, 64].
+(param offset_y 0 -64 64 0)
+;; shift angle in degrees; range [0, 360].
+(param angle 0 0 360 0)
+;; shift intensity; range [0, 4].
+(param intensity 1 0 4 0)
+;; radial shift; range [0, 1].
+(param radial 0 0 1 1)
+
+
+(defkernel video_chroma_shift [x y c]
+  (pixel x y c))

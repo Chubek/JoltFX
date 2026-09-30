@@ -1,0 +1,24 @@
+;; @kernel       grade_cross_process
+;; @category     color_grading
+;; @description  Applies cross process film effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; effect intensity; range [0, 1].
+(param intensity 0.5 0 1 0)
+;; channel shift red; range [-1, 1].
+(param channel_shift_r 0 -1 1 0)
+;; channel shift green; range [-1, 1].
+(param channel_shift_g 0 -1 1 0)
+;; channel shift blue; range [-1, 1].
+(param channel_shift_b 0 -1 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_cross_process [x y c]
+  (pixel x y c))

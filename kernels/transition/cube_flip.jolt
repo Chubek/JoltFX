@@ -1,0 +1,30 @@
+;; @kernel       cube_flip
+;; @category     transition
+;; @description  Transitions between frames with a simulated rotating cube-face effect.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.transition; shared functions: common/image.jolt.
+;; progress in [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; rotation axis x; range [-1, 1].
+(param axis_x 0 -1 1 0)
+;; rotation axis y; range [-1, 1].
+(param axis_y 1 -1 1 0)
+;; rotation axis z; range [-1, 1].
+(param axis_z 0 -1 1 0)
+;; perspective depth; range [0.1, 10].
+(param perspective 1 0.1 10 0)
+;; background color red; range [0, 1].
+(param background_r 0 0 1 0)
+;; background color green; range [0, 1].
+(param background_g 0 0 1 0)
+;; background color blue; range [0, 1].
+(param background_b 0 0 1 0)
+
+
+(defkernel cube_flip [x y c]
+  (pixel x y c))

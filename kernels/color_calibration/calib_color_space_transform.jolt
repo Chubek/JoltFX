@@ -1,0 +1,22 @@
+;; @kernel       calib_color_space_transform
+;; @category     color_calibration
+;; @description  Converts between color spaces.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; 0 sRGB, 1 linear, 2 Rec.709, 3 Rec.2020, 4 Display P3; range [0, 4].
+(param input_space 0 0 4 1)
+;; 0 sRGB, 1 linear, 2 Rec.709, 3 Rec.2020, 4 Display P3; range [0, 4].
+(param output_space 1 0 4 1)
+;; adaptation; 0 none, 1 Bradford, 2 von Kries; range [0, 2].
+(param adaptation 0 0 2 1)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel calib_color_space_transform [x y c]
+  (pixel x y c))

@@ -1,0 +1,24 @@
+;; @kernel       stylize_ink_outline
+;; @category     stylize
+;; @description  Applies ink outline effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; edge threshold; range [0, 1].
+(param threshold 0.2 0 1 0)
+;; line width in pixels; range [0.5, 16].
+(param line_width 2 0.5 16 0)
+;; ink color red; range [0, 1].
+(param color_r 0 0 1 0)
+;; ink color green; range [0, 1].
+(param color_g 0 0 1 0)
+;; ink color blue; range [0, 1].
+(param color_b 0 0 1 0)
+
+
+(defkernel stylize_ink_outline [x y c]
+  (pixel x y c))

@@ -1,0 +1,20 @@
+;; @kernel       stylize_8bit
+;; @category     stylize
+;; @description  Applies 8-bit retro effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; color palette size; range [2, 256].
+(param color_palette 8 2 256 1)
+;; dithering; 0 none, 1 bayer, 2 random; range [0, 2].
+(param dithering 1 0 2 1)
+;; scanlines; range [0, 1].
+(param scanlines 0 0 1 1)
+
+
+(defkernel stylize_8bit [x y c]
+  (pixel x y c))

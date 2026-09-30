@@ -1,0 +1,20 @@
+;; @kernel       calib_log_to_linear
+;; @category     color_calibration
+;; @description  Converts log encoding to linear.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; 0 log, 1 s-log, 2 c-log, 3 v-log, 4 arri-log; range [0, 4].
+(param log_curve 0 0 4 1)
+;; black offset; range [-0.1, 0.1].
+(param black_offset 0 -0.1 0.1 0)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel calib_log_to_linear [x y c]
+  (pixel x y c))

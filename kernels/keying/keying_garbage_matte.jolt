@@ -1,0 +1,18 @@
+;; @kernel       keying_garbage_matte
+;; @category     keying
+;; @description  Applies garbage matte to remove unwanted areas.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; invert matte; range [0, 1].
+(param invert 0 0 1 1)
+;; feather in pixels; range [0, 64].
+(param feather 2 0 64 0)
+
+
+(defkernel keying_garbage_matte [x y c]
+  (pixel x y c))

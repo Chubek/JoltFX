@@ -212,16 +212,22 @@ foreach(image_kernel IN ITEMS
     color_calibration/calib_white_balance color_calibration/calib_hdr_tone_map
     color_calibration/calib_gamma_curve color_calibration/calib_black_level
     color_calibration/calib_white_point
+    color_calibration/calib_color_space_transform
+    color_calibration/calib_log_to_linear
+    color_calibration/calib_legal_to_full
     color_grading/grade_teal_orange color_grading/grade_black_and_white
     color_grading/grade_split_toning color_grading/grade_duotone
-    color_grading/grade_sepia
+    color_grading/grade_sepia color_grading/grade_shadows_highlights
+    color_grading/grade_cross_process color_grading/grade_photo_filter
+    color_grading/grade_color_wheels
     stylize/stylize_cartoon stylize/stylize_pixel_art stylize/stylize_neon
     stylize/stylize_thermal stylize/stylize_night_vision
     stylize/stylize_watercolor stylize/stylize_pencil_sketch
-    stylize/stylize_oil_paint
+    stylize/stylize_oil_paint stylize/stylize_ink_outline
+    stylize/stylize_line_art stylize/stylize_8bit
     transition/cross_dissolve transition/wipe
     transition/zoom_transition transition/slide_transition
-    transition/luma_wipe
+    transition/luma_wipe transition/cube_flip
     mask_matte/rect_mask mask_matte/ellipse_mask mask_matte/feather_mask
     mask_matte/track_matte mask_matte/bezier_mask
     time/frame_delay time/time_remap time/motion_trail
@@ -230,10 +236,15 @@ foreach(image_kernel IN ITEMS
     light/directional_light
     fractal/ifs_fractal
     geometry/stroke_path geometry/boolean_op geometry/offset_path
-    geometry/fill_shape
+    geometry/fill_shape geometry/shape_morph
+    keying/keying_color_keyer keying/keying_despill
+    keying/keying_garbage_matte
     data_analysis/motion_detect data_analysis/histogram_compute
     data_analysis/edge_detect
-    video_effects/video_strobe
+    video_effects/video_strobe video_effects/video_flicker
+    video_effects/video_mosaic video_effects/video_ghosting
+    video_effects/video_chroma_shift
+    temporal/temporal_frame_average
     utility/channel_merge)
     string(REPLACE "/" "_" test_name "${image_kernel}")
     jfx_register_test(kernel_verify_${test_name} joltc --check

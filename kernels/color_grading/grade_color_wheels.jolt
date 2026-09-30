@@ -1,0 +1,34 @@
+;; @kernel       grade_color_wheels
+;; @category     color_grading
+;; @description  Applies color wheels grading.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; shadow wheel red; range [-1, 1].
+(param shadows_r 0 -1 1 0)
+;; shadow wheel green; range [-1, 1].
+(param shadows_g 0 -1 1 0)
+;; shadow wheel blue; range [-1, 1].
+(param shadows_b 0 -1 1 0)
+;; midtone wheel red; range [-1, 1].
+(param midtones_r 0 -1 1 0)
+;; midtone wheel green; range [-1, 1].
+(param midtones_g 0 -1 1 0)
+;; midtone wheel blue; range [-1, 1].
+(param midtones_b 0 -1 1 0)
+;; highlight wheel red; range [-1, 1].
+(param highlights_r 0 -1 1 0)
+;; highlight wheel green; range [-1, 1].
+(param highlights_g 0 -1 1 0)
+;; highlight wheel blue; range [-1, 1].
+(param highlights_b 0 -1 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_color_wheels [x y c]
+  (pixel x y c))

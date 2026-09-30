@@ -83,8 +83,21 @@ The seventh CSV batch wires in the fifth batch's 17 sources and adds these
 | `color_grading` | `grade_duotone` |
 | `stylize` | `stylize_pencil_sketch` |
 
+The eighth CSV batch adds these **20 missing kernels**:
+
+| Category | Kernels |
+| --- | --- |
+| `color_calibration` | `calib_color_space_transform`, `calib_log_to_linear`, `calib_legal_to_full` |
+| `color_grading` | `grade_shadows_highlights`, `grade_cross_process`, `grade_photo_filter`, `grade_color_wheels` |
+| `stylize` | `stylize_ink_outline`, `stylize_line_art`, `stylize_8bit` |
+| `keying` | `keying_color_keyer`, `keying_despill`, `keying_garbage_matte` |
+| `video_effects` | `video_flicker`, `video_mosaic`, `video_ghosting`, `video_chroma_shift` |
+| `transition` | `cube_flip` |
+| `geometry` | `shape_morph` |
+| `temporal` | `temporal_frame_average` |
+
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 205 CSV entries left after these batches.
+the original 12-effect catalog. There are 185 CSV entries left after these batches.
 
 ## Execution and verification
 
@@ -255,7 +268,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all one hundred seventeen sources as separate CTest cases.
+all one hundred thirty-seven sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend

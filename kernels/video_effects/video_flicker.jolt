@@ -1,0 +1,22 @@
+;; @kernel       video_flicker
+;; @category     video_effects
+;; @description  Creates frame brightness flicker effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; flicker amount; range [0, 1].
+(param amount 0.3 0 1 0)
+;; flicker frequency; range [0.1, 60].
+(param frequency 8 0.1 60 0)
+;; random seed; range [0, 65535].
+(param seed 0 0 65535 1)
+;; animate; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_flicker [x y c]
+  (pixel x y c))

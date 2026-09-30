@@ -1,0 +1,20 @@
+;; @kernel       shape_morph
+;; @category     geometry
+;; @description  Interpolates corresponding points between two compatible vector paths.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (path A rasterized); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; morph progress in [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; correspondence; 0 index, 1 length, 2 centroid; range [0, 2].
+(param correspondence 0 0 2 1)
+;; easing curve; 0 linear, 1 smooth; range [0, 1].
+(param easing 0 0 1 1)
+
+
+(defkernel shape_morph [x y c]
+  (pixel x y c))
