@@ -57,7 +57,7 @@ The fifth CSV batch adds these **15 missing kernels**:
 | `stylize` | `stylize_oil_paint` |
 
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 199 CSV entries left after these batches.
+the original 12-effect catalog. There are 179 CSV entries left after these batches.
 
 ## Execution and verification
 
@@ -228,7 +228,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all seventy-seven sources as separate CTest cases.
+all ninety-seven sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend

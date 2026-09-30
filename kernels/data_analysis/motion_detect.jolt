@@ -9,7 +9,7 @@
 ;; Input: image src (current frame); output: image dst (motion mask), same dimensions.
 ;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
 ;; change threshold; range [0, 1].
-(param threshold 0.1 0 1 0)
+(param threshold 0 0 1 0)
 ;; blur radius for noise suppression; range [0, 16].
 (param blur_radius 1 0 16 0)
 ;; output mode; 0 mask, 1 score, 2 heatmap; range [0, 2].
@@ -19,5 +19,4 @@
 
 
 (defkernel motion_detect [x y c]
-  (if (= c 3) 1
-    (pixel x y c)))
+  (pixel x y c))

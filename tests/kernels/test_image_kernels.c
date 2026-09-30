@@ -87,14 +87,15 @@ int main(void) {
             "julia_set","barnsley_fern","video_noise_grain","video_pixelate",
             "bloom","glow","luma_keyer",
             "bilateral_filter","lens_blur","tilt_shift","polar_coords",
-            "rect_mask","ellipse_mask","feather_mask","track_matte",
+            "rect_mask","ellipse_mask","feather_mask","track_matte","bezier_mask",
             "frame_delay","time_remap",
             "calib_white_balance","calib_hdr_tone_map",
             "grade_teal_orange","grade_black_and_white",
             "stylize_cartoon","stylize_pixel_art","stylize_neon",
             "stylize_thermal","stylize_night_vision",
             "cross_dissolve","wipe",
-            "rect_mask","ellipse_mask","feather_mask","track_matte"};
+            "rect_mask","ellipse_mask","feather_mask","track_matte",
+            "stroke_path"};
         int is_gen_noise = 0;
         for (size_t g=0; g<sizeof(gen_noise)/sizeof(*gen_noise); ++g) {
             if (strcmp(name, gen_noise[g]) == 0) { is_gen_noise = 1; break; }
