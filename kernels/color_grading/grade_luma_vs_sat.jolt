@@ -1,0 +1,31 @@
+;; @kernel       grade_luma_vs_sat
+;; @category     color_grading
+;; @description  Adjusts saturation based on source luminance.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; The resource array holds a Curve: increasing (x,y) pairs with x = source
+;; luminance and y = target saturation, both on the unit domain.
+;; channel interpolation; 0 linear, 1 hermite; range [0, 1].
+(param channel 1 0 1 1)
+;; saturation remap intensity; range [0, 1].
+(param intensity 1 0 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_luma_vs_sat [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          target (clamp01 (curve-value l channel))
+          want (mix (saturation r g b) target intensity)
+          v (sat-set x y c want)
+          adj (if (= preserve_luma 1) (- l (luma v v v)) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

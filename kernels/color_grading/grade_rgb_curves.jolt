@@ -1,0 +1,33 @@
+;; @kernel       grade_rgb_curves
+;; @category     color_grading
+;; @description  Applies RGB curves adjustment.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; The resource array packs four length-prefixed curves back to back, each
+;; data[off] = point count N then N (x,y) pairs: red, green, blue, then master.
+;; channel interpolation; 0 linear, 1 hermite; range [0, 1].
+(param channel 1 0 1 1)
+;; curve intensity; range [0, 1].
+(param intensity 1 0 1 0)
+;; apply the master curve after the per-channel curves; range [0, 1].
+(param master 1 0 1 1)
+
+
+(defkernel grade_rgb_curves [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [;; locate each packed curve by walking the length prefixes
+          n0 (curve-n-at 0)
+          o1 (+ 1 (* 2 n0))
+          n1 (curve-n-at o1)
+          o2 (+ o1 (+ 1 (* 2 n1)))
+          n2 (curve-n-at o2)
+          o3 (+ o2 (+ 1 (* 2 n2)))
+          v (clamp01 (curve-value-at (if (= c 0) 0 (if (= c 1) o1 o2)) (straight x y c) channel))
+          per (mix (straight x y c) v intensity)
+          m (if (= master 1) (clamp01 (curve-value-at o3 per channel)) per)]
+      (finish m (pixel x y 3) 1))))

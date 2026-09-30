@@ -1,0 +1,44 @@
+;; @kernel       stylize_pointillism
+;; @category     stylize
+;; @description  Applies pointillism painting effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; A hex lattice of dots samples the source. Each dot takes the mean colour of the
+;; patch it covers, so the painting keeps its forms; the dot is jittered off-lattice
+;; and sized by local brightness, as brush strokes are in a pointillist painting.
+;; dot size in pixels; range [1, 64].
+(param dot_size 8 1 64 1)
+;; dot spacing in pixels; range [1, 128].
+(param dot_spacing 8 1 128 1)
+;; color variation per dot; range [0, 1].
+(param color_variation 0.3 0 1 0)
+
+
+(defkernel stylize_pointillism [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [sp dot_spacing
+          ;; hex lattice: alternate rows are offset by half a spacing
+          row (floor (/ y sp))
+          off (if (= (mod row 2) 0) 0 (/ sp 2))
+          col (floor (/ (+ x off) sp))
+          ;; each dot is jittered inside its cell so the lattice does not read as a grid
+          jx (+ (* col sp) (* (hash2 col row 1) sp .4))
+          jy (+ (* row sp) (* (hash2 col row 2) sp .4))
+          d (sqrt (+ (* (- x jx) (- x jx)) (* (- y jy) (- y jy))))
+          ;; local mean over the 2x2 patch the dot sits on
+          mx (floor (- jx 1))
+          my (floor (- jy 1))
+          mean (/ (+ (straight mx my c) (straight (+ mx 1) my c)
+                     (straight mx (+ my 1) c) (straight (+ mx 1) (+ my 1) c)) 4)
+          painted (+ mean (* color_variation (- (* 2 (hash2 col row 3)) 1)))
+          ;; darker regions get a smaller dot
+          lum (luminance mx my)
+          rad (* dot_size .5 (mix .55 1.15 (clamp01 lum)))
+          ;; 1 at the dot centre, 0 outside its rim
+          cover (- 1 (smooth (- rad 1.2) rad d))]
+      (finish (mix (straight x y c) painted cover) (pixel x y 3) 1))))

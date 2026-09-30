@@ -71,25 +71,25 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 157);
+    assert(jolt_image_kernels_count() == 189);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<157;++i) {
+    for (size_t i=0;i<189;++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
         /* Generative and noise kernels produce non-zero output even with zero input. */
         const char *gen_noise[]={
-            "barnsley_fern", "cell_noise", "checkerboard", "chroma_key",
-            "clamp_values", "edge_detect", "ellipse_mask", "fractal_noise",
-            "gradient_linear", "gradient_radial", "grid",
-            "histogram_compute", "ifs_fractal", "julia_set",
-            "keying_chroma_keyer", "keying_color_keyer", "luma_matte",
-            "mandelbrot", "perlin_noise", "plasma", "rect_mask",
-            "simplex_noise", "solid_color", "video_noise_grain",
-            "video_strobe", "voronoi", "white_noise", "worley_noise",};
+            "barnsley_fern", "cell_noise", "checkerboard", "chroma_key", "edge_detect",
+            "ellipse_mask", "fractal_noise", "gradient_linear", "gradient_radial",
+            "grid", "histogram_compute", "ifs_fractal", "julia_set",
+            "keying_chroma_keyer", "keying_color_difference", "keying_color_keyer",
+            "keying_inner_outer", "keying_linear_color", "keying_luma_keyer",
+            "keying_refine_soft", "mandelbrot", "perlin_noise", "plasma", "rect_mask",
+            "simplex_noise", "solid_color", "video_noise_grain", "video_strobe",
+            "voronoi", "white_noise", "worley_noise",};
         int is_gen_noise = 0;
         for (size_t g=0; g<sizeof(gen_noise)/sizeof(*gen_noise); ++g) {
             if (strcmp(name, gen_noise[g]) == 0) { is_gen_noise = 1; break; }

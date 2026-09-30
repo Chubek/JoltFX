@@ -1,0 +1,78 @@
+;; @kernel       calib_primaries_adjust
+;; @category     color_calibration
+;; @description  Adjusts color primaries for calibration.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; Primary chromaticities are given as CIE xy. The forward matrix (linear RGB to XYZ)
+;; is built from them, the source white point is solved out of it by Cramer's rule,
+;; and a Von Kries diagonal gain maps onto the destination white. This is a real
+;; primary adaptation, not a per-channel gain.
+;; white point x; range [0, 1].
+(param white_x 0.3127 0 1 0)
+;; white point y; range [0, 1].
+(param white_y 0.329 0 1 0)
+;; red primary x; range [0, 1].
+(param red_x 0.64 0 1 0)
+;; red primary y; range [0, 1].
+(param red_y 0.33 0 1 0)
+;; green primary x; range [0, 1].
+(param green_x 0.3 0 1 0)
+;; green primary y; range [0, 1].
+(param green_y 0.6 0 1 0)
+;; blue primary x; range [0, 1].
+(param blue_x 0.15 0 1 0)
+;; blue primary y; range [0, 1].
+(param blue_y 0.06 0 1 0)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+;; Destination white is fixed at D65; the source white is what the caller supplies.
+
+
+(defn det3 [a b c d e f g h i]
+  (- (+ (* a (- (* e i) (* f h))) (* b (- (* d i) (* f g))))
+     (* c (- (* d h) (* e g)))))
+
+
+;; One component of M^-1 * w by Cramer's rule: replace column k of M with w.
+(defn solve-component [k a b c d e f g h i wx wy wz]
+  (let [den (det3 a b c d e f g h i)
+        nx (if (= k 0) wx a) ny (if (= k 0) wy d) nz (if (= k 0) wz g)
+        mx (if (= k 1) wx b) my (if (= k 1) wy e) mz (if (= k 1) wz h)
+        ox (if (= k 2) wx c) oy (if (= k 2) wy f) oz (if (= k 2) wz i)]
+    (if (< (abs den) .000001) 0 (/ (det3 nx mx ox ny my oy nz mz oz) den))))
+
+
+(defkernel calib_primaries_adjust [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [;; primary columns of the forward matrix, as XYZ with Y normalised to 1
+          rx (/ red_x red_y) ry 1 rz (/ (- 1 red_x red_y) red_y)
+          gx (/ green_x green_y) gy 1 gz (/ (- 1 green_x green_y) green_y)
+          bx (/ blue_x blue_y) by 1 bz (/ (- 1 blue_x blue_y) blue_y)
+          ;; source white in XYZ
+          swx (/ white_x white_y) swy 1 swz (/ (- 1 white_x white_y) white_y)
+          ;; the same white expressed in the primaries' own linear RGB
+          pr (solve-component 0 rx gx bx ry gy by rz gz bz swx swy swz)
+          pg (solve-component 1 rx gx bx ry gy by rz gz bz swx swy swz)
+          pb (solve-component 2 rx gx bx ry gy by rz gz bz swx swy swz)
+          ;; destination white (D65) in the same linear RGB basis
+          dwx (/ .3127 .329)
+          dwz (/ (- 1 .3127 .329) .329)
+          dr (solve-component 0 rx gx bx ry gy by rz gz bz dwx 1 dwz)
+          dg (solve-component 1 rx gx bx ry gy by rz gz bz dwx 1 dwz)
+          db (solve-component 2 rx gx bx ry gy by rz gz bz dwx 1 dwz)
+          ;; Von Kries diagonal gain
+          gr (if (> (abs pr) .000001) (/ dr pr) 1)
+          gg (if (> (abs pg) .000001) (/ dg pg) 1)
+          gb (if (> (abs pb) .000001) (/ db pb) 1)
+          lr (decode (straight x y 0))
+          lg (decode (straight x y 1))
+          lb (decode (straight x y 2))
+          v (encode (max 0 (channel c (* lr gr) (* lg gg) (* lb gb))))]
+      (finish v (pixel x y 3) (if (= clamp 1) 1 0)))))

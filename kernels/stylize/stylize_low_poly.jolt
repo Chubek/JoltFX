@@ -1,0 +1,47 @@
+;; @kernel       stylize_low_poly
+;; @category     stylize
+;; @description  Applies low poly art effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; Worley cells stand in for triangles: each takes a flat colour shaded by a facet
+;; normal derived from its own gradient, and the cell edges darken. The result reads
+;; as faceted low-poly art rather than as a Voronoi diagram.
+;; triangle size in pixels; range [2, 128].
+(param triangle_size 24 2 128 1)
+;; color reduction levels; range [2, 32].
+(param color_reduction 5 2 32 1)
+;; edge preservation; range [0, 1].
+(param edge_preservation 0.5 0 1 0)
+
+
+(defkernel stylize_low_poly [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [s (/ x triangle_size)
+          t (/ y triangle_size)
+          ;; each cell is coloured by its own feature point
+          fx (worley-soft-x s t 0 14)
+          fy (worley-soft-y s t 0 14)
+          px (floor (* fx triangle_size))
+          py (floor (* fy triangle_size))
+          r (straight px py 0)
+          g (straight px py 1)
+          b (straight px py 2)
+          ;; facet normal from the cell's own luminance gradient
+          gx (- (luminance (+ px 1) py) (luminance (- px 1) py))
+          gy (- (luminance px (+ py 1)) (luminance px (- py 1)))
+          gz 1
+          len (max .0001 (sqrt (+ (* gx gx) (* gy gy) (* gz gz))))
+          ;; the fixed light is along +Z, so the lambert term is the Z component
+          lam (max 0 (/ gz len))
+          shade (mix .55 1.45 lam)
+          q (floor (* (channel c r g b) color_reduction))
+          flat (clamp01 (/ (+ q 0.5) color_reduction))
+          lit (clamp01 (* flat shade))
+          ;; cell edges darken; preservation controls how strongly
+          edge (smooth .05 .3 (worley-dist s t 0))]
+      (finish (max 0 (- lit (* lit edge edge_preservation))) (pixel x y 3) 1))))

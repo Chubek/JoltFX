@@ -985,3 +985,66 @@ against a finished API rather than more engine work.
 - `git diff --check`: clean. CPU execution and verification are complete for
   this batch. Remaining CSV work: 299 kernels. GPU compilation/dispatch and
   UI integration for the image profile remain explicitly unsupported.
+
+## Kernel batch 11 — 32 more CSV kernels (colour, keying, stylize)
+
+Implemented the last 32 `Frame -> Frame` entries in COLOR_GRADING, KEYING,
+COLOR_CALIBRATION and STYLIZE. Registered kernel count is now **189**; CSV
+coverage is 192 of 322, leaving 130.
+
+- COLOR_GRADING (10): `grade_tritone`, `grade_gradient_map`, `grade_color_lookup`,
+  `grade_hue_vs_hue`, `grade_hue_vs_sat`, `grade_hue_vs_luma`, `grade_sat_vs_sat`,
+  `grade_luma_vs_sat`, `grade_rgb_curves`, `grade_luma_curves`. The `*_vs_*` family
+  shares a domain/target split (hue, saturation or luminance on the curve's x
+  axis; the remapped value on its y) and a common intensity mix.
+- KEYING (9): `keying_luma_keyer`, `keying_extract_keyer`, `keying_linear_color`,
+  `keying_color_difference`, `keying_screen_matte`, `keying_refine_hard`,
+  `keying_refine_soft`, `keying_inner_outer`, `keying_edge_blend`.
+- COLOR_CALIBRATION (8): `calib_hdr_maxcll`, `calib_hdr_maxfall`,
+  `calib_luminance_match`, `calib_chroma_match`, `calib_monitor_profile`,
+  `calib_primaries_adjust`, `calib_1d_lut_calib`, `calib_3d_lut_calib`.
+- STYLIZE (5): `stylize_mosaic_stained`, `stylize_pointillism`, `stylize_low_poly`,
+  `stylize_relief`, `stylize_metal`.
+
+Real algorithms rather than approximations where the profile allowed it:
+`calib_primaries_adjust` builds the linear-RGB-to-XYZ forward matrix from CIE xy
+chromaticities, solves the source white point out of it by Cramer's rule, and
+applies a Von Kries diagonal gain onto D65. `calib_monitor_profile` converts
+through linear light. `keying_linear_color` keys in linear light rather than
+gamma-encoded values. `stylize_relief` and `stylize_metal` implement a real
+signed-slope Lambert term and a Blinn-Phong lobe with a Fresnel rim.
+
+### Non-obvious profile constraints, now documented in `kernels/README.md`
+
+- **Arity is not uniform.** `+ - *` are variadic; `/`, `min`, `max`, `and`, `or`
+  are strictly binary; `sample` takes exactly five arguments. A wrong count fails
+  the whole program with `wrong function arity`, which is easy to misread as a
+  parser bug. `max3`, `all2..all4` and `any2..any4` exist for this reason.
+- **There is no fold.** `sum` is the only reduction, so minima, maxima and
+  nearest-cell lookups need workarounds: `alpha-min`/`alpha-max`,
+  `worley-soft{,-x,-y}` (exponentially weighted 3x3 average, converging to the
+  true nearest cell), and a log-sum-exp soft maximum. Reaching for `sum` where a
+  maximum is meant silently returns a sum; `calib_luminance_match` would have done
+  exactly that.
+- `def` is not a top-level form.
+
+### Harness and registration defects fixed
+
+- `tests/unit/CMakeLists.txt` hand-mirrored the `IMAGE_KERNELS` list and had
+  already drifted once. It is now regenerated from `kernels/CMakeLists.txt` and
+  asserted identical (189 entries, no duplicates).
+- The `gen_noise` list was being derived with each kernel's *test* parameters,
+  but the harness's zero-input check uses **defaults**. Recomputing against
+  defaults removed `clamp_values` (it had only qualified because its test set
+  `min_val=0.5`) and added five keying kernels, for 31 total.
+
+### Verification on Linux
+
+- `cmake --build build --target validate_kernels`: pass.
+- `ctest --output-on-failure`: **218/219 pass**. The single failure, `compose`, was
+  confirmed to fail identically at pristine HEAD with the working tree stashed
+  (`kind 'video' did not render: -5`); it is unrelated to this batch.
+- All 189 sources verify individually through the shipping `joltc` driver as
+  separate CTest cases, and all 189 render through the behavioural harness with
+  their test parameters without a single apply failure.
+- 0 passthrough stubs remain across the 189 registered kernels.

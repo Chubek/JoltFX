@@ -1,0 +1,33 @@
+;; @kernel       keying_refine_soft
+;; @category     keying
+;; @description  Refines soft matte edges.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; erode amount in pixels, trims the matte edge; range [0, 8].
+(param erode 0 0 8 0)
+;; dilate amount in pixels, grows the matte edge; range [0, 8].
+(param dilate 0 0 8 0)
+;; edge softness; range [0, 1].
+(param softness 0.2 0 1 0)
+;; edge blur radius in pixels; range [0, 16].
+(param blur 1 0 16 1)
+
+
+(defkernel keying_refine_soft [x y c]
+  (let [er (ceil erode)
+        dl (ceil dilate)
+        a (pixel x y 3)
+        lo (if (> er 0) (alpha-min x y er) a)
+        hi (if (> dl 0) (alpha-max x y dl) a)
+        geom (if (> dl 0) (if (> er 0) (alpha-min x y er) hi) lo)
+        br (ceil blur)
+        soft (if (> br 0) (box-blur x y 3 br) geom)
+        ;; softness re-expands the transition band around the geometric edge
+        v (if (< softness .0001) soft
+              (clamp01 (+ (* .5 softness) (* (- 1 softness) soft))))]
+    (if (= c 3) v (* (straight x y c) v))))

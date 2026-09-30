@@ -1,0 +1,48 @@
+;; @kernel       stylize_mosaic_stained
+;; @category     stylize
+;; @description  Applies stained glass mosaic effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; The image is partitioned into Worley cells. Each cell takes the colour of its
+;; nearest feature point, sampled from the source, pushed toward saturation, and the
+;; cell boundaries become dark leading. The tessellation is irregular, as in real
+;; stained glass, rather than a rectangular grid.
+;; cell size in pixels; range [2, 128].
+(param cell_size 16 2 128 1)
+;; grout width; 0 derives it from the cell size; range [0, 8].
+(param grout_width 2 0 8 0)
+;; grout color red; range [0, 1].
+(param grout_color_r 0.05 0 1 0)
+;; grout color green; range [0, 1].
+(param grout_color_g 0.05 0 1 0)
+;; grout color blue; range [0, 1].
+(param grout_color_b 0.05 0 1 0)
+
+
+(defkernel stylize_mosaic_stained [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [s (/ x cell_size)
+          t (/ y cell_size)
+          ;; nearest feature point, approximated by a sharp weighted average
+          fx (worley-soft-x s t 0 12)
+          fy (worley-soft-y s t 0 12)
+          px (floor (* fx cell_size))
+          py (floor (* fy cell_size))
+          sr (straight px py 0)
+          sg (straight px py 1)
+          sb (straight px py 2)
+          ;; glass reads as saturated colour: push away from the cell's luminance
+          l (luma sr sg sb)
+          vr (mix l sr 1.4)
+          vg (mix l sg 1.4)
+          vb (mix l sb 1.4)
+          stained (channel c vr vg vb)
+          ;; grout sits where the distance to the nearest feature point is large
+          lead (smooth .25 .55 (worley-dist s t 0))
+          grout (channel c grout_color_r grout_color_g grout_color_b)]
+      (finish (mix stained grout lead) (pixel x y 3) 1))))

@@ -1,0 +1,32 @@
+;; @kernel       keying_inner_outer
+;; @category     keying
+;; @description  Keys using inner and outer masks.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst with keyed alpha, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; The resource array holds two single-channel masks back to back: the inner matte
+;; at data[0..w*h-1], then the outer matte at data[w*h..2*w*h-1]. Missing data
+;; degrades to the inner matte only.
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; despill amount; range [0, 1].
+(param despill 0.5 0 1 0)
+;; matte mode; 0 intersect, 1 subtract, 2 add; range [0, 2].
+(param mode 0 0 2 1)
+
+
+(defkernel keying_inner_outer [x y c]
+  (let [plane (* width height)
+        inner (if (> (data-count) 0) (data (+ (* y width) x)) 1)
+        outer (if (> (data-count) plane) (data (+ plane (+ (* y width) x))) 0)
+        base (if (= mode 0) (min inner outer)
+                (if (= mode 1) (clamp01 (- inner outer)) (clamp01 (+ inner outer))))
+        a (if (< softness .0001) (clamp01 base)
+            (clamp01 (+ .5 (- base .5) (/ softness .0001))))
+        v (if (= despill 0) (straight x y c)
+            (- (straight x y c) (* despill (- 1 a) (straight x y c))))]
+    (if (= c 3) a (* v a))))

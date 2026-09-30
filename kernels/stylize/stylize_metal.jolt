@@ -1,0 +1,46 @@
+;; @kernel       stylize_metal
+;; @category     stylize
+;; @description  Applies metallic effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; A Blinn-Phong lobe is driven by the source luminance used as a surface height, so
+;; bright areas behave like a polished convex surface catching the light.
+;; specular exponent; range [1, 128].
+(param shininess 24 1 128 0)
+;; specular strength; range [0, 4].
+(param specular 0.8 0 4 0)
+;; metal tint red; range [0, 1].
+(param color_r 0.85 0 1 0)
+;; metal tint green; range [0, 1].
+(param color_g 0.87 0 1 0)
+;; metal tint blue; range [0, 1].
+(param color_b 0.9 0 1 0)
+
+
+(defkernel stylize_metal [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [tint (channel c color_r color_g color_b)
+          ;; surface height and its gradient, from the source
+          l (luminance x y)
+          gx (- (luminance (+ x 1) y) (luminance (- x 1) y))
+          gy (- (luminance x (+ y 1)) (luminance x (- y 1)))
+          nx (- (* 0.5 gx))
+          ny (- (* 0.5 gy))
+          nz 1
+          len (max .0001 (sqrt (+ (* nx nx) (* ny ny) (* nz nz))))
+          ux (/ nx len) uy (/ ny len) uz (/ nz len)
+          ;; half-vector between a fixed light and a fixed view, both on +Z
+          hz (/ 1 1.4142135623730951)
+          ndoth (max 0 (+ (* uz hz)))
+          lobe (pow ndoth shininess)
+          ;; Fresnel-weighted rim: grazing angles reflect the tint most strongly
+          rim (pow (- 1 uz) 3)
+          base (mix l tint 0.75)
+          v (clamp01 (+ base (* specular lobe) (* 0.35 rim)))]
+      (finish (mix (channel c (straight x y 0) (straight x y 1) (straight x y 2)) v 0.85)
+              (pixel x y 3) 1))))

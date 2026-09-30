@@ -1,0 +1,24 @@
+;; @kernel       grade_hue_vs_luma
+;; @category     color_grading
+;; @description  Adjusts luminance based on source hue.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; The resource array holds a Curve: increasing (x,y) pairs with x = source hue and
+;; y = target luminance, both on the unit domain.
+;; channel interpolation; 0 linear, 1 hermite; range [0, 1].
+(param channel 1 0 1 1)
+;; luminance remap intensity; range [0, 1].
+(param intensity 1 0 1 0)
+
+
+(defkernel grade_hue_vs_luma [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [src (hue-unit x y)
+          target (clamp01 (curve-value src channel))
+          want (mix (luminance x y) target intensity)]
+      (finish (luma-set x y c want) (pixel x y 3) 1))))

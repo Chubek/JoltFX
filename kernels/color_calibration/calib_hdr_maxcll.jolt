@@ -1,0 +1,28 @@
+;; @kernel       calib_hdr_maxcll
+;; @category     color_calibration
+;; @description  Calibrates MaxCLL metadata for HDR.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; target MaxCLL in nits; range [100, 10000].
+(param maxcll 1000 100 10000 0)
+;; roll off content brighter than the target; range [0, 1].
+(param preserve_highlights 0.5 0 1 0)
+;; clamp output; range [0, 1].
+(param clamp 0 0 1 1)
+
+
+(defkernel calib_hdr_maxcll [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [v (straight x y c)
+          l (luminance x y)
+          ref (/ 10000 maxcll)
+          ;; roll off only the content that exceeds the mastering target
+          over (max 0 (- l ref))
+          rolled (if (> over 0) (max 0 (- l (* over preserve_highlights))) l)
+          k (if (> l .000001) (/ rolled l) 1)]
+      (finish (* v k) (pixel x y 3) (if (= clamp 1) 1 0)))))

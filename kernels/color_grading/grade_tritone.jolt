@@ -1,0 +1,52 @@
+;; @kernel       grade_tritone
+;; @category     color_grading
+;; @description  Applies tritone effect with three colors.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; shadow color red; range [0, 1].
+(param shadow_color_r 0.05 0 1 0)
+;; shadow color green; range [0, 1].
+(param shadow_color_g 0.02 0 1 0)
+;; shadow color blue; range [0, 1].
+(param shadow_color_b 0.15 0 1 0)
+;; midtone color red; range [0, 1].
+(param midtone_color_r 0.5 0 1 0)
+;; midtone color green; range [0, 1].
+(param midtone_color_g 0.25 0 1 0)
+;; midtone color blue; range [0, 1].
+(param midtone_color_b 0.2 0 1 0)
+;; highlight color red; range [0, 1].
+(param highlight_color_r 1 0 1 0)
+;; highlight color green; range [0, 1].
+(param highlight_color_g 0.9 0 1 0)
+;; highlight color blue; range [0, 1].
+(param highlight_color_b 0.7 0 1 0)
+;; grading intensity; range [0, 1].
+(param intensity 0.5 0 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_tritone [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          ;; three-way tonal ramp: shadow / midtone / highlight
+          lo (smooth 0 .5 l)
+          hi (smooth .5 1 l)
+          mi (- 1 lo hi)
+          tr (+ (* lo shadow_color_r) (* mi midtone_color_r) (* hi highlight_color_r))
+          tg (+ (* lo shadow_color_g) (* mi midtone_color_g) (* hi highlight_color_g))
+          tb (+ (* lo shadow_color_b) (* mi midtone_color_b) (* hi highlight_color_b))
+          nr (mix r tr intensity)
+          ng (mix g tg intensity)
+          nb (mix b tb intensity)
+          adj (if (= preserve_luma 1) (- l (luma nr ng nb)) 0)]
+      (finish (+ (channel c nr ng nb) adj) (pixel x y 3) 1))))

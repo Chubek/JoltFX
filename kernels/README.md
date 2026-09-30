@@ -216,6 +216,62 @@ Vector and matrix parameters are logical groups flattened at the C boundary:
 The input image is passed separately. Curve and LUT objects use the resource
 array, never a float encoding of a pointer.
 
+### Arity is not uniform — check before writing a kernel
+
+Most builtins are fixed-arity and fail the whole program with
+`wrong function arity` otherwise. The exceptions:
+
+| Form | Arity |
+|------|-------|
+| `+ - *` | variadic, one or more arguments |
+| `/` `min` `max` `and` `or` | exactly two |
+| `sample` | exactly five: `x y c interpolation border` |
+| `data` / `data-count` / `require` | one / zero / one |
+| `let` / `if` / `sum` | two / three / four |
+
+So a 3-way maximum needs `max3` — `(max a (max b c))` passes only because the
+outer `max` receives exactly two arguments. `all2..all4` and `any2..any4` in
+`common/image.jolt` exist for the same reason: `and`/`or` cannot take three
+operands. `def` does not exist; constants are written inline or bound with
+`let`. User `defn` recursion is supported, bounded by the profile's
+expression-depth limit.
+
+### There is no fold, only `sum`
+
+`sum` accumulates, so reductions needing a minimum, maximum or nearest match
+have no direct expression. Three workarounds are used in
+`common/image.jolt`; new kernels should reuse them rather than reinvent:
+
+- `alpha-min` / `alpha-max` — neighbourhood extrema, with the maximum
+  expressed as `1 - mean(1 - a)`.
+- `worley-soft` / `worley-soft-x` / `worley-soft-y` — a nearest-cell pick as an
+  exponentially weighted average over the 3×3 neighbourhood, which converges to
+  the true nearest cell as the sharpness parameter rises.
+- `soft-max-luma` in `calib_luminance_match` — a frame maximum as log-sum-exp.
+
+Any frame-wide reduction that needs a true maximum should use one of these.
+Reaching for `sum` there silently returns a sum.
+
+## Resource array layouts
+
+The resource array is one flat float block shared by every kernel, so each
+kernel documents its own encoding in a comment above its params. The layouts in
+use are: a bare `(x,y)` pair list for `curves`; length-prefixed curves
+(`data[off] = N`, then `N` pairs) for `grade_rgb_curves`, read with
+`curve-value-at`; a cube of RGB triples with red index fastest for
+`grade_color_lookup` and `calib_3d_lut_calib`; a leading optional point count
+then `N` RGB triples for `calib_1d_lut_calib`; `data[0] = N` then `N` RGB
+triples for `grade_gradient_map`, read with `colormap-value`; a flattened
+closed polygon (`data[0] = N`, then `N` normalized pairs) at a float offset for
+the geometry and `bezier_mask` kernels; and a second RGBA frame
+(`width*height*4` floats) for the multi-frame and match kernels, read with
+`to-frame`.
+
+Every multi-frame or path kernel must tolerate an **empty** resource array:
+`(data-count)` is 0 in the common case, and an unguarded `(data ...)` read fails
+the call. `to-frame` and the path helpers do this internally; new kernels
+should follow suit.
+
 ## Transform conventions
 
 - Integer `(x,y)` is a texel center. UV edge coordinates are
@@ -280,7 +336,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all one hundred fifty-seven sources as separate CTest cases.
+all one hundred eighty-nine sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend

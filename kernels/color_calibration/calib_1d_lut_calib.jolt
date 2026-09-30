@@ -1,0 +1,66 @@
+;; @kernel       calib_1d_lut_calib
+;; @category     color_calibration
+;; @description  Applies 1D LUT for calibration.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; The resource array holds a 1D LUT: an optional point count in data[0] followed by
+;; N RGB triples, or bare RGB triples when no count is present. Missing or malformed
+;; data leaves the source untouched.
+;; channel; 0 RGB (each channel from its own column), 1 R, 2 G, 3 B, 4 A; range [0, 4].
+(param channel 0 0 4 1)
+;; interpolation; 0 nearest, 1 linear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+;; Locate the 1D LUT and return its point count. A leading integer that exactly
+;; accounts for the remaining triples is read as a count; otherwise the whole array
+;; is treated as the samples. The returned base is where the samples begin.
+(defn lut1d-n []
+  (let [d (data-count) lead (if (> d 0) (data 0) 0)]
+    (if (all2 (>= lead 2) (<= (* 3 lead) (- d 3))) lead (/ d 3))))
+
+
+(defn lut1d-base [n]
+  (if (all2 (> (data-count) 0) (<= (* 3 n) (data-count))) (- (data-count) (* 3 n)) 0))
+
+
+;; Sample one channel of the 1D LUT at position t in [0,1].
+(defn lut1d-value [t col n base interpolation]
+  (if (< n 1) 0
+    (if (= n 1) (data (+ base col))
+      (let [p (* (clamp01 t) (- n 1))
+            i (floor p)
+            j (min (+ i 1) (- n 1))]
+        (if (= interpolation 0)
+          (data (+ base (* 3 (round p)) col))
+          (mix (data (+ base (* 3 i) col)) (data (+ base (* 3 j) col)) (- p i)))))))
+
+
+;; Does `channel` apply to output channel c?
+(defn lut1d-applies [channel c]
+  (if (= channel 0) (if (= c 3) 0 1)
+    (if (= channel 4) (if (= c 3) 1 0)
+      (if (= c 3) 0 (if (= c (- channel 1)) 1 0)))))
+
+
+;; Which LUT column supplies output channel c?
+(defn lut1d-column [channel c]
+  (if (= channel 0) c (if (= channel 4) 3 (- channel 1))))
+
+
+(defkernel calib_1d_lut_calib [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [n (lut1d-n)
+          base (lut1d-base n)
+          v (if (= c 3) (pixel x y 3) (straight x y c))
+          ;; the domain is always the source value of the channel being replaced
+          mapped (lut1d-value v (lut1d-column channel c) n base interpolation)]
+      (finish (if (or (< n 1) (= (lut1d-applies channel c) 0)) v mapped)
+              (pixel x y 3) (if (= clamp 1) 1 0)))))

@@ -1,0 +1,32 @@
+;; @kernel       calib_hdr_maxfall
+;; @category     color_calibration
+;; @description  Calibrates MaxFALL metadata for HDR.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; MaxFALL is a frame-average metric, so it is estimated here from the frame's own
+;; spatial mean rather than from a per-pixel maximum.
+;; target MaxFALL in nits; range [100, 10000].
+(param maxfall 400 100 10000 0)
+;; roll off content brighter than the target; range [0, 1].
+(param preserve_highlights 0.5 0 1 0)
+;; clamp output; range [0, 1].
+(param clamp 0 0 1 1)
+
+
+(defkernel calib_hdr_maxfall [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [v (straight x y c)
+          l (luminance x y)
+          ;; frame-average luminance, sampled across the frame
+          avg (sum j 0 height (sum i 0 width (luminance i j)))
+          mean (/ avg (max 1 (* width height)))
+          ref (/ 10000 maxfall)
+          over (max 0 (- mean ref))
+          rolled (if (> over 0) (max 0 (- mean (* over preserve_highlights))) mean)
+          k (if (> mean .000001) (/ rolled mean) 1)]
+      (finish (* v k) (pixel x y 3) (if (= clamp 1) 1 0)))))

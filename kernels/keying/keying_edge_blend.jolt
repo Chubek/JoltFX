@@ -1,0 +1,34 @@
+;; @kernel       keying_edge_blend
+;; @category     keying
+;; @description  Blends keyed edges with background.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (foreground, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; The resource array holds the background frame, width*height*4 floats.
+;; edge blend radius in pixels; range [0, 16].
+(param blend_radius 2 0 16 1)
+;; edge method; 0 over, 1 screen, 2 add; range [0, 2].
+(param method 0 0 2 1)
+;; color correct the background toward the foreground edge; range [0, 1].
+(param color_correct 0 0 1 1)
+;; edge opacity; range [0, 1].
+(param edge_opacity 0.5 0 1 0)
+
+
+(defkernel keying_edge_blend [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [fg (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          bg (channel c (to-frame x y 0) (to-frame x y 1) (to-frame x y 2))
+          r (ceil blend_radius)
+          ;; edge support is a high-pass of the background: it rises where the key
+          ;; colour has bled into the background along the matte boundary
+          mean (if (> r 0) (box-blur x y c r) bg)
+          edge (if (> r 0) (clamp01 (* (abs (- bg mean)) edge_opacity)) 0)
+          corrected (if (= color_correct 1) (mix bg fg edge) bg)
+          blended (if (= method 0) (max fg corrected)
+                    (if (= method 1) (blend-screen fg corrected) (blend-add fg corrected)))]
+      (finish (mix fg blended edge) (pixel x y 3) 1))))

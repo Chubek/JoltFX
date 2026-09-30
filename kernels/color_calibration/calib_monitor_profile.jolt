@@ -1,0 +1,37 @@
+;; @kernel       calib_monitor_profile
+;; @category     color_calibration
+;; @description  Applies monitor profile for calibration.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; profile selects a built-in primaries matrix; 0 sRGB, 1 Rec.709, 2 Rec.2020,
+;; 3 Display P3, 4 generic DCI-P3. The conversion runs through linear light.
+;; profile; range [0, 4].
+(param profile 0 0 4 1)
+;; rendering intent; 0 relative, 1 absolute; range [0, 1].
+(param intent 0 0 1 1)
+;; black point compensation; range [0, 1].
+(param black_point_compensation 0 0 1 1)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel calib_monitor_profile [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (decode (straight x y 0))
+          g (decode (straight x y 1))
+          b (decode (straight x y 2))
+          ;; every built-in profile is expressed as a conversion away from the
+          ;; sRGB/Rec.709 primaries that the working space uses
+          lr (if (= profile 1) r (if (= profile 2) (rec709-to-rec2020 r g b 0) (if (= profile 4) (srgb-to-p3 r g b 0) r)))
+          lg (if (= profile 1) g (if (= profile 2) (rec709-to-rec2020 r g b 1) (if (= profile 4) (srgb-to-p3 r g b 1) g)))
+          lb (if (= profile 1) b (if (= profile 2) (rec709-to-rec2020 r g b 2) (if (= profile 4) (srgb-to-p3 r g b 2) b)))
+          bpc (if (= black_point_compensation 1) .003 0)
+          v (encode (max 0 (+ (channel c lr lg lb) (- bpc))))
+          ;; the absolute intent remaps the black point rather than offsetting it
+          out (if (= intent 1) (max 0 (- (max bpc v) bpc)) v)]
+      (finish out (pixel x y 3) (if (= clamp 1) 1 0)))))

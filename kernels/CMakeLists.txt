@@ -88,6 +88,22 @@ set(IMAGE_KERNELS
     data_analysis/histogram_compute data_analysis/edge_detect
     temporal/temporal_frame_average temporal/temporal_frame_median
     nle/nle_cut
+color_calibration/calib_hdr_maxcll color_calibration/calib_hdr_maxfall
+color_calibration/calib_luminance_match color_calibration/calib_chroma_match
+color_calibration/calib_monitor_profile
+color_calibration/calib_primaries_adjust color_calibration/calib_1d_lut_calib
+color_calibration/calib_3d_lut_calib color_grading/grade_tritone
+color_grading/grade_gradient_map color_grading/grade_color_lookup
+color_grading/grade_hue_vs_hue color_grading/grade_hue_vs_sat
+color_grading/grade_hue_vs_luma color_grading/grade_sat_vs_sat
+color_grading/grade_luma_vs_sat color_grading/grade_rgb_curves
+color_grading/grade_luma_curves keying/keying_luma_keyer
+keying/keying_inner_outer keying/keying_extract_keyer
+keying/keying_linear_color keying/keying_color_difference
+keying/keying_screen_matte keying/keying_refine_hard
+keying/keying_refine_soft keying/keying_edge_blend
+stylize/stylize_mosaic_stained stylize/stylize_pointillism
+stylize/stylize_low_poly stylize/stylize_relief stylize/stylize_metal
 )
 set(IMAGE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/image_sources.h")
 file(WRITE "${IMAGE_HEADER}" "/* Generated from Joltscript sources. */\n")

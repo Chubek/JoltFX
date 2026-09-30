@@ -1,0 +1,36 @@
+;; @kernel       grade_color_lookup
+;; @category     color_grading
+;; @description  Applies color lookup table for grading.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; The resource array holds a cube LUT: width*height*depth*3 RGB triples, red index
+;; fastest. Missing or malformed data degrades to the source.
+;; lookup intensity; range [0, 1].
+(param intensity 1 0 1 0)
+;; blend mode; 0 normal, 1 multiply, 2 screen, 3 overlay; range [0, 3].
+(param blend_mode 0 0 3 1)
+;; LUT interpolation; 0 nearest, 1 trilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 0 0 1 1)
+
+
+(defkernel grade_color_lookup [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luminance x y)
+          lr (lut-value r g b 0 interpolation)
+          lg (lut-value r g b 1 interpolation)
+          lb (lut-value r g b 2 interpolation)
+          base (channel c r g b)
+          looked (if (= (data-count) 0) base (blend-mode blend_mode base (channel c lr lg lb)))
+          v (mix base looked intensity)
+          adj (if (= preserve_luma 1) (- l (luma (mix r lr intensity) (mix g lg intensity) (mix b lb intensity))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

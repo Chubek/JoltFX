@@ -1,0 +1,31 @@
+;; @kernel       keying_refine_hard
+;; @category     keying
+;; @description  Refines hard matte edges.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; erode amount in pixels, trims the matte edge; range [0, 8].
+(param erode 1 0 8 0)
+;; dilate amount in pixels, grows the matte edge; range [0, 8].
+(param dilate 1 0 8 0)
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; matte contrast; range [0, 8].
+(param contrast 2 0 8 0)
+
+
+(defkernel keying_refine_hard [x y c]
+  (let [er (ceil erode)
+        dl (ceil dilate)
+        a (pixel x y 3)
+        lo (if (> er 0) (alpha-min x y er) a)
+        hi (if (> dl 0) (alpha-max x y dl) a)
+        ;; dilate first, then erode: the standard opening/closing order
+        geom (if (> dl 0) (if (> er 0) (alpha-min x y er) hi) lo)
+        soft (smooth .35 .65 geom)
+        v (clamp01 (+ .5 (* contrast (- soft .5))))]
+    (if (= c 3) v (* (straight x y c) v))))

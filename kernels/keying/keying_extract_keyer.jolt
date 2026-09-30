@@ -1,0 +1,29 @@
+;; @kernel       keying_extract_keyer
+;; @category     keying
+;; @description  Keys out using histogram extraction.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst with keyed alpha, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; extraction threshold; range [0, 1].
+(param threshold 0.5 0 1 0)
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; extract channel; 0 luma, 1 R, 2 G, 3 B, 4 max; range [0, 4].
+(param channel 0 0 4 1)
+;; invert the key; range [0, 1].
+(param invert 0 0 1 1)
+
+
+(defkernel keying_extract_keyer [x y c]
+  (let [r (straight x y 0)
+        g (straight x y 1)
+        b (straight x y 2)
+        v (if (= channel 0) (luma r g b)
+            (if (= channel 1) r (if (= channel 2) g (if (= channel 3) b (max3 r g b)))))
+        base (smooth (- threshold softness) (+ threshold softness) v)
+        a (if (= invert 1) (- 1 base) base)]
+    (if (= c 3) a (* (channel c r g b) a))))

@@ -1,0 +1,32 @@
+;; @kernel       keying_screen_matte
+;; @category     keying
+;; @description  Creates screen matte from keyed layer.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst with keyed alpha, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; A screen matte keeps any pixel where *any* channel is above the threshold, which
+;; is the inverse of a luma key and suits bright elements on a black background.
+;; matte threshold; range [0, 1].
+(param threshold 0.5 0 1 0)
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; despill amount; range [0, 1].
+(param despill 0 0 1 0)
+;; black clip floor, removes residual haze; range [0, 1].
+(param clip_black 0 0 1 0)
+
+
+(defkernel keying_screen_matte [x y c]
+  (let [r (straight x y 0)
+        g (straight x y 1)
+        b (straight x y 2)
+        peak (max3 r g b)
+        base (smooth (- threshold softness) (+ threshold softness) peak)
+        a (if (< clip_black 1) (clamp01 (+ (- base clip_black) (/ clip_black 1))) (clamp01 (/ base clip_black)))]
+    (if (= c 3) a
+      (if (= despill 0) (* (channel c r g b) a)
+        (* (- (channel c r g b) (* despill (- 1 a) (min (channel c r g b) peak))) a)))))

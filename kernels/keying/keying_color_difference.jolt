@@ -1,0 +1,40 @@
+;; @kernel       keying_color_difference
+;; @category     keying
+;; @description  Keys using color difference method.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst with keyed alpha, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; Each channel is differenced against the key independently, so a pure-hue key with no
+;; value constraint: this is the classic difference matting formulation.
+;; key color red; range [0, 1].
+(param key_color_r 0 0 1 0)
+;; key color green; range [0, 1].
+(param key_color_g 1 0 1 0)
+;; key color blue; range [0, 1].
+(param key_color_b 0 0 1 0)
+;; tolerance; range [0, 1].
+(param tolerance 0.2 0 1 0)
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; despill amount; range [0, 1].
+(param despill 0.5 0 1 0)
+
+
+(defkernel keying_color_difference [x y c]
+  (let [r (straight x y 0)
+        g (straight x y 1)
+        b (straight x y 2)
+        ;; per-channel difference, each clamped to the tolerance window
+        dr (abs (- r key_color_r))
+        dg (abs (- g key_color_g))
+        db (abs (- b key_color_b))
+        d (max3 dr dg db)
+        a (clamp01 (/ (- d tolerance) (max softness .0001)))
+        v (if (= despill 0) (channel c r g b)
+            (- (channel c r g b)
+               (* despill (- 1 a) (channel c key_color_r key_color_g key_color_b))))]
+    (if (= c 3) a (* v a))))

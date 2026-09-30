@@ -1,0 +1,50 @@
+;; @kernel       calib_chroma_match
+;; @category     color_calibration
+;; @description  Matches chroma between two sources.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (source, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; The resource array holds the target frame, width*height*4 floats. Missing data
+;; leaves the source untouched.
+;; method; 0 per-pixel, 1 frame mean; range [0, 1].
+(param method 1 0 1 1)
+;; match strength; range [0, 1].
+(param strength 1 0 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defn target-chroma [x y]
+  (if (<= (data-count) 0) 0
+    (let [idx (+ (* 4 (+ (* y width) x)))]
+      (let [r (data idx) g (data (+ idx 1)) b (data (+ idx 2))
+            hi (max3 r g b) lo (min3 r g b)]
+        (/ (- hi lo) (max .000001 hi))))))
+
+
+(defn frame-mean-chroma []
+  (/ (sum j 0 height (sum i 0 width
+       (saturation (straight i j 0) (straight i j 1) (straight i j 2))))
+     (max 1 (* width height))))
+
+
+(defkernel calib_chroma_match [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [have (if (> (data-count) 0) 1 0)
+          r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          src (saturation r g b)
+          local (target-chroma x y)
+          tavg (if (= have 0) src
+                 (/ (sum j 0 height (sum i 0 width (target-chroma i j))) (max 1 (* width height))))
+          target (if (= method 0) local tavg)
+          ratio (if (= have 0) 1 (mix 1 (/ target (max .000001 src)) strength))
+          ;; Scaling chroma about luminance leaves value and hue exactly intact.
+          matched (+ l (* (- (channel c r g b) l) ratio))]
+      (finish (if (= preserve_luma 1) matched (mix matched l target)) (pixel x y 3) 1))))

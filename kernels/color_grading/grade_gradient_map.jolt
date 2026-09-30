@@ -1,0 +1,37 @@
+;; @kernel       grade_gradient_map
+;; @category     color_grading
+;; @description  Applies gradient map for color grading.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; The resource array holds a ColorMap: data[0]=N entries, then N RGB triples in
+;; [0,1] ordered dark -> light. Missing map degrades to the source.
+;; blend mode; 0 normal, 1 multiply, 2 screen, 3 overlay; range [0, 3].
+(param blend_mode 0 0 3 1)
+;; mapping intensity; range [0, 1].
+(param intensity 1 0 1 0)
+;; map source; 0 luma, 1 red, 2 green, 3 blue; range [0, 3].
+(param source 0 0 3 1)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 0 0 1 1)
+
+
+(defkernel grade_gradient_map [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luminance x y)
+          t (if (= source 0) l (channel c r g b))
+          mr (colormap-value t 0)
+          mg (colormap-value t 1)
+          mb (colormap-value t 2)
+          base (channel c r g b)
+          mapped (if (= (data-count) 0) base (blend-mode blend_mode base (channel c mr mg mb)))
+          v (mix base mapped intensity)
+          adj (if (= preserve_luma 1) (- l (luma (mix r mr intensity) (mix g mg intensity) (mix b mb intensity))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

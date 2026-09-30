@@ -1,0 +1,56 @@
+;; @kernel       calib_luminance_match
+;; @category     color_calibration
+;; @description  Matches luminance between two sources.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (source, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; The resource array holds the target frame, width*height*4 floats. Missing data
+;; leaves the source untouched.
+;; method; 0 per-pixel, 1 frame mean, 2 frame soft-max; range [0, 2].
+(param method 1 0 2 1)
+;; match strength; range [0, 1].
+(param strength 1 0 1 0)
+;; preserve hue and saturation; range [0, 1].
+(param preserve_hues 1 0 1 1)
+
+
+;; Luminance of the target frame at a pixel, in the same units as `luminance`.
+(defn target-luma [x y]
+  (if (<= (data-count) 0) 0
+    (let [idx (+ (* 4 (+ (* y width) x)))]
+      (luma (data idx) (data (+ idx 1)) (data (+ idx 2))))))
+
+
+;; The profile's only reduction is `sum`, so a frame maximum is taken as a
+;; log-sum-exp soft maximum rather than a hard one.
+(defn soft-max-luma [x y k]
+  (if (<= k 0) 0
+    (/ (log (max .000001 (sum j 0 height (sum i 0 width (exp (* k (luminance i j))))))) k)))
+
+
+(defkernel calib_luminance_match [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [have (if (> (data-count) 0) 1 0)
+          sl (luminance x y)
+          ;; per-pixel method compares against the aligned target pixel
+          local (target-luma x y)
+          ;; frame-wide methods compare aggregate levels
+          savg (/ (sum j 0 height (sum i 0 width (luminance i j))) (max 1 (* width height)))
+          tavg (if (= have 0) sl
+                 (/ (sum j 0 height (sum i 0 width (target-luma i j))) (max 1 (* width height))))
+          smax (soft-max-luma x y 20)
+          tmax (if (= have 0) sl
+                 (/ (log (max .000001 (sum j 0 height (sum i 0 width
+                        (exp (* 20 (target-luma i j))))))) 20))
+          target (if (= method 0) local (if (= method 1) tavg tmax))
+          gain (if (= have 0) 1 (mix 1 (/ target (max .000001 sl)) strength))
+          want (* sl gain)]
+      (if (= preserve_hues 1)
+        ;; scaling RGB about black keeps hue and saturation exactly
+        (finish (luma-set x y c want) (pixel x y 3) 1)
+        ;; an equal offset keeps saturation but rotates hue toward white/black
+        (finish (+ (straight x y c) (- want sl)) (pixel x y 3) 1)))))

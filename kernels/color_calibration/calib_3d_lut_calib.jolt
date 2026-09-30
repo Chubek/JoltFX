@@ -1,0 +1,34 @@
+;; @kernel       calib_3d_lut_calib
+;; @category     color_calibration
+;; @description  Applies 3D LUT for calibration.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; The resource array holds a cube LUT: width*height*depth*3 RGB triples, red index
+;; fastest. Missing or malformed data leaves the source untouched.
+;; interpolation; 0 nearest, 1 trilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; input space; 0 sRGB, 1 linear; range [0, 1].
+(param input_space 0 0 1 1)
+;; output space; 0 sRGB, 1 linear; range [0, 1].
+(param output_space 0 0 1 1)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel calib_3d_lut_calib [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (if (= input_space 1) (straight x y 0) (decode (straight x y 0)))
+          g (if (= input_space 1) (straight x y 1) (decode (straight x y 1)))
+          b (if (= input_space 1) (straight x y 2) (decode (straight x y 2)))
+          ;; lut-value reports an empty or malformed table as a no-op passthrough
+          lr (lut-value r g b 0 interpolation)
+          lg (lut-value r g b 1 interpolation)
+          lb (lut-value r g b 2 interpolation)
+          v (if (= output_space 1) (channel c lr lg lb)
+              (encode (max 0 (channel c lr lg lb))))]
+      (finish v (pixel x y 3) (if (= clamp 1) 1 0)))))

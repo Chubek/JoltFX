@@ -1,0 +1,49 @@
+;; @kernel       stylize_relief
+;; @category     stylize
+;; @description  Applies relief/emboss effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; The luminance gradient is projected onto a fixed light direction; lit slopes take
+;; the highlight colour, shaded slopes the shadow colour, flat areas stay neutral.
+;; light angle in degrees; range [0, 360].
+(param angle 135 0 360 0)
+;; relief depth; range [0, 8].
+(param depth 2 0 8 0)
+;; highlight color red; range [0, 1].
+(param highlight_r 1 0 1 0)
+;; highlight color green; range [0, 1].
+(param highlight_g 1 0 1 0)
+;; highlight color blue; range [0, 1].
+(param highlight_b 1 0 1 0)
+;; shadow color red; range [0, 1].
+(param shadow_r 0 0 1 0)
+;; shadow color green; range [0, 1].
+(param shadow_g 0 0 1 0)
+;; shadow color blue; range [0, 1].
+(param shadow_b 0 0 1 0)
+
+
+(defkernel stylize_relief [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [a (radians angle)
+          lx (cos a)
+          ly (sin a)
+          gx (- (luminance (+ x 1) y) (luminance (- x 1) y))
+          gy (- (luminance x (+ y 1)) (luminance x (- y 1)))
+          len (max .0001 (sqrt (+ (* gx gx) (* gy gy))))
+          ;; slope of the surface along the light direction, signed
+          s (* (/ (+ (* gx lx) (* gy ly)) len) depth)
+          ;; 0 fully shadowed .. 1 fully lit
+          v (clamp01 (+ 0.5 (* s 0.5)))
+          ;; flat areas get no embossing at all
+          strength (min 1 (abs s))]
+      (finish (mix (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+                   (mix (channel c shadow_r shadow_g shadow_b)
+                        (channel c highlight_r highlight_g highlight_b) v)
+                   strength)
+              (pixel x y 3) 1))))
