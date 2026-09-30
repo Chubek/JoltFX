@@ -1,0 +1,28 @@
+;; @kernel       stylize_duotone_art
+;; @category     stylize
+;; @description  Applies duotone art effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; dark color red; range [0, 1].
+(param dark_color_r 0 0 1 0)
+;; dark color green; range [0, 1].
+(param dark_color_g 0 0 1 0)
+;; dark color blue; range [0, 1].
+(param dark_color_b 0 0 1 0)
+;; light color red; range [0, 1].
+(param light_color_r 1 0 1 0)
+;; light color green; range [0, 1].
+(param light_color_g 1 0 1 0)
+;; light color blue; range [0, 1].
+(param light_color_b 1 0 1 0)
+;; contrast; range [0, 1].
+(param contrast 1 0 1 0)
+
+
+(defkernel stylize_duotone_art [x y c]
+  (pixel x y c))

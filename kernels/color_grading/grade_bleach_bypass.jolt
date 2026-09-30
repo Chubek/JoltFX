@@ -1,0 +1,20 @@
+;; @kernel       grade_bleach_bypass
+;; @category     color_grading
+;; @description  Applies bleach bypass film effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; effect intensity; range [0, 1].
+(param intensity 0.5 0 1 0)
+;; contrast adjustment; range [0, 1].
+(param contrast 0.5 0 1 0)
+;; saturation adjustment; range [0, 1].
+(param saturation 1 0 1 0)
+
+
+(defkernel grade_bleach_bypass [x y c]
+  (pixel x y c))

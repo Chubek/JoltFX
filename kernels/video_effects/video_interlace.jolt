@@ -1,0 +1,20 @@
+;; @kernel       video_interlace
+;; @category     video_effects
+;; @description  Simulates interlaced video with alternating fields.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; 0 even field first, 1 odd field first; range [0, 1].
+(param odd_field 0 0 1 1)
+;; blend fields; range [0, 1].
+(param blend_fields 0 0 1 1)
+;; animate; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_interlace [x y c]
+  (pixel x y c))

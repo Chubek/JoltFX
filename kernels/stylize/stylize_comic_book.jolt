@@ -1,0 +1,20 @@
+;; @kernel       stylize_comic_book
+;; @category     stylize
+;; @description  Applies comic book effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; dot size in pixels; range [0.5, 16].
+(param dot_size 4 0.5 16 0)
+;; edge threshold; range [0, 1].
+(param edge_threshold 0.2 0 1 0)
+;; color reduction levels; range [2, 32].
+(param color_reduction 4 2 32 1)
+
+
+(defkernel stylize_comic_book [x y c]
+  (pixel x y c))

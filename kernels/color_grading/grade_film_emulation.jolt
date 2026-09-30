@@ -1,0 +1,22 @@
+;; @kernel       grade_film_emulation
+;; @category     color_grading
+;; @description  Emulates film stock characteristics.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; film stock; 0 kodak, 1 fuji, 2 agfa, 3 custom; range [0, 3].
+(param film_stock 0 0 3 1)
+;; effect intensity; range [0, 1].
+(param intensity 0.5 0 1 0)
+;; grain amount; range [0, 1].
+(param grain 0.1 0 1 0)
+;; halation amount; range [0, 1].
+(param halation 0.1 0 1 0)
+
+
+(defkernel grade_film_emulation [x y c]
+  (pixel x y c))

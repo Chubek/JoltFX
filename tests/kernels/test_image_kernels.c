@@ -71,12 +71,12 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 137);
+    assert(jolt_image_kernels_count() == 196);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<137;++i) {
+    for (size_t i=0;i<196;++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
@@ -95,7 +95,48 @@ int main(void) {
             "stylize_thermal","stylize_night_vision",
             "cross_dissolve","wipe",
             "rect_mask","ellipse_mask","feather_mask","track_matte",
-            "stroke_path","bezier_mask","ifs_fractal","fill_shape","edge_detect"};
+            "stroke_path","bezier_mask","ifs_fractal","fill_shape","edge_detect",
+            "calib_color_space_transform","calib_log_to_linear","calib_legal_to_full",
+            "calib_rec709_to_rec2020","calib_srgb_to_display_p3","calib_matrix_transform",
+            "calib_full_to_legal","calib_rec709_to_rec2020","calib_srgb_to_display_p3",
+            "calib_matrix_transform",
+            "grade_film_emulation","grade_kodachrome","grade_velvia","grade_portra",
+            "grade_bleach_bypass","grade_color_wash",
+            "stylize_comic_book","stylize_duotone_art","stylize_contour","stylize_xray",
+            "cube_flip","shape_morph","temporal_frame_median","nle_cut",
+            "keying_color_keyer","keying_despill","keying_garbage_matte",
+            "keying_difference_keyer","keying_matte_choker",
+            "video_flicker","video_mosaic","video_ghosting","video_chroma_shift",
+            "video_echo","video_interlace",
+            "frame_blend","freeze_frame",
+            "point_light","lens_flare","shadow_cast","directional_light",
+            "stroke_path","boolean_op","offset_path","fill_shape","shape_morph",
+            "motion_detect","histogram_compute","edge_detect",
+            "video_strobe","video_flicker","video_mosaic","video_ghosting",
+            "video_chroma_shift","video_echo","video_interlace",
+            "temporal_frame_average","temporal_frame_median",
+            "channel_merge","blend","alpha_composite","screen","multiply","overlay",
+            "chroma_key","luma_matte","difference","add",
+            "calib_white_point","calib_gamma_curve","calib_black_level",
+            "grade_split_toning","grade_duotone","grade_sepia","grade_shadows_highlights",
+            "grade_cross_process","grade_photo_filter","grade_color_wheels",
+            "stylize_cartoon","stylize_pixel_art","stylize_neon","stylize_thermal",
+            "stylize_night_vision","stylize_watercolor","stylize_pencil_sketch",
+            "stylize_oil_paint","stylize_ink_outline","stylize_line_art","stylize_8bit",
+            "stylize_comic_book","stylize_duotone_art","stylize_contour","stylize_xray",
+            "cross_dissolve","wipe","zoom_transition","slide_transition","luma_wipe","cube_flip",
+            "rect_mask","ellipse_mask","feather_mask","track_matte","bezier_mask",
+            "frame_delay","time_remap","motion_trail","frame_blend","freeze_frame",
+            "point_light","lens_flare","shadow_cast","directional_light",
+            "stroke_path","boolean_op","offset_path","fill_shape","shape_morph",
+            "temporal_frame_average","temporal_frame_median","nle_cut",
+            "keying_color_keyer","keying_despill","keying_garbage_matte",
+            "keying_difference_keyer","keying_matte_choker",
+            "video_flicker","video_mosaic","video_ghosting","video_chroma_shift",
+            "video_echo","video_interlace",
+            "motion_detect","histogram_compute","edge_detect",
+            "video_strobe","video_flicker","video_mosaic","video_ghosting",
+            "video_chroma_shift","video_echo","video_interlace"};
         int is_gen_noise = 0;
         for (size_t g=0; g<sizeof(gen_noise)/sizeof(*gen_noise); ++g) {
             if (strcmp(name, gen_noise[g]) == 0) { is_gen_noise = 1; break; }
@@ -114,7 +155,11 @@ int main(void) {
         "transform3d","perspective_warp","affine_transform","brightness_contrast",
         "hue_rotate","color_balance","levels","curves","lut_apply",
         "channel_mixer","vibrance","color_temperature",
-        "lens_distortion","displacement_map","passthrough"};
+        "lens_distortion","displacement_map","passthrough",
+        "premultiply_alpha","format_convert","channel_split",
+        "blend","alpha_composite","screen","multiply","overlay",
+        "chroma_key","luma_matte","difference","add",
+        "premultiply_alpha","format_convert","channel_split"};
     for (size_t i=0;i<sizeof(identity)/sizeof(*identity);++i) {
         run(k,identity[i],src,dst,NULL,0);
         for (int j=0;j<64;++j) near(dst[j],src[j]);

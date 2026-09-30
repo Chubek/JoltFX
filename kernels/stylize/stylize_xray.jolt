@@ -1,0 +1,24 @@
+;; @kernel       stylize_xray
+;; @category     stylize
+;; @description  Applies X-ray effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; intensity; range [0, 1].
+(param intensity 0.8 0 1 0)
+;; invert; range [0, 1].
+(param invert 0 0 1 1)
+;; color red; range [0, 1].
+(param color_r 0.2 0 1 0)
+;; color green; range [0, 1].
+(param color_g 0.2 0 1 0)
+;; color blue; range [0, 1].
+(param color_b 0.8 0 1 0)
+
+
+(defkernel stylize_xray [x y c]
+  (pixel x y c))

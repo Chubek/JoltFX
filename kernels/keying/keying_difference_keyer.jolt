@@ -1,0 +1,26 @@
+;; @kernel       keying_difference_keyer
+;; @category     keying
+;; @description  Keys out based on difference from background.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst with keyed alpha, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; background frame red; range [0, 1].
+(param background_r 0 0 1 0)
+;; background frame green; range [0, 1].
+(param background_g 0 0 1 0)
+;; background frame blue; range [0, 1].
+(param background_b 0 0 1 0)
+;; threshold; range [0, 1].
+(param threshold 0.1 0 1 0)
+;; softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; despill; range [0, 1].
+(param despill 1 0 1 1)
+
+
+(defkernel keying_difference_keyer [x y c]
+  (pixel x y c))

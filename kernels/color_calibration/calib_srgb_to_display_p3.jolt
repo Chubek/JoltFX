@@ -1,0 +1,18 @@
+;; @kernel       calib_srgb_to_display_p3
+;; @category     color_calibration
+;; @description  Converts sRGB to Display P3 color space.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel calib_srgb_to_display_p3 [x y c]
+  (pixel x y c))

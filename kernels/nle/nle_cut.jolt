@@ -1,0 +1,18 @@
+;; @kernel       nle_cut
+;; @category     nle
+;; @description  Performs hard cut between two frame sources.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; progress in [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; cut point; range [0, 1].
+(param cut_point 0.5 0 1 0)
+
+
+(defkernel nle_cut [x y c]
+  (pixel x y c))

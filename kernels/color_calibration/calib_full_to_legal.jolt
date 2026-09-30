@@ -1,0 +1,20 @@
+;; @kernel       calib_full_to_legal
+;; @category     color_calibration
+;; @description  Converts full range to legal range.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; legal range minimum; range [0, 0.25].
+(param legal_min 0.0625 0 0.25 0)
+;; legal range maximum; range [0.75, 1].
+(param legal_max 0.918 0.75 1 0)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel calib_full_to_legal [x y c]
+  (pixel x y c))

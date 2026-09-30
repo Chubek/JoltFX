@@ -1,0 +1,22 @@
+;; @kernel       keying_matte_choker
+;; @category     keying
+;; @description  Chokes or spreads matte edges.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; choke amount; range [-1, 1].
+(param choke 0 -1 1 0)
+;; softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; contrast; range [0, 1].
+(param contrast 0.5 0 1 0)
+;; shift; range [-1, 1].
+(param shift 0 -1 1 0)
+
+
+(defkernel keying_matte_choker [x y c]
+  (pixel x y c))

@@ -1,0 +1,24 @@
+;; @kernel       grade_color_wash
+;; @category     color_grading
+;; @description  Applies color wash overlay.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; wash color red; range [0, 1].
+(param color_r 0.2 0 1 0)
+;; wash color green; range [0, 1].
+(param color_g 0.2 0 1 0)
+;; wash color blue; range [0, 1].
+(param color_b 0.6 0 1 0)
+;; wash intensity; range [0, 1].
+(param intensity 0.3 0 1 0)
+;; blend mode; 0 normal, 1 multiply, 2 screen; range [0, 2].
+(param blend_mode 0 0 2 1)
+
+
+(defkernel grade_color_wash [x y c]
+  (pixel x y c))

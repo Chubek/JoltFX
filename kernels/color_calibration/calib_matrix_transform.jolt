@@ -1,0 +1,28 @@
+;; @kernel       calib_matrix_transform
+;; @category     color_calibration
+;; @description  Applies color matrix transform for calibration.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; 3x3 row-major matrix; range [-2, 2] per element.
+(param m00 1 -2 2 0)
+(param m01 0 -2 2 0)
+(param m02 0 -2 2 0)
+(param m10 0 -2 2 0)
+(param m11 1 -2 2 0)
+(param m12 0 -2 2 0)
+(param m20 0 -2 2 0)
+(param m21 0 -2 2 0)
+(param m22 1 -2 2 0)
+;; clamp output; range [0, 1].
+(param clamp 1 0 1 1)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel calib_matrix_transform [x y c]
+  (pixel x y c))

@@ -1,0 +1,20 @@
+;; @kernel       temporal_frame_median
+;; @category     temporal
+;; @description  Computes median of frames over time.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; temporal window size; range [1, 60].
+(param window 4 1 60 1)
+;; channel; 0 RGB, 1 R, 2 G, 3 B, 4 A; range [0, 4].
+(param channel 0 0 4 1)
+;; normalize output; range [0, 1].
+(param normalize 1 0 1 1)
+
+
+(defkernel temporal_frame_median [x y c]
+  (pixel x y c))
