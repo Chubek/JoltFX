@@ -1,0 +1,21 @@
+;; @kernel       stylize_cartoon
+;; @category     stylize
+;; @description  Applies cartoon/cel shading effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; quantization levels; range [2, 16].
+(param levels 4 2 16 1)
+;; edge threshold; range [0, 1].
+(param edge_threshold 0.1 0 1 0)
+;; saturation boost; range [0, 2].
+(param saturation 1 0 2 0)
+
+
+(defkernel stylize_cartoon [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

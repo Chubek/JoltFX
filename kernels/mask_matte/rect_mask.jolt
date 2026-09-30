@@ -1,0 +1,37 @@
+;; @kernel       rect_mask
+;; @category     mask_matte
+;; @description  Generates a rectangular mask with optional rounded corners.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: mask (single channel), same dimensions.
+;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
+;; center x in normalized coordinates; range [-2, 2].
+(param center_x 0.5 -2 2 0)
+;; center y in normalized coordinates; range [-2, 2].
+(param center_y 0.5 -2 2 0)
+;; width in normalized coordinates; range [0, 2].
+(param width_norm 0.5 0 2 0)
+;; height in normalized coordinates; range [0, 2].
+(param height_norm 0.5 0 2 0)
+;; corner radius in normalized coordinates; range [0, 1].
+(param corner_radius 0 0 1 0)
+;; feather in normalized coordinates; range [0, 1].
+(param feather 0 0 1 0)
+;; invert mask; range [0, 1].
+(param invert 0 0 1 1)
+
+
+(defkernel rect_mask [x y c]
+  (let [cx (- (* center_x width) 0.5)
+        cy (- (* center_y height) 0.5)
+        w (* width_norm width)
+        h (* height_norm height)
+        dx (abs (- x cx))
+        dy (abs (- y cy))
+        in_x (if (< dx (* w 0.5)) 1 0)
+        in_y (if (< dy (* h 0.5)) 1 0)
+        mask (* in_x in_y)]
+    (if (= c 3) mask 0)))

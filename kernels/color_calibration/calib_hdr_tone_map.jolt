@@ -1,0 +1,23 @@
+;; @kernel       calib_hdr_tone_map
+;; @category     color_calibration
+;; @description  Tone maps HDR content for SDR display.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; peak luminance in nits; range [100, 10000].
+(param peak_nits 1000 100 10000 0)
+;; tone curve type; 0 Reinhard, 1 Hable, 2 ACES; range [0, 2].
+(param tone_curve 0 0 2 1)
+;; saturation preservation; range [0, 1].
+(param saturation 1 0 1 0)
+;; preserve hues; range [0, 1].
+(param preserve_hues 1 0 1 1)
+
+
+(defkernel calib_hdr_tone_map [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

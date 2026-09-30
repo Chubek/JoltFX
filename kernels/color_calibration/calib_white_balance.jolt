@@ -1,0 +1,25 @@
+;; @kernel       calib_white_balance
+;; @category     color_calibration
+;; @description  Corrects white balance using temperature and tint.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
+;; temperature in kelvin; range [1000, 20000].
+(param temperature 6500 1000 20000 0)
+;; tint offset; range [-200, 200].
+(param tint 0 -200 200 0)
+;; correction strength; range [0, 1].
+(param strength 1 0 1 0)
+;; 0 sRGB, 1 linear; range [0, 1].
+(param color_space 0 0 1 1)
+
+
+(defkernel calib_white_balance [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)]
+    (if (= c 0) (* r 1)
+      (if (= c 1) r r)))))

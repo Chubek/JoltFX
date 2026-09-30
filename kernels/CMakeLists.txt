@@ -35,7 +35,20 @@ set(IMAGE_KERNELS
     generative/cell_noise generative/voronoi generative/mandelbrot
     noise/perlin_noise noise/simplex_noise noise/worley_noise
     noise/fractal_noise noise/white_noise
-    utility/passthrough)
+    utility/passthrough utility/premultiply_alpha utility/format_convert
+    utility/channel_split utility/clamp_values utility/remap_range
+    fractal/julia_set fractal/barnsley_fern
+    light/bloom light/glow
+    video_effects/video_noise_grain video_effects/video_pixelate
+    keying/luma_keyer
+    color_calibration/calib_white_balance color_calibration/calib_hdr_tone_map
+    color_grading/grade_teal_orange color_grading/grade_black_and_white
+    stylize/stylize_cartoon stylize/stylize_pixel_art stylize/stylize_neon
+    stylize/stylize_thermal stylize/stylize_night_vision
+    transition/cross_dissolve transition/wipe
+    mask_matte/rect_mask mask_matte/ellipse_mask mask_matte/feather_mask
+    mask_matte/track_matte
+    time/frame_delay time/time_remap)
 set(IMAGE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/image_sources.h")
 file(WRITE "${IMAGE_HEADER}" "/* Generated from Joltscript sources. */\n")
 foreach(path IN ITEMS common/image ${IMAGE_KERNELS})

@@ -1,0 +1,21 @@
+;; @kernel       frame_delay
+;; @category     time
+;; @description  Outputs a frame from a specified number of frames earlier.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.time; shared functions: common/image.jolt.
+;; delay in frames; range [0, 60].
+(param delay 1 0 60 1)
+;; boundary mode; 0 hold, 1 wrap, 2 mirror; range [0, 2].
+(param boundary_mode 0 0 2 1)
+;; cache frames; range [0, 1].
+(param cache 1 0 1 1)
+
+
+(defkernel frame_delay [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

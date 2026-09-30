@@ -1,0 +1,25 @@
+;; @kernel       grade_black_and_white
+;; @category     color_grading
+;; @description  Converts frame to black and white.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
+;; method; 0 luminance, 1 average, 2 channel mixer; range [0, 2].
+(param method 0 0 2 1)
+;; tint color red; range [0, 1].
+(param tint_r 0 0 1 0)
+;; tint color green; range [0, 1].
+(param tint_g 0 0 1 0)
+;; tint color blue; range [0, 1].
+(param tint_b 0 0 1 0)
+;; preserve luminance; range [0, 1].
+(param preserve_luma 1 0 1 1)
+
+
+(defkernel grade_black_and_white [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

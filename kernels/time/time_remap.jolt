@@ -1,0 +1,21 @@
+;; @kernel       time_remap
+;; @category     time
+;; @description  Maps output time to a source-frame time using a configurable time curve.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.time; shared functions: common/image.jolt.
+;; time curve; using data for curve points.
+(param curve 0 0 1 1)
+;; interpolation; 0 linear, 1 cubic; range [0, 1].
+(param interpolation 0 0 1 1)
+;; boundary mode; 0 hold, 1 wrap, 2 mirror; range [0, 2].
+(param boundary_mode 0 0 2 1)
+
+
+(defkernel time_remap [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

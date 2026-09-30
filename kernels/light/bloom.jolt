@@ -1,0 +1,30 @@
+;; @kernel       bloom
+;; @category     light
+;; @description  Extracts highlights and spreads their brightness over nearby pixels.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.light; shared functions: common/image.jolt.
+;; highlight threshold; range [0, 1].
+(param threshold 0.8 0 1 0)
+;; bloom radius in pixels; range [0.5, 64].
+(param radius 8 0.5 64 0)
+;; bloom intensity multiplier; range [0, 4].
+(param intensity 1 0 4 0)
+;; knee for soft threshold; range [0, 1].
+(param knee 0.1 0 1 0)
+;; number of blur passes; range [1, 8].
+(param iterations 2 1 8 1)
+
+
+(defkernel bloom [x y c]
+  (let [r (ceil radius)
+        lum (luminance x y)
+        highlight (max 0 (- lum threshold))]
+    (if (= c 3) (pixel x y 3)
+      (if (= r 0) (* highlight intensity)
+        (let [h (luminance (+ x r) y)]
+          (+ (* highlight intensity) (* (max 0 (- h threshold)) intensity)))))))

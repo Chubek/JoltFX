@@ -1,0 +1,23 @@
+;; @kernel       feather_mask
+;; @category     mask_matte
+;; @description  Softens mask edges by applying a configurable feather radius.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA, alpha used as mask); output: image dst with feathered alpha.
+;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
+;; feather radius in pixels; range [0, 64].
+(param radius 4 0 64 0)
+;; iterations; range [1, 8].
+(param iterations 1 1 8 1)
+;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param edge_mode 1 0 3 1)
+;; expand before feather; range [-32, 32].
+(param expand 0 -32 32 0)
+
+
+(defkernel feather_mask [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

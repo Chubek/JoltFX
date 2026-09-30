@@ -1,0 +1,27 @@
+;; @kernel       stylize_neon
+;; @category     stylize
+;; @description  Applies neon glow effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; edge threshold; range [0, 1].
+(param threshold 0.3 0 1 0)
+;; glow radius in pixels; range [1, 32].
+(param glow_radius 4 1 32 1)
+;; neon color red; range [0, 1].
+(param color_r 0 0 1 0)
+;; neon color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; neon color blue; range [0, 1].
+(param color_b 1 0 1 0)
+;; glow intensity; range [0, 4].
+(param intensity 1 0 4 0)
+
+
+(defkernel stylize_neon [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

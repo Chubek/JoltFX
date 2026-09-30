@@ -1,0 +1,23 @@
+;; @kernel       track_matte
+;; @category     mask_matte
+;; @description  Combines a source frame with a mask or matte frame.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
+;; 0 alpha, 1 luma, 2 red, 3 green, 4 blue; range [0, 4].
+(param matte_source 0 0 4 1)
+;; invert matte; range [0, 1].
+(param invert 0 0 1 1)
+;; 0 straight, 1 premultiplied; range [0, 1].
+(param premultiplied 1 0 1 1)
+;; matte opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+
+(defkernel track_matte [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

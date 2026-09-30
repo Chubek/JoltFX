@@ -1,0 +1,26 @@
+;; @kernel       ellipse_mask
+;; @category     mask_matte
+;; @description  Generates an elliptical mask with configurable center and softness.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: mask (single channel), same dimensions.
+;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
+;; center x in normalized coordinates; range [-2, 2].
+(param center_x 0.5 -2 2 0)
+;; center y in normalized coordinates; range [-2, 2].
+(param center_y 0.5 -2 2 0)
+;; radius x in normalized coordinates; range [0, 2].
+(param radius_x 0.3 0 2 0)
+;; radius y in normalized coordinates; range [0, 2].
+(param radius_y 0.3 0 2 0)
+;; feather in normalized coordinates; range [0, 1].
+(param feather 0 0 1 0)
+;; invert mask; range [0, 1].
+(param invert 0 0 1 1)
+
+
+(defkernel ellipse_mask [x y c]
+  (if (= c 3) 1 0))

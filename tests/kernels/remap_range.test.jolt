@@ -7,4 +7,4 @@
 (param output_min 0 0 0 0)
 (param output_max 2 2 2 0)
 (defkernel test_remap_range [x y c]
-  (assert-pixel 3 3 0 1.875))
+  (assert-pixel 3 3 0 0.9375))

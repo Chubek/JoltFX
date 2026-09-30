@@ -1,0 +1,24 @@
+;; @kernel       video_pixelate
+;; @category     video_effects
+;; @description  Creates pixelation effect with block size.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; pixel block size; range [1, 128].
+(param block_size 8 1 128 1)
+;; 0 square, 1 rectangular; range [0, 1].
+(param shape 0 0 1 1)
+;; animate pixelation; range [0, 1].
+(param animate 0 0 1 1)
+
+
+(defkernel video_pixelate [x y c]
+  (let [bs block_size
+        bx (* bs (floor (/ x bs)))
+        by (* bs (floor (/ y bs)))
+        val (sample bx by c 0 1)]
+    val))

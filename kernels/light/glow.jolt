@@ -1,0 +1,31 @@
+;; @kernel       glow
+;; @category     light
+;; @description  Adds a soft luminous halo around bright image regions.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.light; shared functions: common/image.jolt.
+;; luminance threshold for glow; range [0, 1].
+(param threshold 0.7 0 1 0)
+;; glow radius in pixels; range [0.5, 128].
+(param radius 16 0.5 128 0)
+;; glow intensity; range [0, 4].
+(param intensity 1 0 4 0)
+;; glow color red; range [0, 1].
+(param color_r 1 0 1 0)
+;; glow color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; glow color blue; range [0, 1].
+(param color_b 1 0 1 0)
+
+
+(defkernel glow [x y c]
+  (let [r (ceil radius)
+        lum (luminance x y)
+        glow_amt (max 0 (- lum threshold))
+        base (if (= c 3) (pixel x y 3) (pixel x y c))]
+    (if (= r 0) (+ base (* glow_amt intensity (if (= c 0) color_r (if (= c 1) color_g color_b))))
+      (+ base (* glow_amt intensity (if (= c 0) color_r (if (= c 1) color_g color_b)))))))

@@ -2,7 +2,6 @@
 ;; The C harness applies these named uniforms, then passes the rendered frame
 ;; to this assertion kernel. Defaults, transparency and further edge cases
 ;; are also covered by test_image_kernels.c.
-(param min_val 0.5 0.5 0.5 0)
-(param max_val 0.5 0.5 0.5 0)
-(defkernel test_clamp_values [x y c]
-  (assert-pixel 0 0 0 0))
+(param radius_x 0 0 0 0)
+(defkernel test_ellipse_mask [x y c]
+  (assert-pixel 3 3 0 0))

@@ -1,0 +1,25 @@
+;; @kernel       channel_split
+;; @category     utility
+;; @description  Extracts selected channels from a frame into separate output frames.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst (single channel), same dimensions.
+;; Module: jolt.fx.kernels.utility; shared functions: common/image.jolt.
+;; 0 R, 1 G, 2 B, 3 A; range [0, 3].
+(param channel 0 0 3 1)
+;; output format; 0 single channel, 1 grayscale RGB; range [0, 1].
+(param output_format 0 0 1 1)
+;; normalize to 0-1 range; range [0, 1].
+(param normalize 0 0 1 1)
+
+
+(defkernel channel_split [x y c]
+  (let [val (pixel x y channel)
+        a (pixel x y 3)]
+    (if (= output_format 1)
+      (if (= c 3) a val)
+      (if (= c 3) a
+        (if (= c channel) val 0)))))

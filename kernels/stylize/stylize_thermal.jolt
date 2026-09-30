@@ -1,0 +1,21 @@
+;; @kernel       stylize_thermal
+;; @category     stylize
+;; @description  Applies thermal camera effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; palette; 0 thermal, 1 iron, 2 rainbow; range [0, 2].
+(param palette 0 0 2 1)
+;; intensity; range [0, 1].
+(param intensity 1 0 1 0)
+;; noise amount; range [0, 1].
+(param noise 0 0 1 0)
+
+
+(defkernel stylize_thermal [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

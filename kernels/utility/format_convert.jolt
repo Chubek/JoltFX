@@ -1,0 +1,29 @@
+;; @kernel       format_convert
+;; @category     utility
+;; @description  Converts a frame to a requested pixel format and color representation.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.utility; shared functions: common/image.jolt.
+;; 0 RGBA, 1 RGB, 2 RG, 3 R; range [0, 3].
+(param format 0 0 3 1)
+;; 0 sRGB, 1 linear; range [0, 1].
+(param color_space 0 0 1 1)
+;; bit depth; 0 8-bit, 1 16-bit, 2 32-bit float; range [0, 2].
+(param bit_depth 0 0 2 1)
+;; 0 straight, 1 premultiplied; range [0, 1].
+(param alpha_mode 1 0 1 1)
+
+
+(defkernel format_convert [x y c]
+  (let [val (pixel x y c)
+        a (pixel x y 3)]
+    (if (= c 3)
+      (if (= alpha_mode 1) a 1)
+      (if (= color_space 1)
+        (if (= alpha_mode 1) val (/ val a))
+        (if (= alpha_mode 1) val
+          (if (> a 0) (* val a) 0))))))

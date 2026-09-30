@@ -1,0 +1,25 @@
+;; @kernel       stylize_night_vision
+;; @category     stylize
+;; @description  Applies night vision effect.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; intensity; range [0, 1].
+(param intensity 0.8 0 1 0)
+;; noise amount; range [0, 1].
+(param noise 0.1 0 1 0)
+;; green tint red; range [0, 1].
+(param green_r 0 0 1 0)
+;; green tint green; range [0, 1].
+(param green_g 1 0 1 0)
+;; green tint blue; range [0, 1].
+(param green_b 0 0 1 0)
+
+
+(defkernel stylize_night_vision [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

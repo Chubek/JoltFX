@@ -1,0 +1,34 @@
+;; @kernel       luma_keyer
+;; @category     keying
+;; @description  Keys out based on luminance values.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst with alpha keyed, same dimensions.
+;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
+;; low luminance threshold; range [0, 1].
+(param low 0 0 1 0)
+;; high luminance threshold; range [0, 1].
+(param high 1 0 1 0)
+;; edge softness; range [0, 1].
+(param softness 0.1 0 1 0)
+;; invert key; range [0, 1].
+(param invert 0 0 1 1)
+
+
+(defkernel luma_keyer [x y c]
+  (let [lum (luminance x y)
+        t (if (= invert 0)
+            (if (< softness 0.001)
+              (if (and (> lum low) (< lum high)) 1 0)
+              (if (< lum low) 0
+                (if (> lum high) 0
+                  (min 1 (max 0 (/ (- lum low) (- high low)))))))
+            (if (< softness 0.001)
+              (if (and (> lum low) (< lum high)) 0 1)
+              (if (< lum low) 1
+                (if (> lum high) 1
+                  (min 1 (max 0 (- 1 (/ (- lum low) (- high low)))))))))]
+    (if (= c 3) t (pixel x y c))))

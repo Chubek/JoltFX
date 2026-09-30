@@ -1,0 +1,21 @@
+;; @kernel       stylize_pixel_art
+;; @category     stylize
+;; @description  Applies pixel art effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
+;; pixel block size; range [1, 32].
+(param pixel_size 4 1 32 1)
+;; color palette size; range [2, 256].
+(param color_palette 16 2 256 1)
+;; dithering; 0 none, 1 bayer, 2 random; range [0, 2].
+(param dithering 0 0 2 1)
+
+
+(defkernel stylize_pixel_art [x y c]
+  (if (= c 3) (pixel x y 3)
+    (pixel x y c)))

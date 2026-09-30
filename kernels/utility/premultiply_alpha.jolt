@@ -1,0 +1,25 @@
+;; @kernel       premultiply_alpha
+;; @category     utility
+;; @description  Multiplies color channels by alpha for premultiplied-alpha processing.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (straight RGBA); output: image dst (premultiplied RGBA), same dimensions.
+;; Module: jolt.fx.kernels.utility; shared functions: common/image.jolt.
+;; alpha channel index; range [0, 3].
+(param alpha_channel 3 0 3 1)
+;; source color space; 0 sRGB, 1 linear.
+(param color_space 0 0 1 1)
+;; clamp result to unit range; range [0, 1].
+(param clamp 1 0 1 1)
+
+
+(defkernel premultiply_alpha [x y c]
+  (let [a (pixel x y alpha_channel)
+        val (pixel x y c)]
+    (if (= c alpha_channel) a
+      (if (= clamp 1)
+        (min 1 (* val a))
+        (* val a)))))

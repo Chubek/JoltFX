@@ -18,8 +18,29 @@ The second CSV batch adds these **30 missing kernels** (28 with full test covera
 | `noise` | `perlin_noise`, `simplex_noise`, `worley_noise`, `fractal_noise`, `white_noise` |
 | `utility` | `passthrough`, `clamp_values` (minimal), `remap_range` (minimal) |
 
+The third CSV batch adds these **10 missing kernels**:
+
+| Category | Kernels |
+| --- | --- |
+| `fractal` | `julia_set`, `barnsley_fern` |
+| `light` | `bloom`, `glow` |
+| `video_effects` | `video_noise_grain`, `video_pixelate` |
+| `keying` | `luma_keyer` |
+| `utility` | `premultiply_alpha`, `format_convert`, `channel_split` |
+
+The fourth CSV batch adds these **15 missing kernels**:
+
+| Category | Kernels |
+| --- | --- |
+| `color_calibration` | `calib_white_balance`, `calib_hdr_tone_map` |
+| `color_grading` | `grade_teal_orange`, `grade_black_and_white` |
+| `stylize` | `stylize_cartoon`, `stylize_pixel_art`, `stylize_neon`, `stylize_thermal`, `stylize_night_vision` |
+| `transition` | `cross_dissolve`, `wipe` |
+| `mask_matte` | `rect_mask`, `ellipse_mask`, `feather_mask`, `track_matte` |
+| `time` | `frame_delay`, `time_remap` |
+
 Existing sources, including `saturation`, `exposure`, and `invert`, remain in
-the original 12-effect catalog. There are 239 CSV entries left after this batch.
+the original 12-effect catalog. There are 214 CSV entries left after these batches.
 
 ## Execution and verification
 
@@ -190,7 +211,7 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all forty-eight sources as separate CTest cases.
+all seventy-seven sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend
