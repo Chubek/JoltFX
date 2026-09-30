@@ -8,6 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The resource array holds the other field frame, width*height*4 floats.
 ;; 0 even field first, 1 odd field first; range [0, 1].
 (param odd_field 0 0 1 1)
 ;; blend fields; range [0, 1].
@@ -17,4 +18,9 @@
 
 
 (defkernel video_interlace [x y c]
-  (pixel x y c))
+  (let [this_field (mod y 2)
+        want (if (= odd_field 1) 1 0)
+        a (pixel x y c)
+        b (to-frame x y c)]
+    (if (= this_field want) a
+      (if (= blend_fields 1) (mix a b .5) b))))

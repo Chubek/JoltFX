@@ -21,4 +21,14 @@
 
 
 (defkernel video_chroma_shift [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [ang (radians angle)
+          ox (* intensity (+ (* offset_x (cos ang)) (* offset_y (sin ang))))
+          oy (* intensity (- (* offset_y (cos ang)) (* offset_x (sin ang))))
+          dx (- x (/ width 2))
+          dy (- y (/ height 2))
+          rscale (if (= radial 1) (* (/ (sqrt (+ (* dx dx) (* dy dy))) (max width height)) intensity) 0)
+          v (if (= c 0) (sample (+ x ox rscale) (+ y oy rscale) c 1 1)
+              (if (= c 2) (sample (- x ox rscale) (- y oy rscale) c 1 1)
+                (pixel x y c)))]
+      v)))

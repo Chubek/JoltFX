@@ -19,4 +19,12 @@
 
 
 (defkernel calib_color_space_transform [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          lr (to-linear-channel input_space r g b 0)
+          lg (to-linear-channel input_space r g b 1)
+          lb (to-linear-channel input_space r g b 2)
+          v (from-linear-channel output_space lr lg lb c)]
+      (finish v (pixel x y 3) (if (= clamp 1) 1 0)))))

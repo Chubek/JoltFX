@@ -12,8 +12,8 @@
 (param position_x 0.5 -2 2 0)
 ;; flare position y in normalized coordinates; range [-2, 2].
 (param position_y 0.5 -2 2 0)
-;; flare intensity; range [0, 1].
-(param intensity 0.5 0 1 0)
+;; flare intensity; range [0, 4].
+(param intensity 0.5 0 4 0)
 ;; flare color red; range [0, 1].
 (param color_r 1 0 1 0)
 ;; flare color green; range [0, 1].
@@ -28,4 +28,20 @@
 
 (defkernel lens_flare [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [lx (* position_x width)
+          ly (* position_y height)
+          cx (/ width 2)
+          cy (/ height 2)
+          d (sqrt (+ (* (- x lx) (- x lx)) (* (- y ly) (- y ly))))
+          halo (max 0 (- 1 (/ d (* scale (min width height) .25))))
+          ; ghosts lie on the line through the light and image center
+          ghost (sum k 1 (+ ghost_count 1)
+                  (let [t (/ k (+ ghost_count 1))
+                        gx (- cx (* t (- lx cx)))
+                        gy (- cy (* t (- ly cy)))
+                        gd (sqrt (+ (* (- x gx) (- x gx)) (* (- y gy) (- y gy))))
+                        gr (* scale (min width height) .06)]
+                    (max 0 (- 1 (/ gd (max .0001 gr))))))
+          m (* intensity (+ halo (* .4 ghost)))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (+ base (* m (channel c color_r color_g color_b))) (pixel x y 3) 0))))

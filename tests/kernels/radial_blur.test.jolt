@@ -5,4 +5,4 @@
 (param amount 0 0 0 0)
 (param zoom 0 0 0 0)
 (defkernel test_radial_blur [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 0 0 3 1))

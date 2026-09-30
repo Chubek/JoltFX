@@ -5,4 +5,4 @@
 (param scale 0 0 0 0)
 (param octaves 1 1 1 0)
 (defkernel test_perlin_noise [x y c]
-  (assert-pixel 0 0 0 0.5))
+  (assert-pixel 0 0 3 1))

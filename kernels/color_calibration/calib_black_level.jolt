@@ -20,4 +20,8 @@
 
 (defkernel calib_black_level [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [apply (or (= channel 0) (or (= channel 1) (= channel (+ c 1))))
+          v (straight x y c)
+          level (if (and (= preserve_shadows 1) (< v black_level)) 0 black_level)
+          out (- v level)]
+      (finish (if apply out v) (pixel x y 3) (if (= clamp 1) 1 0)))))

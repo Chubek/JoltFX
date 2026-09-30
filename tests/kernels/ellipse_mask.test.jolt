@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param radius_x 0 0 0 0)
 (defkernel test_ellipse_mask [x y c]
-  (assert-pixel 3 3 0 0))
+  (assert-pixel 2 1 3 1))

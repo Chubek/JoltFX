@@ -19,4 +19,9 @@
 
 
 (defkernel calib_gamma_curve [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [apply (any3 (= channel 0) (= channel 1) (= channel (+ c 1)))
+          v (straight x y c)
+          g (if (> v 0) (pow (/ v pivot) (/ 1 gamma)) 0)
+          out (* pivot g)]
+      (finish (if apply out v) (pixel x y 3) (if (= clamp 1) 1 0)))))

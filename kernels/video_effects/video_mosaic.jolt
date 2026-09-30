@@ -23,4 +23,13 @@
 
 
 (defkernel video_mosaic [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [bs block_size
+          bx (* bs (floor (/ x bs)))
+          by (* bs (floor (/ y bs)))
+          avg (/ (sum i 0 bs (sum j 0 bs (sample (+ bx i) (+ by j) c 1 1))) (* bs bs))
+          gx (mod x bs)
+          gy (mod y bs)
+          grout (if (or (< gx grout_width) (< gy grout_width)) 1 0)
+          v (if (= grout 1) (channel c grout_r grout_g grout_b) avg)]
+      v)))

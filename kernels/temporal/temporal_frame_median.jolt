@@ -8,6 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array holds `window` frames, each width*height*4 floats, concatenated.
 ;; temporal window size; range [1, 60].
 (param window 4 1 60 1)
 ;; channel; 0 RGB, 1 R, 2 G, 3 B, 4 A; range [0, 4].
@@ -17,4 +18,14 @@
 
 
 (defkernel temporal_frame_median [x y c]
-  (pixel x y c))
+  (let [fs (* 4 (* width height))
+        nf (if (= fs 0) 0 (floor (/ (data-count) fs)))]
+    (if (= nf 0) (pixel x y c)
+      (let [n (min window nf)
+            idx (+ (* 4 (+ (* y width) x)) c)
+            rank (ceil (/ (+ n 1) 2))
+            med (sum k 0 n
+                  (let [v (data (+ (* k fs) idx))
+                        below (sum m 0 n (if (<= (data (+ (* m fs) idx)) v) 1 0))]
+                    (if (= below rank) v 0)))]
+        (if (= normalize 1) med med)))))

@@ -8,7 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
-;; palette; 0 thermal, 1 iron, 2 rainbow; range [0, 2].
+;; palette; 0 iron, 1 rainbow, 2 white-hot; range [0, 2].
 (param palette 0 0 2 1)
 ;; intensity; range [0, 1].
 (param intensity 1 0 1 0)
@@ -18,4 +18,17 @@
 
 (defkernel stylize_thermal [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [n (if (= noise 0) 0 (* noise (- (* 2 (hash2 x y 1)) 1)))
+          l (clamp01 (+ (luminance x y) n))
+          r (if (= palette 0) (clamp01 (- (* l 2) .2))
+              (if (= palette 1) (clamp01 (* l 1.2))
+                (clamp01 (- (* l l) .1))))
+          g (if (= palette 0) (clamp01 (- 1 (abs (- (* l 1.5) .5))))
+              (if (= palette 1) (clamp01 (if (< l .5) (* l 2) (- 2 (* l 2))))
+                (clamp01 (* l l))))
+          b (if (= palette 0) (clamp01 (- 1 (* l 1.5)))
+              (if (= palette 1) (clamp01 (- 1 (* l 1.5)))
+                l))]
+      (finish (mix (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+                   (channel c r g b) intensity)
+              (pixel x y 3) 0))))

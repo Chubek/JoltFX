@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param brightness 0.2 0.2 0.2 0)
 (defkernel test_brightness_contrast [x y c]
-  (assert-pixel 0 0 0 .2))
+  (assert-pixel 0 0 3 1))

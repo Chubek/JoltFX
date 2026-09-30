@@ -16,10 +16,21 @@
 (param operator 0 0 2 1)
 ;; blur radius; range [0, 4].
 (param blur_radius 0 0 4 0)
-;; output mode; 0 magnitude, 1 magnitude+direction; range [0, 1].
+;; output mode; 0 magnitude, 1 binary edges; range [0, 1].
 (param output_mode 0 0 1 1)
 
 
 (defkernel edge_detect [x y c]
   (if (= c 3) 1
-    (pixel x y c)))
+    (let [r (if (= blur_radius 0) 1 0)
+          w (if (= operator 1) 10 (if (= operator 0) 2 1))
+          tl (straight (- x 1) (- y 1) c) tc (straight x (- y 1) c) tr (straight (+ x 1) (- y 1) c)
+          ml (straight (- x 1) y c)                        mr (straight (+ x 1) y c)
+          bl (straight (- x 1) (+ y 1) c) bc (straight x (+ y 1) c) br (straight (+ x 1) (+ y 1) c)
+          gx (- (+ tr (* w mr) br) (+ tl (* w ml) bl))
+          gy (- (+ bl (* w bc) br) (+ tl (* w tc) tr))
+          mag (sqrt (+ (* gx gx) (* gy gy)))
+          v (if (= output_mode 1)
+              (if (> mag high_threshold) 1 0)
+              (clamp01 (/ (- mag low_threshold) (max .0001 (- high_threshold low_threshold)))))]
+      (finish v (pixel x y 3) 0))))

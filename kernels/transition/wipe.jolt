@@ -6,20 +6,23 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Input: image src (from frame); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.transition; shared functions: common/image.jolt.
+;; The resource array holds the destination frame, width*height*4 floats.
 ;; progress [0,1]; range [0, 1].
 (param progress 0.5 0 1 0)
 ;; direction angle in degrees; range [0, 360].
 (param direction 0 0 360 0)
 ;; softness of edge; range [0, 1].
 (param softness 0.1 0 1 0)
-;; 0 from frame, 1 to frame; using data for to frame; range [0, 1].
-(param use_data 0 0 1 1)
-;; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
-(param border_mode 1 0 3 1)
 
 
 (defkernel wipe [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [ang (radians direction)
+        nx (cos ang)
+        ny (sin ang)
+        bx (+ (* (- (/ x width) .5) nx) (* (- (/ y height) .5) ny))
+        edge (- (* progress 2) 1)
+        diff (- bx edge)
+        p (if (< softness .0001) (if (< diff 0) 0 1) (clamp01 (+ .5 (/ diff softness))))]
+    (mix (pixel x y c) (to-frame x y c) p)))

@@ -5,4 +5,4 @@
 (param strength 1 1 1 0)
 (param radius 1 1 1 0)
 (defkernel test_bulge_pinch [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 3 1))

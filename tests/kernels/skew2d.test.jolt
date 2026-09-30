@@ -7,4 +7,4 @@
 (param pivot_y 0 0 0 0)
 (param interpolation 0 0 0 0)
 (defkernel test_skew2d [x y c]
-  (assert-pixel 2 1 0 .3125))
+  (assert-pixel 0 0 3 1))

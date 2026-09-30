@@ -13,9 +13,17 @@
 ;; edge threshold; range [0, 1].
 (param edge_threshold 0.1 0 1 0)
 ;; saturation boost; range [0, 2].
-(param saturation 1 0 2 0)
+(param saturation 1.3 0 2 0)
 
 
 (defkernel stylize_cartoon [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0) g (straight x y 1) b (straight x y 2)
+          sr (saturate r g b saturation)
+          sg (saturate g g b saturation)
+          sb (saturate b g b saturation)
+          q (clamp01 (/ (floor (* (channel c sr sg sb) levels)) levels))
+          edge (max (abs (- (luminance (+ x 1) y) (luminance (- x 1) y)))
+                    (abs (- (luminance x (+ y 1)) (luminance x (- y 1)))))
+          dark (if (> edge edge_threshold) .2 1)]
+      (finish (* q dark) (pixel x y 3) 0))))

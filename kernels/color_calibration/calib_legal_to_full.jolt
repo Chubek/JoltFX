@@ -17,4 +17,8 @@
 
 
 (defkernel calib_legal_to_full [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [v (straight x y c)
+          span (max .0001 (- legal_max legal_min))
+          out (/ (- v legal_min) span)]
+      (finish out (pixel x y 3) (if (= clamp 1) 1 0)))))

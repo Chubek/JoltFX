@@ -8,15 +8,30 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.keying; shared functions: common/image.jolt.
-;; choke amount; range [-1, 1].
+;; choke amount, positive erodes, negative dilates; range [-1, 1].
 (param choke 0 -1 1 0)
 ;; softness; range [0, 1].
 (param softness 0.1 0 1 0)
-;; contrast; range [0, 1].
-(param contrast 0.5 0 1 0)
+;; contrast; range [0, 4].
+(param contrast 1 0 4 0)
 ;; shift; range [-1, 1].
 (param shift 0 -1 1 0)
 
 
 (defkernel keying_matte_choker [x y c]
-  (pixel x y c))
+  (let [a (pixel x y 3)
+        r (ceil (* (abs choke) 4))
+        erode (if (> r 0)
+                (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                  (sample (+ x i) (+ y j) 3 0 1)))
+                0)
+        dilated (if (> r 0)
+                  (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                    (min (sample (+ x i) (+ y j) 3 0 1) 1)))
+                  0)
+        shifted (- a shift)
+        v (if (> choke 0)
+            (- a (/ erode (* (* 2 r) (* 2 r))))
+            (if (< choke 0) (+ a (/ (- (* (* 2 r) (* 2 r)) dilated) (* (* 2 r) (* 2 r)))) shifted))
+        v2 (clamp01 (+ .5 (* contrast (- v .5))))]
+    (if (= c 3) v2 (* (straight x y c) v2))))

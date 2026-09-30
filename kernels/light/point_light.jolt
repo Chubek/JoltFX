@@ -28,4 +28,11 @@
 
 (defkernel point_light [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [lx (* position_x width)
+          ly (* position_y height)
+          d (sqrt (+ (* (- x lx) (- x lx)) (* (- y ly) (- y ly))))
+          rr (max .0001 (* radius (min width height)))
+          att (max 0 (- 1 (pow (/ d rr) falloff)))
+          lit (* intensity att)
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (* base lit (channel c color_r color_g color_b)) (pixel x y 3) 0))))

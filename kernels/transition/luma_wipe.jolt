@@ -6,18 +6,24 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Input: image src (from frame); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.transition; shared functions: common/image.jolt.
+;; The resource array holds a luma map then the destination frame; the map is the
+;; first width*height floats, the frame follows at width*height*4 floats.
 ;; progress [0,1]; range [0, 1].
 (param progress 0.5 0 1 0)
-;; 0 from frame, 1 to frame (using data); range [0, 1].
-(param use_data 0 0 1 1)
 ;; softness of edge; range [0, 1].
 (param softness 0.1 0 1 0)
 ;; invert; range [0, 1].
 (param invert 0 0 1 1)
+;; use the luma of the source as the map instead of the resource; range [0, 1].
+(param use_source_luma 0 0 1 1)
 
 
 (defkernel luma_wipe [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [lm (if (= use_source_luma 1) (luminance x y)
+             (if (= (data-count) 0) .5 (data (+ (* y width) x))))
+        p (if (< softness .0001) (if (< lm progress) 0 1)
+            (clamp01 (+ .5 (/ (- lm progress) softness))))
+        p2 (if (= invert 1) (- 1 p) p)]
+    (mix (pixel x y c) (to-frame x y c) p2)))

@@ -12,9 +12,20 @@
 (param intensity 0.5 0 1 0)
 ;; grain amount; range [0, 1].
 (param grain 0.1 0 1 0)
-;; contrast adjustment; range [0, 1].
-(param contrast 1 0 1 0)
+;; saturation adjustment; range [0, 2].
+(param saturation 1.4 0 2 0)
+;; contrast adjustment; range [0, 2].
+(param contrast 1.25 0 2 0)
 
 
 (defkernel grade_velvia [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          sr (saturate r g b saturation)
+          sg (saturate g g b saturation)
+          sb (saturate b g b saturation)
+          v (contrast-around (channel c sr sg sb) contrast .5)
+          n (* grain (- (* 2 (hash2 x y 11)) 1))]
+      (finish (mix (channel c r g b) (clamp01 (+ v n)) intensity) (pixel x y 3) 1))))

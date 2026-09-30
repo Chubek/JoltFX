@@ -23,5 +23,17 @@
 
 
 (defkernel keying_chroma_keyer [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [r (straight x y 0)
+        g (straight x y 1)
+        b (straight x y 2)
+        l (luma r g b)
+        cr (- r l)
+        cg (- g l)
+        cb (- b l)
+        kr (- key_color_r (luma key_color_r key_color_g key_color_b))
+        kg (- key_color_g (luma key_color_r key_color_g key_color_b))
+        kb (- key_color_b (luma key_color_r key_color_g key_color_b))
+        d (sqrt (+ (* (- cr kr) (- cr kr)) (* (- cg kg) (- cg kg)) (* (- cb kb) (- cb kb))))
+        a (clamp01 (/ (- d tolerance) (max softness .0001)))
+        v (if (= despill 1) (- (channel c r g b) (* 0.5 (- 1 a) (channel c kr kg kb))) (channel c r g b))]
+    (if (= c 3) a (* v a))))

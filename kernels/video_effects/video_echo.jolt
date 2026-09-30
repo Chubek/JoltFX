@@ -8,13 +8,22 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The resource array holds the frame history, each frame width*height*4 floats.
 ;; echo count; range [1, 16].
 (param count 4 1 16 1)
 ;; decay factor per echo; range [0, 1].
 (param decay 0.5 0 1 0)
-;; blend mode; 0 normal, 1 add, 2 screen; range [0, 2].
+;; blend mode; 0 lighten, 1 add, 2 screen; range [0, 2].
 (param blend_mode 0 0 2 1)
 
 
 (defkernel video_echo [x y c]
-  (pixel x y c))
+  (let [fs (* 4 (* width height))
+        nf (if (= fs 0) 0 (floor (/ (data-count) fs)))]
+    (if (= nf 0) (pixel x y c)
+      (let [n (min count nf)
+            idx (+ (* 4 (+ (* y width) x)) c)
+            total (sum k 0 n (* (pow decay k) (data (+ (* k fs) idx))))
+            base (pixel x y c)]
+        (if (= blend_mode 0) (max base total)
+          (if (= blend_mode 1) (min 1 (+ base total)) (blend-screen base total)))))))

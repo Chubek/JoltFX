@@ -6,11 +6,11 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (premultiplied RGBA); output: image dst (histogram viz), same dimensions.
+;; Input: image src (premultiplied RGBA); output: image dst (histogram rendered along X), same dimensions.
 ;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
 ;; number of bins; range [2, 256].
 (param bins 64 2 256 1)
-;; channel; 0 RGB, 1 R, 2 G, 3 B, 4 A; range [0, 4].
+;; channel; 0 luma, 1 R, 2 G, 3 B, 4 A; range [0, 4].
 (param channel 0 0 4 1)
 ;; range min; range [0, 1].
 (param range_min 0 0 1 0)
@@ -21,4 +21,15 @@
 
 
 (defkernel histogram_compute [x y c]
-  (pixel x y c))
+  (if (= c 3) 1
+    (let [bin (floor (/ (* x bins) width))
+          span (max .0001 (/ (- range_max range_min) bins))
+          lo (+ range_min (* bin span))
+          hi (+ lo span)
+          count (sum j 0 height (sum i 0 width
+                  (let [v (if (= channel 0) (luminance i j)
+                            (if (= channel 4) (pixel i j 3)
+                              (straight i j (- channel 1))))]
+                    (if (and (>= v lo) (< v hi)) 1 0))))
+          total (max 1 (* width height))]
+      (if (= normalized 1) (/ count total) count))))

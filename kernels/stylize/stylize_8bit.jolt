@@ -10,11 +10,19 @@
 ;; Module: jolt.fx.kernels.stylize; shared functions: common/image.jolt.
 ;; color palette size; range [2, 256].
 (param color_palette 8 2 256 1)
-;; dithering; 0 none, 1 bayer, 2 random; range [0, 2].
+;; dithering; 0 none, 1 ordered, 2 random; range [0, 2].
 (param dithering 1 0 2 1)
 ;; scanlines; range [0, 1].
 (param scanlines 0 0 1 1)
 
 
 (defkernel stylize_8bit [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [levels color_palette
+          d (if (= dithering 1)
+              (* (/ 1 levels) (- (/ (mod (+ x y) 4) 3) .5))
+              (if (= dithering 2) (* (/ 1 levels) (- (* 2 (hash2 x y 3)) 1)) 0))
+          v (floor (* (+ (straight x y c) d) levels))
+          q (clamp01 (/ v levels))
+          scan (if (and (= scanlines 1) (= (mod y 2) 1)) .75 1)]
+      (finish (* q scan) (pixel x y 3) 0))))

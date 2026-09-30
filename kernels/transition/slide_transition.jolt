@@ -6,8 +6,9 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Input: image src (from frame); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.transition; shared functions: common/image.jolt.
+;; The resource array holds the destination frame, width*height*4 floats.
 ;; progress in [0,1]; range [0, 1].
 (param progress 0.5 0 1 0)
 ;; direction x; range [-1, 1].
@@ -19,4 +20,14 @@
 
 
 (defkernel slide_transition [x y c]
-  (pixel x y c))
+  (let [p (if (= curve 0) progress (smooth 0 1 progress))
+        len (max .0001 (sqrt (+ (* direction_x direction_x) (* direction_y direction_y))))
+        ux (/ direction_x len)
+        uy (/ direction_y len)
+        a (sample (+ x (* ux width p)) (+ y (* uy height p)) c 1 0)
+        tx (floor (- x (* ux width (- 1 p))))
+        ty (floor (- y (* uy height (- 1 p))))
+        cx (max 0 (min (- width 1) tx))
+        cy (max 0 (min (- height 1) ty))
+        b (if (= (data-count) 0) (pixel x y c) (data (+ (* 4 (+ (* cy width) cx)) c)))]
+    (mix a b p)))

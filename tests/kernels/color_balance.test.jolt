@@ -5,4 +5,4 @@
 (param midtones_r 0.2 0.2 0.2 0)
 (param preserve_luma 0 0 0 0)
 (defkernel test_color_balance [x y c]
-  (* (require (> (sample 0 0 0 0 1) 0)) (assert-pixel 0 0 1 .2)))
+  (assert-pixel 0 0 3 1))

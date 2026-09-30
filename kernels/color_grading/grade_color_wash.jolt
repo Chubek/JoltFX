@@ -16,9 +16,13 @@
 (param color_b 0.6 0 1 0)
 ;; wash intensity; range [0, 1].
 (param intensity 0.3 0 1 0)
-;; blend mode; 0 normal, 1 multiply, 2 screen; range [0, 2].
-(param blend_mode 0 0 2 1)
+;; blend mode; 0 normal, 1 multiply, 2 screen, 3 overlay; range [0, 3].
+(param blend_mode 0 0 3 1)
 
 
 (defkernel grade_color_wash [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [base (straight x y c)
+          wash (channel c color_r color_g color_b)
+          v (blend-mode blend_mode base wash)]
+      (finish (mix base v intensity) (pixel x y 3) 1))))

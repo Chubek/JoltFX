@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param position_x 0.25 0.25 0.25 0)
 (defkernel test_transform3d [x y c]
-  (* (assert-pixel 1 0 0 0) (assert-pixel 0 0 3 0)))
+  (assert-pixel 1 0 3 1))

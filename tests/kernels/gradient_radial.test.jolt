@@ -5,4 +5,4 @@
 (param center_x 0.5 0.5 0.5 0)
 (param center_y 0.5 0.5 0.5 0)
 (defkernel test_gradient_radial [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 3 1))

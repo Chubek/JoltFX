@@ -20,9 +20,13 @@
 (param light_color_g 1 0 1 0)
 ;; light color blue; range [0, 1].
 (param light_color_b 1 0 1 0)
-;; contrast; range [0, 1].
-(param contrast 1 0 1 0)
+;; contrast; range [0, 4].
+(param contrast 1 0 4 0)
 
 
 (defkernel stylize_duotone_art [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [l (clamp01 (contrast-around (luma (straight x y 0) (straight x y 1) (straight x y 2)) contrast .5))
+          lo (channel c dark_color_r dark_color_g dark_color_b)
+          hi (channel c light_color_r light_color_g light_color_b)]
+      (finish (mix lo hi l) (pixel x y 3) 0))))

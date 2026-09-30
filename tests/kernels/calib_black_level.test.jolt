@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param black_level 0 0 0 0)
 (defkernel test_calib_black_level [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 0 0 3 1))

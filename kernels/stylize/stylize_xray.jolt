@@ -21,4 +21,11 @@
 
 
 (defkernel stylize_xray [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [l (luminance x y)
+          base (if (= invert 1) (- 1 l) l)
+          edge (max (abs (- (luminance (+ x 1) y) (luminance (- x 1) y)))
+                    (abs (- (luminance x (+ y 1)) (luminance x (- y 1)))))
+          m (clamp01 (+ base (* edge 2)))
+          tinted (* m (channel c color_r color_g color_b))]
+      (finish (mix (channel c (straight x y 0) (straight x y 1) (straight x y 2)) tinted intensity) (pixel x y 3) 0))))

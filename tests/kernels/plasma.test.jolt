@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param time 0 0 0 0)
 (defkernel test_plasma [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 2 1))

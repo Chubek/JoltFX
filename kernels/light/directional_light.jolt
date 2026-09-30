@@ -8,6 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.light; shared functions: common/image.jolt.
+;; The resource array may hold a normal map (RGB = XYZ); otherwise normals are derived.
 ;; light direction x; range [-1, 1].
 (param direction_x 0 -1 1 0)
 ;; light direction y; range [-1, 1].
@@ -28,4 +29,11 @@
 
 (defkernel directional_light [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [nx (if (= (data-count) 0) (- (luminance (- x 1) y) (luminance (+ x 1) y)) (data (+ (* 4 (+ (* y width) x)) 0)))
+          ny (if (= (data-count) 0) (- (luminance x (- y 1)) (luminance x (+ y 1))) (data (+ (* 4 (+ (* y width) x)) 1)))
+          nz (if (= (data-count) 0) .5 (data (+ (* 4 (+ (* y width) x)) 2)))
+          len (max .0001 (sqrt (+ (* nx nx) (* ny ny) (* nz nz))))
+          ndl (max 0 (/ (+ (* nx direction_x) (* ny direction_y) (* nz direction_z)) len))
+          lit (+ ambient (* intensity ndl))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (* base lit (channel c color_r color_g color_b)) (pixel x y 3) 0))))

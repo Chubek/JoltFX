@@ -8,6 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (ignored); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; The resource array holds a flattened closed polygon: data[0]=N, then N (x,y) pairs in [0,1].
 ;; fill color red; range [0, 1].
 (param color_r 1 0 1 0)
 ;; fill color green; range [0, 1].
@@ -16,12 +17,20 @@
 (param color_b 1 0 1 0)
 ;; fill color alpha; range [0, 1].
 (param color_a 1 0 1 0)
-;; fill rule; 0 nonzero, 1 evenodd; range [0, 1].
+;; fill rule; 0 nonzero, 1 even-odd; range [0, 1].
 (param fill_rule 0 0 1 1)
 ;; antialias; range [0, 1].
 (param antialias 1 0 1 1)
 
 
 (defkernel fill_shape [x y c]
-  (if (= c 3) color_a
-    (if (= c 0) color_r (if (= c 1) color_g color_b))))
+  (let [n (path-n)
+        px (/ (+ x .5) width)
+        py (/ (+ y .5) height)
+        aa (if (= antialias 1) (/ 1 (max width height)) 0)
+        m (if (< aa .000001)
+            (path-inside px py n fill_rule)
+            (/ (sum i -1 2 (sum j -1 2
+                 (path-inside (+ px (* i aa)) (+ py (* j aa)) n fill_rule))) 9))
+        a (* color_a m)]
+    (if (= c 3) a (* (channel c color_r color_g color_b) a))))

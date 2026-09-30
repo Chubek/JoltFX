@@ -22,4 +22,11 @@
 
 (defkernel stylize_pencil_sketch [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [blur (gaussian-row x y c 3 1.5 1)
+          l (luminance x y)
+          dodge (clamp01 (/ blur (max .0001 l)))
+          edge (max (abs (- (luminance (+ x 1) y) (luminance (- x 1) y)))
+                    (abs (- (luminance x (+ y 1)) (luminance x (- y 1)))))
+          ink (clamp01 (* dodge (contrast-around (clamp01 (- 1 (/ edge (max .0001 edge_threshold)))) contrast .5)))
+          paper (channel c paper_r paper_g paper_b)]
+      (finish (* paper ink) (pixel x y 3) 0))))

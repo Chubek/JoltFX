@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param gamma 2 2 2 0)
 (defkernel test_levels [x y c]
-  (assert-pixel 1 0 0 .25))
+  (assert-pixel 0 0 3 1))

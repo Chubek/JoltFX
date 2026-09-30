@@ -19,4 +19,10 @@
 
 
 (defkernel clamp_values [x y c]
-  (pixel x y c))
+  (let [apply (if (= channels 0) 1
+                (if (= channels 1) (if (= c 3) 0 1)
+                  (if (= channels 2) 1 (if (= c 3) 1 0))))
+        v (pixel x y c)
+        is_nan (not (= v v))
+        out (if (and (= preserve_nan 1) is_nan) v (min max_val (max min_val v)))]
+    (if (= apply 1) out v)))

@@ -21,4 +21,12 @@
 
 
 (defkernel stylize_ink_outline [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (ceil line_width)
+          edge (if (> r 0)
+                 (max (abs (- (luminance (+ x r) y) (luminance (- x r) y)))
+                      (abs (- (luminance x (+ y r)) (luminance x (- y r)))))
+                 0)
+          m (clamp01 (/ (- edge threshold) (max .0001 threshold)))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (mix base (channel c color_r color_g color_b) m) (pixel x y 3) 0))))

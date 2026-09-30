@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param iterations 1 1 1 0)
 (defkernel test_mandelbrot [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 3 1))

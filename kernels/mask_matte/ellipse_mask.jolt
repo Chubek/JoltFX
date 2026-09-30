@@ -23,4 +23,11 @@
 
 
 (defkernel ellipse_mask [x y c]
-  (if (= c 3) 1 0))
+  (let [cx (* center_x width)
+        cy (* center_y height)
+        rx (max .0001 (* radius_x width))
+        ry (max .0001 (* radius_y height))
+        d (sqrt (+ (* (/ (- x cx) rx) (/ (- x cx) rx)) (* (/ (- y cy) ry) (/ (- y cy) ry))))
+        m (if (< feather .0001) (if (< d 1) 1 0) (smooth (- 1 feather) 1 d))
+        a (if (= invert 1) (- 1 m) m)]
+    (if (= c 3) a 0)))

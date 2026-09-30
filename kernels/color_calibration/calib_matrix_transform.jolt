@@ -8,13 +8,15 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
-;; 3x3 row-major matrix; range [-2, 2] per element.
+;; row-major 3x3 matrix, row 0; range [-2, 2].
 (param m00 1 -2 2 0)
 (param m01 0 -2 2 0)
 (param m02 0 -2 2 0)
+;; row 1; range [-2, 2].
 (param m10 0 -2 2 0)
 (param m11 1 -2 2 0)
 (param m12 0 -2 2 0)
+;; row 2; range [-2, 2].
 (param m20 0 -2 2 0)
 (param m21 0 -2 2 0)
 (param m22 1 -2 2 0)
@@ -25,4 +27,13 @@
 
 
 (defkernel calib_matrix_transform [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          nr (+ (* m00 r) (* m01 g) (* m02 b))
+          ng (+ (* m10 r) (* m11 g) (* m12 b))
+          nb (+ (* m20 r) (* m21 g) (* m22 b))
+          adj (if (= preserve_luma 1) (- l (luma nr ng nb)) 0)]
+      (finish (+ (channel c nr ng nb) adj) (pixel x y 3) (if (= clamp 1) 1 0)))))

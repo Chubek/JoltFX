@@ -8,6 +8,8 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (path A rasterized); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; The resource array holds N matching points of path A followed by N of path B:
+;; data[0]=N, then N (x,y) pairs A, then N (x,y) pairs B. Coordinates are normalized [0,1].
 ;; morph progress in [0,1]; range [0, 1].
 (param progress 0.5 0 1 0)
 ;; correspondence; 0 index, 1 length, 2 centroid; range [0, 2].
@@ -16,5 +18,23 @@
 (param easing 0 0 1 1)
 
 
+(defn morph-wind [px py offb k n t]
+  (let [k1 (mod (+ k 1) (max n 1))
+        x0 (mix (path-x k) (path-x-at offb k) t)
+        y0 (mix (path-y k) (path-y-at offb k) t)
+        x1 (mix (path-x k1) (path-x-at offb k1) t)
+        y1 (mix (path-y k1) (path-y-at offb k1) t)
+        cross (- (* (- x1 x0) (- py y0)) (* (- px x0) (- y1 y0)))]
+    (if (<= y0 py)
+      (if (> y1 py) (if (> cross 0) 1 0) 0)
+      (if (<= y1 py) (if (< cross 0) -1 0) 0))))
+
+
 (defkernel shape_morph [x y c]
-  (pixel x y c))
+  (let [n (path-n)
+        offb (+ 1 (* 2 n))
+        px (/ (+ x .5) width)
+        py (/ (+ y .5) height)
+        t (if (= easing 0) progress (smooth 0 1 progress))
+        m (if (= (sum k 0 n (morph-wind px py offb k n t)) 0) 0 1)]
+    (if (= c 3) m (pixel x y c))))

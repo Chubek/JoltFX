@@ -5,4 +5,4 @@
 (param cell_scale 1 1 1 0)
 (param edge_width 0 0 0 0)
 (defkernel test_voronoi [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 0 1))

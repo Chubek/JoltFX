@@ -17,4 +17,16 @@
 
 
 (defkernel stylize_comic_book [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [l (luminance x y)
+          ds (max 1 dot_size)
+          gx (mod x ds)
+          gy (mod y ds)
+          half (/ ds 2)
+          d (sqrt (+ (* (- gx half) (- gx half)) (* (- gy half) (- gy half))))
+          dot (if (< d (* half (clamp01 l))) 1 0)
+          q (/ (floor (* (straight x y c) color_reduction)) color_reduction)
+          edge (max (abs (- (luminance (+ x 1) y) (luminance (- x 1) y)))
+                    (abs (- (luminance x (+ y 1)) (luminance x (- y 1)))))
+          dark (if (> edge edge_threshold) .15 1)]
+      (finish (* q dot dark) (pixel x y 3) 0))))

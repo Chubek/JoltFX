@@ -22,4 +22,11 @@
 
 (defkernel stylize_night_vision [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [n (if (= noise 0) 0 (* noise (- (* 2 (hash2 x y 2)) 1)))
+          l (clamp01 (+ (* (luminance x y) 1.4) n))
+          cx (/ width 2) cy (/ height 2)
+          vig (max 0 (- 1 (/ (sqrt (+ (* (- x cx) (- x cx)) (* (- y cy) (- y cy))))
+                             (* .7 (max width height)))))
+          v (* l (mix .6 1 vig))
+          tinted (channel c green_r green_g green_b)]
+      (finish (mix (channel c (straight x y 0) (straight x y 1) (straight x y 2)) (* v tinted) intensity) (pixel x y 3) 0))))

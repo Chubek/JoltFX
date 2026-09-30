@@ -31,4 +31,20 @@
 
 
 (defkernel grade_color_wheels [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          sw (shadow-weight l)
+          hw (highlight-weight l)
+          mw (max 0 (- 1 (+ sw hw)))
+          base (channel c r g b)
+          add (+ (* sw (channel c shadows_r shadows_g shadows_b))
+                 (* mw (channel c midtones_r midtones_g midtones_b))
+                 (* hw (channel c highlights_r highlights_g highlights_b)))
+          v (+ base add)
+          adj (if (= preserve_luma 1) (- l (luma (+ r (* sw shadows_r) (* mw midtones_r) (* hw highlights_r))
+                                                   (+ g (* sw shadows_g) (* mw midtones_g) (* hw highlights_g))
+                                                   (+ b (* sw shadows_b) (* mw midtones_b) (* hw highlights_b)))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

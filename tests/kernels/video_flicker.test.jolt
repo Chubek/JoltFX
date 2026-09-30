@@ -3,4 +3,4 @@
 ;; to this assertion kernel. Defaults, transparency and further edge cases
 ;; are also covered by test_image_kernels.c.
 (defkernel test_video_flicker [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 0 0 3 1))

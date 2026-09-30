@@ -22,4 +22,13 @@
 
 (defkernel grade_sepia [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          sr (* l color_r)
+          sg (* l color_g)
+          sb (* l color_b)
+          v (mix (channel c r g b) (channel c sr sg sb) intensity)
+          adj (if (= preserve_luma 1) (- l (luma (mix r sr intensity) (mix g sg intensity) (mix b sb intensity))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

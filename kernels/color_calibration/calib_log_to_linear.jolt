@@ -8,7 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
-;; 0 log, 1 s-log, 2 c-log, 3 v-log, 4 arri-log; range [0, 4].
+;; 0 Cineon, 1 S-Log, 2 C-Log, 3 V-Log, 4 ARRI LogC; range [0, 4].
 (param log_curve 0 0 4 1)
 ;; black offset; range [-0.1, 0.1].
 (param black_offset 0 -0.1 0.1 0)
@@ -17,4 +17,9 @@
 
 
 (defkernel calib_log_to_linear [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [v (+ (straight x y c) black_offset)
+          gain (if (= log_curve 0) 0.002 (if (= log_curve 1) 0.02 (if (= log_curve 2) 0.05 (if (= log_curve 3) 0.08 0.06))))
+          offset (if (= log_curve 0) 0.001 (if (= log_curve 1) 0.01 (if (= log_curve 2) 0.02 (if (= log_curve 3) 0.03 0.02))))
+          out (max 0 (/ (- (pow 10 (/ (- v offset) (* 0.9 (- 1 offset)))) 1) (/ 1 (- gain 1))))]
+      (finish out (pixel x y 3) (if (= clamp 1) 1 0)))))

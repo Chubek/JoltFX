@@ -10,15 +10,27 @@
 ;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
 ;; effect intensity; range [0, 1].
 (param intensity 0.5 0 1 0)
-;; channel shift red; range [-1, 1].
-(param channel_shift_r 0 -1 1 0)
-;; channel shift green; range [-1, 1].
+;; per-channel tone shift red; range [-1, 1].
+(param channel_shift_r 0.1 -1 1 0)
+;; per-channel tone shift green; range [-1, 1].
 (param channel_shift_g 0 -1 1 0)
-;; channel shift blue; range [-1, 1].
-(param channel_shift_b 0 -1 1 0)
+;; per-channel tone shift blue; range [-1, 1].
+(param channel_shift_b -0.1 -1 1 0)
 ;; preserve luminance; range [0, 1].
 (param preserve_luma 1 0 1 1)
 
 
 (defkernel grade_cross_process [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          shift (channel c channel_shift_r channel_shift_g channel_shift_b)
+          base (channel c r g b)
+          boosted (+ (* base base (- 1 (* 2 shift))) (* base (* 2 shift)))
+          v (mix base boosted intensity)
+          adj (if (= preserve_luma 1) (- l (luma (mix r (+ (* r r (- 1 (* 2 channel_shift_r))) (* r (* 2 channel_shift_r))) intensity)
+                                                   (mix g (+ (* g g (- 1 (* 2 channel_shift_g))) (* g (* 2 channel_shift_g))) intensity)
+                                                   (mix b (+ (* b b (- 1 (* 2 channel_shift_b))) (* b (* 2 channel_shift_b))) intensity))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

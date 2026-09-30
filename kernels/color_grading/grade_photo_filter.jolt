@@ -9,7 +9,7 @@
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
 ;; filter color red; range [0, 1].
-(param filter_color_r 1 0 1 0)
+(param filter_color_r 1.0 0 1 0)
 ;; filter color green; range [0, 1].
 (param filter_color_g 0.8 0 1 0)
 ;; filter color blue; range [0, 1].
@@ -21,4 +21,14 @@
 
 
 (defkernel grade_photo_filter [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          fr (channel c filter_color_r filter_color_g filter_color_b)
+          v (* (channel c r g b) (mix 1 fr density))
+          adj (if (= preserve_luma 1) (- l (luma (* r (mix 1 filter_color_r density))
+                                                   (* g (mix 1 filter_color_g density))
+                                                   (* b (mix 1 filter_color_b density)))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

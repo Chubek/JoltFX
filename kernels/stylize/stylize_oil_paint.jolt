@@ -18,4 +18,14 @@
 
 (defkernel stylize_oil_paint [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r radius
+          levels 8
+          bin (floor (* (luminance x y) levels))
+          num (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                (let [l (luminance (+ x i) (+ y j))]
+                  (if (= (floor (* l levels)) bin) (straight (+ x i) (+ y j) c) 0))))
+          den (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                (let [l (luminance (+ x i) (+ y j))]
+                  (if (= (floor (* l levels)) bin) 1 0))))
+          v (/ num (max 1 den))]
+      (finish (mix (straight x y c) v intensity) (pixel x y 3) 0))))

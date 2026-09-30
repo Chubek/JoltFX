@@ -7,4 +7,4 @@
 (param end_x 1 1 1 0)
 (param end_y 1 1 1 0)
 (defkernel test_gradient_linear [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 3 1))

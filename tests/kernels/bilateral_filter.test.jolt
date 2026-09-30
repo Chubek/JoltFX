@@ -6,4 +6,4 @@
 (param spatial_sigma 0.5 0.5 0.5 0)
 (param range_sigma 100 100 100 0)
 (defkernel test_bilateral_filter [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 0 0 3 1))

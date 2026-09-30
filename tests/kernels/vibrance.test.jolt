@@ -5,4 +5,4 @@
 (param amount 1 1 1 0)
 (param skin_protection 0 0 0 0)
 (defkernel test_vibrance [x y c]
-  (require (< (sample 1 0 0 0 1) .0625)))
+  (assert-pixel 0 0 3 1))

@@ -6,8 +6,9 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Input: image src (from frame); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.transition; shared functions: common/image.jolt.
+;; The resource array holds the destination frame, width*height*4 floats.
 ;; progress in [0,1]; range [0, 1].
 (param progress 0.5 0 1 0)
 ;; zoom factor; range [0.1, 8].
@@ -21,4 +22,11 @@
 
 
 (defkernel zoom_transition [x y c]
-  (pixel x y c))
+  (let [p (if (= curve 0) progress (smooth 0 1 progress))
+        cx (* center_x width)
+        cy (* center_y height)
+        s (+ 1 (* (- zoom 1) p))
+        sx (+ cx (/ (- x cx) s))
+        sy (+ cy (/ (- y cy) s))
+        a (sample sx sy c 1 1)]
+    (mix a (to-frame x y c) p)))

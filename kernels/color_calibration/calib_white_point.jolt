@@ -20,4 +20,8 @@
 
 (defkernel calib_white_point [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [apply (or (= channel 0) (or (= channel 1) (= channel (+ c 1))))
+          v (straight x y c)
+          gain (if (and (= preserve_highlights 1) (> v .9)) 1 white_point)
+          out (* v gain)]
+      (finish (if apply out v) (pixel x y 3) (if (= clamp 1) 1 0)))))

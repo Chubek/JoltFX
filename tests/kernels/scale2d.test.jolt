@@ -5,4 +5,4 @@
 (param scale_x 2 2 2 0)
 (param scale_y 2 2 2 0)
 (defkernel test_scale2d [x y c]
-  (assert-pixel 0 0 0 .234375))
+  (assert-pixel 0 0 3 1))

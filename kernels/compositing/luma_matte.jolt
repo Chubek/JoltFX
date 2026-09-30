@@ -14,10 +14,12 @@
 (param threshold 0.5 0 1 0)
 ;; softness; range [0, 1].
 (param softness 0.1 0 1 0)
-;; 0 from frame, 1 to frame (using data); range [0, 1].
+;; use the luma of the data resource instead of the source; range [0, 1].
 (param use_data 0 0 1 1)
 
 
 (defkernel luma_matte [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [l (if (= use_data 1) (data (+ (* 4 (+ (* y width) x)) 0)) (luminance x y))
+        a0 (smooth (- threshold softness) (+ threshold softness) l)
+        a (if (= invert 1) (- 1 a0) a0)]
+    (if (= c 3) a (* (straight x y c) a))))

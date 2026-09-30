@@ -15,4 +15,14 @@
 
 
 (defkernel calib_srgb_to_display_p3 [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (decode (straight x y 0))
+          g (decode (straight x y 1))
+          b (decode (straight x y 2))
+          l (luma r g b)
+          nr (srgb-to-p3 r g b 0)
+          ng (srgb-to-p3 r g b 1)
+          nb (srgb-to-p3 r g b 2)
+          adj (if (= preserve_luma 1) (- l (luma nr ng nb)) 0)
+          v (encode (max 0 (+ (channel c nr ng nb) adj)))]
+      (finish v (pixel x y 3) (if (= clamp 1) 1 0)))))

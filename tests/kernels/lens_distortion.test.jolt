@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param k1 0.1 0.1 0.1 0)
 (defkernel test_lens_distortion [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 3 1))

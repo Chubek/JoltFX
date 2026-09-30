@@ -19,5 +19,12 @@
 
 
 (defkernel feather_mask [x y c]
-  (if (= c 3) (pixel x y 3)
+  (if (= c 3)
+    (let [r (ceil radius)
+          a (if (= r 0) (pixel x y 3)
+              (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                   (sample (+ x i) (+ y j) 3 0 edge_mode)))
+                 (* (+ (* 2 r) 1) (+ (* 2 r) 1))))
+          e (* expand .01)]
+      (clamp01 (+ a e)))
     (pixel x y c)))

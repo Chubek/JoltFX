@@ -14,9 +14,15 @@
 (param frequency 8 0.1 60 0)
 ;; random seed; range [0, 65535].
 (param seed 0 0 65535 1)
+;; animation time; range [0, 1000000].
+(param time 0 0 1000000 0)
 ;; animate; range [0, 1].
 (param animate 1 0 1 1)
 
 
 (defkernel video_flicker [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [t (if (= animate 1) time 0)
+          f (+ .5 (* .5 (sin (* frequency t))))
+          v (* (pixel x y c) (- 1 (* amount (- 1 f))))]
+      v)))

@@ -6,7 +6,7 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Input: image src (ignored); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.generative; shared functions: common/image.jolt.
 ;; random seed; range [0, 65535].
 (param seed 0 0 65535 1)
@@ -21,11 +21,11 @@
 (defkernel cell_noise [x y c]
   (let [sx (/ x cell_scale)
         sy (/ y cell_scale)
-        d (worley-dist sx sy seed)]
-    (if (= output_mode 0)
-      (if (= c 3) 1
-        (clamp01 (* d 2)))
-      (if (= output_mode 1)
-        (if (= c 3) 1
-          (if (= c 0) d 0))
-      (if (= c 3) 1 0)))))
+        d1 (worley-dist sx sy seed)
+        xi (floor sx)
+        yi (floor sy)
+        h (hash2 xi yi seed)
+        val (if (= output_mode 0) (clamp01 d1)
+              (if (= output_mode 1) h
+                (clamp01 (- 1 d1))))]
+    (if (= c 3) 1 val)))

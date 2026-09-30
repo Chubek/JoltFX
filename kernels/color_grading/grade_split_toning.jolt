@@ -20,12 +20,28 @@
 (param highlight_color_g 0.9 0 1 0)
 ;; highlight color blue; range [0, 1].
 (param highlight_color_b 0.7 0 1 0)
-;; tonal balance; range [0, 1].
+;; tonal balance, 0 shadows .. 1 highlights; range [0, 1].
 (param balance 0.5 0 1 0)
+;; toning strength; range [0, 1].
+(param strength 0.5 0 1 0)
 ;; preserve luminance; range [0, 1].
 (param preserve_luma 1 0 1 1)
 
 
 (defkernel grade_split_toning [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          pivot (- 1 balance)
+          sw (max 0 (- 1 (/ l (max pivot .0001))))
+          hw (max 0 (/ (- l pivot) (max (- 1 pivot) .0001)))
+          sr (channel c shadow_color_r shadow_color_g shadow_color_b)
+          hr (channel c highlight_color_r highlight_color_g highlight_color_b)
+          base (channel c r g b)
+          v (clamp01 (+ base (* strength (- sr .5) sw) (* strength (- hr .5) hw)))
+          adj (if (= preserve_luma 1) (- l (luma (clamp01 (+ r (* strength (- shadow_color_r .5) sw) (* strength (- highlight_color_r .5) hw)))
+                                                   (clamp01 (+ g (* strength (- shadow_color_g .5) sw) (* strength (- highlight_color_g .5) hw)))
+                                                   (clamp01 (+ b (* strength (- shadow_color_b .5) sw) (* strength (- highlight_color_b .5) hw))))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

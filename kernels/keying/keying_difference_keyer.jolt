@@ -23,4 +23,13 @@
 
 
 (defkernel keying_difference_keyer [x y c]
-  (pixel x y c))
+  (let [r (straight x y 0)
+        g (straight x y 1)
+        b (straight x y 2)
+        have (if (> (data-count) 0) 1 0)
+        br (if (= have 0) background_r (data (+ (* 4 (+ (* y width) x)) 0)))
+        bg2 (if (= have 0) background_g (data (+ (* 4 (+ (* y width) x)) 1)))
+        bb (if (= have 0) background_b (data (+ (* 4 (+ (* y width) x)) 2)))
+        d (sqrt (+ (* (- r br) (- r br)) (* (- g bg2) (- g bg2)) (* (- b bb) (- b bb))))
+        a (clamp01 (/ (- d threshold) (max softness .0001)))]
+    (if (= c 3) a (* (channel c r g b) a))))

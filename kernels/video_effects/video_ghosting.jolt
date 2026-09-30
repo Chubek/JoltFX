@@ -6,8 +6,9 @@
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
-;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Input: image src (current frame); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The resource array holds the previous frame, width*height*4 floats.
 ;; ghost opacity; range [0, 1].
 (param opacity 0.4 0 1 0)
 ;; blend mode; 0 normal, 1 add, 2 screen; range [0, 2].
@@ -15,4 +16,9 @@
 
 
 (defkernel video_ghosting [x y c]
-  (pixel x y c))
+  (let [base (pixel x y c)
+        prev (to-frame x y c)
+        v (if (= blend_mode 0) (mix base prev opacity)
+            (if (= blend_mode 1) (min 1 (+ base (* prev opacity)))
+              (blend-screen base (* prev opacity))))]
+    v))

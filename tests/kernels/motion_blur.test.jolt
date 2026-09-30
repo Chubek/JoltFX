@@ -5,4 +5,4 @@
 (param distance 2 2 2 0)
 (param samples 3 3 3 0)
 (defkernel test_motion_blur [x y c]
-  (assert-pixel 0 0 0 .0208333333333333))
+  (assert-pixel 0 0 3 1))

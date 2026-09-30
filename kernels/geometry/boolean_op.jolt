@@ -8,15 +8,28 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (path A rasterized); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; The resource array holds path A then path B: A is data[0]=NA plus NA (x,y) pairs,
+;; immediately followed by B's count and pairs. Coordinates are normalized [0,1].
 ;; operation; 0 union, 1 intersect, 2 subtract, 3 xor; range [0, 3].
 (param operation 0 0 3 1)
-;; 0 from frame, 1 path B (using data); range [0, 1].
-(param use_data 0 0 1 1)
+;; fill rule; 0 nonzero, 1 even-odd; range [0, 1].
+(param fill_rule 0 0 1 1)
 ;; tolerance in pixels; range [0.01, 8].
 (param tolerance 0.5 0.01 8 0)
-;; fill rule; 0 nonzero, 1 evenodd; range [0, 1].
-(param fill_rule 0 0 1 1)
+;; antialias; range [0, 1].
+(param antialias 1 0 1 1)
 
 
 (defkernel boolean_op [x y c]
-  (pixel x y c))
+  (let [na (path-n-at 0)
+        offb (+ 1 (* 2 na))
+        nb (path-n-at offb)
+        px (/ (+ x .5) width)
+        py (/ (+ y .5) height)
+        ia (path-inside-at px py 0 na fill_rule)
+        ib (path-inside-at px py offb nb fill_rule)
+        m (if (= operation 0) (if (or (= ia 1) (= ib 1)) 1 0)
+            (if (= operation 1) (if (and (= ia 1) (= ib 1)) 1 0)
+              (if (= operation 2) (if (and (= ia 1) (= ib 0)) 1 0)
+                (if (= (mod (+ ia ib) 2) 1) 1 0))))]
+    (if (= c 3) m (pixel x y c))))

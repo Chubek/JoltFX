@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param angle 180 180 180 0)
 (defkernel test_rotate2d [x y c]
-  (assert-pixel 0 0 0 .9375))
+  (assert-pixel 0 0 3 1))

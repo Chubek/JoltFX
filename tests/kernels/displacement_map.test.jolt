@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param amount 1 1 1 0)
 (defkernel test_displacement_map [x y c]
-  (assert-pixel 0 0 0 0))
+  (assert-pixel 0 0 3 1))

@@ -15,4 +15,11 @@
 
 
 (defkernel keying_garbage_matte [x y c]
-  (pixel x y c))
+  (let [r (ceil feather)
+        m (if (= (data-count) 0) 1 (data (+ (* 4 (+ (* y width) x)) 0)))
+        m0 (if (or (= r 0) (= (data-count) 0)) m
+             (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                  (data (+ (* 4 (+ (* (max 0 (min (- height 1) (+ y j))) width) (max 0 (min (- width 1) (+ x i))))) 0))))
+                (* (+ (* 2 r) 1) (+ (* 2 r) 1))))
+        a (if (= invert 1) (- 1 m0) m0)]
+    (if (= c 3) (* (pixel x y 3) a) (* (straight x y c) a))))

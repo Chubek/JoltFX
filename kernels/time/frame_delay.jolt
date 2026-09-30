@@ -8,6 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.time; shared functions: common/image.jolt.
+;; The resource array holds the frame history, each frame width*height*4 floats.
 ;; delay in frames; range [0, 60].
 (param delay 1 0 60 1)
 ;; boundary mode; 0 hold, 1 wrap, 2 mirror; range [0, 2].
@@ -17,5 +18,11 @@
 
 
 (defkernel frame_delay [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [fs (* 4 (* width height))
+        nf (if (= fs 0) 0 (floor (/ (data-count) fs)))]
+    (if (= nf 0) (pixel x y c)
+      (let [i (if (= boundary_mode 0) (min (- nf 1) delay)
+                (if (= boundary_mode 1) (mod delay nf)
+                  (let [d (mod delay (* 2 nf))] (if (< d nf) d (- (* 2 nf) 1 d)))))
+            idx (+ (* 4 (+ (* y width) x)) c)]
+        (data (+ (* i fs) idx))))))

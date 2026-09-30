@@ -20,10 +20,18 @@
 (param highlight_color_g 0.9 0 1 0)
 ;; highlight color blue; range [0, 1].
 (param highlight_color_b 0.7 0 1 0)
-;; blend mode; 0 normal, 1 multiply, 2 screen; range [0, 2].
+;; blend mode applied to the mapped tone; 0 normal, 1 multiply, 2 screen; range [0, 2].
 (param blend_mode 0 0 2 1)
 
 
 (defkernel grade_duotone [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          t (clamp01 (luma r g b))
+          lo (channel c shadow_color_r shadow_color_g shadow_color_b)
+          hi (channel c highlight_color_r highlight_color_g highlight_color_b)
+          mapped (mix lo hi t)
+          v (blend-mode blend_mode mapped (channel c r g b))]
+      (finish v (pixel x y 3) 1))))

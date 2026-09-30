@@ -28,4 +28,14 @@
 
 (defkernel shadow_cast [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (ceil blur_radius)
+          sx (- x offset_x)
+          sy (- y offset_y)
+          raw (if (= r 0) (sample sx sy 3 0 1)
+                (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
+                     (sample (+ sx i) (+ sy j) 3 0 1)))
+                   (* (+ (* 2 r) 1) (+ (* 2 r) 1))))
+          a (clamp01 (* (+ raw spread) opacity))
+          shadow (channel c color_r color_g color_b)
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (mix base shadow a) (pixel x y 3) 0))))

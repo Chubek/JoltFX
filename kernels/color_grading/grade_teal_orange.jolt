@@ -20,4 +20,19 @@
 
 (defkernel grade_teal_orange [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          h (* (hue r g b) 60)
+          warm (max 0 (- 1 (/ (min (abs (- h orange_hue)) (- 360 (abs (- h orange_hue)))) 90)))
+          cool (max 0 (- 1 (/ (min (abs (- h teal_hue)) (- 360 (abs (- h teal_hue)))) 90)))
+          tr (+ 1 (* warm 0.35) (* cool -0.15))
+          tg (+ 1 (* warm 0.10) (* cool 0.10))
+          tb (+ 1 (* warm -0.20) (* cool 0.40))
+          nr (* r tr)
+          ng (* g tg)
+          nb (* b tb)
+          v (mix (channel c r g b) (channel c nr ng nb) intensity)
+          adj (if (= preserve_luma 1) (- l (luma (mix r nr intensity) (mix g ng intensity) (mix b nb intensity))) 0)]
+      (finish (+ v adj) (pixel x y 3) 1))))

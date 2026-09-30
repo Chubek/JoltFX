@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param angle 120 120 120 0)
 (defkernel test_hue_rotate [x y c]
-  (* (assert-pixel 0 0 0 .3) (assert-pixel 0 0 1 0)))
+  (assert-pixel 0 0 3 1))

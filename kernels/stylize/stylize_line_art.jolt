@@ -21,4 +21,11 @@
 
 
 (defkernel stylize_line_art [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (ceil line_width)
+          gx (- (luminance (+ x r) y) (luminance (- x r) y))
+          gy (- (luminance x (+ y r)) (luminance x (- y r)))
+          edge (sqrt (+ (* gx gx) (* gy gy)))
+          m (clamp01 (/ (- edge edge_threshold) (max .0001 edge_threshold)))
+          paper (channel c 1 1 1)]
+      (finish (mix paper (channel c color_r color_g color_b) m) (pixel x y 3) 0))))

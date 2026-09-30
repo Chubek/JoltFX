@@ -10,11 +10,20 @@
 ;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
 ;; effect intensity; range [0, 1].
 (param intensity 0.5 0 1 0)
-;; contrast adjustment; range [0, 1].
-(param contrast 0.5 0 1 0)
+;; contrast adjustment; range [0, 2].
+(param contrast 1.3 0 2 0)
 ;; saturation adjustment; range [0, 1].
-(param saturation 1 0 1 0)
+(param saturation 0.5 0 1 0)
 
 
 (defkernel grade_bleach_bypass [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          sr (saturate r g b saturation)
+          sg (saturate g g b saturation)
+          sb (saturate b g b saturation)
+          v (contrast-around (channel c sr sg sb) contrast .5)]
+      (finish (mix (channel c r g b) v intensity) (pixel x y 3) 1))))

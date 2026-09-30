@@ -10,7 +10,7 @@
 ;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
 ;; peak luminance in nits; range [100, 10000].
 (param peak_nits 1000 100 10000 0)
-;; tone curve type; 0 Reinhard, 1 Hable, 2 ACES; range [0, 2].
+;; tone curve; 0 Reinhard, 1 Hable, 2 ACES; range [0, 2].
 (param tone_curve 0 0 2 1)
 ;; saturation preservation; range [0, 1].
 (param saturation 1 0 1 0)
@@ -20,4 +20,26 @@
 
 (defkernel calib_hdr_tone_map [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          exposure (/ 1000 peak_nits)
+          er (* r exposure)
+          eg (* g exposure)
+          eb (* b exposure)
+          l (luma er eg eb)
+          mapped (if (= tone_curve 0)
+                   (/ l (+ 1 l))
+                   (if (= tone_curve 1)
+                     (/ (* l (+ (* l .15) .05)) (* l (+ (* l .15) .5) .1))
+                     (let [a 2.51 b2 0.03 cc 2.43 d 0.59 e 0.14]
+                       (clamp01 (/ (* l (+ (* a l) b2)) (* l (+ (* cc l) d) e))))))
+          scale (if (> l 0) (/ mapped l) 1)
+          nr (* er scale)
+          ng (* eg scale)
+          nb (* eb scale)
+          gray (luma nr ng nb)
+          sr (mix gray nr saturation)
+          sg (mix gray ng saturation)
+          sb (mix gray nb saturation)]
+      (finish (clamp01 (channel c sr sg sb)) (pixel x y 3) 0))))

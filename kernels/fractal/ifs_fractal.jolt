@@ -8,13 +8,38 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (ignored); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.fractal; shared functions: common/image.jolt.
-;; number of transforms; range [2, 8].
-(param num_transforms 4 2 8 1)
-;; iterations; range [1000, 1000000].
-(param iterations 50000 1000 1000000 1)
+;; Iterated function system: the classic Barnsley fern maps. Membership is decided
+;; by bounded inverse iteration (an inverse-IFS attractor test), which is stateless
+;; and therefore expressible in the per-pixel profile.
+;; inverse-iteration depth; range [1, 6].
+(param iterations 4 1 6 1)
 ;; random seed; range [0, 65535].
 (param seed 0 0 65535 1)
+;; fern color red; range [0, 1].
+(param color_r 0.2 0 1 0)
+;; fern color green; range [0, 1].
+(param color_g 0.8 0 1 0)
+;; fern color blue; range [0, 1].
+(param color_b 0.3 0 1 0)
+
+
+(defn inv2x [px py] (/ (- (* 0.85 px) (* 0.04 (- py 1.6))) 0.7241))
+(defn inv2y [px py] (/ (+ (* 0.04 px) (* 0.85 (- py 1.6))) 0.7241))
+(defn inv3x [px py] (/ (+ (* 0.22 px) (* 0.26 (- py 1.6))) 0.1038))
+(defn inv3y [px py] (/ (+ (* -0.23 px) (* 0.2 (- py 1.6))) 0.1038))
+(defn inv4x [px py] (/ (- (* 0.24 px) (* 0.28 (- py 0.44))) -0.1088))
+(defn inv4y [px py] (/ (+ (* -0.26 px) (* -0.15 (- py 0.44))) -0.1088))
+(defn fern-hit [px py d]
+  (if (= d 0)
+    (if (all4 (>= px -3) (<= px 3) (>= py 0) (<= py 10)) 1 0)
+    (max (fern-hit (inv2x px py) (inv2y px py) (- d 1))
+      (max (fern-hit (inv3x px py) (inv3y px py) (- d 1))
+           (fern-hit (inv4x px py) (inv4y px py) (- d 1))))))
 
 
 (defkernel ifs_fractal [x y c]
-  (if (= c 3) 1 0))
+  (let [px (- (* (/ (+ x .5) width) 6) 3)
+        py (* (/ (+ y .5) height) 10)
+        hit (fern-hit px py iterations)]
+    (if (= c 3) 1
+      (if (= hit 1) (channel c color_r color_g color_b) 0))))

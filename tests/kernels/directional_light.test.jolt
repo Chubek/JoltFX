@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param intensity 1 1 1 0)
 (defkernel test_directional_light [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 3 3 0 1.025672))

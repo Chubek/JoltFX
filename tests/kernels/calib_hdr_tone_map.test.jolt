@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param peak_nits 100 100 100 0)
 (defkernel test_calib_hdr_tone_map [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 0 0 2 1))

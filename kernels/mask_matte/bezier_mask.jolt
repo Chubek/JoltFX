@@ -8,14 +8,23 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (ignored); output: mask (single channel), same dimensions.
 ;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
-;; path data in resource; range [0, 1] for coordinates.
-;; feather in pixels; range [0, 64].
-(param feather 0 0 64 0)
+;; The resource array holds a flattened closed polygon: data[0]=N, then N (x,y) pairs in [0,1].
+;; feather in normalized units; range [0, 1].
+(param feather 0 0 1 0)
 ;; antialias; range [0, 1].
 (param antialias 1 0 1 1)
-;; fill rule; 0 nonzero, 1 evenodd; range [0, 1].
+;; fill rule; 0 nonzero, 1 even-odd; range [0, 1].
 (param fill_rule 0 0 1 1)
 
 
 (defkernel bezier_mask [x y c]
-  (if (= c 3) 1 0))
+  (let [n (path-n)
+        px (/ (+ x .5) width)
+        py (/ (+ y .5) height)
+        aa (if (= antialias 1) (/ 1 (max width height)) 0)
+        f (max feather aa)
+        m (if (< f .000001)
+            (path-inside px py n fill_rule)
+            (/ (sum i -2 3 (sum j -2 3
+                 (path-inside (+ px (* i (/ f 2))) (+ py (* j (/ f 2))) n fill_rule))) 25))]
+    (if (= c 3) m 0)))

@@ -8,6 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (ignored); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.geometry; shared functions: common/image.jolt.
+;; The resource array holds a flattened closed polygon: data[0]=N, then N (x,y) pairs in [0,1].
 ;; stroke width in pixels; range [0.5, 64].
 (param width 2 0.5 64 0)
 ;; stroke color red; range [0, 1].
@@ -23,5 +24,11 @@
 
 
 (defkernel stroke_path [x y c]
-  (if (= c 3) color_a
-    (if (= c 0) color_r (if (= c 1) color_g color_b))))
+  (let [n (path-n)
+        px (/ (+ x .5) width)
+        py (/ (+ y .5) height)
+        hw (/ (/ width (max width height)) 2)
+        aa (/ 1 (max width height))
+        m (path-stroke-cover-at px py 0 n hw aa)
+        a (* color_a m)]
+    (if (= c 3) a (* (channel c color_r color_g color_b) a))))

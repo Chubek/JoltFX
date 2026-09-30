@@ -8,7 +8,7 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.mask_matte; shared functions: common/image.jolt.
-;; 0 alpha, 1 luma, 2 red, 3 green, 4 blue; range [0, 4].
+;; matte source; 0 alpha, 1 luma, 2 red, 3 green, 4 blue; range [0, 4].
 (param matte_source 0 0 4 1)
 ;; invert matte; range [0, 1].
 (param invert 0 0 1 1)
@@ -19,5 +19,11 @@
 
 
 (defkernel track_matte [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [m (if (= matte_source 0) (pixel x y 3)
+            (if (= matte_source 1) (luminance x y)
+              (if (= matte_source 2) (straight x y 0)
+                (if (= matte_source 3) (straight x y 1) (straight x y 2)))))
+        m0 (if (= invert 1) (- 1 m) m)
+        a (* m0 opacity)]
+    (if (= c 3) (* (pixel x y 3) a)
+      (if (= premultiplied 1) (* (pixel x y c) a) (* (straight x y c) a)))))

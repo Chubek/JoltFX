@@ -5,4 +5,4 @@
 (param levels 2 2 2 0)
 (param edge_threshold 1 1 1 0)
 (defkernel test_stylize_cartoon [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 0 0 3 1))

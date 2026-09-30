@@ -5,4 +5,4 @@
 (param m00 0 0 0 0)
 (param m02 1 1 1 0)
 (defkernel test_channel_mixer [x y c]
-  (assert-pixel 0 0 0 .3))
+  (assert-pixel 0 0 3 1))

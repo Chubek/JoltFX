@@ -25,5 +25,14 @@
 
 
 (defkernel chroma_key [x y c]
-  (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+  (let [r (straight x y 0)
+        g (straight x y 1)
+        b (straight x y 2)
+        d (sqrt (+ (* (- r key_color_r) (- r key_color_r))
+                   (* (- g key_color_g) (- g key_color_g))
+                   (* (- b key_color_b) (- b key_color_b))))
+        a (clamp01 (/ (- d tolerance) (max softness .0001)))
+        despilled (if (= despill 1)
+                    (- (channel c r g b) (* spill_suppression (- 1 a) (channel c key_color_r key_color_g key_color_b)))
+                    (channel c r g b))]
+    (if (= c 3) a (* despilled a))))

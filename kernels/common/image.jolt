@@ -167,3 +167,150 @@
   (let [t (- 0.5 (+ (* x x) (* y y)))
         t (max t 0)]
     (* t t t t (hash2 i j seed))))
+
+;; ---------------------------------------------------------------------------
+;; Blend-mode helpers. Operate on straight (unpremultiplied) channel values.
+(defn blend-normal [a b] b)
+(defn blend-multiply [a b] (* a b))
+(defn blend-screen [a b] (- 1 (* (- 1 a) (- 1 b))))
+(defn blend-darken [a b] (min a b))
+(defn blend-lighten [a b] (max a b))
+(defn blend-difference [a b] (abs (- a b)))
+(defn blend-exclusion [a b] (+ a b (- (* 2 a b))))
+(defn blend-add [a b] (min 1 (+ a b)))
+(defn blend-subtract [a b] (max 0 (- a b)))
+(defn blend-overlay [a b] (if (< a .5) (* 2 a b) (- 1 (* 2 (- 1 a) (- 1 b)))))
+(defn blend-hard-light [a b] (blend-overlay b a))
+(defn blend-soft-light [a b]
+  (if (< b .5)
+    (- a (* (- 1 a) b (- 1 a)))
+    (+ a (* (- 1 a) (- b .5) a))))
+(defn blend-color-dodge [a b] (if (<= b 0) 0 (min 1 (/ a (- 1 b)))))
+(defn blend-color-burn [a b] (if (>= b 1) 1 (- 1 (min 1 (/ (- 1 a) b)))))
+;; Select by integer mode id: 0 normal,1 multiply,2 screen,3 overlay,4 darken,
+;; 5 lighten,6 difference,7 exclusion,8 add,9 subtract,10 hard,11 soft,12 dodge,13 burn
+(defn blend-mode [mode a b]
+  (if (= mode 0) (blend-normal a b)
+    (if (= mode 1) (blend-multiply a b)
+      (if (= mode 2) (blend-screen a b)
+        (if (= mode 3) (blend-overlay a b)
+          (if (= mode 4) (blend-darken a b)
+            (if (= mode 5) (blend-lighten a b)
+              (if (= mode 6) (blend-difference a b)
+                (if (= mode 7) (blend-exclusion a b)
+                  (if (= mode 8) (blend-add a b)
+                    (if (= mode 9) (blend-subtract a b)
+                      (if (= mode 10) (blend-hard-light a b)
+                        (if (= mode 11) (blend-soft-light a b)
+                          (if (= mode 12) (blend-color-dodge a b)
+                            (blend-color-burn a b)))))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Color helpers.
+(defn max3 [a b c] (max a (max b c)))
+(defn min3 [a b c] (min a (min b c)))
+;; Boolean helpers: `or`/`and` are strictly binary in the image profile.
+(defn any2 [a b] (or a b))
+(defn any3 [a b c] (or a (or b c)))
+(defn any4 [a b c d] (or (or a b) (or c d)))
+(defn all2 [a b] (and a b))
+(defn all3 [a b c] (and a (and b c)))
+(defn all4 [a b c d] (and (and a b) (and c d)))
+;; Saturation in [0,1] (HSV definition).
+(defn saturation [r g b]
+  (let [hi (max3 r g b)]
+    (if (> hi 0) (/ (- hi (min3 r g b)) hi) 0)))
+;; Scale chroma around luminance, preserving luma.
+(defn saturate [r g b amount]
+  (let [l (luma r g b)]
+    (mix l r amount)))
+(defn contrast-around [v amount pivot] (+ pivot (* amount (- v pivot))))
+;; Soft tonal weights used by shadow/highlight style controls.
+(defn shadow-weight [l] (- 1 (smooth 0 .5 l)))
+(defn highlight-weight [l] (smooth .5 1 l))
+;; sRGB <-> Rec.709 / Rec.2020 / Display P3 matrices are folded into helpers.
+(defn mat3 [m00 m01 m02 m10 m11 m12 m20 m21 m22 r g b c]
+  (if (= c 0) (+ (* m00 r) (* m01 g) (* m02 b))
+    (if (= c 1) (+ (* m10 r) (* m11 g) (* m12 b))
+      (+ (* m20 r) (* m21 g) (* m22 b)))))
+;; Rec.709 -> Rec.2020 (linear light).
+(defn rec709-to-rec2020 [r g b c]
+  (mat3 0.6274 0.3293 0.0433 0.0691 0.9195 0.0114 0.0164 0.0880 0.8956 r g b c))
+;; sRGB (linear) -> Display P3 (linear).
+(defn srgb-to-p3 [r g b c]
+  (mat3 0.8225 0.1774 0.0 0.0332 0.9669 0.0 0.0171 0.0724 0.9105 r g b c))
+;; Rec.2020 -> Rec.709 (linear light), inverse of the above.
+(defn rec2020-to-rec709 [r g b c]
+  (mat3 1.6605 -0.5876 -0.0728 -0.1246 1.1329 -0.0083 -0.0182 -0.1006 1.1187 r g b c))
+;; Display P3 (linear) -> sRGB (linear).
+(defn p3-to-srgb [r g b c]
+  (mat3 1.2249 -0.2247 0.0 -0.0420 1.0419 0.0 -0.0197 -0.0786 1.0983 r g b c))
+
+;; Decode one channel of `space` to linear light (sRGB/Rec.709 hub primaries).
+;; 0 sRGB, 1 linear, 2 Rec.709, 3 Rec.2020, 4 Display P3.
+(defn to-linear-channel [space r g b c]
+  (let [dr (decode r) dg (decode g) db (decode b)]
+    (if (= space 1) (channel c r g b)
+      (if (= space 3) (rec2020-to-rec709 dr dg db c)
+        (if (= space 4) (p3-to-srgb dr dg db c)
+          (channel c dr dg db))))))
+;; Encode one channel of linear light to `space`.
+(defn from-linear-channel [space lr lg lb c]
+  (if (= space 1) (channel c lr lg lb)
+    (if (= space 3) (encode (rec709-to-rec2020 lr lg lb c))
+      (if (= space 4) (encode (srgb-to-p3 lr lg lb c))
+        (encode (channel c lr lg lb))))))
+
+;; ---------------------------------------------------------------------------
+;; Flattened path helpers. A path at array offset `off` is:
+;;   data[off] = vertex count N, then N (x,y) pairs in normalized [0,1] space.
+;; A path with off = 0 is the common case used by single-path kernels.
+(defn path-n-at [off] (if (<= (data-count) off) 0 (data off)))
+(defn path-x-at [off k] (data (+ 1 off (* 2 k))))
+(defn path-y-at [off k] (data (+ 2 off (* 2 k))))
+(defn path-n [] (path-n-at 0))
+(defn path-x [k] (path-x-at 0 k))
+(defn path-y [k] (path-y-at 0 k))
+;; Ray-cast crossing test for the edge (k, k+1).
+(defn path-cross-edge-at [px py off k n]
+  (let [k1 (mod (+ k 1) (max n 1))
+        x0 (path-x-at off k) y0 (path-y-at off k)
+        x1 (path-x-at off k1) y1 (path-y-at off k1)]
+    (if (all2 (any2 (all2 (<= y0 py) (> y1 py)) (all2 (<= y1 py) (> y0 py)))
+              (< px (+ x0 (/ (* (- x1 x0) (- py y0)) (if (= y1 y0) .000001 (- y1 y0))))))
+      1 0)))
+;; Winding-number contribution for the edge (k, k+1).
+(defn path-wind-edge-at [px py off k n]
+  (let [k1 (mod (+ k 1) (max n 1))
+        x0 (path-x-at off k) y0 (path-y-at off k)
+        x1 (path-x-at off k1) y1 (path-y-at off k1)
+        cross (- (* (- x1 x0) (- py y0)) (* (- px x0) (- y1 y0)))]
+    (if (<= y0 py)
+      (if (> y1 py) (if (> cross 0) 1 0) 0)
+      (if (<= y1 py) (if (< cross 0) -1 0) 0))))
+(defn path-crossings-at [px py off n] (sum k 0 n (path-cross-edge-at px py off k n)))
+(defn path-winding-at [px py off n] (sum k 0 n (path-wind-edge-at px py off k n)))
+;; rule 0 = nonzero, 1 = even-odd.
+(defn path-inside-at [px py off n rule]
+  (if (= rule 0) (if (= (path-winding-at px py off n) 0) 0 1)
+    (if (= (mod (path-crossings-at px py off n) 2) 1) 1 0)))
+(defn path-inside [px py n rule] (path-inside-at px py 0 n rule))
+;; Distance from a point to a segment.
+(defn dist-to-seg [px py x0 y0 x1 y1]
+  (let [dx (- x1 x0) dy (- y1 y0) len2 (+ (* dx dx) (* dy dy))
+        t (if (= len2 0) 0 (clamp01 (/ (+ (* (- px x0) dx) (* (- py y0) dy)) len2)))
+        cx (+ x0 (* t dx)) cy (+ y0 (* t dy))]
+    (sqrt (+ (* (- px cx) (- px cx)) (* (- py cy) (- py cy))))))
+;; Union coverage of a stroked outline (half-width and aa in normalized units).
+(defn path-stroke-cover-at [px py off n halfwidth aa]
+  (min 1 (sum k 0 n
+    (let [k1 (mod (+ k 1) (max n 1))]
+      (clamp01 (/ (- halfwidth (dist-to-seg px py (path-x-at off k) (path-y-at off k)
+                                            (path-x-at off k1) (path-y-at off k1)))
+                  (max aa .000001)))))))
+
+;; ---------------------------------------------------------------------------
+;; Second-frame accessor. Multi-frame kernels pass the "other" frame through the
+;; resource array as width*height*4 floats; empty data degrades to the source.
+(defn to-frame [x y c]
+  (if (= (data-count) 0) (pixel x y c) (data (+ (* 4 (+ (* y width) x)) c))))

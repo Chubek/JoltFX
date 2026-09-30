@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param operation 0 0 0 0)
 (defkernel test_boolean_op [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 3 3 0 0.9375))

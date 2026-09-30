@@ -9,14 +9,20 @@
 ;; Input: image src (current frame); output: image dst (motion mask), same dimensions.
 ;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
 ;; change threshold; range [0, 1].
-(param threshold 0 0 1 0)
+(param threshold 0.1 0 1 0)
 ;; blur radius for noise suppression; range [0, 16].
 (param blur_radius 1 0 16 0)
 ;; output mode; 0 mask, 1 score, 2 heatmap; range [0, 2].
 (param output_mode 0 0 2 1)
-;; 0 from frame, 1 previous frame (using data); range [0, 1].
-(param use_data 0 0 1 1)
+;; use the previous frame from the data resource instead of the source; range [0, 1].
+(param use_data 1 0 1 1)
 
 
 (defkernel motion_detect [x y c]
-  (pixel x y c))
+  (let [cur (straight x y c)
+        prev (if (and (= use_data 1) (> (data-count) 0)) (data (+ (* 4 (+ (* y width) x)) c)) cur)
+        d (abs (- cur prev))
+        a (clamp01 (/ (- d threshold) (max .0001 (- 1 threshold))))]
+    (if (= output_mode 0) (if (= c 3) a (* a a))
+      (if (= output_mode 1) (if (= c 3) a a)
+        (if (= c 3) 1 (if (= c 0) d (if (= c 1) (* d .5) (* d .25))))))))

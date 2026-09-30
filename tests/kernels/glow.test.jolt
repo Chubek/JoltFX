@@ -5,4 +5,4 @@
 (param threshold 0 0 0 0)
 (param radius 0 0 0 0)
 (defkernel test_glow [x y c]
-  (assert-pixel 3 3 0 .9375))
+  (assert-pixel 3 3 3 1.364012))

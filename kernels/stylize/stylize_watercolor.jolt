@@ -18,4 +18,9 @@
 
 (defkernel stylize_watercolor [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r 2
+          blur (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1) (sample (+ x i) (+ y j) c 1 1))) 25)
+          pig (contrast-around blur (+ 1 (* pigment_density .4)) .5)
+          paper (* (- (* 2 (hash2 x y 9)) 1) paper_texture .12)
+          wet (mix (straight x y c) pig wetness)]
+      (finish (clamp01 (+ wet paper)) (pixel x y 3) 0))))

@@ -8,15 +8,22 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
-;; shadow recovery amount; range [-1, 1].
+;; shadow recovery, positive lifts shadows; range [-1, 1].
 (param shadows 0.3 -1 1 0)
-;; highlight recovery amount; range [-1, 1].
+;; highlight recovery, positive lowers highlights; range [-1, 1].
 (param highlights 0.3 -1 1 0)
-;; recovery radius in pixels; range [1, 64].
-(param radius 16 1 64 0)
-;; recovery mask amount; range [0, 1].
-(param mask 1 0 1 0)
+;; local contrast radius in pixels; range [0, 64].
+(param radius 16 0 64 0)
+;; overall strength; range [0, 1].
+(param strength 1 0 1 0)
 
 
 (defkernel grade_shadows_highlights [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [v (straight x y c)
+          l (luminance x y)
+          sw (shadow-weight l)
+          hw (highlight-weight l)
+          detail (- v (gaussian-row x y c (ceil radius) (max .5 (* radius .35)) 1))
+          v2 (+ v (* shadows sw strength .5) (- (* highlights hw strength .5)) (* detail strength .5))]
+      (finish v2 (pixel x y 3) 1))))

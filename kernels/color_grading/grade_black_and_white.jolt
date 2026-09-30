@@ -8,18 +8,27 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.color_grading; shared functions: common/image.jolt.
-;; method; 0 luminance, 1 average, 2 channel mixer; range [0, 2].
-(param method 0 0 2 1)
+;; method; 0 Rec.709 luminance, 1 average, 2 max, 3 min; range [0, 3].
+(param method 0 0 3 1)
 ;; tint color red; range [0, 1].
 (param tint_r 0 0 1 0)
 ;; tint color green; range [0, 1].
 (param tint_g 0 0 1 0)
 ;; tint color blue; range [0, 1].
 (param tint_b 0 0 1 0)
+;; tint amount; range [0, 1].
+(param tint_amount 0 0 1 0)
 ;; preserve luminance; range [0, 1].
 (param preserve_luma 1 0 1 1)
 
 
 (defkernel grade_black_and_white [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          gray (if (= method 0) (luma r g b)
+                 (if (= method 1) (/ (+ r g b) 3)
+                   (if (= method 2) (max3 r g b) (min3 r g b))))
+          v (mix gray (channel c tint_r tint_g tint_b) tint_amount)]
+      (finish v (pixel x y 3) 1))))

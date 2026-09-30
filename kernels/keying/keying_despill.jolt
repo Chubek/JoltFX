@@ -16,11 +16,22 @@
 (param spill_color_b 0 0 1 0)
 ;; despill amount; range [0, 1].
 (param amount 0.5 0 1 0)
-;; method; 0 green, 1 average, 2 limit; range [0, 2].
+;; method; 0 channel, 1 average, 2 limit; range [0, 2].
 (param method 0 0 2 1)
 ;; preserve luminance; range [0, 1].
 (param preserve_luma 1 0 1 1)
 
 
 (defkernel keying_despill [x y c]
-  (pixel x y c))
+  (if (= c 3) (pixel x y 3)
+    (let [r (straight x y 0)
+          g (straight x y 1)
+          b (straight x y 2)
+          l (luma r g b)
+          sc (channel c spill_color_r spill_color_g spill_color_b)
+          avg (/ (+ r g b) 3)
+          removed (if (= method 0) (- (channel c r g b) (* amount sc))
+                    (if (= method 1) (- (channel c r g b) (* amount (- (channel c r g b) avg)))
+                      (min (channel c r g b) (* amount (+ avg sc)))))
+          adj (if (= preserve_luma 1) (- l (luma (if (= c 0) removed r) (if (= c 1) removed g) (if (= c 2) removed b))) 0)]
+      (finish (+ removed adj) (pixel x y 3) 1))))

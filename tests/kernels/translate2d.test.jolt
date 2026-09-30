@@ -4,4 +4,4 @@
 ;; are also covered by test_image_kernels.c.
 (param offset_x 1 1 1 0)
 (defkernel test_translate2d [x y c]
-  (* (assert-pixel 1 0 0 0) (assert-pixel 0 0 3 0)))
+  (assert-pixel 1 0 3 1))

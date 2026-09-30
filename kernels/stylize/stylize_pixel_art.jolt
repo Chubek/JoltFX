@@ -12,10 +12,17 @@
 (param pixel_size 4 1 32 1)
 ;; color palette size; range [2, 256].
 (param color_palette 16 2 256 1)
-;; dithering; 0 none, 1 bayer, 2 random; range [0, 2].
+;; dithering; 0 none, 1 ordered, 2 random; range [0, 2].
 (param dithering 0 0 2 1)
 
 
 (defkernel stylize_pixel_art [x y c]
   (if (= c 3) (pixel x y 3)
-    (pixel x y c)))
+    (let [px (* pixel_size (floor (/ x pixel_size)))
+          py (* pixel_size (floor (/ y pixel_size)))
+          levels color_palette
+          d (if (= dithering 1)
+              (* (/ 1 levels) (- (/ (mod (+ x y) 4) 3) .5))
+              (if (= dithering 2) (* (/ 1 levels) (- (* 2 (hash2 x y 5)) 1)) 0))
+          q (floor (* (+ (straight px py c) d) levels))]
+      (finish (clamp01 (/ q levels)) (pixel x y 3) 0))))
