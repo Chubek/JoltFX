@@ -7,7 +7,7 @@ jfx_test_target(test_core SOURCES core/test_engine.c LIBRARIES jfx_core)
 target_include_directories(test_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(test_plugin_module MODULE core/test_plugin_module.c)
-target_include_directories(test_plugin_module PRIVATE ${PROJECT_SOURCE_DIR}/core/include)
+target_include_directories(test_plugin_module PRIVATE ${PROJECT_SOURCE_DIR}/mograph/include)
 if(UNIX AND NOT APPLE)
     target_link_options(test_plugin_module PRIVATE -Wl,--allow-shlib-undefined)
 endif()
