@@ -10,6 +10,8 @@
 ;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
 ;; clamp output; range [0, 1].
 (param clamp 1 0 1 1)
+;; conversion strength; 0 passes the source through, 1 fully converts; range [0, 1].
+(param strength 1 0 1 0)
 ;; preserve luminance; range [0, 1].
 (param preserve_luma 1 0 1 1)
 
@@ -25,4 +27,4 @@
           nb (rec709-to-rec2020 r g b 2)
           adj (if (= preserve_luma 1) (- l (luma nr ng nb)) 0)
           v (encode (max 0 (+ (channel c nr ng nb) adj)))]
-      (finish v (pixel x y 3) (if (= clamp 1) 1 0)))))
+      (finish (mix (straight x y c) v strength) (pixel x y 3) (if (= clamp 1) 1 0)))))

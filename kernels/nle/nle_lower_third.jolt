@@ -35,8 +35,9 @@
 ;; Glyph coverage of the run at a frame pixel; 0 outside the run box. The run box
 ;; sits in the upper part of the bar, left aligned after the reveal.
 (defn lower-coverage [x y progress size opacity]
-  (let [n (round (data 0))]
-    (if (< n 1) 0
+  (if (<= (data-count) 0) 0
+    (let [n (round (data 0))]
+      (if (< n 1) 0
       (let [barh (* 0.18 height)
             runh (* barh size)
             left (+ (* 0.04 width) (* progress (* 0.4 width)))
@@ -46,7 +47,7 @@
             idx (+ (* (floor v) width) (floor u))]
         (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (< v 1))))
           (max 0 (* (data (+ (+ n (* 2 n)) 1 idx)) opacity))
-          0)))))
+          0))))))
 
 
 (defkernel nle_lower_third [x y c]

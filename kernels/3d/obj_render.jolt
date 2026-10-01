@@ -1,0 +1,160 @@
+;; @kernel       obj_render
+;; @category     3D
+;; @description  Ray-casts a triangle mesh into a frame.
+;; @complexity   High
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.3d; shared functions: common/image.jolt.
+;;
+;; Mesh resource layout:
+;;   data[0]        = vertex count V
+;;   data[1 .. 3V]  = V (x,y,z) vertex positions
+;;   data[1+3V]     = triangle count T
+;;   data[2+3V ..]  = T*3 vertex indices, three per triangle
+;;
+;; Each pixel casts one ray and intersects it against every triangle (Moller-Trumbore).
+;; The profile has no fold and no tuple type, so two substitutions are made and both
+;; are used elsewhere in the tree: the nearest hit is a sharp exponential average over
+;; the hits rather than a fold, and a normal is three scalar functions rather than a
+;; 3-vector. The face colour comes from the normal, which makes the render read as
+;; faceted geometry instead of a silhouette.
+;;
+;; The inventory declares a `Kernel` input for the shading model. The profile has no
+;; function-valued parameter, so it is an integer selector over built-in models.
+;; mesh scale; range [0.01, 20].
+(param scale 1 0.01 20 0)
+;; camera distance along -Z; range [0.5, 100].
+(param distance 4 0.5 100 0)
+;; field of view; range [0.05, 3].
+(param fov 0.8 0.05 3 0)
+;; mesh rotation about Y in degrees; range [0, 360].
+(param rotate 0 0 360 0)
+;; shading model; 0 flat, 1 lambert, 2 blinn-phong; range [0, 2].
+(param shading 1 0 2 1)
+;; mix of the shaded mesh over the background; range [0, 1].
+(param opacity 1 0 1 0)
+
+
+;; Component `c` (0,1,2) of vertex `v`.
+(defn vtx [v c] (data (+ 1 (+ (* v 3) c))))
+
+
+;; Index of triangle `t`'s `slot`-th vertex (0,1,2).
+(defn tri-index [t slot]
+  (if (<= (data-count) 0) 0
+    (let [v (round (data 0)) i (+ (+ 2 (* v 3)) (+ (* t 3) slot))]
+      (if (all2 (>= i 0) (< i (data-count))) (round (data i)) 0))))
+
+
+;; Edge vector of triangle `t` from slot `s` to slot `s+1`, component `c`.
+(defn edge [t s c]
+  (let [a (tri-index t s) b (tri-index t (mod (+ s 1) 3))]
+    (- (vtx b c) (vtx a c))))
+
+
+;; The triangle diagonal v2 - v0. `edge t 1` is v2 - v1, which is the wrong
+;; second edge for a face normal and for Moller-Trumbore; both need v2 - v0.
+(defn diag [t c]
+  (- (vtx (tri-index t 2) c) (vtx (tri-index t 0) c)))
+
+
+;; Length of the unnormalised face normal, which is also twice the triangle area.
+;; A degenerate (zero-area) triangle is floored so callers never divide by zero.
+(defn normal-len [t]
+  (let [e1x (edge t 0 0) e1y (edge t 0 1) e1z (edge t 0 2)
+        e2x (diag t 0) e2y (diag t 1) e2z (diag t 2)
+        nx (- (* e1y e2z) (* e1z e2y))
+        ny (- (* e1z e2x) (* e1x e2z))
+        nz (- (* e1x e2y) (* e1y e2x))]
+    (max .000001 (sqrt (+ (* nx nx) (* ny ny) (* nz nz))))))
+
+
+;; One component of the normalised face normal, signed by the winding.
+(defn tri-n [t c]
+  (let [e1x (edge t 0 0) e1y (edge t 0 1) e1z (edge t 0 2)
+        e2x (diag t 0) e2y (diag t 1) e2z (diag t 2)
+        nx (- (* e1y e2z) (* e1z e2y))
+        ny (- (* e1z e2x) (* e1x e2z))
+        nz (- (* e1x e2y) (* e1y e2x))
+        l (normal-len t)]
+    (if (= c 0) (/ nx l) (if (= c 1) (/ ny l) (/ nz l)))))
+
+
+;; Moller-Trumbore: returns the ray parameter of the hit, or 0 when the ray misses.
+(defn ray-tri [ox oy oz dx dy dz t]
+  (let [ax (vtx (tri-index t 0) 0) ay (vtx (tri-index t 0) 1) az (vtx (tri-index t 0) 2)
+        e1x (edge t 0 0) e1y (edge t 0 1) e1z (edge t 0 2)
+        e2x (diag t 0) e2y (diag t 1) e2z (diag t 2)
+        ;; p = d x e2
+        px (- (* dy e2z) (* dz e2y))
+        py (- (* dz e2x) (* dx e2z))
+        pz (- (* dx e2y) (* dy e2x))
+        det (+ (* e1x px) (* e1y py) (* e1z pz))
+        ;; q = (o - a) x e1
+        tvx (- ox ax) tvy (- oy ay) tvz (- oz az)
+        qx (- (* tvy e1z) (* tvz e1y))
+        qy (- (* tvz e1x) (* tvx e1z))
+        qz (- (* tvx e1y) (* tvy e1x))
+        ;; the reciprocal has to be guarded here, not at the test below: `let`
+        ;; bindings evaluate eagerly, so dividing by a zero determinant before the
+        ;; miss test would raise a numeric error instead of reporting a miss
+        inv (/ 1 (if (< (abs det) .000001) 1 det))
+        u (* (+ (* tvx px) (* tvy py) (* tvz pz)) inv)
+        v (* (+ (* dx qx) (* dy qy) (* dz qz)) inv)
+        dist (* (+ (* e2x qx) (* e2y qy) (* e2z qz)) inv)]
+    (if (or (< (abs det) .000001) (or (< u 0) (or (> u 1) (or (< v 0) (> (+ u v) 1)))))
+      0
+      (if (> dist .000001) dist 0))))
+
+
+;; Face colour: the normal's absolute components read as facet colour, modulated by
+;; the selected lighting model. Back faces are dimmed by the sign of nz.
+(defn face-color [t ch]
+  (let [nx (tri-n t 0) ny (tri-n t 1) nz (tri-n t 2)
+        ;; a light from over the viewer's left shoulder
+        lam (max 0 (max 0.05 (+ (* 0.75 (+ (* nx 0.5) (* ny 0.6))) (* 0.35 (max 0 nz)))))
+        facet (if (= ch 0) (abs nx) (if (= ch 1) (abs ny) (abs nz)))
+        spec (if (= shading 0) 0
+                (if (= shading 1) 0
+                  (* 0.6 (pow (max 0 nz) 16))))
+        back (if (< nz 0) 0.35 1)]
+    (min 1 (* (+ (* 0.75 facet) lam) (max 0.05 (+ spec 0.25)) back))))
+
+
+(defkernel obj_render [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [vcount (if (<= (data-count) 0) 0 (round (data 0)))
+          tcount (if (<= (+ 2 (* (max 0 vcount) 3)) (data-count)) (round (data (+ 1 (* 3 vcount)))) 0)
+          ;; camera sits on -Z looking down +Z; a pinhole ray through this pixel
+          sx (* (- (/ (+ x .5) width) 0.5) fov)
+          sy (* (- (/ (+ y .5) height) 0.5) fov)
+          ;; rotating the ray by -rotate about Y is the same as rotating the mesh by +rotate
+          ang (radians (* 0 -1 rotate))
+          ca (cos ang) sa (sin ang)
+          ;; rotating (sx, sy, 1) by -rotate about Y: dx = sx*cos + sin, dz = cos - sx*sin
+          dx (+ (* sx ca) sa)
+          dy sy
+          dz (- ca (* sx sa))
+          ;; Nearest-hit selection. The exponent is taken relative to the nearest hit
+          ;; rather than to the camera: anchoring at the camera makes every real hit
+          ;; sit thousands of exponent units below zero, so the weight underflows to
+          ;; zero and nothing is ever drawn. dmin is a log-sum-exp soft minimum, which
+          ;; is what the profile's sum-only reduction can express instead of a fold.
+          lse (sum t 0 tcount
+                (let [d (ray-tri 0 0 (- distance) dx dy dz t)]
+                  (if (> d .000001) (exp (- d)) 0)))
+          dmin (if (<= lse .000001) 0 (- (log lse)))
+          hitw (sum t 0 tcount
+                 (let [d (ray-tri 0 0 (- distance) dx dy dz t)]
+                   (if (> d .000001) (exp (* 30 (- d dmin))) 0)))
+          cover (clamp01 (* opacity (if (<= hitw .000001) 0 1)))
+          mesh (/ (sum t 0 tcount
+                    (let [d (ray-tri 0 0 (- distance) dx dy dz t)
+                          w (if (> d .000001) (exp (* 30 (- d dmin))) 0)]
+                      (* w (face-color t c))))
+                 (max .000001 hitw))
+          bg (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (if (> cover 0) (mix bg mesh cover) bg) (pixel x y 3) 1))))

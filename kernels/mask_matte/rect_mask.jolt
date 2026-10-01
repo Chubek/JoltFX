@@ -33,5 +33,11 @@
         dy (abs (- y cy))
         in_x (if (< dx (* w 0.5)) 1 0)
         in_y (if (< dy (* h 0.5)) 1 0)
-        mask (* in_x in_y)]
+        ;; a positive corner_radius rounds the rectangle: the mask is the distance
+        ;; to the inset box measured with a circular metric, so the corners arc
+        r (max 0 corner_radius)
+        qx (max 0 (- dx (- (* w 0.5) r)))
+        qy (max 0 (- dy (- (* h 0.5) r)))
+        round (if (> r .000001) (smooth r 0 (sqrt (+ (* qx qx) (* qy qy)))) 1)
+        mask (* in_x in_y (if (= corner_radius 0) 1 round))]
     (if (= c 3) mask 0)))

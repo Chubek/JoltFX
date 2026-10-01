@@ -14,6 +14,8 @@
 (param channel 1 0 1 1)
 ;; luminance remap intensity; range [0, 1].
 (param intensity 1 0 1 0)
+;; clamp the result; 0 leaves headroom above 1 for an HDR grade; range [0, 1].
+(param clamp 1 0 1 1)
 
 
 (defkernel grade_hue_vs_luma [x y c]
@@ -21,4 +23,4 @@
     (let [src (hue-unit x y)
           target (clamp01 (curve-value src channel))
           want (mix (luminance x y) target intensity)]
-      (finish (luma-set x y c want) (pixel x y 3) 1))))
+      (finish (luma-set x y c want) (pixel x y 3) (if (= clamp 1) 1 0)))))

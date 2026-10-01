@@ -19,15 +19,16 @@
 (param safe_margin 0.1 0 0.25 0)
 ;; extra inset from title safe to action safe; range [0, 0.15].
 (param action_inset 0.05 0 0.15 0)
-;; rule line weight as a fraction of the smaller dimension; range [0, 0.01].
-(param line_weight 0.002 0 0.01 0)
+;; rule line weight as a fraction of the smaller dimension; range [0, 0.05].
+(param line_weight 0.004 0 0.05 0)
 ;; draw the centre cross and thirds grid; range [0, 1].
 (param show_grid 1 0 1 1)
 
 
-;; Antialiased distance to a line segment, 1 px soft.
+;; Coverage of a line segment: full inside the half-width t, then a soft edge
+;; two pixels wide so the guide stays a clean line at any weight.
 (defn line-cov [px py ax ay bx by t]
-  (clamp01 (/ (- (+ t 1) (dist-to-seg px py ax ay bx by)) 2)))
+  (clamp01 (/ (- (+ t 1) (dist-to-seg px py ax ay bx by)) 2.5)))
 
 
 ;; Outline of an axis-aligned rectangle.

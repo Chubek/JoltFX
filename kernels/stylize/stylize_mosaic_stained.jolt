@@ -42,7 +42,11 @@
           vg (mix l sg 1.4)
           vb (mix l sb 1.4)
           stained (channel c vr vg vb)
-          ;; grout sits where the distance to the nearest feature point is large
-          lead (smooth .25 .55 (worley-dist s t 0))
+          ;; grout sits where the distance to the nearest feature point is large;
+          ;; grout_width sets how far into each cell the lead reaches
+          dcell (worley-dist s t 0)
+          lead (if (< grout_width .001)
+                 (if (> dcell 1) 1 0)
+                 (smooth .25 (+ .3 (* 2 grout_width)) dcell))
           grout (channel c grout_color_r grout_color_g grout_color_b)]
       (finish (mix stained grout lead) (pixel x y 3) 1))))

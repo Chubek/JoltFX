@@ -24,4 +24,4 @@
     (if (= r 0) (pixel x y c)
       (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
            (sample (+ x i) (+ y j) c 0 1)))
-         (* 4 r r)))))
+         (* (+ (* 2 r) 1) (+ (* 2 r) 1))))))

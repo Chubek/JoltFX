@@ -21,9 +21,9 @@
 
 
 (defkernel box_blur [x y c]
-  (let [rx (ceil radius) ry (ceil radius_y)]
+  (let [rx (* (ceil radius) iterations) ry (ceil radius_y)]
     (if (= (mod pass 2) 0)
       (if (= rx 0) (pixel x y c)
-        (/ (sum i (- rx) (+ rx 1) (sample (+ x i) y c 0 edge_mode)) (* 2 rx)))
+        (/ (sum i (- rx) (+ rx 1) (sample (+ x i) y c 0 edge_mode)) (+ (* 2 rx) 1)))
       (if (= ry 0) (pixel x y c)
-        (/ (sum j (- ry) (+ ry 1) (sample x (+ y j) c 0 edge_mode)) (* 2 ry))))))
+        (/ (sum j (- ry) (+ ry 1) (sample x (+ y j) c 0 edge_mode)) (+ (* 2 ry) 1))))))

@@ -34,8 +34,9 @@
 
 ;; Glyph index at run-box coordinate u, counting the advances already passed.
 (defn text-advance [j]
-  (let [n (round (data 0))]
-    (if (all2 (> n 0) (< j n)) (data (+ 1 n j)) 0)))
+  (if (<= (data-count) 0) 0
+    (let [n (round (data 0))]
+      (if (all2 (> n 0) (< j n)) (data (+ 1 n j)) 0))))
 
 
 (defn text-glyph-at [u n]
@@ -45,8 +46,9 @@
 
 ;; Coverage of the run at this frame pixel; 0 outside the run box.
 (defn text-coverage [x y position_x position_y size]
-  (let [n (round (data 0))]
-    (if (< n 1) 0
+  (if (<= (data-count) 0) 0
+    (let [n (round (data 0))]
+      (if (< n 1) 0
       (let [h (* size height)
             w (* h (/ width (max 1 height)))
             u (/ (- x (- (* position_x width) (/ w 2))) (max .0001 w))
@@ -54,7 +56,7 @@
             idx (+ (* (floor v) width) (floor u))]
         (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (< v 1))))
           (max 0 (data (+ (+ n (* 2 n)) 1 idx)))
-          0)))))
+          0))))))
 
 
 (defkernel text_subtitle [x y c]

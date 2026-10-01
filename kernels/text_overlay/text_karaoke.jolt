@@ -110,7 +110,6 @@
           front (* progress (max .02 e))
           cv (text-coverage x y ox oy boxw boxh)
           u (/ (- x ox) (max .0001 boxw))
-          v (/ (- y oy) (max .0004 boxh))
           ; glyph index, its centre and whether the front has passed it
           gi (text-glyph-at u n)
           centre (* .5 (+ (glyph-left gi) (glyph-right gi)))

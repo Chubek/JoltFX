@@ -12,6 +12,8 @@
 (param invert 0 0 1 1)
 ;; feather in pixels; range [0, 64].
 (param feather 2 0 64 0)
+;; matte opacity; range [0, 1].
+(param opacity 1 0 1 0)
 
 
 (defkernel keying_garbage_matte [x y c]
@@ -21,5 +23,5 @@
              (/ (sum i (- r) (+ r 1) (sum j (- r) (+ r 1)
                   (data (+ (* 4 (+ (* (max 0 (min (- height 1) (+ y j))) width) (max 0 (min (- width 1) (+ x i))))) 0))))
                 (* (+ (* 2 r) 1) (+ (* 2 r) 1))))
-        a (if (= invert 1) (- 1 m0) m0)]
+        a (* (if (= invert 1) (- 1 m0) m0) opacity)]
     (if (= c 3) (* (pixel x y 3) a) (* (straight x y c) a))))

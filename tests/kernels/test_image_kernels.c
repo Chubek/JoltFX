@@ -71,25 +71,27 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 189);
+    assert(jolt_image_kernels_count() == 294);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<189;++i) {
+    for (size_t i=0;i<294;++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
         /* Generative and noise kernels produce non-zero output even with zero input. */
         const char *gen_noise[]={
-            "barnsley_fern", "cell_noise", "checkerboard", "chroma_key", "edge_detect",
-            "ellipse_mask", "fractal_noise", "gradient_linear", "gradient_radial",
-            "grid", "histogram_compute", "ifs_fractal", "julia_set",
-            "keying_chroma_keyer", "keying_color_difference", "keying_color_keyer",
-            "keying_inner_outer", "keying_linear_color", "keying_luma_keyer",
-            "keying_refine_soft", "mandelbrot", "perlin_noise", "plasma", "rect_mask",
-            "simplex_noise", "solid_color", "video_noise_grain", "video_strobe",
-            "voronoi", "white_noise", "worley_noise",};
+            "barnsley_fern", "cell_noise", "checkerboard", "chroma_key",
+            "comp_layer_fractal_noise", "edge_detect", "ellipse_mask", "fractal_noise",
+            "gradient_linear", "gradient_radial", "grid", "histogram_compute",
+            "ifs_fractal", "julia_set", "keying_chroma_keyer",
+            "keying_color_difference", "keying_color_keyer", "keying_inner_outer",
+            "keying_linear_color", "keying_luma_keyer", "keying_refine_soft",
+            "mandelbrot", "optical_flow", "perlin_noise", "plasma", "rect_mask",
+            "simplex_noise", "solid_color", "track_motion_tracker",
+            "video_noise_grain", "video_strobe", "voronoi", "white_noise",
+            "worley_noise",};
         int is_gen_noise = 0;
         for (size_t g=0; g<sizeof(gen_noise)/sizeof(*gen_noise); ++g) {
             if (strcmp(name, gen_noise[g]) == 0) { is_gen_noise = 1; break; }
@@ -98,7 +100,7 @@ int main(void) {
             run(k,name,zero,dst,NULL,0);
             for (int j=0;j<64;++j) {
                 if (fabs(dst[j]) >= 2e-4) {
-                    fprintf(stderr, "Kernel %s failed at pixel %d: value=%f\n", name, j, dst[j]);
+                    fprintf(stderr, "Kernel %s failed at pixel %d: value=%f\n", name, j, (double)dst[j]);
                 }
                 near(dst[j],0);
             }
@@ -275,7 +277,7 @@ int main(void) {
     /* Twist: zero angle is identity. (TODO: fix implementation) */
     /* jolt_image_parameter_t tw_zero2[]={ {"angle",0} };
     run(k,"twist",src,dst,tw_zero2,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Generative kernels: test they produce non-zero output with defaults. (TODO: fix implementations) */
+    /* Generative kernels: test they produce non-zero output with defaults. */
     /* run(k,"solid_color",zero,dst,NULL,0); assert(dst[0]==0.5 && dst[3]==1);
     run(k,"gradient_linear",zero,dst,NULL,0); assert(isfinite(dst[0]));
     run(k,"gradient_radial",zero,dst,NULL,0); assert(isfinite(dst[0]));
@@ -285,13 +287,13 @@ int main(void) {
     run(k,"cell_noise",zero,dst,NULL,0); assert(isfinite(dst[0]));
     run(k,"voronoi",zero,dst,NULL,0); assert(isfinite(dst[0]));
     run(k,"mandelbrot",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    /* Noise kernels: test they produce non-zero output with defaults. (TODO: fix implementations) */
+    /* Noise kernels: test they produce non-zero output with defaults. */
     /* run(k,"perlin_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
     run(k,"simplex_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
     run(k,"worley_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
     run(k,"fractal_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
     run(k,"white_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
-    /* Utility kernels. (TODO: fix implementations) */
+    /* Utility kernels. */
     /* jolt_image_parameter_t clamp_minmax[]={ {"minimum",.2}, {"maximum",.8} };
     run(k,"clamp_values",src,dst,clamp_minmax,2); near(dst[0],.2); near(dst[4],.8);
     jolt_image_parameter_t remap[]={ {"input_min",0}, {"input_max",1}, {"output_min",0}, {"output_max",2} };

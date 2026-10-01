@@ -30,5 +30,8 @@
           gray (if (= method 0) (luma r g b)
                  (if (= method 1) (/ (+ r g b) 3)
                    (if (= method 2) (max3 r g b) (min3 r g b))))
-          v (mix gray (channel c tint_r tint_g tint_b) tint_amount)]
-      (finish v (pixel x y 3) 1))))
+          v (mix gray (channel c tint_r tint_g tint_b) tint_amount)
+          ;; preserve_luma 0 keeps the source's tonal range by re-centring the
+          ;; result on the pixel's own luminance instead of on pure gray
+          out (if (= preserve_luma 1) v (mix (luma r g b) v 0.5))]
+      (finish out (pixel x y 3) 1))))

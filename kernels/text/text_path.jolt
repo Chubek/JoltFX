@@ -114,10 +114,10 @@
                   (exp (- k (dist-to-seg u v (path-x-at po i) (path-y-at po i)
                                         (path-x-at po i1) (path-y-at po i1)))))) 0)
           ; arc length at the foot of the perpendicular onto segment i
-          pre (sum i 0 (- p 1)
+          pre (if (> p 1) (sum i 0 (- p 1)
                 (let [j1 (+ i 1)
                       ex (- (path-x-at po j1) (path-x-at po i)) ey (- (path-y-at po j1) (path-y-at po i))]
-                  (sqrt (+ (* ex ex) (* ey ey)))))
+                  (sqrt (+ (* ex ex) (* ey ey))))) 0)
           ; weighted average of the along-path distance and the signed side offset
           along (if (> ws .000001)
                 (/ (sum i 0 (- p 1)

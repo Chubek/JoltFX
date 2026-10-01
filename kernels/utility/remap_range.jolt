@@ -22,7 +22,20 @@
 (param channels 1 0 3 1)
 
 
+(defn remap-applies [channels c]
+  (if (= channels 0) 1
+    (if (= channels 1) (if (= c 3) 0 1)
+      (if (= channels 2) (if (= c 3) 1 0)
+        (if (= c 3) 1 (if (= c (- channels 1)) 1 0))))))
+
+
 (defkernel remap_range [x y c]
-  (let [val (pixel x y c)
-        alpha (pixel x y 3)]
-    (finish val alpha 0)))
+  (let [v (pixel x y c)
+        ;; clamp the input window before scaling, so out-of-range values do not
+        ;; extrapolate into the output range
+        t (clamp01 (/ (- v input_min) (max .000001 (- input_max input_min))))
+        out (+ output_min (* t (- output_max output_min)))
+        ;; channel 4 maps the alpha, 0 maps colour and alpha alike
+        apply (remap-applies channels c)
+        out2 (if (= clamp 1) (min output_max (max output_min out)) out)]
+    (finish (if (= apply 1) out2 v) (pixel x y 3) 0)))

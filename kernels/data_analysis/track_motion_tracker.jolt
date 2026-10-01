@@ -9,57 +9,98 @@
 ;; Input: image src (current frame); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
 ;; The inventory declares a FlowField, which is a 2-channel image in this profile:
-;; c=0 is u, c=1 is v, c=2 is 0, c=3 is 1. The estimated motion is global, so the
-;; field is uniform; publishing it as a field keeps the output shape stable for
-;; consumers that feed it straight into a warp (see comp_layer_pixel_motion).
+;; c=0 is u, c=1 is v, c=2 is the per-pixel residual, c=3 is 1. The estimate is
+;; global, so the field is uniform; publishing it as a field keeps the output shape
+;; stable for consumers that feed it straight into a warp (see comp_layer_pixel_motion).
+;;
+;; The estimate is a coarse-to-fine integer search. The profile has no fold and no
+;; way to share work between output pixels, so the cost surface is rebuilt for every
+;; invocation; two things keep that affordable and this is why they are here:
+;; the cost reads the green channel of the reference frame with one tap (green carries
+;; 72% of Rec.709 luma), and each stage shortens its `sum` ranges by a stride rather
+;; than filtering inside the body, because `let` bindings evaluate eagerly.
+;;
 ;; The resource array holds the reference frame, width*height*4 floats.
-;; search radius in pixels; range [0, 16].
-(param radius 6 0 16 1)
-;; smoothing weight of the per-pixel residual, 0 gives the pure global estimate;
+;;
+;; Cost note: a whole-frame reduction cannot be shared between output pixels in this
+;; profile, so this kernel is O(frame area * search box) per pixel, i.e. quadratic in
+;; frame area. It is correct and cheap on small frames and at low radii, and it is not
+;; usable at delivery resolution; that is why it is @gpu No and High. The probe lattice
+;; is what keeps the small-frame case affordable.
+;; coarse search radius in pixels; range [0, 6].
+(param radius 2 0 4 1)
+;; sharpness of the weighted centroid, which stands in for an argmin the profile
+;; cannot fold to. Per-pixel squared errors here are of order 1e-2, so the exponent
+;; has to be large to concentrate the weights on the true minimum; range [10, 20000].
+(param detail 2000 10 20000 0)
+;; weight of the per-pixel residual in channel 2, 0 reports the pure global fit;
 ;; range [0, 1].
 (param residual 0 0 1 0)
-;; confidence floor below which the field is reported as zero; range [0, 1].
+;; residual floor below which channel 2 reports zero; range [0, 1].
 (param threshold 0 0 1 0)
 ;; scale applied to the reported vector; range [-4, 4].
 (param scale 1 -4 4 0)
 
 
-;; Squared luma difference between the two frames at an integer offset.
-(defn track-cost [dx dy]
-  (sum j 0 height (sum i 0 width
-    (let [a (luminance i j)
-          b (luminance (max 0 (min (- width 1) (+ i dx))) (max 0 (min (- height 1) (+ j dy))))]
-      (* (- a b) (- a b))))))
+;; Green channel of the reference frame at (rx, ry); outside the frame reads as 0,
+;; which makes the border of a displaced block genuinely costly to match.
+(defn ref-green [rx ry]
+  (let [px (+ (* (floor (+ ry .5)) width) (floor (+ rx .5)))
+        i (+ (* 4 px) 1)]
+    (if (all2 (>= px 0) (< px (* width height)))
+      (if (all2 (>= i 0) (< i (data-count))) (data i) 0)
+      0)))
 
 
-;; Exponential-weighted mean of the candidates, which concentrates on the
-;; argmin because the sharpness is set below one pixel's mismatch.
-(defn track-pick [k]
-  (let [den (sum d 0 (+ (* 2 radius) 1) (sum e 0 (+ (* 2 radius) 1)
-             (exp (* k (- (track-cost (- d radius) (- e radius)))))))]
+;; Mean squared green-channel error at displacement (dx, dy), probed on a `stride`
+;; lattice inside the frame inset by `rad`. The inset is a correctness requirement,
+;; not just a speed one: a probe that leaves the frame reads as 0, so without it every
+;; negative displacement is penalised for its probes falling off the edge and the whole
+;; estimate comes out biased positive. The mean keeps the cost on the same scale whatever
+;; the stride, so the search radius still means what it says.
+(defn track-cost [stride cx cy rad dx dy]
+  (let [lo (max 0 (+ cx rad))
+        hi (max lo (min (- width 1) (- (- width 1) rad)))
+        lo2 (max 0 (+ cy rad))
+        hi2 (max lo2 (min (- height 1) (- (- height 1) rad)))
+        nx (max 1 (floor (/ (+ (- hi lo) (- stride 1)) stride)))
+        ny (max 1 (floor (/ (+ (- hi2 lo2) (- stride 1)) stride)))]
+    (/ (sum k 0 nx (sum m 0 ny
+         (let [i (+ lo (* k stride)) j (+ lo2 (* m stride))
+               d (- (pixel i j 1) (ref-green (+ i dx) (+ j dy)))]
+           (* d d))))
+       (* nx ny))))
+
+
+;; Exponentially weighted centroid of the candidate displacements, taken over axis
+;; 0 (u) or 1 (v). The profile cannot fold to an argmin, so a sharp exponential
+;; average stands in for one.
+(defn track-pick [k stride cx cy rad axis]
+  (let [n (+ (* 2 rad) 1)
+        den (sum d 0 n (sum e 0 n
+               (exp (* k (- (track-cost stride cx cy rad (- d rad) (- e rad)))))))]
     (if (<= den .000001) 0
-      (/ (sum d 0 (+ (* 2 radius) 1) (sum e 0 (+ (* 2 radius) 1)
-            (let [w (exp (* k (- (track-cost (- d radius) (- e radius)))))]
-              (* w (- d radius))))) den))))))
+      (/ (sum d 0 n (sum e 0 n
+            (let [w (exp (* k (- (track-cost stride cx cy rad (- d rad) (- e rad)))))
+                  v (if (= axis 0) (- d rad) (- e rad))]
+              (* w v))))
+         den))))
 
 
 (defkernel track_motion_tracker [x y c]
-  (let [k 6
+  (let [k detail
         have (if (> (data-count) 0) 1 0)
-        ;; the cost has to be evaluated inside the defn so each candidate gets its
-        ;; own value; hoisting it into a let would make every candidate identical
-        c00 (if (= have 0) 0 (track-cost 0 0))
-        conf (if (<= c00 .000001) 0 1)
-        u (if (= conf 0) 0 (track-pick k))
-        v (if (= conf 0) 0 (track-pick k))
-        ;; the per-pixel residual lets a consumer see where the global model is poor
-        local (if (and (= residual 1) (= have 1))
-                  (let [a (luminance x y)
-                        b (luminance (max 0 (min (- width 1) (round (+ x u))))
-                                     (max 0 (min (- height 1) (round (+ y v)))))]
-                    (abs (- a b)))
-                  0)
-        vec (if (> local threshold) (abs local) 0)]
+        ;; coarse pass over the whole search box on a stride-4 lattice
+        cu0 (if (= have 0) 0 (round (track-pick k 1 0 0 radius 0)))
+        cv0 (if (= have 0) 0 (round (track-pick k 1 0 0 radius 1)))
+        ;; fine pass on a stride-2 lattice centred on the coarse result
+        u (if (= have 0) 0 (+ cu0 (track-pick k 1 cu0 cv0 1 0)))
+        v (if (= have 0) 0 (+ cv0 (track-pick k 1 cu0 cv0 1 1)))
+        ;; how well the global model fits here, so a consumer can see where it does not
+        fit (if (and (= residual 1) (= have 1))
+               (abs (- (pixel x y 1) (ref-green (+ x u) (+ y v))))
+               0)
+        vec (if (> fit threshold) (min 1 fit) 0)]
     (if (= c 0) (* scale u)
       (if (= c 1) (* scale v)
-        (if (= c 2) vec 1)))))
+        (if (= c 2) (* residual vec) 1)))))

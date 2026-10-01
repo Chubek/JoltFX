@@ -21,5 +21,10 @@
   (if (= c 3) (pixel x y 3)
     (let [l (luminance x y)
           target (clamp01 (curve-value l channel))
-          want (mix l target intensity)]
-      (finish (luma-set x y c want) (pixel x y 3) 1))))
+          want (mix l target intensity)
+          ;; preserve_hue 0 lets the curve act on the channels rather than only
+          ;; on luminance, which shifts hue as a side effect of a strong curve
+          gain (if (= preserve_hue 1) 1 (max .000001 l))
+          want2 (* want (/ l gain))]
+      (finish (if (= preserve_hue 1) (luma-set x y c want) (luma-set x y c want2))
+              (pixel x y 3) 1))))

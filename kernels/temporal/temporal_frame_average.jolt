@@ -8,11 +8,16 @@
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
-;; The resource array holds `window` frames, each width*height*4 floats, concatenated.
-;; temporal window size; range [1, 60].
+;; The resource array packs `window` frames, each width*height*4 floats, and the
+;; source is treated as the newest. Triangular weights are not used here because a
+;; plain mean is what averaging means; use temporal_temporal_smooth to track motion.
+;; temporal window; range [1, 60].
 (param window 4 1 60 1)
 ;; normalize average; range [0, 1].
 (param normalize 1 0 1 1)
+;; channel selection; 0 all, 1 colour only with alpha passed through, 2 alpha only;
+;; range [0, 2].
+(param channel 0 0 2 1)
 
 
 (defkernel temporal_frame_average [x y c]
@@ -20,6 +25,9 @@
         nf (if (= fs 0) 0 (floor (/ (data-count) fs)))]
     (if (= nf 0) (pixel x y c)
       (let [n (min window nf)
-            idx (+ (* 4 (+ (* y width) x)) c)
-            total (sum k 0 n (data (+ (* k fs) idx)))]
-        (if (= normalize 1) (/ total n) total)))))
+            base (* 4 (+ (* y width) x))
+            total (sum k 0 n (data (+ (* k fs) base c)))
+            avg (/ total n)
+            ;; channel 1 leaves alpha alone; channel 2 leaves colour alone
+            keep (if (= channel 1) (= c 3) (if (= channel 2) (not (= c 3)) 0))]
+        (if (= keep 1) (pixel x y c) (if (= normalize 1) avg total))))))

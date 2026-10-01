@@ -1,25 +1,44 @@
 ;; @kernel       calib_white_balance
 ;; @category     color_calibration
 ;; @description  Corrects white balance using temperature and tint.
-;; @complexity   Medium
+;; @complexity   Low
 ;; @gpu          Yes
 ;; @since        0.7.0
 ;; @author       joltfx-team
 ;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
 ;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
 ;; Module: jolt.fx.kernels.color_calibration; shared functions: common/image.jolt.
-;; temperature in kelvin; range [1000, 20000].
-(param temperature 6500 1000 20000 0)
-;; tint offset; range [-200, 200].
-(param tint 0 -200 200 0)
+;; A relative blackbody approximation: temperature drives a warm/cool gain and tint a
+;; green/magenta gain, both normalised so 6500K is unity and applied in linear light.
+;; This is a creative white-balance approximation, not spectral chromatic adaptation.
+;; colour temperature in kelvin; range [1000, 20000].
+(param temperature 6500 1000 20000 1)
+;; green/magenta tint; range [-1, 1].
+(param tint 0 -1 1 0)
 ;; correction strength; range [0, 1].
 (param strength 1 0 1 0)
-;; 0 sRGB, 1 linear; range [0, 1].
+;; working space; 0 sRGB, 1 linear; range [0, 1].
 (param color_space 0 0 1 1)
 
 
 (defkernel calib_white_balance [x y c]
   (if (= c 3) (pixel x y 3)
-    (let [r (straight x y 0)]
-    (if (= c 0) (* r 1)
-      (if (= c 1) r r)))))
+    (let [;; relative warmth of the requested temperature against 6500K
+          t (/ (- temperature 6500) 6500)
+          wr (+ 1 (* 0.35 t))
+          wg (+ 1 (* 0.06 t))
+          wb (- 1 (* 0.45 t))
+          ;; tint pushes green up and magenta (red+blue) down
+          gr (+ 1 (* 0.3 tint))
+          r (if (= color_space 1) (straight x y 0) (decode (straight x y 0)))
+          g (if (= color_space 1) (straight x y 1) (decode (straight x y 1)))
+          b (if (= color_space 1) (straight x y 2) (decode (straight x y 2)))
+          nr (* r wr)
+          ng (* g wg gr)
+          nb (* b wb)
+          ;; blend toward the corrected value so strength 0 is a true no-op
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          graded (if (= color_space 1) (channel c nr ng nb)
+                   (encode (max 0 (channel c nr ng nb))))
+          v (mix base graded strength)]
+      (finish v (pixel x y 3) 1))))

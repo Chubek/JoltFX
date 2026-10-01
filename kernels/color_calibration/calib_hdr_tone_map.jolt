@@ -41,5 +41,11 @@
           gray (luma nr ng nb)
           sr (mix gray nr saturation)
           sg (mix gray ng saturation)
-          sb (mix gray nb saturation)]
+          sb (mix gray nb saturation)
+          ;; preserve_hues blends the luminance-scaled result back toward the
+          ;; original chroma, so tone mapping changes exposure without rotating hue
+          keep (if (= preserve_hues 1) 1 0)
+          sr (mix sr (saturate r g b saturation) keep)
+          sg (mix sg (saturate g g b saturation) keep)
+          sb (mix sb (saturate b g b saturation) keep)]
       (finish (clamp01 (channel c sr sg sb)) (pixel x y 3) 0))))

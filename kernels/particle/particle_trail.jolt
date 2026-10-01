@@ -33,7 +33,7 @@
     (let [dc (data-count)
           p (if (> dc 5) (max 0 (min (round (data 0)) (floor (/ (- dc 1) 5)))) 0)
           trail (* .012 trail_length)
-          r (* dot_radius (max 1 height))
+          r (* .01 dot_radius (max 1 height))
           ; each record contributes a soft dot at its head and along its streak
           acc (if (> p 0)
                 (sum i 0 p
@@ -45,10 +45,8 @@
                         lf (max 0 (min 1 (data (+ b 4))))
                         tailx (- px (* vx trail streak width))
                         taily (- py (* vy trail streak height))
-                        dx (- x px)
-                        dy (- y py)
                         d (dist-to-seg x y px py tailx taily)
-                        glow (max 0 (- 1 (/ d (max 1 r))))
+                        glow (max 0 (- 1 (/ d (max .0001 r))))
                         soft (* glow glow (* fade lf))]
                     (* soft (min 1 soft))))
                 0)

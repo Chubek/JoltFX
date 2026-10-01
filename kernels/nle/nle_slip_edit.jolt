@@ -41,8 +41,11 @@
         t (clamp01 (/ (mod position hl) hl))
         ;; held frame: the frame index frozen at the start of this hold window
         hs (slip-resolve (floor (/ (+ position (* 0.5 hl)) hl)) n boundary_mode)
-        ;; running frame: the timebase catches up over the second half
-        rs (slip-resolve (+ hs (floor (* (- t 0.5) 2))) n boundary_mode)
+        ;; running frame: the timebase catches up over the second half, so during
+        ;; the hold it sits on the held frame and then advances one per output
+        rs (slip-resolve (+ hs (max 0 (floor (* (- t 0.5) 2)))) n boundary_mode)
+        ;; crossfade weight: 0 through the hold, ramping to 1 across the release
+        w (clamp01 (* (- t 0.5) 2))
         ;; the slip vector offsets the held picture; the read is clamped so a
         ;; slip that pushes past the frame edge repeats it instead of failing
         ix (max 0 (min (- width 1) (floor (+ x (* slip_x width)))))
@@ -50,4 +53,4 @@
     (if (< n 1) (pixel x y c)
       ;; first half: frozen on the held frame; second half: releases and runs,
       ;; crossfading from the held picture into the running one
-      (mix (frame-at hs ix iy c) (frame-at rs ix iy c) (clamp01 (* t 2))))))
+      (mix (frame-at hs ix iy c) (frame-at rs ix iy c) w))))
