@@ -1,0 +1,40 @@
+;; @kernel       comp_layer_luma_key
+;; @category     compositing
+;; @description  Keys out layer based on luminance.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer to key, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The luma key removes the dark or bright part of a layer. `low` and `high` are the
+;; Rec.709 luminance thresholds the matte ramps between, both measured on the
+;; unpremultiplied pixel, so the key does not move as the layer's own alpha changes.
+;; `softness` widens both thresholds outward by that fraction of the threshold span,
+;; which is what turns a hard matte into a soft one without moving its midpoint.
+;; `invert` mirrors the matte, so a dark key becomes a bright key. The matte is
+;; combined with the layer's own alpha rather than replacing it, which is how a key on
+;; a layer works: an already transparent pixel stays transparent and an opaque layer
+;; keys out to a clean matte edge. The output is premultiplied.
+;; lower luminance threshold; range [0, 1].
+(param low 0.1 0 1 0)
+;; upper luminance threshold; range [0, 1].
+(param high 0.5 0 1 0)
+;; matte edge softness as a fraction of the threshold span; range [0, 1].
+(param softness 0.2 0 1 0)
+;; 1 mirrors the matte; range [0, 1].
+(param invert 0 0 1 1)
+
+
+(defkernel comp_layer_luma_key [x y c]
+  (let [l (luminance x y)
+        span (max .000001 (- high low))
+        ;; both edges widen outward by the softness fraction of the threshold span
+        w (* softness span)
+        lo (max 0 (- low w))
+        hi (+ lo .000001 (+ high w))
+        m0 (smooth lo hi l)
+        m (clamp01 (if (= invert 1) (- 1 m0) m0))
+        a (min 1 (* m (pixel x y 3)))]
+    (if (= c 3) a (* (straight x y c) a))))

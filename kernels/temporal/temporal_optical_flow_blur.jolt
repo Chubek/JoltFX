@@ -1,0 +1,44 @@
+;; @kernel       temporal_optical_flow_blur
+;; @category     temporal
+;; @description  Applies blur based on optical flow.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The flow arrives as a two-plane resource, plane 0 = u and plane 1 = v, each one
+;; width*height floats, expressed in pixels of motion per frame interval. The pixel is
+;; smeared along that vector: `samples + 1` taps are placed at fractions of the vector
+;; spanning `shutter` of a frame interval, centred on the output position, so the
+;; exposure window straddles the instant the frame was taken. `weight` switches from a
+;; uniform box to a tent that favours samples near the centre of the window.
+;; motion vector multiplier; range [0, 4].
+(param scale 1 0 4 0)
+;; fraction of the frame interval the sensor is exposed for; range [0, 1].
+(param shutter 0.5 0 1 0)
+;; number of motion blur taps, samples + 1 are evaluated; range [1, 16].
+(param samples 8 1 16 1)
+;; tap weighting; 0 uniform box, 1 tent centred on the output position; range [0, 1].
+(param weight 1 0 1 1)
+
+
+(defkernel temporal_optical_flow_blur [x y c]
+  (let [planes (plane-count)
+        has (if (< planes 2) 0 1)
+        u (* scale (if (= has 1) (plane-at 0 x y) 0))
+        v (* scale (if (= has 1) (plane-at 1 x y) 0))
+        ;; tap fractions run from -0.5 to +0.5 of the shutter window
+        taps (+ samples 1)
+        ;; per-tap displacement and weight, evaluated for each tap
+        total (sum i 0 taps
+                (let [f (* (- (/ i (max 1 samples)) .5) shutter)
+                      ;; 0 uniform, 1 tent
+                      w (if (= weight 1) (- 1 (abs (* 2 f))) 1)]
+                  (* w (sample (+ x (* u f)) (+ y (* v f)) c 1 1))))
+        wsum (sum i 0 taps
+               (if (= weight 1)
+                   (- 1 (abs (* 2 (* (- (/ i (max 1 samples)) .5) shutter))))
+                   1))]
+    (finish (/ total (max .000001 wsum)) (pixel x y 3) 0)))

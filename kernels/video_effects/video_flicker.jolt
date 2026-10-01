@@ -22,7 +22,7 @@
 
 (defkernel video_flicker [x y c]
   (if (= c 3) (pixel x y 3)
-    (let [t (if (= animate 1) time 0)
+    (let [t (if (= animate 1) (+ time (hash2 0 0 seed)) 0)
           f (+ .5 (* .5 (sin (* frequency t))))
           v (* (pixel x y c) (- 1 (* amount (- 1 f))))]
       v)))

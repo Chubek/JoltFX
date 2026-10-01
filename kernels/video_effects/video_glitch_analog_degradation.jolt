@@ -1,0 +1,40 @@
+;; @kernel       video_glitch_analog_degradation
+;; @category     video_effects
+;; @description  Simulates analog signal degradation and noise.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; Four analogue faults are layered together: the raster rolls vertically and wraps
+;; at the frame edge, every other scan line is nudged sideways by a per-band hash,
+;; the chroma trails the luma by a few pixels as it does on a worn tape, and additive
+;; grain is mixed in. `seed` shifts the fault hashes; with distortion, ghosting and
+;; noise at zero only the roll remains, which is an exact identity when roll is 0.
+;; additive grain amplitude; range [0, 1].
+(param noise 0.05 0 1 0)
+;; chroma trail behind the luma in pixels; range [0, 16].
+(param ghosting 0.4 0 16 0)
+;; per-scanline horizontal jitter in pixels; range [0, 24].
+(param distortion 2 0 24 0)
+;; noise seed; range [0, 4095].
+(param seed 7 0 4095 1)
+;; vertical roll speed in pixels per pass; range [0, 64].
+(param roll 6 0 64 0)
+
+
+(defkernel video_glitch_analog_degradation [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [s (+ 1 seed)
+          ;; the raster slides down and wraps at the frame edge
+          ry (wrap (+ y (- (* roll height) (floor (* 2 pass)))) height)
+          row (floor ry)
+          ;; per-scanline jitter, hashed once per two lines
+          jx (+ x (* distortion (- (* 2 (hash2 row s 421)) 1)))
+          luma-tap (sample jx ry c 1 1)
+          chroma-tap (sample (+ jx (* 4 ghosting)) ry c 1 1)
+          bleed (mix luma-tap chroma-tap (clamp01 (* 1.5 ghosting)))
+          grain (* noise (- (* 2 (hash2 x (+ row s) 917)) 1))]
+      (finish (+ bleed grain) (pixel x y 3) 0))))

@@ -1,0 +1,45 @@
+;; @kernel       video_glitch_vhs_tracking
+;; @category     video_effects
+;; @description  Adds VHS tracking distortion lines.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; A soft-edged horizontal band centred on `position * height` is displaced sideways
+;; by a travelling wave, which is what a mistracked tape shows. The bottom of the
+;; frame additionally reproduces head switching: those scan lines tear into random
+;; horizontal slivers, lose their chroma and pick up drop-out noise.
+;; band centre as a fraction of the frame height; range [0, 1].
+(param position 0.45 0 1 0)
+;; band half width as a fraction of the frame height; range [0.001, 1].
+(param band_width 0.03 0.001 1 0)
+;; band edge softness as a fraction of the half width; range [0.01, 1].
+(param softness 0.5 0.01 1 0)
+;; peak horizontal displacement in pixels; range [0, 96].
+(param amount 12 0 96 0)
+;; animate; 0 a frozen tape, 1 the band and the head switch travel with time; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_glitch_vhs_tracking [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [t (if (= animate 1) pass 0)
+          hw (max 0.5 (* band_width height))
+          soft (max 0.0001 (* softness hw))
+          d (abs (- y (* position height)))
+          ;; 1 inside the tracking band, falling to 0 across the soft edge
+          band (clamp01 (/ (- (+ hw soft) d) (* 2 soft)))
+          wave (* band amount (sin (+ (* d 0.06) (* 1.7 t))))
+          row (floor (/ y 2))
+          ;; head switching tears the last few per cent of the frame into slivers
+          sw (if (> y (* height 0.94)) 1 0)
+          hn (* sw amount (- (* 2 (hash2 x row (+ 61 (floor t)))) 1))
+          sx (+ x (+ wave hn))
+          s (sample sx y c 1 1)
+          lum (luma (sample sx y 0 1 1) (sample sx y 1 1 1) (sample sx y 2 1 1))
+          ;; the switched slivers also drop out towards monochrome
+          desat (* sw (min (min 1 amount) (hash2 row x (+ 7 (floor t)))))]
+      (finish (mix s lum desat) (pixel x y 3) 1))))

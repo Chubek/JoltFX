@@ -1,0 +1,86 @@
+;; @kernel       temporal_motion_adaptive
+;; @category     temporal
+;; @description  Applies motion adaptive processing.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame window, each frame width*height*4 floats, and the
+;; source is the newest frame. One filter strength cannot serve a frame that is mostly
+;; static and a frame that is mostly moving, so the window is weighted per pixel by how
+;; well each frame's luma agrees with the source's: `motion_threshold` is the agreement
+;; radius in luma units, a frame inside it contributes fully and a frame outside it
+;; contributes nothing. Where nothing agrees the weights collapse and the result falls
+;; back to the source, so motion is passed through instead of ghosted. `method` picks
+;; the combiner: a weighted mean, a median over only the agreeing frames, or a single
+;; gate taken from the mean motion rather than from per-frame agreement.
+;; Rec.709 luma of resource frame k at (rx, ry); k indexes the frame array.
+(defn flum [k rx ry]
+  (let [i (+ (+ (* k (* 4 (* width height))) (* 4 (+ (* (floor (+ ry .5)) width) (floor (+ rx .5))))) 3)]
+    (if (all2 (>= i 3) (< i (data-count)))
+      (let [a (data i)]
+        (if (> a 0)
+            (luma (/ (data (- i 3)) a) (/ (data (- i 2)) a) (/ (data (- i 1)) a))
+            0))
+      (luminance rx ry))))
+
+
+;; temporal window in frames; range [1, 8].
+(param window 4 1 8 1)
+;; agreement radius in Rec.709 luma units; range [0.01, 1].
+(param motion_threshold 0.1 0.01 1 0)
+;; combiner; 0 weighted mean, 1 median of agreeing frames, 2 single motion gate; range [0, 2].
+(param method 0 0 2 1)
+;; blend of the combined window against the source; range [0, 1].
+(param strength 0.8 0 1 0)
+
+
+(defkernel temporal_motion_adaptive [x y c]
+  (let [n (min window (frame-count))
+        base (pixel x y c)
+        ;; per-frame agreement weight against the source luma
+        wsum (sum k 0 n
+               (- 1 (smooth 0 motion_threshold
+                             (abs (- (luminance x y) (flum (- (- n 1) k) x y))))))
+        ;; the same weights applied to the frame values
+        vsum (sum k 0 n
+               (* (- 1 (smooth 0 motion_threshold
+                              (abs (- (luminance x y) (flum (- (- n 1) k) x y)))))
+                  (frame-clamped (- (- n 1) k) x y c)))
+        ;; weighted mean; with no agreeing frame the weights collapse onto the source
+        mean (/ (+ base vsum) (+ 1 wsum))
+        ;; number of window frames that agree, used to place the median rank
+        acc (sum k 0 n
+              (if (< (abs (- (luminance x y) (flum (- (- n 1) k) x y)))
+                     motion_threshold)
+                  1 0))
+        rank (max 1 (round (/ (+ 1 acc) 2)))
+        ;; median over the source plus only the agreeing frames
+        med (sum k 0 (+ n 1)
+              (let [ok (if (= k n) 1
+                           (if (< (abs (- (luminance x y) (flum (- (- n 1) k) x y)))
+                                  motion_threshold)
+                               1 0))
+                    v (if (= k n) base (frame-clamped (- (- n 1) k) x y c))
+                    below (sum j 0 (+ n 1)
+                              (let [okj (if (= j n) 1
+                                           (if (< (abs (- (luminance x y)
+                                                         (flum (- (- n 1) j) x y)))
+                                                  motion_threshold)
+                                               1 0))]
+                                (if (all2 (= okj 1)
+                                         (<= (if (= j n) base
+                                               (frame-clamped (- (- n 1) j) x y c))
+                                             v))
+                                    1 0)))]
+                (if (all2 (= ok 1) (= below rank)) v 0)))
+        ;; a single gate from the mean motion across the whole window
+        still (- 1 (smooth 0 motion_threshold
+                          (/ (sum k 0 n
+                                (abs (- (luminance x y) (flum (- (- n 1) k) x y))))
+                             (max 1 n))))
+        out (if (= method 0) mean (if (= method 1) med (mix base mean still)))]
+    (finish (mix base out strength) (pixel x y 3) 0)))

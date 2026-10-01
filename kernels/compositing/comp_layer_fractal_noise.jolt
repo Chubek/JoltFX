@@ -1,0 +1,58 @@
+;; @kernel       comp_layer_fractal_noise
+;; @category     compositing
+;; @description  Generates fractal noise layer.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (ignored); output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; A fractal noise layer is a generated plate, so it does not read the source frame.
+;; `seed` selects the hash family, `scale` is the noise frequency in cycles per pixel,
+;; `octaves` is the number of frequency doublings, and `warp` domain-warps the
+;; coordinates first, which is what turns axis-aligned fBm into something that reads
+;; as cloud or smoke rather than as a grid. `dimension` selects the fractal; the profile
+;; has no dimension type, so it is an integer selector with these codes: 0 a single
+;; fBm greyscale field from `fractal-noise`, 1 three decorrelated fBm fields driving
+;; RGB, which is how a colour plate is built, 2 a billowy cellular fractal from
+;; `worley-dist`, giving the puffy look of smoke, and 3 a ridged multifractal, giving
+;; the creased look of terrain and marble. Every variant is normalised by the octave
+;; weight sum so the result stays in [0,1] for any octave count, and alpha is opaque.
+;; random seed selecting the hash family; range [0, 65535].
+(param seed 0 0 65535 1)
+;; noise frequency in cycles per pixel; range [0.002, 1].
+(param scale 0.02 0.002 1 0)
+;; number of frequency doublings; range [1, 6].
+(param octaves 4 1 6 1)
+;; fractal variant; 0 fBm, 1 RGB fBm, 2 billowy, 3 ridged; range [0, 3].
+(param dimension 0 0 3 1)
+;; domain warp amount before the fractal is evaluated; range [0, 1].
+(param warp 0.15 0 1 0)
+
+
+(defkernel comp_layer_fractal_noise [x y c]
+  (let [sx (* x scale) sy (* y scale)
+        ;; domain warp, off by default only when warp is exactly zero
+        wx (if (> warp 0) (* 24 warp scale (fractal-noise (+ sx 3.7) sy seed 2 0.5 2)) 0)
+        wy (if (> warp 0) (* 24 warp scale (fractal-noise sx (+ sy 5.1) (+ seed 7) 2 0.5 2)) 0)
+        ax (+ sx wx) ay (+ sy wy)
+        ;; 0: one fBm field
+        n0 (fractal-noise ax ay seed octaves 0.5 2)
+        ;; 1: three decorrelated fBm fields for RGB
+        n1 (fractal-noise (+ ax 11.3) (+ ay 4.9) (+ seed 1) octaves 0.5 2)
+        n2 (fractal-noise (+ ax 2.1) (+ ay 17.7) (+ seed 2) octaves 0.5 2)
+        ;; the octave weight sum normalises every variant back into [0,1]
+        nw (max .0001 (sum o 0 octaves (pow .5 o)))
+        ;; 2: billowy cellular fractal from the worley distance
+        bl (/ (sum o 0 octaves (let [k (pow 2 o) sc (pow .5 o)]
+                 (* sc (- 1 (min 1 (worley-dist (* ax k) (* ay k) (+ seed o)))))))
+               nw)
+        ;; 3: ridged multifractal, the creased look of terrain and marble
+        rg (/ (sum o 0 octaves (let [k (pow 2 o) sc (pow .5 o)]
+                 (* sc (- 1 (abs (- 1 (* 2 (value-noise (* ax k) (* ay k) (+ seed o)))))))))
+               nw)
+        val (if (= dimension 0) n0
+             (if (= dimension 1) (channel c n0 n1 n2)
+               (if (= dimension 2) bl rg)))]
+    (if (= c 3) 1 (clamp01 val))))

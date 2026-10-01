@@ -1,0 +1,58 @@
+;; @kernel       temporal_temporal_denoise
+;; @category     temporal
+;; @description  Reduces noise using temporal information.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame window, each frame width*height*4 floats, and
+;; the source is the newest sample, so the filter sees `window + 1` samples. The
+;; per-pixel mean absolute deviation is the variance measure: samples further than
+;; `motion_threshold` deviations from the mean are motion and are rejected, the
+;; rest are noise and are averaged. Detail survives because a pixel that is
+;; consistently different from its own temporal mean keeps that difference.
+;; temporal window in frames; range [1, 16].
+(param window 5 1 16 1)
+;; denoise strength; range [0, 1].
+(param strength 0.8 0 1 0)
+;; motion rejection gate in mean-absolute-deviation units; range [0.01, 1].
+(param motion_threshold 0.35 0.01 1 0)
+;; 0 outlier-clipped mean, 1 temporal median, 2 Wiener shrink to the mean; range [0, 2].
+(param method 0 0 2 1)
+
+
+(defkernel temporal_temporal_denoise [x y c]
+  (let [n (min window (frame-count))
+        base (pixel x y c)
+        ;; temporal mean over the window, source included
+        mean (/ (+ base (sum k 0 n (frame-clamped (- (- n 1) k) x y c))) (+ n 1))
+        ;; per-pixel variance measure: mean absolute deviation about that mean
+        mad (/ (+ (abs (- base mean))
+                  (sum k 0 n (abs (- (frame-clamped (- (- n 1) k) x y c) mean))))
+               (+ n 1))
+        tol (max .0001 (* motion_threshold (max .01 mad)))
+        ;; samples inside the motion gate: noise, so they are averaged together
+        acc (sum k 0 n
+              (if (< (abs (- (frame-clamped (- (- n 1) k) x y c) mean)) tol) 1 0))
+        clipped (if (> acc 0)
+                   (/ (+ base
+                         (sum k 0 n
+                           (let [v (frame-clamped (- (- n 1) k) x y c)]
+                             (if (< (abs (- v mean)) tol) v 0))))
+                      (+ 1 acc))
+                   base)
+        ;; temporal median: the rank-th smallest sample of the same window
+        rank (round (/ (+ n 1) 2))
+        median (sum k 0 (+ n 1)
+                  (let [v (if (= k n) base (frame-clamped (- (- n 1) k) x y c))
+                        below (sum m 0 (+ n 1)
+                                  (if (<= (if (= m n) base (frame-clamped (- (- n 1) m) x y c)) v)
+                                      1 0))]
+                    (if (= below rank) v 0)))
+        ;; Wiener shrink: noisy pixels fall back to the mean, clean ones are untouched
+        shrunk (+ mean (* (- base mean) (- 1 (smooth 0 .25 mad))))
+        out (if (= method 0) clipped (if (= method 1) median shrunk))]
+    (finish (mix base out strength) (pixel x y 3) 0)))

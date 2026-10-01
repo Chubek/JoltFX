@@ -1,0 +1,136 @@
+;; @kernel       text_crawl
+;; @category     text_overlay
+;; @description  Overlays news crawl text.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; Text run resource layout (no string or font type in this profile, so the text
+;; engine supplies the rasterised run):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The crawl repeats the run horizontally, so a short run tiles the crawl bar; a
+;; run extent of at least 0.25 keeps the join invisible. Every read is guarded, so
+;; an absent (empty) run resource is a no-op.
+;; The CSV String parameter becomes an integer selector:
+;; 0 plain bar, 1 bar with a top rule, 2 bar with end chevrons, 3 double bar with
+;; a centre rule. range [0, 3].
+(param style 0 0 3 1)
+;; crawl phase; one unit scrolls the run by its own width, so the cycle is
+;; seamless; range [0, 8].
+(param phase 0 0 8 0)
+;; crawl bar centre y in normalized frame coordinates; range [0, 1].
+(param position_y 0.86 0 1 0)
+;; run height as a fraction of frame height; range [0.01, 1].
+(param size 0.06 0.01 1 0)
+;; crawl opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+(defkernel text_crawl [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [e (max .02 (text-extent))
+          boxh (* size height)
+          boxw (* size width)
+          bh (* 1.7 boxh)
+          by (- (* position_y height) (* .5 bh))
+          ; the run is sampled six times across the bar so a short run still fills it,
+          ; and each copy is shifted by exactly one run extent so the join is seamless
+          off (* (mod phase 1) e boxw)
+          ox (- (* .5 (- width boxw)) off)
+          oy (+ by (* .5 (- bh boxh)))
+          ; soft top and bottom edges keep the bar clear of the picture edge
+          y0 (+ by (* boxh .14))
+          y2 (+ by bh)
+          y1 (- y2 (* boxh .14))
+          fade (min (smooth by y0 y) (- 1 (smooth y1 y2 y)))
+          band (* opacity (clamp01 fade))
+          rt (max 1 (* boxh .05))
+          toprule (clamp01 (/ (- y (+ by rt)) rt))
+          midrule (clamp01 (/ (abs (- y (* .5 (+ by bh)))) rt))
+          ; style 2 wedges a triangular mark in at each end of the bar
+          cr (+ (* width .5) (* boxh 1.2))
+          cl (- width cr)
+          mid (* .5 (+ by bh))
+          dd (abs (- y mid))
+          half (max 1 (* boxh .5))
+          wedge (/ (max 0 (- (* boxh 1.7) dd)) half)
+          inr (min wedge (clamp01 (/ (- boxh (- x cr)) half)))
+          inl (min wedge (clamp01 (/ (- boxh (- cl x)) half)))
+          chev (max inr inl)
+          trim (* band (if (= style 1) toprule (if (= style 3) midrule (if (= style 2) chev 0))))
+          cov (* band (sum k 0 6 (text-coverage x y (- ox (* k e boxw)) oy boxw boxh)))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          barc (channel c .04 .06 .12)
+          acc (channel c .92 .82 .25)]
+      (finish (mix (mix (mix base barc band) acc trim) 1 cov) (pixel x y 3) 1))))

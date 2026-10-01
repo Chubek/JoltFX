@@ -1,0 +1,39 @@
+;; @kernel       comp_layer_pixel_motion
+;; @category     compositing
+;; @description  Applies pixel motion blur.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the layer. The resource array is a two-plane flow field of width*height
+;; floats per plane, read with `plane-at`: plane 0 is the per-pixel u velocity and
+;; plane 1 the v velocity, both in pixels per frame. `plane-at` returns 1 for a plane
+;; index the resource does not have, so an absent flow field is read as a constant
+;; one-pixel-per-frame drift instead of failing. `strength` is the flow gain,
+;; `shutter` is the fraction of the exposure the shutter was open for, and `samples`
+;; is the number of taps averaged along the per-pixel motion vector, which is what
+;; makes this a per-pixel shutter average rather than a single offset. The taps are
+;; spread over the shutter interval centred on the frame. `border` is the sampling
+;; border mode. Sampling the source means an empty layer stays empty.
+;; flow magnitude gain; range [0, 8].
+(param strength 1 0 8 0)
+;; fraction of the exposure the shutter was open for; range [0, 1].
+(param shutter 0.5 0 1 0)
+;; number of taps averaged along the motion vector; range [1, 16].
+(param samples 8 1 16 1)
+;; sampling border mode; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border 1 0 3 1)
+
+
+(defkernel comp_layer_pixel_motion [x y c]
+  (let [;; plane 0 is u, plane 1 is v; a missing plane reads as 1, a uniform drift
+        fu (plane-at 0 x y) fv (plane-at 1 x y)
+        du (* strength fu) dv (* strength fv)
+        taps (round samples)
+        acc (sum k 0 taps
+          (let [t (* .5 shutter (- 1 (* 2 (/ (+ 1 k) taps))))]
+            (sample (+ x (* t du)) (+ y (* t dv)) c 1 border)))]
+    (/ acc (max 1 taps))))

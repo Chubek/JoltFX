@@ -1,0 +1,85 @@
+;; @kernel       comp_layer_parenting
+;; @category     compositing
+;; @description  Parents layer to another for transform inheritance.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the child layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the child layer. The resource array holds the parent layer as
+;; width*height*4 floats, read with `to-frame`, which returns the source pixel when
+;; the array is empty. `offset_x/y/z` is the parent's 3D anchor in plane units
+;; (half the frame width is 1 unit, positive Y is down, positive Z is away from the
+;; camera). The child is placed by inverting the parent's projection, so its local
+;; plane coordinate is `u * depth - offset * depth`: the divide by `depth = 1 +
+;; offset_z` is a real perspective divide, and moving the parent in Z scales the
+;; child visibly. `inherit` extends that to the parent's measured transform: 1 also
+;; takes the parent's luma centroid, estimated on a 3x3 lattice of the parent frame
+;; in plane coordinates, and the parent's luma-weighted spread, so the child tracks
+;; and rescales with the parent instead of only following the anchor. `border` is
+;; the sampling border mode for the parts of the child that leave the frame.
+;; parent anchor x in plane units; range [-4, 4].
+(param offset_x 0 -4 4 0)
+;; parent anchor y in plane units; range [-4, 4].
+(param offset_y 0 -4 4 0)
+;; parent anchor depth, added to the neutral unit depth; range [-0.9, 8].
+(param offset_z 0 -0.9 8 0)
+;; 1 inherits the parent's measured centroid and spread; range [0, 1].
+(param inherit 1 0 1 1)
+;; sampling border mode; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border 1 0 3 1)
+
+
+;; Premultiplied Rec.709 luma of the parent frame at a clamped lattice position.
+(defn par-w [qx qy]
+  (let [px (min (- width 1) (max 0 qx)) py (min (- height 1) (max 0 qy))]
+    (luma (to-frame px py 0) (to-frame px py 1) (to-frame px py 2))))
+
+
+;; Luma-weighted centroid of the parent frame along x, in plane coordinates.
+(defn par-cx []
+  (let [st (max 1 (floor (/ (min width height) 3)))
+        ws (sum j 0 3 (sum i 0 3 (par-w (* i st) (* j st))))
+        cs (sum j 0 3 (sum i 0 3 (let [w (par-w (* i st) (* j st))]
+          (* w (- (* 2 (/ (+ (* i st) (/ st 2)) width)) 1)))))]
+    (if (> ws 0) (/ cs ws) 0)))
+
+
+;; Luma-weighted centroid of the parent frame along y, in plane coordinates.
+(defn par-cy []
+  (let [st (max 1 (floor (/ (min width height) 3)))
+        ws (sum j 0 3 (sum i 0 3 (par-w (* i st) (* j st))))
+        cs (sum j 0 3 (sum i 0 3 (let [w (par-w (* i st) (* j st))]
+          (* w (- (* 2 (/ (+ (* j st) (/ st 2)) height)) 1)))))]
+    (if (> ws 0) (/ cs ws) 0)))
+
+
+;; Luma-weighted spread (rms radius) of the parent frame in plane coordinates.
+(defn par-spread []
+  (let [st (max 1 (floor (/ (min width height) 3)))
+        ws (sum j 0 3 (sum i 0 3 (par-w (* i st) (* j st))))
+        cs (sum j 0 3 (sum i 0 3 (let [w (par-w (* i st) (* j st))
+                                       px (- (* 2 (/ (+ (* i st) (/ st 2)) width)) 1)
+                                       py (- (* 2 (/ (+ (* j st) (/ st 2)) height)) 1)]
+          (* w (+ (* px px) (* py py))))))]
+    (if (> ws 0) (max .05 (min 4 (sqrt (/ cs ws)))) 1)))
+
+
+(defkernel comp_layer_parenting [x y c]
+  (let [tz (max .05 (+ 1 offset_z))
+        ;; the parent's measured placement, folded into the anchor
+        ax (if (= inherit 1) (+ offset_x (par-cx)) offset_x)
+        ay (if (= inherit 1) (+ offset_y (par-cy)) offset_y)
+        ;; the child inherits the parent's apparent extent, or keeps its own
+        hw (if (= inherit 1) (par-spread) 1)
+        hh (if (= inherit 1) (par-spread) 1)
+        ;; invert the projection: local plane coordinate = screen * depth - anchor
+        u (- (* 2 (/ (+ x .5) width)) 1)
+        v (- (* 2 (/ (+ y .5) height)) 1)
+        p (/ (- (* u tz) (* ax tz)) hw)
+        q (/ (- (* v tz) (* ay tz)) hh)
+        sx (- (/ (* (+ p 1) width) 2) .5)
+        sy (- (/ (* (+ q 1) height) 2) .5)]
+    (sample sx sy c 1 border)))

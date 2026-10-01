@@ -1,0 +1,39 @@
+;; @kernel       comp_layer_opacity
+;; @category     compositing
+;; @description  Controls layer opacity.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the layer whose opacity is being set. The resource array holds an
+;; optional second frame of width*height*4 floats whose alpha is a layer matte;
+;; `to-frame` returns the source pixel when the array is empty, so `matte_alpha`
+;; selects whether that matte is consulted at all (0 leaves the layer alone).
+;; `gamma_correct` fades the straight colour in linear light (`decode`/`encode`)
+;; instead of in sRGB, so a partial opacity is perceptually even rather than a uniform
+;; multiply that crushes the shadows. `invert` mirrors the opacity, turning a fade-in
+;; into a fade-out. The output is premultiplied: the layer alpha is scaled by the same
+;; factor as its colour, so a transparent layer stays transparent and the kernel is
+;; safe on an empty input.
+;; layer opacity; range [0, 1].
+(param opacity 0.5 0 1 0)
+;; 1 mirrors the opacity; range [0, 1].
+(param invert 0 0 1 1)
+;; 1 multiplies the layer by the resource frame's alpha matte; range [0, 1].
+(param matte_alpha 0 0 1 1)
+;; 1 fades the layer in linear light rather than in sRGB; range [0, 1].
+(param gamma_correct 0 0 1 1)
+
+
+(defkernel comp_layer_opacity [x y c]
+  (let [o0 (if (= invert 1) (- 1 opacity) opacity)
+        ma (if (= matte_alpha 1) (min 1 (to-frame x y 3)) 1)
+        sa (pixel x y 3)
+        a (min 1 (* o0 ma sa))
+        ;; fade the straight colour, in linear light when asked, then re-premultiply
+        s (if (> sa 0) (/ (pixel x y c) sa) 0)
+        lv (if (= gamma_correct 1) (encode (* (decode s) o0)) (* s o0))]
+    (if (= c 3) a (* lv a))))

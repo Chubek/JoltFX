@@ -1,0 +1,87 @@
+;; @kernel       nle_frame_interpolation
+;; @category     nle
+;; @description  Interpolates frames for smooth slow motion.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (earlier frame); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the later frame, width*height*4 floats. Method 0 is a
+;; plain cross-blend. Method 1 is motion compensated: a small integer search
+;; (search_radius, a few pixels) estimates the local displacement from the
+;; earlier to the later frame by exponentially weighted SAD, then both frames are
+;; sampled at the compensated offsets so the midpoint lands on the moving content
+;; instead of ghosting between two positions. Method 2 runs the search from both
+;; directions and averages the estimates, which stabilises occluded areas at
+;; twice the cost; optical_flow blends the two estimates by half. An empty
+;; resource makes every cost zero, so the estimate is zero and the result is a
+;; plain blend rather than a crash.
+;; blend position [0,1] between the two frames; range [0, 1].
+(param position 0.5 0 1 0)
+;; interpolation method; 0 cross-blend, 1 motion compensated, 2 bidirectional; range [0, 2].
+(param method_param 1 0 2 1)
+;; bidirectional refinement weight; 0 forward estimate only; range [0, 1].
+(param optical_flow 0 0 1 1)
+;; integer motion search radius in pixels; range [1, 3].
+(param search_radius 2 1 3 1)
+
+
+;; Clamped, rounded read of the later frame so a search can step outside the frame.
+(defn next-s [px py pc]
+  (to-frame (max 0 (min (- width 1) (round px)))
+            (max 0 (min (- height 1) (round py))) pc))
+
+
+(defn next-luma [px py]
+  (let [a (next-s px py 3)]
+    (if (> a 0) (/ (+ (* 0.2126 (next-s px py 0)) (* 0.7152 (next-s px py 1))
+                       (* 0.0722 (next-s px py 2))) a) 0)))
+
+
+;; SAD between the earlier frame at (px,py) and the later frame at (px+dx,py+dy).
+;; The probe is an L of three taps so the cost is not decided by a single pixel.
+(defn block-sad [px py dx dy]
+  (+ (abs (- (luminance px py) (next-luma (+ px dx) (+ py dy))))
+     (abs (- (luminance px (+ py 1)) (next-luma (+ px dx) (+ py dy 1))))
+     (abs (- (luminance (+ px 1) py) (next-luma (+ px dx 1) (+ py dy))))))
+
+
+;; The same SAD measured from the later frame, used to refine from the other side.
+(defn block-sad-rev [px py dx dy]
+  (+ (abs (- (next-luma px py) (luminance (+ px dx) (+ py dy))))
+     (abs (- (next-luma px (+ py 1)) (luminance (+ px dx) (+ py dy 1))))
+     (abs (- (next-luma (+ px 1) py) (luminance (+ px dx 1) (+ py dy))))))
+
+
+;; Soft-argmin weight for one candidate offset: exp(-6 * cost) peaks on the best
+;; match and the weighted mean converges to the true integer argmin.
+(defn flow-w [px py dx dy] (exp (* -6 (block-sad px py dx dy))))
+
+
+(defn flow-w-rev [px py dx dy] (exp (* -6 (block-sad-rev px py dx dy))))
+
+
+(defkernel nle_frame_interpolation [x y c]
+  (let [r (max 1 (min 3 search_radius))
+        ;; forward estimate: how far the content moved from the earlier frame
+        w (max 0.000001 (sum j (- r) (+ r 1) (sum i (- r) (+ r 1) (flow-w x y i j))))
+        fdx (/ (sum j (- r) (+ r 1) (sum i (- r) (+ r 1) (* (flow-w x y i j) i))) w)
+        fdy (/ (sum j (- r) (+ r 1) (sum i (- r) (+ r 1) (* (flow-w x y i j) j))) w)
+        ;; reverse estimate, negated so it measures the same earlier-to-later shift
+        v (max 0.000001 (sum j (- r) (+ r 1) (sum i (- r) (+ r 1) (flow-w-rev x y i j))))
+        bdx (- (/ (sum j (- r) (+ r 1) (sum i (- r) (+ r 1) (* (flow-w-rev x y i j) i))) v))
+        bdy (- (/ (sum j (- r) (+ r 1) (sum i (- r) (+ r 1) (* (flow-w-rev x y i j) j))) v))
+        ;; method 2 averages both estimates outright; optical_flow halves the pull
+        refine (if (= method_param 2) 1 (if (= optical_flow 1) 0.5 0))
+        dx (* (- 1 (* refine 0.5)) (+ fdx bdx))
+        dy (* (- 1 (* refine 0.5)) (+ fdy bdy))
+        p (clamp01 position)
+        ;; read the earlier frame at -p*d and the later one at +(1-p)*d, so both
+        ;; land on the moving content and the midpoint stays sharp
+        a (if (= method_param 0) (pixel x y c)
+             (sample (- x (* p dx)) (- y (* p dy)) c 1 1))
+        b (if (= method_param 0) (next-s x y c)
+             (next-s (+ x (* (- 1 p) dx)) (+ y (* (- 1 p) dy)) c))]
+    (if (= c 3) (mix a b p) (finish (mix a b p) (pixel x y 3) 0))))

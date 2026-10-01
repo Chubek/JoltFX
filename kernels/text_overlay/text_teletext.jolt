@@ -1,0 +1,181 @@
+;; @kernel       text_teletext
+;; @category     text_overlay
+;; @description  Overlays teletext graphics.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; Teletext has no font here, so the page is drawn the way the service looked: a
+;; coloured header band carrying the page number and subpage as seven segment
+;; digits, over a grid of content cells. No text resource is needed.
+;; teletext page number, 0 to 999; range [0, 999].
+(param page 100 0 999 1)
+;; teletext subpage, 0 to 15; range [0, 15].
+(param subpage 0 0 15 1)
+;; page layout code: 0 header over a four column grid, 1 a 3x3 index menu,
+;; 2 an oversized page number filling the frame, 3 a two column list with the
+;; subpage row highlighted. range [0, 3].
+(param style 0 0 3 1)
+;; content rows; range [3, 8].
+(param rows 6 3 8 1)
+;; header and cell height as a fraction of frame height; range [0.02, 1].
+(param size 0.07 0.02 1 0)
+;; teletext opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+;; Segment bit mask of a decimal digit: a=1 b=2 c=4 d=8 e=16 f=32 g=64.
+(defn digit-mask [d]
+  (if (= d 0) 63
+    (if (= d 1) 6
+      (if (= d 2) 91
+        (if (= d 3) 79
+          (if (= d 4) 102
+            (if (= d 5) 109
+              (if (= d 6) 125
+                (if (= d 7) 7
+                  (if (= d 8) 127
+                    (if (= d 9) 111 0)))))))))))
+
+;; Seven-segment ink at digit-box coordinates (du,dv), mask m, stroke th wide.
+;; Segment s runs a(top) b c d(bottom) e f g(middle), numbered 0..6: the
+;; multiples of three are the horizontal bars, the rest are the verticals.
+(defn seven-cover [du dv m th]
+  (clamp01 (sum s 0 7
+    (if (> (mod (floor (/ m (pow 2 s))) 2) 0)
+      (let [hy (+ .05 (* .45 (floor (/ s 3))))
+            vx (if (< s 3) .86 .14)
+            vy (if (= (mod s 2) 1) .05 .50)]
+        (if (= (mod s 3) 0)
+          (clamp01 (/ (- th (dist-to-seg du dv .14 hy .86 hy)) th))
+          (clamp01 (/ (- th (dist-to-seg du dv vx vy vx (+ vy .45))) th))))
+      0))))
+(defkernel text_teletext [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [dh (* size height)
+          hdr (* 1.7 dh)
+          ; teletext colour bands follow the hundreds digit of the page number
+          band (mod (floor (/ page 100)) 4)
+          cr (if (= band 0) .95 (if (= band 1) .10 (if (= band 2) .95 .10)))
+          cg (if (= band 0) .12 (if (= band 1) .92 (if (= band 2) .92 .92)))
+          cb (if (= band 0) .12 (if (= band 1) .18 (if (= band 2) .12 .95)))
+          big (if (= style 2) 1 0)
+          cols (if (= style 1) 3 (if (= style 3) 2 4))
+          nrows (if (= style 1) 3 rows)
+          cellh (* .8 dh)
+          cellw (/ width (max 1 cols))
+          r (floor (/ (- y hdr) (max .0001 cellh)))
+          k (floor (/ x (max .0001 cellw)))
+          ; the subpage picks the highlighted row, or the selected menu cell
+          hirow (mod subpage rows)
+          selc (mod subpage 3)
+          selr (floor (/ subpage 3))
+          ingrid (* (if (= style 2) 0 1)
+                    (if (all2 (>= r 0) (all2 (< r nrows) (all2 (>= k 0) (< k cols)))) 1 0))
+          h (if (> ingrid 0) (hash2 k r page) 0)
+          lit (if (= style 1)
+                (if (all2 (= k selc) (= r selr)) 1 0)
+                (if (= r hirow) 1 0))
+          fill (* opacity (if (> ingrid 0) (* .18 (* .55 h)) 0))
+          glow (* opacity (if (> ingrid 0) (* .75 (* lit h)) 0))
+          ; the header band carries page hundreds, tens and units, then the subpage
+          bdh (* .62 dh)
+          bdw (* bdh .68)
+          bgap (* bdh .22)
+          bx (* width .015)
+          by (* dh .3)
+          hdrband (* opacity (if (= style 2) 0
+            (min (clamp01 (/ (- y (* dh .1)) 1.5))
+                 (clamp01 (/ (- (+ hdr (* dh .12)) y) 1.5)))))
+          hdrink (sum d 0 4
+                   (let [dx (/ (- x (+ bx (* d (+ bdw bgap)))) (max .0001 bdw))
+                         dy (/ (- y by) (max .0004 bdh))
+                         inside (all2 (>= dx 0) (all2 (<= dx 1) (all2 (>= dy 0) (<= dy 1))))
+                         value (if (< d 3) (mod (floor (/ page (pow 10 (- 2 d)))) 10)
+                                  (mod subpage 10))]
+                     (if inside (* opacity (seven-cover dx dy (digit-mask value) .085)) 0)))
+          ; style 2 blows the page number up until it fills the frame
+          bigh (* .8 height)
+          bigw (* bigh .62)
+          biggap (* bigw .25)
+          bigink (* big (sum d 0 3
+                   (let [dx (/ (- x (+ (* width .1) (* d (+ bigw biggap)))) (max .0001 bigw))
+                         dy (/ (- y (* .1 height)) (max .0004 bigh))
+                         inside (all2 (>= dx 0) (all2 (<= dx 1) (all2 (>= dy 0) (<= dy 1))))
+                         value (mod (floor (/ page (pow 10 (- 2 d)))) 10)]
+                     (if inside (* opacity (seven-cover dx dy (digit-mask value) .06)) 0))))
+          ink (max (* hdrink hdrband) (* bigink (+ hdrband 1)))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          bgc (channel c .01 .01 .01)
+          bandc (channel c cr cg cb)]
+      (finish (mix (mix (mix (mix base bgc fill) bandc glow) bandc hdrband)
+                   (channel c 1 1 1) ink)
+              (pixel x y 3) 1))))

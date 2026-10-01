@@ -1,0 +1,44 @@
+;; @kernel       comp_layer_mask
+;; @category     compositing
+;; @description  Applies mask to layer.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the layer being masked. The resource array is a plane resource of
+;; width*height floats per plane, read with `plane-at`, which returns 1 for a
+;; plane index outside the array, so an absent mask degrades to fully opaque
+;; rather than crashing; `plane-at` does not bound the pixel coordinate, so the
+;; feathered average clamps it to the frame first. `plane` selects which plane
+;; carries the mask: 0 is the common single-plane mask, 1..3 allow a mask packed
+;; into the alpha or channels of a mask frame. `feather` widens the matte with a
+;; small box average so the matte edge is not aliased, and `invert` flips it. The
+;; output is premultiplied: the mask scales both the colour and the layer alpha.
+;; mask plane index; 0 is a single-plane mask; range [0, 3].
+(param plane 0 0 3 1)
+;; 1 inverts the matte; range [0, 1].
+(param invert 0 0 1 1)
+;; matte edge feather radius in pixels; range [0, 2].
+(param feather 1 0 2 0)
+;; overall matte gain; range [0, 1].
+(param opacity 1 0 1 0)
+
+
+;; Clamped plane read: plane-at only guards the plane index, not the coordinate.
+(defn mask-at [px py]
+  (plane-at plane (min (- width 1) (max 0 px)) (min (- height 1) (max 0 py))))
+
+
+(defkernel comp_layer_mask [x y c]
+  (let [fr (round feather)
+        ;; a feathered matte is a small box average of the plane
+        m0 (clamp01 (if (= fr 0) (mask-at x y)
+             (/ (sum i (- 0 fr) (+ fr 1) (sum j (- 0 fr) (+ fr 1)
+                  (mask-at (+ x i) (+ y j))))
+                (* (+ fr 1) (+ fr 1)))))
+        m1 (clamp01 (if (= invert 1) (- 1 m0) m0))
+        a (min 1 (* m1 opacity))]
+    (if (= c 3) (* (pixel x y 3) a) (* (pixel x y c) a))))

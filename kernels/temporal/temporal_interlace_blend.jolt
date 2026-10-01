@@ -1,0 +1,57 @@
+;; @kernel       temporal_interlace_blend
+;; @category     temporal
+;; @description  Blends interlaced fields.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The second field frame arrives in the resource array as width*height*4 floats.
+;; An interlaced frame only carries every second row per field, so a progressive frame
+;; is rebuilt by giving each output row to the field that actually scanned it and
+;; filling the rest from the partner frame. `field_order` names which field owns which
+;; row parity: 0 is even-field-first (even rows are field 0), 1 is odd-field-first.
+;; `method` picks how the rows a field never scanned are recovered: the pair of rows
+;; that shares the field parity, the double-rate pair from both fields, or a diagonal
+;; average of both fields. `motion_adaptive` lets static rows cross-fade, which is
+;; where motion compensation would be needed, and `merge` scales the whole merge.
+;; field order; 0 even-field-first, 1 odd-field-first; range [0, 1].
+(param field_order 0 0 1 1)
+;; 0 same-field row pair, 1 double-rate row pair, 2 diagonal both-field average; range [0, 2].
+(param method 0 0 2 1)
+;; cross-fade the two fields where they agree, which is motion compensation; range [0, 1].
+(param motion_adaptive 1 0 1 1)
+;; overall strength of the field merge; range [0, 1].
+(param merge 1 0 1 0)
+
+
+(defkernel temporal_interlace_blend [x y c]
+  (let [s (pixel x y c)
+        o (to-frame x y c)
+        parity (mod y 2)
+        ;; 1 when the source field is the one that scanned this row
+        own (if (= field_order 0) (if (= parity 0) 1 0) (if (= parity 0) 0 1))
+        ;; how far the two fields disagree here: disagreement is motion
+        disagree (abs (- s o))
+        ;; field ownership weight, relaxed toward a cross-fade on static rows
+        w (clamp01 (+ (if (= own 1) 0 1)
+                      (if (= motion_adaptive 1)
+                          (* .5 (- 1 (smooth 0 .25 disagree)))
+                          0)))
+        ;; rows recovered by doubling the line rate
+        top (* 2 y)
+        bot (min (- height 1) (+ top 1))
+        merged (if (= method 0)
+                  ;; the two rows the owning field actually scanned
+                  (mix s o w)
+                  (let [pair (/ (+ (sample x top c 1 1) (sample x bot c 1 1)) 2)]
+                    (if (= method 1)
+                        (mix pair o w)
+                        ;; diagonal average of both fields at the doubled line rate
+                        (mix pair (/ (+ (sample x top c 1 1) (sample x bot c 1 1)
+                                       (to-frame x top c) (to-frame x bot c)) 4) w))))
+        ;; the merge changes alpha, so alpha follows the same blend
+        a (mix (pixel x y 3) (mix (pixel x y 3) (to-frame x y 3) w) merge)]
+    (if (= c 3) a (finish (mix s merged merge) a 0))))

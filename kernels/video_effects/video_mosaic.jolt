@@ -25,11 +25,17 @@
 (defkernel video_mosaic [x y c]
   (if (= c 3) (pixel x y 3)
     (let [bs block_size
-          bx (* bs (floor (/ x bs)))
-          by (* bs (floor (/ y bs)))
+          ;; Hex tiles stagger alternate rows by half a tile and overlap vertically
+          ;; by a third, which is what makes a hex mosaic read as hex rather than
+          ;; as a shifted square grid.
+          row (floor (/ y bs))
+          sx (if (and (= shape 1) (= (mod row 2) 1)) (/ bs 2) 0)
+          sy (if (= shape 1) (* bs (/ 1 3)) 0)
+          bx (* bs (floor (/ (+ x sx) bs)))
+          by (* bs (floor (/ (+ y sy) bs)))
           avg (/ (sum i 0 bs (sum j 0 bs (sample (+ bx i) (+ by j) c 1 1))) (* bs bs))
-          gx (mod x bs)
-          gy (mod y bs)
+          gx (mod (+ x sx) bs)
+          gy (mod (+ y sy) bs)
           grout (if (or (< gx grout_width) (< gy grout_width)) 1 0)
           v (if (= grout 1) (channel c grout_r grout_g grout_b) avg)]
       v)))

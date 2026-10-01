@@ -1,0 +1,39 @@
+;; @kernel       video_deinterlace
+;; @category     video_effects
+;; @description  Deinterlaces video by blending or discarding fields.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src = the interlaced frame (premultiplied RGBA); output: image dst,
+;; same dimensions. No resource array is read; both fields live in this one frame.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; Each output row is the recorded line at that row plus the average of its two
+;; neighbouring lines, which is the other field sampled onto this row. The method
+;; selector chooses between the two standard reconstructions and field_order says
+;; which parity is the first field, so the bob keeps the first field sharp and fills
+;; the second one. motion_adaptive measures how far the neighbouring fields disagree,
+;; which is inter-field motion, and leans the reconstruction back onto the recorded
+;; line so combing does not appear through movement.
+;; method; 0 field average (blend both fields on every row), 1 field adaptive bob
+;; (keep the first field, spatially interpolate the second); range [0, 1].
+(param method 1 0 1 1)
+;; field order; 0 first field on even lines, 1 first field on odd lines; range [0, 1].
+(param field_order 0 0 1 1)
+;; motion adaptive; 1 weight the reconstruction by inter-field disagreement; range [0, 1].
+(param motion_adaptive 1 0 1 1)
+
+
+(defkernel video_deinterlace [x y c]
+  (let [p0 (if (= field_order 1) 1 0)
+        first (if (= (mod y 2) p0) 1 0)
+        cur (sample x y c 1 1)
+        ;; the other field resampled onto this row
+        nb (/ (+ (sample x (- y 1) c 1 1) (sample x (+ y 1) c 1 1)) 2)
+        ;; inter-field disagreement is a vertical luma step: motion or a hard edge
+        motion (clamp01 (* 6 (abs (- (luminance x (- y 1)) (luminance x (+ y 1))))))
+        adapt (if (= motion_adaptive 1) motion 0)]
+    (if (= method 0)
+      (mix cur nb (mix 0.5 (if (= first 1) 0.25 0.75) adapt))
+      (if (= first 1) cur (mix nb cur (* 0.75 adapt))))))

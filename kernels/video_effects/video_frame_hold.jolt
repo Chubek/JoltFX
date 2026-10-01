@@ -1,0 +1,32 @@
+;; @kernel       video_frame_hold
+;; @category     video_effects
+;; @description  Holds specific frames for strobe or freeze effect.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The resource array holds a Frame[] history: `frame-count` RGBA frames of
+;; width*height*4 floats each, read with `frame-count` and `frame-at`. The kernel
+;; freezes the picture by averaging `duration` consecutive history frames starting at
+;; `hold_frame`: one frame reproduces the hold exactly, and a longer hold accumulates
+;; more of the frozen window while the live picture keeps arriving. The index either
+;; wraps the history or clamps at its end.
+;; first held frame in the history; range [0, 4095].
+(param hold_frame 0 0 4095 1)
+;; output frames the hold lasts, 1 the frame is shown unchanged; range [1, 64].
+(param duration 1 1 64 0)
+;; wrap the index around the history instead of clamping it; range [0, 1].
+(param loop 1 0 1 1)
+
+
+(defkernel video_frame_hold [x y c]
+  (let [nf (frame-count)]
+    (if (<= nf 0) (pixel x y c)
+      (let [span (max 1 (min nf (round duration)))]
+        (/ (sum k 0 span
+             (let [j (+ hold_frame k)]
+               (frame-at (if (= loop 1) (wrap j nf) (min (- nf 1) (max 0 j))) x y c)))
+           span)))))

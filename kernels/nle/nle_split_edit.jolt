@@ -1,0 +1,37 @@
+;; @kernel       nle_split_edit
+;; @category     nle
+;; @description  Performs split edit at a specified point.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (outgoing frame); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the incoming frame, width*height*4 floats. An empty
+;; array degrades to the outgoing frame. The divider moves from the split point
+;; toward full frame, carrying a narrow vertical rule that marks the boundary.
+;; split edit progress [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; divider start position [0,1] of frame width; range [0, 1].
+(param split_point 0.5 0 1 0)
+;; divider softness; range [0, 1].
+(param softness 0.02 0 1 0)
+
+
+(defkernel nle_split_edit [x y c]
+  (let [;; divider centre travels from split_point toward the right edge
+        dx (* (clamp01 (+ split_point (* progress (- 1 split_point)))) width)
+        rule (max 0.5 (* 0.004 width))
+        sw (max 0.0001 (* softness width 0.5))
+        d (- x dx)
+        t (clamp01 (/ (+ d sw) (* 2 sw)))
+        ;; left of the divider shows the outgoing frame, right the incoming one
+        l (sample x y c 1 0)
+        r (to-frame x y c)
+        out (mix l r t)
+        ;; narrow bright divider rule, plus a soft glow
+        core (clamp01 (- 1 (/ (abs d) rule)))
+        glow (clamp01 (- 1 (/ (abs d) (* 4 rule))))]
+    (if (= c 3) (pixel x y 3)
+      (finish (+ out (* core 0.75) (* glow 0.12)) (pixel x y 3) 1))))

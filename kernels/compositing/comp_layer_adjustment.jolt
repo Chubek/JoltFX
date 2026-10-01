@@ -1,0 +1,83 @@
+;; @kernel       comp_layer_adjustment
+;; @category     compositing
+;; @description  Applies adjustment layer to underlying layers.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the topmost underlying layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; An adjustment layer grades everything below it. `src` is the topmost underlying
+;; layer; the resource array packs the rest of the underlying stack as RGBA frames of
+;; width*height*4 floats back to back and is read with `frame-clamped`, which returns
+;; the source pixel past the end, so the base is the source frame alone when no stack
+;; is supplied. `adjustment` selects the built-in adjustment; the profile has no
+;; kernel type, so a named adjustment is an integer code: 0 exposure, 1 contrast,
+;; 2 saturation, 3 gamma. `pivot` is the neutral point the grade is built around and
+;; changes the character of the grade even at full intensity, and `intensity` is the
+;; final blend between the base and the graded colour, so 0 is a clean pass-through
+;; of the underlying layers. `vibrance` is applied on top of the grade and, unlike a
+;; plain saturation lift, is weighted down where the colour is already saturated.
+;; `layers` bounds how much of the underlying stack is flattened beneath the source.
+;; The adjustment never touches alpha.
+;; built-in adjustment; 0 exposure, 1 contrast, 2 saturation, 3 gamma; range [0, 3].
+(param adjustment 0 0 3 1)
+;; blend between the underlying layers and the graded colour; range [0, 1].
+(param intensity 1 0 1 0)
+;; neutral point the grade is built around; 0.5 is a neutral exposure and gamma,
+;; below 0.5 darkens and above 0.5 brightens; range [0, 1].
+(param pivot 0.4 0 1 0)
+;; saturation change weighted by the existing saturation; range [-1, 1].
+(param vibrance 0 -1 1 0)
+;; number of underlying stack frames to flatten beneath the source; range [1, 6].
+(param layers 3 1 6 1)
+
+
+;; Premultiplied colour of frames [s, n) folded back to front.
+(defn adj-fold [px py ch s n p]
+  (if (>= s n) 0
+    (let [la (frame-clamped s px py 3)
+          a (min 1 la)
+          p1 (* p (- 1 a))
+          ls (if (> la 0) (/ (frame-clamped s px py ch) la) 0)]
+      (+ (* a p1 ls) (adj-fold px py ch (+ s 1) n p1)))))
+
+
+;; One built-in adjustment applied to a straight colour, given the base luminance.
+(defn adj-one [v l gain satk gamma]
+  (if (= adjustment 0) (* (max 0 v) gain)
+    (if (= adjustment 1) (+ pivot (* 2 (- v pivot)))
+      (if (= adjustment 2) (+ l (* (- v l) satk))
+        (pow (max 0 v) gamma)))))
+
+
+;; Vibrance: the saturation lift falls off where the colour is already saturated.
+(defn vib-one [v l vk] (+ l (* (- v l) vk)))
+
+
+(defkernel comp_layer_adjustment [x y c]
+  (let [n (min layers (frame-count))
+        ;; transmittance of the underlying stack, as a sum of logs
+        pc (exp (sum k 0 n (log (max .000000001 (- 1 (min 1 (frame-clamped k x y 3)))))))
+        pm0 (adj-fold x y 0 0 n 1)
+        pm1 (adj-fold x y 1 0 n 1)
+        pm2 (adj-fold x y 2 0 n 1)
+        ba (+ (* (pixel x y 3) pc) (- 1 pc))
+        r (if (> ba 0) (/ (+ (* (pixel x y 0) pc) pm0) ba) 0)
+        g (if (> ba 0) (/ (+ (* (pixel x y 1) pc) pm1) ba) 0)
+        b (if (> ba 0) (/ (+ (* (pixel x y 2) pc) pm2) ba) 0)
+        l (luma r g b)
+        gain (pow 2 (* 2 (- pivot .5)))
+        satk (+ 1 (* 2 pivot))
+        gamma (pow 2 (* 4 (- pivot .5)))
+        ar (adj-one r l gain satk gamma)
+        ag (adj-one g l gain satk gamma)
+        ab (adj-one b l gain satk gamma)
+        al (luma ar ag ab)
+        vk (+ 1 (* vibrance (- 1 (saturation ar ag ab))))
+        vr (vib-one ar al vk)
+        vg (vib-one ag al vk)
+        vb (vib-one ab al vk)
+        out (mix (channel c r g b) (channel c vr vg vb) intensity)]
+    (if (= c 3) (pixel x y 3) (finish out (pixel x y 3) 1))))

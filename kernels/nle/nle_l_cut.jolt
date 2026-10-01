@@ -1,0 +1,38 @@
+;; @kernel       nle_l_cut
+;; @category     nle
+;; @description  Performs L-cut where video leads audio transition.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (outgoing frame); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the incoming frame, width*height*4 floats. An empty
+;; array degrades to the outgoing frame. The wipe front is an L: the incoming
+;; picture fills the region below the horizontal edge and right of the vertical
+;; edge, so the cut wraps around a corner instead of crossing the frame.
+;; video lead [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; how far the video leads the audio point, in progress units; range [0, 1].
+(param video_lead 0.15 0 1 0)
+;; L wipe corner softness; range [0, 1].
+(param softness 0.04 0 1 0)
+
+
+(defkernel nle_l_cut [x y c]
+  (let [lead (* video_lead 0.2)
+        pos (clamp01 (- progress lead))
+        ;; corner position sweeps from top-left to bottom-right
+        cx (* (clamp01 pos) width)
+        cy (* (clamp01 (+ (- 1 progress) lead)) height)
+        sw (max 0.0001 (* softness (max width height) 0.35))
+        ;; signed distance to the L: positive outside the corner region
+        dv (- x cx)
+        dh (- cy y)
+        d (max dv dh)
+        t (clamp01 (/ (- sw d) (* 2 sw)))
+        out (mix (pixel x y c) (to-frame x y c) t)
+        bar (clamp01 (- 1 (/ (abs d) sw)))]
+    (if (= c 3) (pixel x y 3)
+      (finish (+ out (* bar 0.4)) (pixel x y 3) 1))))

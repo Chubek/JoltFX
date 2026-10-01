@@ -1,0 +1,89 @@
+;; @kernel       temporal_flicker_reduction
+;; @category     temporal
+;; @description  Reduces temporal flicker.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame window, each frame width*height*4 floats, and the
+;; source is the newest frame. Flicker is a whole-frame brightness excursion, so it is
+;; measured where it actually lives: every window frame, and the source, get a level
+;; from a four-point probe lattice spread over the frame. The source's level is compared
+;; with the running mean of the window and the source is rescaled by run/cur, which is
+;; a pure level change - detail, contrast and colour are untouched, because the
+;; correction is one multiplier applied to all three channels. The gain is clamped so a
+;; frame that went nearly black cannot be multiplied up into garbage. `method` picks the
+;; running level: the mean of the frame levels, their median, or a trimmed mean that
+;; discards the two extremes of a short window. `preserve_motion` fades the correction
+;; out where the pixel's own temporal spread says the scene moved there, so moving
+;; highlights are not flattened.
+;; Rec.709 luma of resource frame k at (rx, ry); k indexes the frame array.
+(defn flum [k rx ry]
+  (let [i (+ (+ (* k (* 4 (* width height))) (* 4 (+ (* (floor (+ ry .5)) width) (floor (+ rx .5))))) 3)]
+    (if (all2 (>= i 3) (< i (data-count)))
+      (let [a (data i)]
+        (if (> a 0)
+            (luma (/ (data (- i 3)) a) (/ (data (- i 2)) a) (/ (data (- i 1)) a))
+            0))
+      (luminance rx ry))))
+;; Mean luma of resource frame k over the four probe points of the probe lattice.
+(defn frame-level [k ax ay bx by]
+  (/ (+ (flum k ax ay) (flum k bx ay) (flum k ax by) (flum k bx by)) 4))
+;; Level of window sample k, where sample n is the source frame and the rest are the
+;; resource frames from the newest backwards.
+(defn level-at [k n cur ax ay bx by]
+  (if (= k n) cur (frame-level (- (- n 1) k) ax ay bx by)))
+
+
+;; temporal window in frames; range [1, 8].
+(param window 6 1 8 1)
+;; fraction of the measured level error to remove; range [0, 1].
+(param strength 1 0 1 0)
+;; running level; 0 mean of frame levels, 1 median, 2 trimmed mean; range [0, 2].
+(param method 0 0 2 1)
+;; fade the correction out where the pixel changed over the window; range [0, 1].
+(param preserve_motion 1 0 1 1)
+
+
+(defkernel temporal_flicker_reduction [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [n (min window (frame-count))
+          ;; four probe points, a quarter and three quarters across each axis
+          ax (/ width 4) ay (/ height 4)
+          bx (* 3 (/ width 4)) by (* 3 (/ height 4))
+          ;; level of the source frame itself
+          cur (/ (+ (luminance ax ay) (luminance bx ay)
+                    (luminance ax by) (luminance bx by)) 4)
+          ;; level of every window frame, source included as the last sample
+          ;; mean of the frame levels: the running level
+          level (/ (+ cur (sum k 0 n (frame-level (- (- n 1) k) ax ay bx by)))
+                   (+ n 1))
+          ;; median level: the rank-th smallest of the same window levels
+          rank (round (/ (+ n 1) 2))
+          median (sum k 0 (+ n 1)
+                    (let [v (level-at k n cur ax ay bx by)
+                          below (sum j 0 (+ n 1)
+                                    (if (<= (level-at j n cur ax ay bx by) v) 1 0))]
+                      (if (= below (max 1 rank)) v 0)))
+          ;; trimmed mean: drop the levels beyond one deviation of the running level
+          dev (abs (- cur level))
+          trimmed (if (= method 2)
+                    (/ (sum k 0 (+ n 1)
+                         (let [v (level-at k n cur ax ay bx by)]
+                           (if (all2 (> v (- level dev)) (< v (+ level dev))) v 0)))
+                       (+ n 1))
+                    level)
+          run (if (= method 1) median trimmed)
+          base (pixel x y c)
+          ;; per-pixel temporal spread about the source, used to protect real motion
+          spread (/ (+ (abs (- base (frame-clamped (max 0 (- n 1)) x y c)))
+                       (sum k 0 n (abs (- (frame-clamped (- (- n 1) k) x y c) base))))
+                    (+ n 1))
+          gate (if (= preserve_motion 1) (- 1 (smooth 0 .25 spread)) 1)
+          ;; the level correction, clamped so a near-black frame cannot be scaled up
+          gain (min 4 (max .25 (/ (max .0001 run) (max .0001 cur))))
+          out (* base (+ 1 (* strength gate (- gain 1))))]
+      (finish out (pixel x y 3) 0))))

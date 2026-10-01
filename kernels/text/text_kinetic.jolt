@@ -1,0 +1,172 @@
+;; @kernel       text_kinetic
+;; @category     text
+;; @description  Animates glyph positions, rotations, and scale using per-character timing.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text; shared functions: common/image.jolt.
+;; Text run resource layout (the profile has no string or font type, so the text
+;; engine supplies the rasterised run):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; Curve resource layout. The curve is packed immediately after the run at offset
+;; po = 1 + 2N + width*height, and is read with the length-prefixed curve helpers
+;; (curve-value-at), which is how two resources share one array:
+;;   data[po]          = point count M
+;;   data[po+1 .. po+2M] = M (x,y) pairs, x increasing over [0,1]
+;; Each glyph is driven by the curve at a staggered time, so the curve y value
+;; sets the glyph's vertical offset, its rotation through the run's cross
+;; coordinate, and its scale. Every read is guarded, and curve-value degrades to
+;; identity on an empty resource, so an absent run or curve is a no-op.
+;; glyph code page selector, which folds the character codes onto a tint:
+;; 0 straight codes, 1 upper-case fold, 2 digits-only fold, 3 symbol fold.
+;; range [0, 3].
+(param character_set 0 0 3 1)
+;; animation clock; one unit is one full pass through the curve; range [0, 32].
+(param time 0 0 32 0)
+;; per-glyph time stagger; range [0, 4].
+(param stagger 0.12 0 4 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+;; Sample a length-prefixed curve at array offset `off` (data[off] = point count M,
+;; then M (x,y) pairs with x increasing) with the same piecewise-linear semantics
+;; and the same degradation as curve-value: an empty, short or malformed curve
+;; returns v unchanged. This mirrors curve-value because the profile has one data
+;; array, and the run this kernel animates occupies the front of it.
+;;   data[off]     = M
+;;   data[off+1+2i] = x_i, data[off+2+2i] = y_i, for i in [0, M)
+(defn curve-at [off v]
+  (let [dc (data-count)
+        n (if (> dc (+ off 1)) (max 0 (min (round (data off)) 1000)) 0)
+        ok (if (> dc (+ off 2 (- n 1))) 1 0)]
+    (if (< n 2) v
+      (if (= ok 0) v
+        (let [xa (data (+ off 1))
+              xb (data (+ (+ off 1) (* 2 (- n 1))))
+              ya (data (+ off 2))
+              yb (data (+ (+ off 2) (* 2 (- n 1))))
+              k (max 0 (min (- n 2)
+                    (sum i 0 (- n 1)
+                      (if (< v (data (+ (+ off 1) (* 2 (+ i 1))))) 1 0))))
+              ax (data (+ off 1 (* 2 k)))
+              bx (data (+ off 1 (* 2 (+ k 1))))
+              ay (data (+ off 2 (* 2 k)))
+              by (data (+ off 2 (* 2 (+ k 1))))
+              t (if (> bx ax) (clamp01 (/ (- v ax) (- bx ax))) 0)]
+          (if (< v (min xa xb)) ya
+            (if (> v (max xa xb)) yb
+              (+ (* (- 1 t) ay) (* t by)))))))))
+
+(defkernel text_kinetic [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [n (run-n)
+          e (max .02 (text-extent))
+          boxh (* .14 height)
+          boxw (* .14 width)
+          inkw (* e boxw)
+          ox (* .5 (- width inkw))
+          oy (* .5 (- height boxh))
+          u (/ (- x ox) (max .0001 boxw))
+          v (/ (- y oy) (max .0004 boxh))
+          inb (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (< v 1))))
+          gi (if (all2 (> n 0) inb) (text-glyph-at u n) 0)
+          gl (glyph-left gi)
+          gr (glyph-right gi)
+          ; the glyph's own position across its advance span, 0 at its left edge
+          gu (/ (- u gl) (max .00001 (- gr gl)))
+          ; the curve is packed after the run, so read it at that offset
+          po (+ 1 (+ (* 2 (run-n)) (* width height)))
+          phase (mod (+ time (* gi stagger)) 1)
+          m (curve-at po phase)
+          ; the curve value drives the lift, the rotation and the scale
+          lift (- m .5)
+          rot (* .55 (- gu .5))
+          scale (max .05 (- 1 (* .75 (abs lift))))
+          ; a rotation about the glyph centre maps this pixel into glyph space
+          sdx (* scale (sin rot))
+          sdy (* scale (cos rot))
+          rx (- u (* .5 (+ gl gr)))
+          ry (- v .5)
+          uu (+ (* .5 (+ gl gr)) (- (* rx sdy) (* ry sdx)))
+          vv (+ .5 (+ (* lift boxh .55) (- (* rx sdx) (* ry sdy))))
+          cov (if (all2 (> n 0) inb) (clamp01 (run-coverage (clamp01 uu) (clamp01 vv))) 0)
+          code (if (> n 0) (data (+ 1 (max 0 (min (- n 1) gi)))) 0)
+          folded (if (= character_set 0) code
+                  (if (= character_set 1) (* (mod code 26) 65)
+                    (if (= character_set 2) (* (mod code 10) 48) (* (mod (+ code 11) 40) 32))))
+          tint (mod folded 3)
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          ir (if (= tint 0) 1 (if (= tint 1) .40 .95))
+          ig (if (= tint 0) 1 (if (= tint 1) .95 .55))
+          ib (if (= tint 0) 1 (if (= tint 1) .30 .15))]
+      (finish (mix base (channel c ir ig ib) cov) (pixel x y 3) 1))))

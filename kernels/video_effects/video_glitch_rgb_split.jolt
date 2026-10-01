@@ -1,0 +1,41 @@
+;; @kernel       video_glitch_rgb_split
+;; @category     video_effects
+;; @description  Splits RGB channels with horizontal offset for chromatic glitch.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The logical Vec2 offset is flattened into split_x/split_y and is applied to each
+;; colour channel along its own direction, 120 degrees apart, so the three channels
+;; separate radially: the split grows with the distance from the frame centre and the
+;; green and blue copies pull away from the red one.
+;; channel offset x in pixels; range [-128, 128].
+(param split_x 6 -128 128 0)
+;; channel offset y in pixels; range [-128, 128].
+(param split_y 0 -128 128 0)
+;; rotation of the split vector in degrees; range [0, 360].
+(param angle 0 0 360 0)
+;; offset gain; range [0, 8].
+(param intensity 1 0 8 0)
+;; animate; 0 steady split, 1 the gain breathes down each scan line; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_glitch_rgb_split [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [seg (if (= c 0) 0 (if (= c 1) 120 240))
+          ang (radians (+ angle seg))
+          ;; animated mode wobbles the gain from row to row
+          wob (if (= animate 1) (/ (sin (+ (* 1.7 pass) (* y 0.11))) 2) 0)
+          gain (* intensity (+ 1 (* 0.35 wob)))
+          ;; radial falloff: half the offset at the centre, full at the corners
+          dx (- (+ x 0.5) (* 0.5 width))
+          dy (- (+ y 0.5) (* 0.5 height))
+          fall (+ 0.5 (* 0.5 (/ (sqrt (+ (* dx dx) (* dy dy)))
+                               (max 1 (max width height)))))
+          ox (* gain (* fall (* split_x (cos ang))))
+          oy (* gain (* fall (* split_y (sin ang))))]
+      (sample (+ x ox) (+ y oy) c 1 1))))

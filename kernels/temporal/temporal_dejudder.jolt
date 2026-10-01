@@ -1,0 +1,107 @@
+;; @kernel       temporal_dejudder
+;; @category     temporal
+;; @description  Removes judder from video.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the source frames, each frame width*height*4 floats, and the
+;; two bracketing frames are the first and the last one supplied. Displacement between
+;; them is estimated with the same bounded integer search the stabiliser uses: a probe
+;; lattice is compared over the whole box [-radius, radius]^2, with the earlier bracket's
+;; lattice held still and the later bracket's lattice displaced. The profile has no fold
+;; primitive and no argmin, so the box cannot be scanned for a minimum; each candidate is
+;; weighted by exp(-error/tau) and the estimate is the weighted centroid of that cost
+;; surface, which is a smooth argmin and falls back to zero on a flat frame. Both
+;; brackets are then resampled at the fraction of that vector `midpoint` asks for, so at
+;; 0.5 both read the centre of the motion and the ghosting of a plain cross-fade cancels.
+;; Both brackets are stored premultiplied, so interpolating the stored premultiplied
+;; channels is the correct thing to average. `method` varies the reconstruction: two
+;; taps, a quarter-pixel box against aliasing, or an agreement-weighted pair that refuses
+;; to blend across an occlusion. `strength` cross-fades the synthesis against the source,
+;; which is what to back off when the search lands on the wrong thing.
+;; Channel ch of frame k at integer (rx, ry); out-of-range reads clamp to the source.
+(defn fpx [k rx ry ch]
+  (let [px (+ (* ry width) rx)
+        i (+ (* k (* 4 (* width height))) (* 4 px) ch)]
+    (if (all2 (all2 (>= px 0) (>= i 0)) (< i (data-count))) (data i) (pixel rx ry ch))))
+;; Green-channel value of frame k at (rx, ry); a read outside the frame or the array
+;; falls back to the source.
+(defn fgrn [k rx ry]
+  (let [px (+ (* (floor (+ ry .5)) width) (floor (+ rx .5)))
+        i (+ (* k (* 4 (* width height))) (* 4 px) 1)]
+    (if (all2 (>= px 0) (>= i 0))
+        (if (< i (data-count)) (data i) (pixel rx ry 1))
+        (pixel rx ry 1))))
+;; Bilinear sample of channel ch in frame k; premultiplied, so interpolating the stored
+;; values directly is correct.
+(defn fbilerp [k rx ry ch]
+  (let [fx (floor rx) fy (floor ry) ax (- rx fx) ay (- ry fy)]
+    (+ (* (- 1 ay) (+ (* (- 1 ax) (fpx k fx fy ch)) (* ax (fpx k (+ fx 1) fy ch))))
+       (* ay (+ (* (- 1 ax) (fpx k fx (+ fy 1) ch)) (* ax (fpx k (+ fx 1) (+ fy 1) ch)))))))
+;; Cost of one candidate displacement: the earlier bracket's probe lattice is held still
+;; and the later bracket's lattice is displaced by (dx, dy). The cost has to be recomputed
+;; per candidate, which is why it is a function and not a binding.
+(defn bracket-err [x y dx dy k0 k1]
+  (sum i 0 3
+    (sum j 0 3
+      (let [px (* (+ .5 i) (/ width 3))
+            py (* (+ .5 j) (/ height 3))
+            d (- (fgrn k0 px py) (fgrn k1 (+ px dx) (+ py dy)))]
+        (* d d)))))
+
+
+;; temporal position to reconstruct inside the bracket; range [0, 1].
+(param midpoint 0.5 0 1 0)
+;; bounded integer search radius in pixels; range [0, 4].
+(param radius 2 0 4 1)
+;; blend of the synthesised frame against the source; range [0, 1].
+(param strength 1 0 1 0)
+;; reconstruction; 0 two taps, 1 quarter-pixel box, 2 agreement-weighted pair; range [0, 2].
+(param method 0 0 2 1)
+
+
+(defkernel temporal_dejudder [x y c]
+  (let [nf (frame-count)
+        ;; the bracketing frames: first and last one supplied
+        k0 0
+        k1 (max 0 (- nf 1))
+        r (max 0 (round radius))
+        ;; softmax temperature, set well below one probe lattice's worth of mismatch so
+        ;; the centroid is an effectively exact integer argmin
+        tau (max .000001 (/ (* 3 3) 500))
+        wsum (max .000001
+                (sum dx (- r) (+ r 1)
+                  (sum dy (- r) (+ r 1)
+                    (exp (/ (* -1 (bracket-err x y dx dy k0 k1)) tau)))))
+        ;; per-axis translation: the weighted centroid of the cost surface
+        cx (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (bracket-err x y dx dy k0 k1)) tau))]
+                    (* w dx)))) wsum)
+        cy (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (bracket-err x y dx dy k0 k1)) tau))]
+                    (* w dy)))) wsum)
+        ;; both brackets read at the requested fraction of the motion vector
+        m midpoint
+        ax (+ x (* m cx))
+        ay (+ y (* m cy))
+        bx (- x (* (- 1 m) cx))
+        by (- y (* (- 1 m) cy))
+        ;; method 1 widens each tap into a quarter-pixel box
+        q (if (= method 1) .25 0)
+        fa (/ (+ (fbilerp k0 (- ax q) (- ay q) c) (fbilerp k0 (+ ax q) (- ay q) c)
+                 (fbilerp k0 (- ax q) (+ ay q) c) (fbilerp k0 (+ ax q) (+ ay q) c)) 4)
+        fb (/ (+ (fbilerp k1 (- bx q) (- by q) c) (fbilerp k1 (+ bx q) (- by q) c)
+                 (fbilerp k1 (- bx q) (+ by q) c) (fbilerp k1 (+ bx q) (+ by q) c)) 4)
+        ;; how well the two brackets agree here: low agreement means an occlusion
+        agree (clamp01 (- 1 (smooth 0 .25 (abs (- fa fb)))))
+        ;; method 2 refuses to blend where the two frames describe different things
+        out (if (= method 2)
+              (if (> agree .5) (/ (+ fa fb) 2) fa)
+              (mix fa fb m))]
+    (finish (mix (pixel x y c) out strength) (pixel x y 3) 0)))

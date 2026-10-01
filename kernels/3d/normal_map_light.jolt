@@ -1,0 +1,65 @@
+;; @kernel       normal_map_light
+;; @category     3d
+;; @description  Lights a normal-map frame using a configurable directional light.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src = the colour frame (premultiplied RGBA); the resource array holds
+;; the normal map as width*height*4 floats and is read with `to-frame`, whose red,
+;; green and blue channels are the tangent-space XYZ components. Output: image dst,
+;; same dimensions as src.
+;; Module: jolt.fx.kernels.3d; shared functions: common/image.jolt.
+;; Each normal is remapped from the usual [0,1] encoding to [-1,1] and normalised; a
+;; map whose encoded length is zero carries no direction, so it falls back to the
+;; head-on normal (0,0,1) rather than dividing by a vanishing length. The normal is
+;; lit with Blinn-Phong against the directional light and a head-on view: Lambert
+;; diffuse plus a specular lobe off the half vector, raised on an ambient floor. An
+;; empty resource reads the source pixel as the normal map, so the frame relights
+;; itself from its own colour instead of failing.
+;; light direction x; range [-1, 1].
+(param light_x 0 -1 1 0)
+;; light direction y; range [-1, 1].
+(param light_y 0 -1 1 0)
+;; light direction z; range [-1, 1].
+(param light_z 1 -1 1 0)
+;; light intensity; range [0, 4].
+(param intensity 1 0 4 0)
+;; specular strength; range [0, 2].
+(param specular 0.35 0 2 0)
+;; ambient light; range [0, 1].
+(param ambient 0.12 0 1 0)
+
+
+;; Normal-map channel at a pixel coordinate, clamped to the frame.
+(defn normal-at [px py ch]
+  (to-frame (max 0 (min (- width 1) (round px))) (max 0 (min (- height 1) (round py))) ch))
+
+
+(defkernel normal_map_light [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [nx (* 2 (- (normal-at x y 0) 0.5))
+          ny (* 2 (- (normal-at x y 1) 0.5))
+          nz (* 2 (- (normal-at x y 2) 0.5))
+          nl (sqrt (+ (* nx nx) (* ny ny) (* nz nz)))
+          ;; a zero-length encoded normal has no direction: fall back to (0,0,1)
+          flat (if (> nl 0.000001) 0 1)
+          nlen (max 0.000001 nl)
+          ux (/ (* (- 1 flat) nx) nlen)
+          uy (/ (* (- 1 flat) ny) nlen)
+          uz (+ flat (/ (* (- 1 flat) nz) nlen))
+          ll (max 0.000001 (sqrt (+ (* light_x light_x) (* light_y light_y) (* light_z light_z))))
+          lx (/ light_x ll)
+          ly (/ light_y ll)
+          lz (/ light_z ll)
+          ;; half vector for the specular lobe, against a head-on view direction
+          hl (max 0.000001 (sqrt (+ (* lx lx) (* ly ly) (* (+ lz 1) (+ lz 1)))))
+          hx (/ lx hl)
+          hy (/ ly hl)
+          hz (/ (+ lz 1) hl)
+          ndl (max 0 (+ (* ux lx) (* uy ly) (* uz lz)))
+          ndh (max 0 (+ (* ux hx) (* uy hy) (* uz hz)))
+          lit (+ ambient (* intensity (+ ndl (* specular (pow ndh 32)))))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (* base lit) (pixel x y 3) 0))))

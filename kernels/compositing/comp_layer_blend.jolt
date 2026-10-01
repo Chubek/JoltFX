@@ -1,0 +1,28 @@
+;; @kernel       comp_layer_blend
+;; @category     video_effects
+;; @description  Blends a layer against another frame with a selectable blend mode.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (backdrop, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The resource array holds the layer frame, width*height*4 floats. `mode` selects
+;; a blend mode: the profile has no string type, so a named mode is an integer code
+;; (see common/image.jolt `blend-mode`).
+;; blend mode; see blend-mode codes; range [0, 13].
+(param mode 0 0 13 1)
+;; layer opacity; range [0, 1].
+(param opacity 1 0 1 0)
+;; composite the layer alpha over the backdrop; range [0, 1].
+(param over 1 0 1 1)
+
+
+(defkernel comp_layer_blend [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          lay (channel c (to-frame x y 0) (to-frame x y 1) (to-frame x y 2))
+          blended (blend-mode mode base lay)
+          mixed (mix base blended opacity)]
+      (finish (if (= over 1) (min 1 mixed) mixed) (pixel x y 3) 1))))

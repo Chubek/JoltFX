@@ -1,0 +1,59 @@
+;; @kernel       nle_rate_stretch
+;; @category     nle
+;; @description  Stretches or compresses clip duration.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the clip, N RGBA frames packed back to back, each
+;; width*height*4 floats. The rate controls how fast that window is traversed:
+;; rate > 1 is a speed-up, so the source advances faster than the output and the
+;; clip finishes early; rate < 1 is a slow-motion stretch, so it runs long. The
+;; exact half and double rates are handled specially and land on whole source
+;; frames -- 0.5x gives every source frame exactly two output frames and 2x gives
+;; it exactly one -- instead of leaving the sampled position a fraction out and
+;; ghosting. Pitch correction forces whole-frame selection, which removes the
+;; blend smear that reads as a pitch shift. An empty resource is a no-op.
+;; output playhead in frames; range [0, 600].
+(param position 12 0 600 0)
+;; playback rate; 0.5 is half speed, 1 is real time, 2 is double; range [0.25, 4].
+(param rate 2 0.25 4 0)
+;; interpolation; 0 nearest frame, 1 blend between frames; range [0, 1].
+(param interpolation 1 0 1 1)
+;; pitch correction: 1 snaps to whole frames; range [0, 1].
+(param pitch_correct 0 0 1 1)
+;; boundary mode; 0 hold last frame, 1 wrap, 2 mirror; range [0, 2].
+(param boundary_mode 0 0 2 1)
+
+
+(defn rate-resolve [k n mode]
+  (if (< n 1) 0
+    (if (= mode 0) (max 0 (min (- n 1) k))
+      (if (= mode 1) (mod k n)
+        (let [d (mod k (* 2 (max 1 (- n 1))))]
+          (if (< d (max 1 (- n 1))) d (- (* 2 (max 1 (- n 1))) d)))))))
+
+
+(defkernel nle_rate_stretch [x y c]
+  (let [n (frame-count)
+        r (max 0.01 rate)
+        ;; the clip lasts n/r output frames at this rate; the playhead stays inside
+        len (/ n r)
+        pos (min position len)
+        raw (* pos r)
+        ;; exact rates snap so the cadence is whole frames, not a half-frame out
+        exact (if (> rate 1.9) 1 (if (< rate 0.6) 1 0))
+        snap (if (= exact 1) (floor (+ raw 0.5)) raw)
+        i0 (floor snap)
+        f (- snap i0)
+        s0 (rate-resolve i0 n boundary_mode)
+        s1 (rate-resolve (+ i0 1) n boundary_mode)
+        ;; pitch correction drops the blend; otherwise honour the interpolation flag
+        blend (* interpolation (- 1 pitch_correct))]
+    (if (< n 1) (pixel x y c)
+      (if (= blend 0)
+        (frame-at (if (= exact 1) i0 (round (rate-resolve snap n boundary_mode))) x y c)
+        (mix (frame-at s0 x y c) (frame-at s1 x y c) (clamp01 f))))))

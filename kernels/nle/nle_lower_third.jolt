@@ -1,0 +1,68 @@
+;; @kernel       nle_lower_third
+;; @category     nle
+;; @description  Draws a lower-third caption bar with a rasterised text run.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; Text run resource layout (the profile has no string or font type, so the text
+;; engine supplies rasterised coverage):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width in run-box pixels
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; `String` in the inventory selects the bar style; with no string type it is an
+;; integer style code.
+;; bar style; 0 solid, 1 translucent, 2 underline rule; range [0, 2].
+(param style 0 0 2 1)
+;; bar reveal [0,1]; range [0, 1].
+(param progress 1 0 1 0)
+;; text opacity; range [0, 1].
+(param opacity 1 0 1 0)
+;; text run height as a fraction of the bar height; range [0.01, 2].
+(param size 0.5 0.01 2 0)
+;; bar color red; range [0, 1].
+(param color_r 0.1 0 1 0)
+;; bar color green; range [0, 1].
+(param color_g 0.1 0 1 0)
+;; bar color blue; range [0, 1].
+(param color_b 0.12 0 1 0)
+
+
+;; Glyph coverage of the run at a frame pixel; 0 outside the run box. The run box
+;; sits in the upper part of the bar, left aligned after the reveal.
+(defn lower-coverage [x y progress size opacity]
+  (let [n (round (data 0))]
+    (if (< n 1) 0
+      (let [barh (* 0.18 height)
+            runh (* barh size)
+            left (+ (* 0.04 width) (* progress (* 0.4 width)))
+            top (- (+ (- height barh) (/ barh 2)) runh)
+            u (/ (- x left) (max .0004 (* 0.7 width)))
+            v (/ (- y top) (max .0004 runh))
+            idx (+ (* (floor v) width) (floor u))]
+        (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (< v 1))))
+          (max 0 (* (data (+ (+ n (* 2 n)) 1 idx)) opacity))
+          0)))))
+
+
+(defkernel nle_lower_third [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [barh (* 0.18 height)
+          ;; the bar occupies the bottom strip of the frame
+          inbar (if (< y (- height barh)) 1 0)
+          ;; style 0 solid, 1 translucent, 2 no fill and only an underline rule
+          fill (if (= style 2) 0 (if (= style 1) 0.5 0.85))
+          rule (if (= style 2) (if (< y (- height (* barh 0.85))) 0.9 0) 0)
+          ;; the bar wipes in from the left as progress advances
+          wipe (/ (- (* progress width) (* 0.04 width)) (max .0001 (* 0.4 width)))
+          covered (if (< x (+ (* 0.04 width) (* wipe (* 0.4 width)))) 1 0)
+          bar (if (= inbar 0) 0 (* covered (max fill rule)))
+          cov (lower-coverage x y progress size opacity)
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          ink (channel c 1 1 1)
+          withbar (mix base (channel c color_r color_g color_b) bar)]
+      (finish (mix withbar ink cov) (pixel x y 3) 1))))

@@ -1,0 +1,48 @@
+;; @kernel       temporal_rolling_shutter_fix
+;; @category     temporal
+;; @description  Fixes rolling shutter distortion.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The second frame arrives in the resource array as width*height*4 floats. A rolling
+;; sensor reads rows sequentially, so during one readout each row was captured at a
+;; different instant and a moving scene shears across the frame. The skew is undone by
+;; shearing rows back by an amount proportional to their vertical position: `scan_time`
+;; is the readout duration in frame intervals, and the largest row is displaced by
+;; `strength * max_shift` pixels. `crop` zooms in enough to hide the border the shear
+;; exposes, and `blend` cross-fades against the raw row for partial correction.
+;; readout duration in frame intervals; range [0, 1].
+(param scan_time 0.5 0 1 0)
+;; fraction of the skew to undo; range [0, 1].
+(param strength 1 0 1 0)
+;; vertical skew profile; 0 linear in row, 1 eased toward the top; range [0, 2].
+(param method 0 0 2 1)
+;; skew of the last row in pixels; range [0, 32].
+(param max_shift 8 0 32 0)
+;; centre zoom that hides the sheared border; range [0, 0.49].
+(param crop 0.1 0 0.49 0)
+;; cross-fade between the corrected and the raw row; range [0, 1].
+(param blend 1 0 1 0)
+
+
+(defkernel temporal_rolling_shutter_fix [x y c]
+  (let [;; normalized row position: 0 at the top, 1 at the bottom
+        ny (/ y (max 1 (- height 1)))
+        ;; 0 linear shear, 1 eased shear, 2 quadratic shear
+        profile (if (= method 0) ny
+                  (if (= method 1) (smooth 0 1 ny) (* ny ny)))
+        ;; centre-zoom first, so the correction is applied in the cropped space
+        zx (/ (- width 1) 2)
+        zy (/ (- height 1) 2)
+        zoom (- 1 (min .49 crop))
+        sx (+ zx (* (- x zx) zoom))
+        sy (+ zy (* (- y zy) zoom))
+        ;; the row this output row was actually captured on
+        dy (- sy (* strength max_shift scan_time profile))]
+    (if (= c 3) (pixel x y 3)
+      (finish (mix (sample sx y c 1 1) (sample sx dy c 1 1) blend)
+              (/ (+ (pixel x y 3) (sample sx dy 3 1 1)) 2) 0))))

@@ -1,0 +1,118 @@
+;; @kernel       comp_layer_time_remap
+;; @category     compositing
+;; @description  Applies per-layer time remapping.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The resource array carries both a curve and a frame window, in this order:
+;; data[0] = P, then P (x,y) curve pairs at data[1+2i] and data[2+2i] with strictly
+;; increasing x, then N RGBA frames of width*height*4 floats back to back starting at
+;; data[1+2P]. `remap-curve` reads the curve directly rather than through the shared
+;; length-prefixed helpers, because those overlap the length prefix with the first x
+;; value; it also degrades to the identity when P < 2 or when the x values are not
+;; increasing, so an absent or malformed curve is a plain linear time map instead of a
+;; failed call. `remap-frame` reads the window and falls back to the source pixel for any
+;; index the window does not cover, so a short window is safe. The curve maps a normalized
+;; time onto a normalized frame position, so a speed ramp becomes a frame ramp. `method`
+;; selects the curve interpolation, 0 linear and 1 cubic Hermite with finite-difference
+;; tangents. `offset` is the time position the curve is evaluated at, and `speed` scales
+;; the curve output across the window, where 1 walks the whole window and a smaller value
+;; is a slower remap that only covers part of it. `hold` quantizes the sampled position to
+;; whole frames, which is how a remap is held on keys instead of blended between them.
+;; curve interpolation; 0 linear, 1 cubic Hermite; range [0, 1].
+(param method 1 0 1 1)
+;; normalized time position the curve is evaluated at; range [0, 1].
+(param offset 0.5 0 1 0)
+;; curve output multiplier across the frame window; range [0.25, 4].
+(param speed 1 0.25 4 0)
+;; 1 quantizes the sampled position to whole frames; range [0, 1].
+(param hold 0 0 1 1)
+
+
+;; Number of curve points declared by the resource, 0 when there is no resource.
+(defn remap-count [] (if (> (data-count) 0) (max 0 (round (data 0))) 0))
+
+
+;; First frame of the packed window, which follows the curve.
+(defn remap-base [] (+ 1 (* 2 (remap-count))))
+
+
+;; Number of whole frames the window holds.
+(defn remap-frames []
+  (max 0 (floor (/ (- (data-count) (remap-base)) (max 1 (frame-size))))))
+
+
+;; The x of curve point i.
+(defn remap-x [i] (data (+ 1 (* 2 i))))
+
+
+;; The y of curve point i.
+(defn remap-y [i] (data (+ 2 (* 2 i))))
+
+
+;; Segment slope at i, or 0 where the segment does not increase.
+(defn remap-slope [i m]
+  (if (all2 (> i 0) (all2 (< i (- m 1)) (all2 (> (remap-x (+ i 1)) (remap-x i)) 1)))
+    (/ (- (remap-y (+ i 1)) (remap-y i)) (- (remap-x (+ i 1)) (remap-x i)))
+    0))
+
+
+;; Linear segment interpolation.
+(defn remap-lin [t y0 y1] (+ y0 (* t (- y1 y0))))
+
+
+;; Cubic Hermite segment interpolation; d0 and d1 are the tangent magnitudes, which
+;; are the neighbouring slopes times the segment width.
+(defn remap-herm [t y0 y1 d0 d1]
+  (+ (* (+ (* 2 t t t) (+ (* -3 t t) 1)) y0)
+     (* (+ (+ (* t t t) (* -2 t t)) t) d0)
+     (* (+ (* -2 t t t) (* 3 t t)) y1)
+     (* (+ (* t t t) (* -1 t t)) d1)))
+
+
+;; The remap curve at normalized time v, degrading to the identity when the resource
+;; declares fewer than two points or the points are not strictly increasing in x.
+(defn remap-curve [v method]
+  (let [m (remap-count)
+        ordered (if (< m 2) 0
+          (sum i 0 (- m 1) (if (> i 0) (if (> (remap-x i) (remap-x (- i 1))) 1 0) 0)))]
+    (if (any2 (< m 2) (= ordered 1))
+      v
+      (let [seg (max 0 (min (- m 2)
+                    (sum i 0 (- m 1) (if (< v (remap-x (+ i 1))) 0 1))))
+            x0 (remap-x seg)
+            x1 (remap-x (+ seg 1))
+            dx (max .000000001 (- x1 x0))
+            t (clamp01 (/ (- v x0) dx))
+            sc (remap-slope seg m)
+            ;; each end tangent falls back to the segment slope at an endpoint
+            lo (if (> seg 0) (remap-slope (- seg 1) m) sc)
+            hi (if (< seg (- m 2)) (remap-slope (+ seg 1) m) sc)
+            y0 (remap-y seg)
+            y1 (remap-y (+ seg 1))]
+        (if (= method 0) (remap-lin t y0 y1) (remap-herm t y0 y1 (* dx lo) (* dx hi)))))))
+
+
+;; Frame k of the packed window, or the source pixel when the window is short.
+(defn remap-frame [k ch px py]
+  (let [fs (frame-size)
+        idx (+ (remap-base) (* k fs) (* 4 (+ (* py width) px)))]
+    (if (all2 (>= k 0) (< k (remap-frames))) (data idx) (pixel px py ch))))
+
+
+(defkernel comp_layer_time_remap [x y c]
+  (let [;; where in the window the curve sends this time, then how fast to walk it
+        raw (clamp01 (+ offset (* .25 pass)))
+        pos (remap-curve raw method)
+        n (max 1 (remap-frames))
+        fi (max 0 (min (- n 1) (* pos speed (- n 1))))
+        k0 (floor fi)
+        k1 (min (- n 1) (+ k0 1))
+        frac (if (= hold 1) 1 (- fi k0))
+        v0 (remap-frame k0 c x y)
+        v1 (remap-frame k1 c x y)]
+    (+ (* (- 1 frac) v0) (* frac v1))))

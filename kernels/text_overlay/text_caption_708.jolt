@@ -1,0 +1,154 @@
+;; @kernel       text_caption_708
+;; @category     text_overlay
+;; @description  Overlays CEA-708 closed caption.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; Text run resource layout (no string or font type in this profile, so the text
+;; engine supplies the rasterised run):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; CEA-708 draws a wide caption band carrying service flags above the text cells,
+;; which is what this kernel lays out. Every read is guarded, so an absent (empty)
+;; run resource leaves the band and flags.
+;; The CSV String parameter becomes an integer selector:
+;; 0 band with a top rule, 1 band with a leading icon column, 2 centred band with
+;; a bottom rule, 3 band with a progress underline. range [0, 3].
+(param style 0 0 3 1)
+;; band reveal as a fraction of the cell grid; range [0, 1].
+(param progress 1 0 1 0)
+;; caption columns inside the band; range [8, 42].
+(param cells 32 8 42 1)
+;; band bottom y in normalized frame coordinates; range [0, 1].
+(param position_y 0.94 0 1 0)
+;; text cell height as a fraction of frame height; range [0.01, 1].
+(param size 0.06 0.01 1 0)
+;; band opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+(defkernel text_caption_708 [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [n (run-n)
+          ch (* size height)
+          iconw (if (= style 1) (* ch 2.2) 0)
+          bandw (- width (* ch .8))
+          bx0 (/ iconw 2)
+          bx1 (+ bx0 bandw)
+          stack (* 1.35 ch)
+          top (- (* position_y height) stack)
+          ; the service flag strip sits above the text cells
+          flags (- top (* ch .5))
+          fy (/ (- y flags) (max .0004 (* ch .5)))
+          fx (/ (- x bx0) (max .0004 bandw))
+          fk (max 0 (min 7 (floor (* fx 8))))
+          flit (if (> fx 1) 0 (if (< fx (* .06 progress)) (* fk 0.9) (* fk 0.12)))
+          flag (* opacity (* (if (all2 (>= fy 0) (all2 (< fy 1) (all2 (>= fx 0) (< fx 1)))) 1 0) flit))
+          inband (* (if (all2 (>= y top) (all2 (< y (+ top stack)) (all2 (>= x bx0) (< x bx1)))) 1 0)
+                    (min (clamp01 (/ (- y top) 1.5))
+                      (min (clamp01 (/ (- (+ top stack) y) 1.5))
+                        (min (clamp01 (/ (- x bx0) 1.5)) (clamp01 (/ (- bx1 x) 1.5))))))
+          band (* opacity inband)
+          rule (if (= style 0) (* band (clamp01 (/ (- y (+ top (* ch .06))) (max 1 (* ch .05)))))
+                 (if (= style 2) (* band (clamp01 (/ (- (+ top stack (* ch .06)) y) (max 1 (* ch .05))))) 0))
+          under (* band (if (= style 3) (clamp01 (/ (- (+ top stack (* ch .12)) y) (max 1 (* ch .1)))) 0))
+          underlit (* under (if (< (- (+ top stack (* ch .12)) y) (* progress (* ch 2))) 1 0))
+          ; the text cells start after the icon column
+          tw (- bandw (* ch .8))
+          t0 (+ bx0 (* ch .4))
+          cellw (/ tw cells)
+          col (max 0 (min (- cells 1) (floor (/ (- x t0) (max .0004 cellw)))))
+          uc (- (/ (- x t0) cellw) col)
+          v (/ (- y (+ top (* ch .35))) (max .0004 ch))
+          g col
+          gl (glyph-left g)
+          gr (glyph-right g)
+          u (+ gl (* uc (max .00001 (- gr gl))))
+          live (if (< g n) 1 0)
+          shown (if (< col (* progress cells)) 1 0)
+          cv (* opacity (if (all2 (all2 (>= v 0) (< v 1))
+                                  (all2 (> live 0) (> shown 0)))
+                          (run-coverage u v) 0))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          bandc (channel c .04 .05 .12)
+          flagc (channel c .92 .92 .96)
+          rulec (channel c .95 .72 .10)
+          iconc (* opacity (* 0.55 (if (= style 1)
+                       (* (if (all2 (>= x bx0) (< x iconw))
+                            (if (< fy .5) 1 0) 0) 1) 0)))]
+      (finish (mix (mix (mix (mix (mix base bandc band) flagc flag)
+                             rulec (max rule underlit))
+                        (channel c .35 .95 .55) iconc)
+                   (channel c 1 1 1) cv)
+              (pixel x y 3) 1))))

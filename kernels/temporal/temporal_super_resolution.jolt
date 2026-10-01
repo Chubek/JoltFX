@@ -1,0 +1,79 @@
+;; @kernel       temporal_super_resolution
+;; @category     temporal
+;; @description  Enhances resolution using temporal information.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame window, each frame width*height*4 floats. No single
+;; frame carries more than one sample of the scene per pixel, so the window is resampled
+;; at sub-pixel positions and averaged: the frames interleave detail the individual
+;; frames never resolve, which is the multi-frame super-resolution idea. `factor` is the
+;; sub-pixel sampling density, so the taps walk a raster of `factor` phases across the
+;; sub-pixel domain. `alignment` picks the lattice those phases sit on: the raster
+;; itself, a low-discrepancy irrational sequence that covers the sub-pixel domain far
+;; better than any finite raster, or a second incommensurate sequence so the taps form a
+;; low-discrepancy lattice in two dimensions rather than a line. Frames are stored
+;; premultiplied, so the taps are interpolated premultiplied, which is the correct thing
+;; to average. `method` keeps the reconstruction honest: a plain mean, an edge-aware
+;; mean that rejects a tap disagreeing with the source (so edges are not averaged away),
+;; or the mean plus the residual that the averaging removed.
+;; Channel ch of resource frame k at (rx, ry); out-of-range reads clamp to the source.
+(defn fpx [k rx ry ch]
+  (let [px (+ (* (floor (+ ry .5)) width) (floor (+ rx .5)))
+        i (+ (* k (* 4 (* width height))) (* 4 px) ch)]
+    (if (all2 (all2 (>= px 0) (>= i 0)) (< i (data-count))) (data i) (pixel rx ry ch))))
+;; Bilinear sample of channel ch in resource frame k, premultiplied.
+(defn fbilerp [k rx ry ch]
+  (let [fx (floor rx) fy (floor ry) ax (- rx fx) ay (- ry fy)]
+    (+ (* (- 1 ay) (+ (* (- 1 ax) (fpx k fx fy ch)) (* ax (fpx k (+ fx 1) fy ch))))
+       (* ay (+ (* (- 1 ax) (fpx k fx (+ fy 1) ch)) (* ax (fpx k (+ fx 1) (+ fy 1) ch)))))))
+;; The sub-frame sample of this window: the source at phase zero, then each window
+;; frame at the sub-pixel offset its lattice position calls for.
+(defn tap [k c base n x y]
+  (let [s1 .6180339887498949
+        s2 .7548776662466927
+        f (max 1 factor)
+        ;; raster phase: `factor` evenly spaced phases inside one pixel
+        raster (- (/ (+ (mod k f) .5) f) .5)
+        dx (if (= alignment 0) raster (- (mod (* k s1) 1) .5))
+        dy (if (= alignment 2) (- (mod (* (+ k 7) s2) 1) .5) dx)]
+    (if (= k 0) base (fbilerp (max 0 (- (- n 1) k)) (+ x dx) (+ y dy) c))))
+
+
+;; sub-pixel sampling density of the reconstruction; range [1, 8].
+(param factor 4 1 8 1)
+;; tap lattice; 0 raster, 1 irrational line, 2 irrational plane; range [0, 2].
+(param alignment 0 0 2 1)
+;; combiner; 0 mean, 1 edge-aware mean, 2 mean plus residual; range [0, 2].
+(param method 1 0 2 1)
+;; edge weight tolerance, and the residual amount for method 2; range [0.01, 1].
+(param detail 0.1 0.01 1 0)
+;; frames combined into the reconstruction; range [1, 8].
+(param window 4 1 8 1)
+
+
+(defkernel temporal_super_resolution [x y c]
+  (let [n (min window (frame-count))
+        taps (+ n 1)
+        base (pixel x y c)
+        ;; a tap that disagrees with the source pixel is not the same scene point, so
+        ;; its weight decays with the squared difference against `detail`
+        wsum (sum k 0 taps
+               (if (= method 1)
+                   (exp (/ (* -1 (* (- (tap k c base n x y) base) (- (tap k c base n x y) base)))
+                           (* 2 (* detail detail))))
+                   1))
+        vsum (sum k 0 taps
+               (* (if (= method 1)
+                    (exp (/ (* -1 (* (- (tap k c base n x y) base) (- (tap k c base n x y) base)))
+                            (* 2 (* detail detail))))
+                    1)
+                  (tap k c base n x y)))
+        avg (/ vsum (max .000001 wsum))
+        ;; method 2 restores the residual the temporal average removed
+        out (if (= method 2) (+ avg (* detail (- base avg))) avg)]
+    (finish out (pixel x y 3) 0)))

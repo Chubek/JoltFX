@@ -1,0 +1,64 @@
+;; @kernel       comp_layer_null
+;; @category     compositing
+;; @description  Creates null object for parenting.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the flat layer content, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; A null object is a real, renderable layer that exists so other layers can be
+;; parented to it. `position_x/y` is its anchor in normalized frame coordinates
+;; (0.5, 0.5 is the centre) and `rotation_x/y/z` are XYZ Euler angles in degrees,
+;; with matrix order Rz Ry Rx, the same convention as transform3d. `size` is the
+;; quad half-extent in plane units, where half the frame width is 1. The quad is
+;; drawn by inverting the pinhole projection of its own plane: for the screen point
+;; (u,v) in [-1,1], substituting the depth row of the rotation into the projection
+;; leaves a 2x2 linear system whose solution is the local plane coordinate, so
+;; pitching or yawing the quad genuinely foreshortens it and the perspective divide
+;; scales it. The quad is filled with the source layer's own content, so a solid
+;; input renders as a flat coloured quad and an empty input stays empty; an
+;; edge-on projection collapses the quad to zero coverage instead of failing.
+;; null position x in normalized frame coordinates; range [0, 1].
+(param position_x 0.5 0 1 0)
+;; null position y in normalized frame coordinates; range [0, 1].
+(param position_y 0.5 0 1 0)
+;; pitch about X in degrees; range [-360, 360].
+(param rotation_x 0 -360 360 0)
+;; yaw about Y in degrees; range [-360, 360].
+(param rotation_y 0 -360 360 0)
+;; roll about Z in degrees; range [-360, 360].
+(param rotation_z 0 -360 360 0)
+;; quad half-extent in plane units; range [0.05, 2].
+(param size 0.5 0.05 2 0)
+
+
+(defkernel comp_layer_null [x y c]
+  (let [crx (cos (radians rotation_x)) srx (sin (radians rotation_x))
+        cry (cos (radians rotation_y)) sry (sin (radians rotation_y))
+        crz (cos (radians rotation_z)) srz (sin (radians rotation_z))
+        ;; rotation matrix rows for Rz Ry Rx; the local plane sits at z = 0
+        m00 (* crz cry) m01 (- (* crz sry srx) (* srz crx))
+        m10 (* srz cry) m11 (+ (* srz sry srx) (* crz crx))
+        m20 (- sry) m21 (* cry srx)
+        ;; screen point in [-1,1] and the null anchor in plane units
+        u (- (* 2 (/ (+ x .5) width)) 1)
+        v (- (* 2 (/ (+ y .5) height)) 1)
+        tx (- (* 2 position_x) 1)
+        ty (- (* 2 position_y) 1)
+        ;; w = 1 + m20 lx + m21 ly, so the projection collapses to 2x2 equations
+        aa (- m00 (* u m20)) bb (- m01 (* u m21))
+        cc (- m10 (* v m20)) dd (- m11 (* v m21))
+        ee (- u tx) ff (- v ty)
+        det (- (* aa dd) (* bb cc))
+        lx (/ (- (* ee dd) (* bb ff)) (max .000000000001 det))
+        ly (/ (- (* aa ff) (* ee cc)) (max .000000000001 det))
+        ;; quad coverage in local units, feathered by about one source pixel
+        nx (abs (/ lx size)) ny (abs (/ ly size))
+        ex (/ 2 width) ey (/ 2 height)
+        cov (min (- 1 (smooth (- 0 ex) (+ 1 ex) nx)) (- 1 (smooth (- 0 ey) (+ 1 ey) ny)))
+        ;; the layer content mapped across the quad's own extent
+        qx (- (/ (* (+ (/ lx size) 1) width) 2) .5)
+        qy (- (/ (* (+ (/ ly size) 1) height) 2) .5)]
+    (* (sample qx qy c 1 1) cov)))

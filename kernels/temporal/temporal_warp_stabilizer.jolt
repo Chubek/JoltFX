@@ -1,0 +1,88 @@
+;; @kernel       temporal_warp_stabilizer
+;; @category     temporal
+;; @description  Stabilizes video using warp transformation.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame history, each frame width*height*4 floats; the
+;; newest supplied frame is the stabilisation reference. The camera translation is
+;; estimated per axis with the phase-correlation-style bounded search the profile
+;; affords: a probe lattice spread over the frame is compared against the reference over
+;; the whole integer box [-radius, radius]^2, with the source block held still and the
+;; reference block displaced, and the translation is the argmin of that cost surface.
+;; The profile has no fold primitive and no argmin, so the box cannot be scanned for a
+;; minimum; each candidate is weighted by exp(-error/tau) and the answer is the weighted
+;; centroid, which is a smooth argmin and degrades gracefully: on a flat frame every
+;; candidate scores the same, the weights are equal and the translation comes out zero.
+;; The temperature sits well below the mismatch of a whole probe lattice, so the centroid
+;; is effectively the exact integer argmin. `method` picks the cost: 0 summed squared
+;; difference, 1 summed absolute difference, which is less sensitive to a few wild
+;; probes. `smoothing` scales the applied translation and `crop` zooms in to hide the
+;; border it exposes. The green channel stands in for luma in the probe sum: it carries
+;; 72% of Rec.709 luma, and one tap instead of three keeps the 4*radius^2 search times
+;; three evaluations affordable.
+;; Green-channel value of frame k at (rx, ry); k >= 0 indexes the resource array, and a
+;; read outside the frame or the array falls back to the source.
+(defn fgrn [k rx ry]
+  (let [px (+ (* (floor (+ ry .5)) width) (floor (+ rx .5)))
+        i (+ (+ (* k (* 4 (* width height))) (* 4 px)) 1)]
+    (if (all2 (>= px 0) (>= i 0))
+        (if (< i (data-count)) (data i) (pixel rx ry 1))
+        (pixel rx ry 1))))
+
+
+;; translation estimate as a fraction of the raw search; range [0, 1].
+(param smoothing 1 0 1 0)
+;; centre crop that hides the border revealed by the translation; range [0, 0.49].
+(param crop 0.05 0 0.49 0)
+;; bounded integer search radius in pixels; range [0, 4].
+(param radius 2 0 4 1)
+;; difference cost; 0 summed squared difference, 1 summed absolute difference; range [0, 1].
+(param method 0 0 1 1)
+;; cross-fade between the stabilised and the raw frame; range [0, 1].
+(param blend 1 0 1 0)
+
+
+(defkernel temporal_warp_stabilizer [x y c]
+  (let [nf (frame-count)
+        ;; newest supplied frame is the reference the source is aligned to
+        pi (max 0 (- nf 1))
+        r (max 0 (round radius))
+        ;; softmax temperature, set well below one probe lattice's worth of mismatch so
+        ;; the centroid is an effectively exact integer argmin
+        tau (max .000001 (/ (* 3 3) 500))
+        wsum (max .000001
+                (sum dx (- r) (+ r 1)
+                  (sum dy (- r) (+ r 1)
+                    (exp (/ (* -1 (probe-err x y dx dy pi)) tau)))))
+        ;; per-axis translation: the weighted centroid of the cost surface
+        cx (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (probe-err x y dx dy pi)) tau))]
+                    (* w dx)))) wsum)
+        cy (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (probe-err x y dx dy pi)) tau))]
+                    (* w dy)))) wsum)
+        ;; apply the smoothed estimate and the compensating centre crop
+        zx (/ (- width 1) 2)
+        zy (/ (- height 1) 2)
+        sx (+ (+ zx (* (- x zx) (- 1 (min .49 crop)))) (* cx smoothing))
+        sy (+ (+ zy (* (- y zy) (- 1 (min .49 crop)))) (* cy smoothing))]
+    (finish (mix (pixel x y c) (sample sx sy c 1 1) blend) (pixel x y 3) 0)))
+
+
+;; Cost of one candidate camera translation: the source's probe lattice is held still and
+;; frame pi's lattice is displaced by (dx, dy). The error has to be recomputed per
+;; candidate, which is why it is a function and not a binding.
+(defn probe-err [x y dx dy pi]
+  (sum i 0 3
+    (sum j 0 3
+      (let [px (* (+ .5 i) (/ width 3))
+            py (* (+ .5 j) (/ height 3))
+            d (- (pixel px py 1) (fgrn pi (+ px dx) (+ py dy)))]
+        (if (= method 0) (* d d) (abs d))))))

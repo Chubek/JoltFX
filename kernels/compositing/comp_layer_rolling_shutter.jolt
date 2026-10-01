@@ -1,0 +1,47 @@
+;; @kernel       comp_layer_rolling_shutter
+;; @category     compositing
+;; @description  Corrects rolling shutter distortion.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the skewed layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; A rolling shutter sensor exposes the frame line by line, so during a move each row
+;; is captured at a different moment and the image leans and smears. The correction
+;; resamples the source with the accumulated offset for that row. `scan_time` is the
+;; fraction of the exposure spent reading the frame and scales the whole correction,
+;; `slope` is the horizontal lean as a fraction of the frame width, and `strength` is
+;; the correction gain, so a strength of 1 fully removes the lean and 0 leaves the
+;; layer alone. `method` selects the read profile; the profile has no string type, so
+;; a named method is an integer code: 0 linear, where the delay grows linearly down
+;; the frame, and 1 an S-shaped profile 3t^2 - 2t^3, which is what a sensor produces
+;; when the row readout is fastest in the middle of the scan. The offset is centred on
+;; the middle row so correcting a lean does not drift the frame sideways, and `border`
+;; is the sampling border mode because an uncorrected lean pushes content off frame.
+;; fraction of the exposure spent scanning the frame; range [0, 1].
+(param scan_time 0.5 0 1 0)
+;; correction method; 0 linear scan, 1 S-shaped scan; range [0, 1].
+(param method 0 0 1 1)
+;; correction gain; 0 leaves the layer alone; range [0, 2].
+(param strength 1 0 2 0)
+;; horizontal lean as a fraction of the frame width; range [0, 0.5].
+(param slope 0.3 0 0.5 0)
+;; sampling border mode; 0 transparent, 1 clamp, 2 wrap, 3 mirror; range [0, 3].
+(param border 1 0 3 1)
+
+
+;; Fraction of the scan already elapsed when row v (0 at the top, 1 at the bottom) was
+;; exposed: linear for method 0, an S curve for method 1.
+(defn rs-delay [v]
+  (if (= method 1) (+ (* 3 v v) (* -2 v v v)) v))
+
+
+(defkernel comp_layer_rolling_shutter [x y c]
+  (let [v (/ (+ y .5) height)
+        ;; the offset this row accumulated, centred on the middle row
+        e (* strength scan_time (- (rs-delay v) .5))
+        qx (- x (* slope width e))
+        qy (- y (* .5 height e))]
+    (sample qx qy c 1 border)))

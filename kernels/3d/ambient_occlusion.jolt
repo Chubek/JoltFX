@@ -1,0 +1,67 @@
+;; @kernel       ambient_occlusion
+;; @category     3d
+;; @description  Estimates local occlusion from scene depth or geometry.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src = the shaded frame (premultiplied RGBA); the resource array holds
+;; the occlusion/depth frame as width*height*4 floats and is read with `to-frame`,
+;; whose red channel carries the depth. Output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.3d; shared functions: common/image.jolt.
+;; A larger depth value means nearer to the camera, so a tap that rises above the
+;; local plane occludes the shading point and a tap that falls behind it does not.
+;; The plane is fitted from the centre depth and its central-difference gradient, and
+;; `samples` taps are scattered over a golden-angle disc of radius `radius`; each tap
+;; is weighted by a Gaussian in radius, and by a soft range gate that fades out taps
+;; far behind the plane. That gate is what makes the blur depth-aware: occlusion is
+;; accumulated from a handful of neighbouring pixels instead of a screen-wide box, so
+;; it does not bleed across a silhouette into the background. The result darkens the
+;; frame quadratically, which keeps creases open rather than crushing them to black.
+;; neighbourhood radius in pixels; range [1, 64].
+(param radius 8 1 64 0)
+;; occlusion strength; range [0, 4].
+(param strength 1 0 4 0)
+;; taps per shading point; range [1, 24].
+(param samples 12 1 24 1)
+;; depth bias, larger tolerates shallow surfaces before they occlude; range [0.001, 0.5].
+(param bias 0.08 0.001 0.5 0)
+
+
+;; Depth-frame red channel at a pixel coordinate, clamped to the frame.
+(defn depth-at [px py]
+  (to-frame (max 0 (min (- width 1) (round px))) (max 0 (min (- height 1) (round py))) 0))
+
+
+;; Tap radius on the golden-angle disc for sample i out of n.
+(defn tap-radius [i n r]
+  (* r (sqrt (/ (+ i 0.5) n))))
+
+
+(defkernel ambient_occlusion [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (max 1 radius)
+          n (max 1 (min 24 samples))
+          d0 (depth-at x y)
+          span (max 0.0001 (* 4 bias))
+          far (max 0.0001 (* 12 bias))
+          ;; local depth gradient: the tangent plane the occlusion is measured against
+          gx (* 0.5 (- (depth-at (+ x 1) y) (depth-at (- x 1) y)))
+          gy (* 0.5 (- (depth-at x (+ y 1)) (depth-at x (- y 1))))
+          acc (sum i 0 n
+                (let [a (* 2.479 i)
+                      rr (tap-radius i n r)
+                      ox (* rr (cos a))
+                      oy (* rr (sin a))
+                      d (depth-at (+ x ox) (+ y oy))
+                      ;; how far this tap rises above the local plane, in depth
+                      rise (- d (+ d0 (+ (* gx ox) (* gy oy))))
+                      ;; occludes when it rises; background behind the plane is faded
+                      occ (clamp01 (/ (- rise bias) span))
+                      behind (clamp01 (/ (- (max 0 (- rise)) far) far))]
+                  (* (gaussian-weight rr r) (* occ (+ 1 (* behind 3))))))
+          ;; normalise by the full radial weight so strength is scale independent
+          tot (max 0.0001 (sum i 0 n (gaussian-weight (tap-radius i n r) r)))
+          ao (clamp01 (- 1 (* strength (/ acc tot))))]
+      (finish (* (pixel x y c) (* ao ao)) (pixel x y 3) 1))))

@@ -1,0 +1,54 @@
+;; @kernel       temporal_field_weave
+;; @category     temporal
+;; @description  Weaves fields together.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The second field frame arrives in the resource array as width*height*4 floats. Weave
+;; is the strict operation: every output row is taken whole from whichever field
+;; scanned it, and `field_order` says which field that is - 0 is even-field-first (even
+;; rows come from the source field), 1 is odd-field-first. A hard weave combs wherever
+;; the scene moved between fields, so `feather` cross-fades each woven row toward a
+;; reference built from its neighbours, and `motion_adaptive` fades that cross-fade out
+;; on rows where the two fields disagree, which is where the comb would appear.
+;; `method` picks the reference: the vertical mean of the woven rows, the other field's
+;; copy of the same row, or a diagonal average of both fields at the doubled line rate.
+;; field order; 0 even-field-first, 1 odd-field-first; range [0, 1].
+(param field_order 0 0 1 1)
+;; feather target; 0 vertical row mean, 1 other field row, 2 diagonal both-field mean; range [0, 2].
+(param method 0 0 2 1)
+;; amount of cross-fade applied to each woven row; range [0, 1].
+(param feather 0.35 0 1 0)
+;; fade the cross-fade out on rows where the two fields disagree; range [0, 1].
+(param motion_adaptive 1 0 1 1)
+
+
+(defkernel temporal_field_weave [x y c]
+  (let [s (pixel x y c)
+        o (to-frame x y c)
+        parity (mod y 2)
+        ;; 1 when the source field is the one that scanned this row
+        own (if (= field_order 0) (if (= parity 0) 1 0) (if (= parity 0) 0 1))
+        ;; strict weave: the row is taken whole from the field that scanned it
+        woven (if (= own 1) s o)
+        ;; disagreement between the fields: a comb can only appear where these differ
+        disagree (abs (- s o))
+        gate (if (= motion_adaptive 1) (- 1 (smooth 0 .2 disagree)) 1)
+        top (* 2 y)
+        bot (min (- height 1) (+ top 1))
+        target (if (= method 0)
+                 ;; vertical mean of the woven rows either side
+                 (/ (+ woven (sample x (max 0 (- y 1)) c 1 1)
+                          (sample x (min (- height 1) (+ y 1)) c 1 1)) 3)
+                 (if (= method 1)
+                     ;; the other field's copy of the same row
+                     (/ (+ s o) 2)
+                     ;; diagonal average of both fields at the doubled line rate
+                     (/ (+ (sample x top c 1 1) (sample x bot c 1 1)
+                            (to-frame x top c) (to-frame x bot c)) 4)))
+        w (clamp01 (* feather gate))]
+    (finish (mix woven target w) (pixel x y 3) 0)))

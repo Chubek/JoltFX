@@ -1,0 +1,35 @@
+;; @kernel       nle_j_cut
+;; @category     nle
+;; @description  Performs J-cut where audio leads video transition.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (outgoing frame); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the incoming frame, width*height*4 floats. An empty
+;; array degrades to the outgoing frame, so the wipe has no visible effect.
+;; The hard cut travels behind a vertical wipe bar; audio_lead pushes the bar
+;; ahead of the nominal progress so the incoming picture leads the audio point.
+;; transition progress [0,1]; range [0, 1].
+(param progress 0.5 0 1 0)
+;; how far the picture leads the audio point, in progress units; range [0, 1].
+(param audio_lead 0.15 0 1 0)
+;; wipe bar edge softness; range [0, 1].
+(param softness 0.03 0 1 0)
+
+
+(defkernel nle_j_cut [x y c]
+  (let [lead (* audio_lead 0.18)
+        pos (clamp01 (+ progress lead))
+        bx (* pos width)
+        sw (max 0.0001 (* softness width 0.5))
+        d (- x bx)
+        ;; 0 to the left of the bar (outgoing picture), 1 to the right
+        t (clamp01 (/ (+ d sw) (* 2 sw)))
+        out (mix (pixel x y c) (to-frame x y c) t)
+        ;; the wipe bar itself is a soft bright stripe
+        bar (clamp01 (- 1 (/ (abs d) sw)))]
+    (if (= c 3) (pixel x y 3)
+      (finish (+ out (* bar 0.45)) (pixel x y 3) 1))))

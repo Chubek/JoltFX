@@ -1,0 +1,48 @@
+;; @kernel       comp_layer_card_wipe
+;; @category     compositing
+;; @description  Applies card wipe transition.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the outgoing frame, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the outgoing frame and the resource array holds the incoming frame as
+;; width*height*4 floats, read with `to-frame`, which returns the source pixel when
+;; the array is empty and so degrades to a wipe between identical frames. A card wipe
+;; slides a rigid card across the frame; the card front is a single straight boundary
+;; sweeping from the left edge to the right edge, tilted by a sixth of the frame
+;; height so the card reads as a card rather than as a flat wipe. `progress` is the
+;; card position along that sweep, 0 before the card arrives and 1 after it has passed.
+;; `edge_noise` displaces the boundary with a fractal noise field, so the front is a
+;; torn organic edge instead of a ruler line, and `seed` selects that noise family.
+;; `softness` is the width of the front in normalized frame units and also controls a
+;; slight blur of the displaced edge, which is what stops the noise from aliasing.
+;; The output is premultiplied: the front blends the two alphas as well as the two
+;; colours, so a wipe between transparent frames stays transparent.
+;; card position along the sweep; 0 before the card arrives; range [0, 1].
+(param progress 0.5 0 1 0)
+;; width of the card front in normalized frame units; range [0, 0.25].
+(param softness 0.02 0 0.25 0)
+;; fractal displacement of the card front; range [0, 1].
+(param edge_noise 0.3 0 1 0)
+;; random seed selecting the edge noise family; range [0, 1023].
+(param seed 7 0 1023 1)
+
+
+(defkernel comp_layer_card_wipe [x y c]
+  (let [u (/ (+ x .5) width)
+        v (/ (+ y .5) height)
+        ;; the card front: a single tilted sweep plus a fractal torn edge
+        proj (+ u (* (/ v 6) (- v .5)))
+        n0 (* 0.25 (fractal-noise (+ (* 3 proj) seed) (* 3 v) seed 3 0.5 2))
+        n1 (* 0.06 (fractal-noise (+ (* 9 proj) seed) (* 9 v) (+ seed 5) 2 0.5 2))
+        front (+ (* edge_noise n0) (* edge_noise n1))
+        ;; signed distance across the front, positive once the card has arrived
+        sd (- (+ proj front) progress)
+        s (max .0005 softness)
+        cov (smooth (- 0 s) s sd)
+        fa (pixel x y 3) ta (to-frame x y 3)]
+    (if (= c 3) (+ (* fa (- 1 cov)) (* ta cov))
+      (+ (* (pixel x y c) (- 1 cov)) (* (to-frame x y c) cov)))))

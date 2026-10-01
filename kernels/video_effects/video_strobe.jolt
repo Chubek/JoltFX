@@ -12,8 +12,6 @@
 (param rate 10 0.1 60 0)
 ;; duty cycle [0,1]; range [0, 1].
 (param duty_cycle 0.5 0 1 0)
-;; phase offset; range [0, 1].
-(param phase 0 0 1 0)
 ;; animation time; range [0, 1000000].
 (param time 0 0 1000000 0)
 ;; flash color red; range [0, 1].
@@ -26,7 +24,7 @@
 
 (defkernel video_strobe [x y c]
   (if (= c 3) (pixel x y 3)
-    (let [ph (mod (+ (* time rate) phase) 1)
+    (let [ph (mod (* time rate) 1)
           on (if (< ph duty_cycle) 1 0)
           base (pixel x y c)
           col (channel c color_r color_g color_b)]

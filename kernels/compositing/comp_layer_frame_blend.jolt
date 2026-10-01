@@ -1,0 +1,51 @@
+;; @kernel       comp_layer_frame_blend
+;; @category     compositing
+;; @description  Blends frames with motion blur.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; Frame blending is the shutter-integrated average of a frame window. The resource
+;; array packs the window as RGBA frames of width*height*4 floats back to back, read
+;; with `frame-clamped`, which returns the source pixel past the end, so a window
+;; shorter than `samples` degrades by clamping to its last frame and an absent window
+;; degrades to the source itself. `method` selects the weight profile; the profile has
+;; no string type, so a named method is an integer code: 0 uniform, which is the plain
+;; average, and 1 triangular, which ramps towards the newest frame the way a real
+;; shutter does. `sharpness` bends that ramp further towards the newest frame, so 0 is
+;; a linear triangular weight and 1 puts nearly all of the weight on the newest frame.
+;; `samples` is the number of frames in the window and `blend_amount` is the strength
+;; of the blend, where 0 returns the newest frame untouched and 1 returns the full
+;; weighted average. The output is premultiplied, so a transparent window stays
+;; transparent.
+;; frame blend method; 0 uniform, 1 triangular; range [0, 1].
+(param method 1 0 1 1)
+;; number of frames in the window; range [1, 16].
+(param samples 4 1 16 1)
+;; strength of the blend; 0 is the newest frame alone; range [0, 1].
+(param blend_amount 0.5 0 1 0)
+;; ramp of the triangular weights towards the newest frame; range [0, 1].
+(param sharpness 0.5 0 1 0)
+
+
+;; Premultiplied colour of window frame k.
+(defn fb-frame [k ch px py] (frame-clamped k px py ch))
+
+
+;; Weight of window frame k, 0 the oldest and n-1 the newest.
+(defn fb-weight [k n]
+  (if (= method 0) 1 (pow (+ 1 k) (+ 1 (* 3 sharpness)))))
+
+
+(defkernel comp_layer_frame_blend [x y c]
+  (let [n (max 1 (min samples (frame-count)))
+        ;; wsum is the total weight of the window, computed once per pixel
+        ws (sum k 0 n (fb-weight k n))
+        ;; the fully weighted average of the window
+        avg (/ (sum k 0 n (* (fb-weight k n) (fb-frame k c x y))) (max .000001 ws))
+        ;; the newest frame alone
+        new (fb-frame (- n 1) c x y)]
+    (mix new avg blend_amount)))

@@ -1,0 +1,121 @@
+;; @kernel       nle_timecode_overlay
+;; @category     nle
+;; @description  Overlays timecode display on video.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; No font resource exists in the profile, so the readout is drawn as seven-segment
+;; strokes: every digit cell is tested against the standard a..g segment pattern
+;; and the active segments are stroked. `timecode` is the time in seconds on a
+;; 25 fps broadcast ratebase and is read out HH:MM:SS:FF. format selects the
+;; grouping: 0 HH:MM:SS:FF, 1 MM:SS:FF, 2 HH:MM:SS, 3 SS:FF. position_x and
+;; position_y place the readout, normalised to the frame. font selects the segment
+;; thickness: 0 standard, 1 bold, 2 thin. Cells outside the selected format are
+;; left blank, and a dark plate behind the digits keeps the readout legible.
+;; timecode in seconds; range [0, 86400].
+(param timecode 3661.25 0 86400 0)
+;; readout format; 0 HH:MM:SS:FF, 1 MM:SS:FF, 2 HH:MM:SS, 3 SS:FF; range [0, 3].
+(param format 0 0 3 1)
+;; horizontal readout position, normalised to frame width; range [0, 1].
+(param position_x 0.08 0 1 0)
+;; vertical readout position, normalised to frame height; range [0, 1].
+(param position_y 0.88 0 1 0)
+;; segment weight; 0 standard, 1 bold, 2 thin; range [0, 2].
+(param font 0 0 2 1)
+
+
+;; Standard seven-segment bit patterns: bit 0 = a (top), 1 = b, 2 = c, 3 = d
+;; (bottom), 4 = e, 5 = f, 6 = g (middle).
+(defn seg-mask [d]
+  (if (= d 0) 63 (if (= d 1) 6 (if (= d 2) 91 (if (= d 3) 79 (if (= d 4) 102
+    (if (= d 5) 109 (if (= d 6) 125 (if (= d 7) 7 (if (= d 8) 127 111))))))))))
+
+
+(defn seg-on [m s] (if (= (mod (floor (/ m (pow 2 s))) 2) 1) 1 0))
+
+
+;; Antialiased axis-aligned box in cell-local units, 1 pixel soft.
+(defn seg-box [u v u0 u1 v0 v1 aa]
+  (let [a (clamp01 (/ (- (min u u1) u0) aa))
+        b (clamp01 (/ (- (min v v1) v0) aa))]
+    (* a b)))
+
+
+;; Coverage of segment s in a digit cell, th being the stroke thickness.
+(defn seg-cover [s u v th aa]
+  (if (= s 0) (seg-box u v (* th 0.5) (- 1 (* th 0.5)) 0 th aa)
+  (if (= s 1) (seg-box u v (- 1 th) 1 0 (+ 0.5 (* th 0.5)) aa)
+  (if (= s 2) (seg-box u v (- 1 th) 1 (- 0.5 (* th 0.5)) 1 aa)
+  (if (= s 3) (seg-box u v (* th 0.5) (- 1 (* th 0.5)) (- 1 th) 1 aa)
+  (if (= s 4) (seg-box u v 0 th (- 0.5 (* th 0.5)) 1 aa)
+  (if (= s 5) (seg-box u v 0 th 0 (+ 0.5 (* th 0.5)) aa)
+      (seg-box u v (* th 0.5) (- 1 (* th 0.5)) (- 0.5 (* th 0.5)) (+ 0.5 (* th 0.5)) aa))))))))
+
+
+;; Soft round dot, used for the colon separators.
+(defn seg-dot [u v cu cv ru rv]
+  (clamp01 (- 1 (sqrt (+ (* (/ (- u cu) ru) (/ (- u cu) ru)) (* (/ (- v cv) rv) (/ (- v cv) rv)))))))
+
+
+;; Field at pair index p for the selected format: 0 hh, 1 mm, 2 ss, 3 ff. The
+;; hh/mm/ss/ff arguments are the already-derived timecode fields.
+(defn slot-field [p fmt hh mm ss ff]
+  (if (= fmt 0) (if (= p 0) hh (if (= p 1) mm (if (= p 2) ss ff)))
+    (if (= fmt 1) (if (= p 0) mm (if (= p 1) ss ff))
+      (if (= fmt 2) (if (= p 0) hh (if (= p 1) mm ss)) ss))))
+
+
+;; Digit value for readout slot k: even slots are the tens digit, odd slots the
+;; units digit, so each digit is the field value divided by 10 or not.
+(defn slot-digit [k fmt hh mm ss ff]
+  (if (> k 7) 0
+    (let [f (slot-field (floor (/ (max 0 k) 2)) fmt hh mm ss ff)
+          div (if (= (mod (max 0 k) 2) 0) 10 1)]
+      (mod (floor (/ f div)) 10))))
+
+
+(defkernel nle_timecode_overlay [x y c]
+  (let [;; broadcast fields, 25 fps ratebase
+        total (max 0 (floor (* timecode 25)))
+        ff (mod total 25)
+        ss (mod (floor (/ total 25)) 60)
+        mm (mod (floor (/ total (* 25 60))) 60)
+        hh (min 99 (floor (/ total (* 25 60 60))))
+        nd (if (= format 0) 8 (if (= format 3) 4 6))
+        dh (* 0.15 height)
+        dw (* dh 0.56)
+        pitch (* dw 1.42)
+        totalw (* nd pitch)
+        ox (- (* position_x width) (* totalw 0.5))
+        oy (- (* position_y height) (* dh 0.5))
+        relx (- x ox)
+        rely (- y oy)
+        slot (floor (/ relx pitch))
+        u (/ (- relx (* slot pitch)) dw)
+        v (/ rely dh)
+        th (if (= font 1) 0.19 (if (= font 2) 0.1 0.14))
+        aa (/ 1.2 (max 1 dw))
+        ;; digit body, only inside a cell that this format actually shows
+        inside (if (all4 (>= slot 0) (< slot nd) (>= u 0) (all2 (<= u 1) (all2 (>= v 0) (<= v 1)))) 1 0)
+        d (slot-digit (max 0 slot) format hh mm ss ff)
+        m (seg-mask (max 0 (min 9 d)))
+        lit (* inside (clamp01 (sum s 0 7 (if (= (seg-on m s) 1) (seg-cover s u v th aa) 0))))
+        ;; colon separators live in the gap after every second cell
+        in-gap (if (all2 (> u 1) (< u (+ (/ (- pitch dw) dw) 1))) 1 0)
+        odd (if (= (mod slot 2) 1) 1 0)
+        cu (+ 1 (/ (- pitch dw) (* 2 dw)))
+        dots (max (seg-dot u v cu 0.3 0.16 0.16) (seg-dot u v cu 0.7 0.16 0.16))
+        colon (* in-gap odd dots)
+        ;; dark plate behind the readout for legibility
+        in-plate (if (all2 (>= relx (- (* 0.15 dw))) (<= relx (+ totalw (* 0.15 dw))))
+          (if (all2 (>= rely (- (* 0.06 dh))) (<= rely (* 1.06 dh))) 1 0) 0)
+        plate (* 0.55 in-plate)
+        base (pixel x y c)
+        al (pixel x y 3)]
+    (if (= c 3) (pixel x y 3)
+      ;; premultiplied: the plate darkens by alpha, the lit segments add white
+      (finish (+ (* base (- 1 plate)) (* (max lit colon) 0.92 al)) al 1))))

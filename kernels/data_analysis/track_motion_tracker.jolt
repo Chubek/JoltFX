@@ -1,0 +1,65 @@
+;; @kernel       track_motion_tracker
+;; @category     data_analysis
+;; @description  Estimates the dominant motion between two frames.
+;; @complexity   High
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (current frame); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
+;; The inventory declares a FlowField, which is a 2-channel image in this profile:
+;; c=0 is u, c=1 is v, c=2 is 0, c=3 is 1. The estimated motion is global, so the
+;; field is uniform; publishing it as a field keeps the output shape stable for
+;; consumers that feed it straight into a warp (see comp_layer_pixel_motion).
+;; The resource array holds the reference frame, width*height*4 floats.
+;; search radius in pixels; range [0, 16].
+(param radius 6 0 16 1)
+;; smoothing weight of the per-pixel residual, 0 gives the pure global estimate;
+;; range [0, 1].
+(param residual 0 0 1 0)
+;; confidence floor below which the field is reported as zero; range [0, 1].
+(param threshold 0 0 1 0)
+;; scale applied to the reported vector; range [-4, 4].
+(param scale 1 -4 4 0)
+
+
+;; Squared luma difference between the two frames at an integer offset.
+(defn track-cost [dx dy]
+  (sum j 0 height (sum i 0 width
+    (let [a (luminance i j)
+          b (luminance (max 0 (min (- width 1) (+ i dx))) (max 0 (min (- height 1) (+ j dy))))]
+      (* (- a b) (- a b))))))
+
+
+;; Exponential-weighted mean of the candidates, which concentrates on the
+;; argmin because the sharpness is set below one pixel's mismatch.
+(defn track-pick [k]
+  (let [den (sum d 0 (+ (* 2 radius) 1) (sum e 0 (+ (* 2 radius) 1)
+             (exp (* k (- (track-cost (- d radius) (- e radius)))))))]
+    (if (<= den .000001) 0
+      (/ (sum d 0 (+ (* 2 radius) 1) (sum e 0 (+ (* 2 radius) 1)
+            (let [w (exp (* k (- (track-cost (- d radius) (- e radius)))))]
+              (* w (- d radius))))) den))))))
+
+
+(defkernel track_motion_tracker [x y c]
+  (let [k 6
+        have (if (> (data-count) 0) 1 0)
+        ;; the cost has to be evaluated inside the defn so each candidate gets its
+        ;; own value; hoisting it into a let would make every candidate identical
+        c00 (if (= have 0) 0 (track-cost 0 0))
+        conf (if (<= c00 .000001) 0 1)
+        u (if (= conf 0) 0 (track-pick k))
+        v (if (= conf 0) 0 (track-pick k))
+        ;; the per-pixel residual lets a consumer see where the global model is poor
+        local (if (and (= residual 1) (= have 1))
+                  (let [a (luminance x y)
+                        b (luminance (max 0 (min (- width 1) (round (+ x u))))
+                                     (max 0 (min (- height 1) (round (+ y v)))))]
+                    (abs (- a b)))
+                  0)
+        vec (if (> local threshold) (abs local) 0)]
+    (if (= c 0) (* scale u)
+      (if (= c 1) (* scale v)
+        (if (= c 2) vec 1)))))

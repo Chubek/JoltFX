@@ -1,0 +1,59 @@
+;; @kernel       audio_spectrum_bars
+;; @category     audio_reactive
+;; @description  Renders audio frequency bands as bars in a frame.
+;; @complexity   High
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.audio_reactive; shared functions: common/image.jolt.
+;; Audio resource layout (the shared audio-* helpers):
+;;   data[0]      = sample count M
+;;   data[1 .. M] = M mono samples in [-1,1]
+;; audio-bin is a direct DFT: O(M) trig calls per bin, and the kernel is invoked
+;; once per (x,y,c), so supply a short window of a few hundred samples. The DFT is
+;; only evaluated for pixels inside the bar region. Marked @gpu No because of it.
+;; frequency bins sampled from the window, mapped logarithmically over the bars;
+;; range [1, 64].
+(param bins 32 1 64 1)
+;; bars drawn across the frame; range [4, 128].
+(param bars 48 4 128 1)
+;; display mode: 0 bars from the baseline, 1 mirrored about the baseline,
+;; 2 line and filled body, 3 square-law expansion of quiet bins; range [0, 3].
+(param mode 0 0 3 1)
+
+(defkernel audio_spectrum_bars [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [m (audio-count)
+          nb (max 1 (min bins (max 1 (/ m 2))))
+          span (max .0001 (- (log (+ 1 nb)) (log 2)))
+          bw (/ width bars)
+          bar (max 0 (min (- bars 1) (floor (/ x (max .0001 bw)))))
+          ; bars are spread logarithmically across the sampled bins, so the low end
+          ; is not crowded into the first few bars
+          ratio (/ bar (max 1 (- bars 1)))
+          bin (max 1 (min (- m 1) (+ 1 (floor (* 1.9 (exp (* ratio span)))))))
+          base (* .82 height)
+          top (- base (* .78 height))
+          ; audio-bin is a direct DFT, so it is only paid for inside the bar region
+          active (all2 (< y base) (>= y top))
+          mag (if (all2 (> m 1) active) (audio-bin bin) 0)
+          peak (clamp01 (* 1.8 mag))
+          grow (if (= mode 3) (sqrt peak) peak)
+          hgt (if (= mode 1) (* .5 grow) grow)
+          u (/ (- x (* bar bw)) (max .0001 bw))
+          spanpx (* hgt height)
+          ytop (- base spanpx)
+          up (all2 (< y base) (all2 (>= y ytop) (all2 (>= u 0) (< u 1))))
+          dn (if (= mode 1) (all2 (>= y base) (all2 (< y (+ base spanpx)) (all2 (>= u 0) (< u 1)))) 0)
+          body (if (all2 (> m 1) (max up dn)) 1 0)
+          ; mode 2 draws a bright rule along the top of each bar
+          edge (* (if (= mode 2) 1 0) (clamp01 (/ (- 1 (* 8 (abs (- y ytop)))) 1)))
+          glow (* .35 (min 1 (* 4 peak)))
+          addc (max (max (channel c .25 .70 1) (channel c .18 .35 .55)) (channel c .92 .97 1))
+          amt (min 1 (+ glow (* body (min 1 (* 2 peak)))))
+          basec (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (+ basec (* amt addc) (* edge (channel c .92 .97 1)))
+              (pixel x y 3)
+              0))))

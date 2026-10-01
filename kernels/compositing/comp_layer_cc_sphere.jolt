@@ -1,0 +1,67 @@
+;; @kernel       comp_layer_cc_sphere
+;; @category     compositing
+;; @description  Applies CC sphere distortion.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer to wrap, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The CC sphere effect wraps the layer onto a sphere, which is the fisheye and VR
+;; projection a panoramic camera produces. `center_x/y` is the sphere centre in
+;; normalized frame coordinates (0.5, 0.5 is the centre) and `radius` is the sphere
+;; radius as a fraction of the shorter frame side, so the sphere stays circular whatever
+;; the frame aspect. A pixel at normalized distance d from the centre sits on the sphere
+;; at polar angle asin(d); the source is then read at the radius that angle maps to
+;; through the texture scale, which magnifies the middle of the sphere and compresses it
+;; towards the rim. There is no asin in the profile, so it is built from atan2 and sqrt,
+;; which is exact over the [-1,1] domain the distance is clamped to. The cosine of that
+;; angle is the sphere normal towards the camera, and `shading` uses it together with a
+;; d^4 Fresnel rim to give the glass its falloff. `strength` is the colour correction
+;; across the sphere, a saturation and contrast push that is strongest at the rim where
+;; the refraction stretches the source most. Outside the sphere the layer is transparent
+;; and the rim is feathered over about one pixel so the sphere edge is not aliased.
+;; sphere centre x in normalized frame coordinates; range [-1, 2].
+(param center_x 0.5 -1 2 0)
+;; sphere centre y in normalized frame coordinates; range [-1, 2].
+(param center_y 0.5 -1 2 0)
+;; sphere radius as a fraction of the shorter frame side; range [0.02, 1.5].
+(param radius 0.4 0.02 1.5 0)
+;; colour correction strength across the sphere; range [-1, 2].
+(param strength 0.5 -1 2 0)
+;; glass shading amount; range [0, 1].
+(param shading 0.6 0 1 0)
+
+
+(defkernel comp_layer_cc_sphere [x y c]
+  (let [sc (max 1 (min width height))
+        ;; pixel position on the unit sphere
+        dx (/ (- (+ x .5) (* center_x width)) (* radius sc))
+        dy (/ (- (+ y .5) (* center_y height)) (* radius sc))
+        d (sqrt (+ (* dx dx) (* dy dy)))
+        ;; clamped copy for the asin, which is only defined on [-1,1]
+        dq (min .999999 d)
+        ;; polar angle of the sphere point: asin(d) from atan2 and sqrt
+        ang (atan2 dq (sqrt (max 0 (- 1 (* dq dq)))))
+        ;; the texture radius that angle maps to
+        kk (/ (* radius sc (/ ang (/ pi 2))) (max .000001 d))
+        sx (+ (* center_x width) (* kk dx))
+        sy (+ (* center_y height) (* kk dy))
+        ;; the refracted layer colour at that point
+        sa (max .000001 (sample sx sy 3 1 0))
+        r (/ (sample sx sy 0 1 0) sa)
+        g (/ (sample sx sy 1 1 0) sa)
+        b (/ (sample sx sy 2 1 0) sa)
+        lm (luma r g b)
+        ;; the grade is strongest where the refraction stretches the source most
+        rim (* (* d d) (* d d))
+        amt (* strength rim)
+        ;; shading from the sphere normal and the Fresnel rim
+        nzc (sqrt (max 0 (- 1 (* dq dq))))
+        lit (+ (- 1 shading) (* shading (+ (* .4 nzc) (* .6 rim))))
+        base (channel c r g b)
+        graded (max 0 (+ lm (* (- base lm) (+ 1 amt))))
+        ;; one pixel of feather on the sphere edge
+        cov (- 1 (smooth (- 1 (/ 1 (* radius sc))) (+ 1 (/ 1 (* radius sc))) d))]
+    (if (= c 3) (* (sample sx sy 3 1 0) cov) (* graded lit cov))))

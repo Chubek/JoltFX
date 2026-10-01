@@ -1,0 +1,61 @@
+;; @kernel       video_glitch_datamosh
+;; @category     video_effects
+;; @description  Simulates datamoshing compression artifacts.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src = current frame (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The resource array holds the previous frame as width*height*4 floats, read with
+;; `to-frame`; src stays the current frame. A small integer search over displacements
+;; of +/- search_radius pixels weights each candidate by exp(-sharpness * |previous
+;; shifted - current|), so the weighted mean of the displacements is a motion
+;; estimate that collapses onto the best match. Corrupted macroblocks then show the
+;; current frame pulled back along that vector, which drags stale image content
+;; across the block instead of carrying the motion forward.
+;; displacement gain; range [0, 4].
+(param strength 0.6 0 4 0)
+;; integer motion search radius in pixels; range [0, 4].
+(param search_radius 2 0 4 1)
+;; macroblock size in pixels; range [1, 128].
+(param block_size 16 1 128 1)
+;; blend mode for the stale block; 0 normal, 1 multiply, 2 screen, 3 overlay,
+;; 4 darken, 5 lighten, 6 difference, 7 exclusion, 8 add, 9 subtract, 10 hard light,
+;; 11 soft light, 12 colour dodge, 13 colour burn; range [0, 13].
+(param blend_mode 0 0 13 1)
+
+
+;; Previous-frame green channel at integer pixel coordinates, clamped to the frame.
+(defn prev-at [px py]
+  (to-frame (max 0 (min (- width 1) (round px))) (max 0 (min (- height 1) (round py))) 1))
+
+
+(defkernel video_glitch_datamosh [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (max 0 (min 4 search_radius))
+          sharp 24
+          here (pixel x y 1)
+          wgt (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (exp (- (* sharp (abs (- (prev-at (+ x dx) (+ y dy)) here)))))))
+          wx (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (* dx (exp (- (* sharp (abs (- (prev-at (+ x dx) (+ y dy)) here))))))))
+          wy (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (* dy (exp (- (* sharp (abs (- (prev-at (+ x dx) (+ y dy)) here))))))))
+          z (max 0.000001 wgt)
+          mx (/ wx z)
+          my (/ wy z)
+          gain (* strength (max 1 r))
+          bs (max 1 block_size)
+          bx (floor (/ x bs))
+          by (floor (/ y bs))
+          stale (if (< (hash2 bx by 1337) strength)
+                   (sample (- x (* gain mx)) (- y (* gain my)) c 1 1)
+                   (pixel x y c))
+          ;; colour burn divides by its second operand, so keep that operand off zero
+          operand (max 0.000001 stale)]
+      (finish (blend-mode blend_mode (pixel x y c) operand) (pixel x y 3) 1))))

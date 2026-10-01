@@ -1,0 +1,44 @@
+;; @kernel       temporal_frame_rate_up
+;; @category     temporal
+;; @description  Increases frame rate by interpolation.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame window, each frame width*height*4 floats. The
+;; whole window is resampled onto `factor` outputs, one per pass: the window is cut
+;; into `factor` equal segments and pass p is the left edge of the p-th one, so pass 0
+;; is the first source frame and every later pass lands strictly inside a source
+;; interval and is a real blend of the two frames that bracket it. No vector field is
+;; consulted, so this is the optical-flow-free blend and fast motion can ghost.
+;; temporal interpolation factor, one output per pass; range [1, 16].
+(param factor 2 1 16 1)
+;; interpolation curve; 0 linear, 1 smoothstep, 2 cosine ease; range [0, 2].
+(param method 1 0 2 1)
+;; pull the blend toward the earlier frame where the two frames disagree, which
+;; shortens ghost trails at the cost of timing accuracy; range [0, 1].
+(param motion_aware 0 0 1 0)
+(passes factor)
+
+
+(defkernel temporal_frame_rate_up [x y c]
+  (let [;; last valid frame index, at least 0
+        last (max 0 (- (frame-count) 1))
+        ;; map the output pass onto a timeline position between two source frames
+        step (/ last (max 1 factor))
+        pos (* pass step)
+        idx (min last (floor pos))
+        frac (- pos (floor pos))
+        a (frame-clamped idx x y c)
+        b (frame-clamped (+ idx 1) x y c)
+        ;; 0 linear, 1 smoothstep ease, 2 half-cosine ease
+        t (if (= method 0) frac
+            (if (= method 1) (smooth 0 1 frac)
+              (/ (- 1 (cos (* pi frac))) 2)))
+        ;; disagreement between the bracketing frames stands in for motion
+        disagree (smooth 0 .2 (abs (- a b)))
+        v (mix a b (clamp01 (* t (- 1 (* motion_aware disagree)))))]
+    (finish v (pixel x y 3) 0)))

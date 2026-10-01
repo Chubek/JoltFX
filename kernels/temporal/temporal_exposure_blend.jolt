@@ -1,0 +1,82 @@
+;; @kernel       temporal_exposure_blend
+;; @category     temporal
+;; @description  Blends frames with different exposures.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs two things back to back: the frame window first, `n` frames
+;; of width*height*4 floats, then one weight plane of width*height floats. The plane is
+;; a per-pixel exposure weight in [0,1] saying how far this pixel should be carried by
+;; the bracketing frames rather than by the source, and `exposure` scales it. Frames
+;; further back are ranked by that weight, so a region the brackets exposed well decays
+;; fast while a region only the source saw stays put. `ghost` rejects the frames that
+;; disagree with the source by more than that tolerance, which is what keeps a moving
+;; object from smearing across the blend. `method` chooses the reconstruction: a
+;; cross-fade against the single most recent bracket, an exposure-ranked weighted mean
+;; in linear light, or the same mean blended in log light, which weights the brackets
+;; by stops rather than by signal and is the right basis when the weights span a wide
+;; exposure range. RGB is left unclamped so the blend keeps HDR headroom above 1.0.
+;; Value of the exposure plane that follows the frames; a missing plane reads as 0.
+(defn plane-val [off rx ry]
+  (let [i (+ off (+ (* (floor (+ ry .5)) width) (floor (+ rx .5))))]
+    (if (all2 (>= i 0) (< i (data-count))) (data i) 0)))
+;; Rank weight of frame k for channel ch: the supplied per-pixel exposure weight raised
+;; to the frame's rank, scaled by how closely that frame agrees with the source. The
+;; agreement term has a floor so the window still contributes when every bracket
+;; diverges from the source, which is the normal case rather than the exception.
+(defn rank-weight [k ch w x y n base]
+  (let [v (frame-clamped (- (- n 1) k) x y ch)
+        agree (max 0.1 (- 1 (clamp01 (/ (abs (- v base)) (max ghost .0001)))))]
+    (* (pow w (+ k 1)) agree)))
+
+
+;; frames blended; range [1, 8].
+(param window 4 1 8 1)
+;; scale applied to the supplied exposure plane; range [0, 4].
+(param exposure 1 0 4 0)
+;; reconstruction; 0 cross-fade, 1 exposure-ranked linear mean, 2 log-light mean; range [0, 2].
+(param method 1 0 2 1)
+;; ghost rejection tolerance against the source; range [0.01, 1].
+(param ghost 0.2 0.01 1 0)
+;; blend of the reconstruction against the source; range [0, 1].
+(param strength 1 0 1 0)
+
+
+(defkernel temporal_exposure_blend [x y c]
+  (let [fs (* 4 (* width height))
+        nf (if (= fs 0) 0 (floor (/ (data-count) fs)))
+        n (min window nf)
+        ;; the weight plane starts where the frames stop
+        off (* nf fs)
+        ;; per-pixel exposure weight, scaled and kept inside a usable range
+        w (clamp01 (* exposure (plane-val off x y)))
+        base (pixel x y c)
+        ;; method 0 cross-fades against the most recent bracket only
+        prev (frame-clamped (max 0 (- n 1)) x y c)
+        cross (mix base prev (clamp01 (* w (smooth 0 ghost (abs (- prev base))))))
+        ;; methods 1 and 2 weight the whole window by the supplied exposure weight
+        wsum (sum k 0 n (rank-weight k c w x y n base))
+        ;; an all-zero plane asks for nothing, so hold the source rather than divide
+        ;; by an empty weight sum
+        usable (if (> wsum .000001) 1 0)
+        linear (if (= usable 1)
+                  (/ (sum k 0 n
+                        (* (rank-weight k c w x y n base)
+                           (frame-clamped (- (- n 1) k) x y c)))
+                     wsum)
+                  base)
+        ;; the log-light mean is geometric: it weights brackets by stops, not by signal
+        geometric (if (= usable 1)
+                    (/ (sum k 0 n
+                          (* (rank-weight k c w x y n base)
+                             (log (+ (frame-clamped (- (- n 1) k) x y c) .0001))))
+                        wsum)
+                    (log (+ base .0001)))
+        out (if (= method 0) cross
+              (if (= method 1) linear (exp geometric)))]
+    ;; the blend is left unclamped, so it can carry more than one stop of headroom
+    (finish (mix base out strength) (pixel x y 3) 0)))

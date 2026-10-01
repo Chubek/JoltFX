@@ -1,0 +1,53 @@
+;; @kernel       nle_slip_edit
+;; @category     nle
+;; @description  Adjusts in and out points while maintaining duration.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the frame sequence, N RGBA frames packed back to back,
+;; each width*height*4 floats. A slip edit holds the outgoing picture while the
+;; timebase advances: for the first half of every hold window the source index is
+;; frozen on one frame, then it releases and runs one frame per output frame over
+;; the second half, crossfading out of the held picture. The slip vector (Vec2,
+;; flattened to slip_x/slip_y) offsets the picture so the cut lands on a moving
+;; edge. An empty resource degrades to the source.
+;; output playhead in frames; range [0, 600].
+(param position 12 0 600 0)
+;; hold length in frames; range [1, 120].
+(param hold 8 1 120 1)
+;; slip offset x, in fractions of the frame; range [-1, 1].
+(param slip_x 0 -1 1 0)
+;; slip offset y, in fractions of the frame; range [-1, 1].
+(param slip_y 0 -1 1 0)
+;; boundary mode; 0 hold, 1 wrap, 2 mirror; range [0, 2].
+(param boundary_mode 0 0 2 1)
+
+
+(defn slip-resolve [k n mode]
+  (if (< n 1) 0
+    (if (= mode 0) (max 0 (min (- n 1) k))
+      (if (= mode 1) (mod k n)
+        (let [d (mod k (* 2 (max 1 (- n 1))))]
+          (if (< d (max 1 (- n 1))) d (- (* 2 (max 1 (- n 1))) d)))))))
+
+
+(defkernel nle_slip_edit [x y c]
+  (let [n (frame-count)
+        hl (max 1 hold)
+        t (clamp01 (/ (mod position hl) hl))
+        ;; held frame: the frame index frozen at the start of this hold window
+        hs (slip-resolve (floor (/ (+ position (* 0.5 hl)) hl)) n boundary_mode)
+        ;; running frame: the timebase catches up over the second half
+        rs (slip-resolve (+ hs (floor (* (- t 0.5) 2))) n boundary_mode)
+        ;; the slip vector offsets the held picture; the read is clamped so a
+        ;; slip that pushes past the frame edge repeats it instead of failing
+        ix (max 0 (min (- width 1) (floor (+ x (* slip_x width)))))
+        iy (max 0 (min (- height 1) (floor (+ y (* slip_y height)))))]
+    (if (< n 1) (pixel x y c)
+      ;; first half: frozen on the held frame; second half: releases and runs,
+      ;; crossfading from the held picture into the running one
+      (mix (frame-at hs ix iy c) (frame-at rs ix iy c) (clamp01 (* t 2))))))

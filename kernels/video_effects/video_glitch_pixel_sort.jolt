@@ -1,0 +1,57 @@
+;; @kernel       video_glitch_pixel_sort
+;; @category     video_effects
+;; @description  Sorts pixels along a line to stretch highlights into streaks.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; A full sort has no expression here, but the visible part of one does: a running
+;; maximum over the eligible (above-threshold) values along the sort axis turns a
+;; bright pixel into a streak of its own value trailing behind it. The maximum is
+;; taken as a log-sum-exp, which the profile's `sum`-only reduction can express.
+;; sort direction; 0 horizontal, 1 vertical; range [0, 1].
+(param direction 0 0 1 1)
+;; sort window length in pixels; range [2, 128].
+(param length 24 2 128 1)
+;; highlight threshold; only pixels above this are eligible to be sorted; range [0, 1].
+(param threshold 0.4 0 1 0)
+;; sort strength; 0 is identity, 1 fully sorts; range [0, 1].
+(param strength 1 0 1 0)
+;; seed; dithers the eligibility gate so streaks break up instead of banding; range [0, 65535].
+(param seed 0 0 65535 1)
+
+
+;; Luminance at `d` steps back along the sort axis from (px, py), clamped.
+(defn axis-lum [px py d dir]
+  (luminance (max 0 (min (- width 1) (if (= dir 0) (- px d) px)))
+             (max 0 (min (- height 1) (if (= dir 0) py (- py d))))))
+
+
+;; Soft maximum of the eligible luminances in the window, 0 when none qualify.
+(defn sort-streak [px py dir n gate]
+  (let [k 8]
+    (/ (log (max .000001 (sum d 0 n
+         (let [v (axis-lum px py d dir)]
+           (if (> v gate) (exp (* k (- v gate))) 0)))))
+       k)))
+
+
+(defkernel video_glitch_pixel_sort [x y c]
+  (let [n (min length (max 2 (if (= direction 0) width height)))
+        span (- n 1)
+        ;; anchor the window one full length back so the streak trails the highlight
+        w0 (if (= direction 0) (- x span) (- y span))
+        px (max 0 (min (- width 1) w0))
+        py (max 0 (min (- height 1) w0))
+        here (axis-lum x y 0 direction)
+        gate (+ threshold (* strength (hash2 x y seed)))
+        streak (sort-streak px py direction n gate)
+        ;; only stretch where this pixel is itself eligible, and never past its own
+        ;; value, so a streak cannot brighten a pixel beyond what the source had
+        on (if (> here gate) strength 0)
+        base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+        ratio (if (> here .000001) (min 1 (/ streak here)) 1)]
+    (finish (mix base (* base ratio) on) (pixel x y 3) 0)))

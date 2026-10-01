@@ -1,0 +1,51 @@
+;; @kernel       video_dust_scratches
+;; @category     video_effects
+;; @description  Overlays film dust and scratches artifacts.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; Dust is a sparse field of bright specks: the frame is diced into 3x3 pixel cells,
+;; each holding one hashed candidate speck that lights up with probability
+;; 0.12 * density and falls off over a cell radius. Scratches are `scratch_count`
+;; hashed vertical lines, each 1-2 pixels wide, jittered sideways and flickering
+;; along their length, faded out near the top and bottom of the frame. Both are added
+;; to the premultiplied source so alpha is untouched.
+;; dust density, 0 clean, 1 heavily speckled; range [0, 1].
+(param density 0.35 0 1 0)
+;; vertical scratch lines; range [0, 24].
+(param scratch_count 6 0 24 1)
+;; artefact seed; range [0, 4095].
+(param seed 3 0 4095 1)
+;; animate; 0 scratches sit still, 1 they flicker; range [0, 1].
+(param animate 1 0 1 1)
+;; artefact brightness added on top of the picture; range [0, 1].
+(param intensity 0.55 0 1 0)
+
+
+(defkernel video_dust_scratches [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [s (+ 1 seed)
+          step (if (= animate 1) pass 0)
+          ;; one candidate dust speck per 3x3 cell
+          cell 3
+          cx (floor (/ x cell))
+          cy (floor (/ y cell))
+          fx (+ (* cx cell) (* cell (hash2 cx cy (+ s 3))))
+          fy (+ (* cy cell) (* cell (hash2 cx cy (+ s 5))))
+          lit (if (< (hash2 cx cy s) (* 0.12 density)) 1 0)
+          speck (* lit intensity (clamp01 (- (* 1.6 cell)
+                                             (sqrt (+ (* (- x fx) (- x fx))
+                                                      (* (- y fy) (- y fy)))))))
+          ;; scratch lines brighten where a hashed column falls within reach
+          scratch (sum k 0 scratch_count
+                    (let [col (floor (* width (hash2 k (+ s 11) 17)))
+                          jit (floor (* 3 (- (hash2 k (+ s 13) (+ 3 (floor step))) 0.5)))
+                          w (+ 0.5 (* 0.5 (hash2 k (+ s 19) 29)))
+                          fade (min 1 (clamp01 (/ (min y (- height 1 y)) (* 0.08 height))))]
+                      (* intensity fade (if (< (abs (- (+ x jit) col)) w) 1 0))))
+          bright (min 1 (+ speck scratch))]
+      (finish (+ (pixel x y c) bright) (pixel x y 3) 1))))

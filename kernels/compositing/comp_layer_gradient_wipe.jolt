@@ -1,0 +1,57 @@
+;; @kernel       comp_layer_gradient_wipe
+;; @category     compositing
+;; @description  Applies gradient wipe transition.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the outgoing frame, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the outgoing frame. The resource array packs two RGBA frames of
+;; width*height*4 floats back to back: the first is the incoming frame, read with
+;; `to-frame`, which returns the source pixel when the array is empty; the second is the
+;; gradient or matte map that controls the reveal, read by `grad-at` at the frame-size
+;; offset and falling back to a left-to-right linear ramp when the array holds only one
+;; frame. `source_channel` selects what the map contributes; the profile has no string
+;; type, so a named source is an integer code: 0 the Rec.709 luminance of the premultiplied
+;; map, 1 red, 2 green, 3 blue. The reveal coordinate is that value compared against
+;; `progress`: pixels whose coordinate is already past the threshold show the incoming
+;; frame, the rest still show the outgoing one, which is how a gradient wipe behaves.
+;; `softness` is the width of that threshold in map units, so it is the blend band
+;; rather than a hard edge, and `invert` mirrors the map, which turns a left-to-right
+;; reveal into a right-to-left one. The output is premultiplied: the threshold blends
+;; the two alphas as well as the two colours.
+;; reveal threshold in map units; 0 shows only the outgoing frame; range [0, 1].
+(param progress 0.5 0 1 0)
+;; width of the reveal band in map units; range [0, 0.5].
+(param softness 0.05 0 0.5 0)
+;; 1 mirrors the gradient map; range [0, 1].
+(param invert 0 0 1 1)
+;; map channel; 0 luma, 1 red, 2 green, 3 blue; range [0, 3].
+(param source_channel 0 0 3 1)
+
+
+;; Channel ch of the gradient map frame, packed after the incoming frame.
+(defn grad-at [ch px py]
+  (let [fs (* 4 (* width height))
+        idx (+ fs (* 4 (+ (* py width) px)))
+        have (> (data-count) (+ idx 3))]
+    (if have
+      (clamp01 (if (= source_channel 0)
+                 (luma (data idx) (data (+ idx 1)) (data (+ idx 2)))
+                 (data (+ idx (if (= source_channel 3) 2 (if (= source_channel 2) 1 0))))))
+      ;; no map frame: fall back to a left-to-right linear ramp
+      (/ (+ px .5) width))))
+
+
+(defkernel comp_layer_gradient_wipe [x y c]
+  (let [g0 (clamp01 (grad-at source_channel x y))
+        g (clamp01 (if (= invert 1) (- 1 g0) g0))
+        ;; signed distance across the reveal threshold, positive where the wipe has passed
+        sd (- g progress)
+        s (max .0005 softness)
+        cov (smooth (- 0 s) s sd)
+        fa (pixel x y 3) ta (to-frame x y 3)]
+    (if (= c 3) (+ (* fa (- 1 cov)) (* ta cov))
+      (+ (* (pixel x y c) (- 1 cov)) (* (to-frame x y c) cov)))))

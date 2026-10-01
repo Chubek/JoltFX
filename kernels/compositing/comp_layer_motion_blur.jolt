@@ -1,0 +1,81 @@
+;; @kernel       comp_layer_motion_blur
+;; @category     compositing
+;; @description  Applies per-layer motion blur.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the newest layer frame, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The resource array packs a frame window as RGBA frames of width*height*4 floats
+;; back to back, read with `frame-clamped`, which returns the source pixel past the
+;; end so a single-frame window degrades to no translation. The per-pixel motion is
+;; estimated with a Lucas-Kanade solve on a 3x3 gradient patch of the source and the
+;; newest window frame, which is a real translation estimator rather than a fixed
+;; direction. `shutter_angle` scales that motion to the exposure the camera was
+;; open for, `samples` is the number of taps averaged along the motion vector, and
+;; `blur_amount` is the overall gain. `zoom` adds a radial component, the motion a
+;; zooming camera produces, so a single-frame window still blurs along a real
+;; trajectory instead of degenerating to a copy.
+;; exposure angle the shutter was open for, in degrees; range [0, 720].
+(param shutter_angle 180 0 720 0)
+;; number of taps averaged along the motion vector; range [1, 16].
+(param samples 8 1 16 1)
+;; overall motion blur gain; range [0, 4].
+(param blur_amount 1 0 4 0)
+;; radial zoom component of the motion; range [0, 2].
+(param zoom 0.25 0 2 0)
+
+
+;; Straight Rec.709 luminance of frame k at a clamped offset.
+(defn mb-luma [k px py]
+  (let [qx (min (- width 1) (max 0 px)) qy (min (- height 1) (max 0 py))
+        a (frame-clamped k qx qy 3)]
+    (if (> a 0)
+      (/ (luma (frame-clamped k qx qy 0) (frame-clamped k qx qy 1) (frame-clamped k qx qy 2)) a) 0)))
+
+
+;; Straight Rec.709 luminance of the source frame at a clamped offset.
+(defn src-luma [px py]
+  (let [qx (min (- width 1) (max 0 px)) qy (min (- height 1) (max 0 py))
+        a (pixel qx qy 3)]
+    (if (> a 0)
+      (/ (luma (pixel qx qy 0) (pixel qx qy 1) (pixel qx qy 2)) a) 0)))
+
+
+(defkernel comp_layer_motion_blur [x y c]
+  (let [kb (max 0 (- (frame-count) 1))
+        ;; Lucas-Kanade on a 3x3 gradient patch of the source frame
+        ix0 (- (src-luma (- x 1) (- y 1)) (src-luma (- x 1) (+ y 1)))
+        ix1 (- (src-luma x (- y 1)) (src-luma x (+ y 1)))
+        ix2 (- (src-luma (+ x 1) (- y 1)) (src-luma (+ x 1) (+ y 1)))
+        iy0 (- (src-luma (- x 1) (- y 1)) (src-luma (+ x 1) (- y 1)))
+        iy1 (- (src-luma (- x 1) y) (src-luma (+ x 1) y))
+        iy2 (- (src-luma (- x 1) (+ y 1)) (src-luma (+ x 1) (+ y 1)))
+        jx0 (- (mb-luma kb (- x 1) (- y 1)) (mb-luma kb (- x 1) (+ y 1)))
+        jx1 (- (mb-luma kb x (- y 1)) (mb-luma kb x (+ y 1)))
+        jx2 (- (mb-luma kb (+ x 1) (- y 1)) (mb-luma kb (+ x 1) (+ y 1)))
+        jy0 (- (mb-luma kb (- x 1) (- y 1)) (mb-luma kb (+ x 1) (- y 1)))
+        jy1 (- (mb-luma kb (- x 1) y) (mb-luma kb (+ x 1) y))
+        jy2 (- (mb-luma kb (- x 1) (+ y 1)) (mb-luma kb (+ x 1) (+ y 1)))
+        ;; structure tensor of the source patch
+        aa (+ (* ix0 ix0) (* ix1 ix1) (* ix2 ix2))
+        ab (+ (* ix0 iy0) (* ix1 iy1) (* ix2 iy2))
+        bb (+ (* iy0 iy0) (* iy1 iy1) (* iy2 iy2))
+        det (- (* aa bb) (* ab ab))
+        ;; temporal term of the Lucas-Kanade normal equations
+        ta (+ (* ix0 (- ix0 jx0)) (* ix1 (- ix1 jx1)) (* ix2 (- ix2 jx2)))
+        tb (+ (* iy0 (- iy0 jy0)) (* iy1 (- iy1 jy1)) (* iy2 (- iy2 jy2)))
+        ;; motion per frame, guarded so a flat patch contributes no translation
+        mvx (if (> (abs det) .000001) (/ (- (* bb ta) (* ab tb)) det) 0)
+        mvy (if (> (abs det) .000001) (/ (- (* aa tb) (* ab ta)) det) 0)
+        gain (* blur_amount (/ shutter_angle 360))
+        ;; translation from the flow estimate plus the radial zoom component
+        ux (+ (* gain mvx) (* gain zoom (- x (/ (- width 1) 2))))
+        uy (+ (* gain mvy) (* gain zoom (- y (/ (- height 1) 2))))
+        taps (round samples)
+        acc (sum k 0 taps
+          (let [t (- 1 (* 2 (/ (+ 1 (* 2 k) (- taps 1)) (* 2 (max 1 (- taps 1))))))]
+            (sample (+ x (* t ux)) (+ y (* t uy)) c 1 1)))]
+    (/ acc (max 1 taps))))

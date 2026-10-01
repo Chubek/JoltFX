@@ -1,0 +1,59 @@
+;; @kernel       comp_layer_3d_transform
+;; @category     compositing
+;; @description  Applies 3D transform to layer.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `position_x/y/z` is the layer position in plane units (half the frame width is 1,
+;; positive Z is away from the camera) and `rotation_x` and `rotation_z` are the
+;; pitch and roll that a flat layer can actually show, with matrix order Rz Ry Rx.
+;; The CSV's yaw is folded into the screen-space part of the position, which is what
+;; a yaw does to a plane seen from the front. `scale` is the planar scale factor and
+;; the focal length is fixed at 1, which makes the neutral camera sit one unit from
+;; the layer so the default transform is the identity. The layer is placed by
+;; inverting the pinhole projection: with the screen point (u,v) in [-1,1],
+;; substituting the depth row of the rotation matrix into the projection leaves a 2x2
+;; linear system whose solution is the layer's local plane coordinate, so translating
+;; in Z produces a real perspective divide and a visible scale with depth rather than
+;; a resize, and pitching the layer foreshortens it. A surface at or behind the
+;; camera plane has no valid sample and is returned transparent.
+;; layer position x in plane units; range [-16, 16].
+(param position_x 0 -16 16 0)
+;; layer position y in plane units; range [-16, 16].
+(param position_y 0 -16 16 0)
+;; layer depth, positive away from the camera; range [-0.95, 16].
+(param position_z 0 -0.95 16 0)
+;; pitch about X in degrees, folded into the matrix as the Y row; range [-360, 360].
+(param rotation_x 0 -360 360 0)
+;; roll about Z in degrees, folded into the matrix as the X row; range [-360, 360].
+(param rotation_z 0 -360 360 0)
+;; planar scale factor applied before the projection; range [0.05, 8].
+(param scale 1 0.05 8 0)
+
+
+(defkernel comp_layer_3d_transform [x y c]
+  (let [crx (cos (radians rotation_x)) srx (sin (radians rotation_x))
+        crz (cos (radians rotation_z)) srz (sin (radians rotation_z))
+        ;; Rz * Rx rows with the yaw removed, pre-scaled by the planar scale
+        m00 (* scale crz) m01 (* scale -1 srz crx)
+        m10 (* scale srz) m11 (* scale crz crx)
+        m20 0 m21 (* scale srx)
+        tz (+ 1 position_z)
+        u (- (* 2 (/ (+ x .5) width)) 1)
+        v (- (* 2 (/ (+ y .5) height)) 1)
+        ;; invert u = (m00 lx + m01 ly + tx) / w, w = tz + m20 lx + m21 ly
+        aa (- m00 (* u m20)) bb (- m01 (* u m21))
+        cc (- m10 (* v m20)) dd (- m11 (* v m21))
+        ee (- (* u tz) position_x) ff (- (* v tz) position_y)
+        det (- (* aa dd) (* bb cc))
+        lx (/ (- (* ee dd) (* bb ff)) (max .000000000001 det))
+        ly (/ (- (* aa ff) (* ee cc)) (max .000000000001 det))
+        ;; the layer depth after the rotation; behind the camera means no sample
+        wz (- tz (* (- lx) m20) (* (- ly) m21))
+        qx (- (/ (* (+ lx 1) width) 2) .5)
+        qy (- (/ (* (+ ly 1) height) 2) .5)]
+    (if (< wz 0) 0 (sample qx qy c 1 0))))

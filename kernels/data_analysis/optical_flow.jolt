@@ -1,0 +1,102 @@
+;; @kernel       optical_flow
+;; @category     data_analysis
+;; @description  Estimates per-pixel motion vectors between consecutive frames.
+;; @complexity   High
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (previous frame, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.data_analysis; shared functions: common/image.jolt.
+;; The profile produces images only, so a FlowField is published as a two-channel image:
+;; c=0 is u, c=1 is v, c=2 is zero, c=3 is one. u and v are in pixels: the integer
+;; displacement that best matches this pixel from `src` to the second frame, which
+;; arrives in the resource array as width*height*4 floats, so src(p) matches frame(p+d).
+;; Motion is estimated by integer-search block matching: a window_size block around the
+;; pixel in the source is compared against the same block displaced over the whole
+;; search box, and the offset with the lowest block error is the answer. The profile has
+;; no fold primitive and no argmin, so the box cannot be scanned for a minimum; instead
+;; every candidate is weighted by exp(-error/tau) and the answer is the weighted
+;; centroid of that cost surface, which is a smooth argmin and degrades gracefully on a
+;; flat region, where equal weights put the estimate back at zero. The temperature is
+;; set well below the mismatch of a whole block so the centroid is effectively the exact
+;; integer argmin. `quality` picks the error: 0 absolute difference, 1 squared
+;; difference, 2 zero-mean absolute difference, which is the one to use when the two
+;; frames differ in exposure because the block mean is removed before the error is
+;; accumulated. `pyramid_levels` is the pyramid level evaluated here: each step halves
+;; the search radius and roughly halves the match block, so level 1 is the coarsest and
+;; most robust to noise and level 3 the finest and the most precise. A full coarse-to-fine
+;; cannot be iterated per pixel without a fold, so one level is evaluated instead.
+;; `max_flow` bounds the reported magnitude, which keeps block matching from running away
+;; across low-contrast regions. The green channel stands in for luma in the matching
+;; cost: it carries 72% of Rec.709 luma and needs one tap instead of three, which matters
+;; when the cost is a block times a whole search box evaluated three times.
+;; Marked @gpu No: the cost surface is a per-pixel serial search rather than a parallel
+;; neighbour read, and the interpreter has no fold to express the block reduction.
+;; Green-channel value of the second frame at (rx, ry); outside the frame reads as 0,
+;; which makes the border of a displaced block genuinely costly to match.
+(defn fg [rx ry]
+  (let [px (+ (* (floor (+ ry .5)) width) (floor (+ rx .5)))
+        i (+ (* 4 px) 1)]
+    (if (all2 (>= px 0) (< px (* width height)))
+        (if (all2 (>= i 0) (< i (data-count))) (data i) 0)
+        0)))
+;; Block error of one candidate displacement: the source block sits still at the pixel
+;; and the second frame's block is displaced by (dx, dy).
+(defn block-err [b x y dx dy]
+  (if (= quality 2)
+      ;; zero-mean absolute difference: removing the block mean makes the cost immune to
+      ;; an exposure or DC offset between the two frames
+      (let [dmean (/ (sum i (- b) (+ b 1)
+                     (sum j (- b) (+ b 1)
+                       (- (pixel (+ x i) (+ y j) 1)
+                          (fg (+ x (+ dx i)) (+ y (+ dy j))))))
+                    (* (+ b 1) (+ b 1)))]
+        (sum i (- b) (+ b 1)
+          (sum j (- b) (+ b 1)
+            (let [d (- (pixel (+ x i) (+ y j) 1)
+                       (fg (+ x (+ dx i)) (+ y (+ dy j))))]
+              (abs (- d dmean))))))
+      (sum i (- b) (+ b 1)
+        (sum j (- b) (+ b 1)
+          (let [d (- (pixel (+ x i) (+ y j) 1)
+                     (fg (+ x (+ dx i)) (+ y (+ dy j))))]
+            (if (= quality 1) (* d d) (abs d)))))))
+
+
+;; pyramid level evaluated, 1 coarsest; range [1, 3].
+(param pyramid_levels 2 1 3 1)
+;; match block side in pixels before the level divides it; range [2, 8].
+(param window_size 4 2 8 1)
+;; block error; 0 absolute, 1 squared, 2 zero-mean absolute; range [0, 2].
+(param quality 0 0 2 1)
+;; bound on the reported magnitude in pixels; range [0, 16].
+(param max_flow 8 0 16 0)
+
+
+(defkernel optical_flow [x y c]
+  (let [lvl (max 1 (min 3 pyramid_levels))
+        ;; each level halves the search radius and roughly halves the match block
+        b (max 1 (round (/ window_size (+ lvl 1))))
+        r (max 1 (round (/ window_size lvl)))
+        ;; softmax temperature, set well below the mismatch of one block so that the
+        ;; centroid of the cost surface becomes an effectively exact integer argmin; on a
+        ;; flat region every candidate scores the same, the weights are equal and the
+        ;; centroid falls to zero, which is the correct answer for no detectable motion
+        tau (max .000001 (/ (* (+ b 1) (+ b 1)) 500))
+        wsum (max .000001
+                (sum dx (- r) (+ r 1)
+                  (sum dy (- r) (+ r 1)
+                    (exp (/ (* -1 (block-err b x y dx dy)) tau)))))
+        ;; the displacement estimate is the weighted centroid of the cost surface
+        cx (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (block-err b x y dx dy)) tau))]
+                    (* w dx)))) wsum)
+        cy (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (block-err b x y dx dy)) tau))]
+                    (* w dy)))) wsum)
+        u (max (- max_flow) (min max_flow cx))
+        v (max (- max_flow) (min max_flow cy))]
+    (if (= c 3) 1 (if (= c 2) 0 (if (= c 0) u v)))))

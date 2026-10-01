@@ -1,0 +1,44 @@
+;; @kernel       nle_ripple_delete
+;; @category     nle
+;; @description  Removes frames and ripples subsequent frames forward.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the frame sequence, N RGBA frames packed back to back,
+;; each width*height*4 floats. `count` frames starting at `start` are removed;
+;; with ripple enabled the remainder slides forward to close the gap, otherwise
+;; the gap holds the frame preceding it. Sub-frame positions blend the two
+;; neighbouring source frames. An empty or too-short resource is a no-op.
+;; output playhead in frames; range [0, 600].
+(param position 12 0 600 0)
+;; first frame index to remove; range [0, 599].
+(param start 10 0 599 1)
+;; number of frames to remove; range [1, 120].
+(param count 5 1 120 1)
+;; ripple remaining frames forward; range [0, 1].
+(param ripple 1 0 1 1)
+
+
+;; Map an output index to the source index it now displays.
+(defn ripple-src [k n st cn rp]
+  (if (< k st) k
+    (if (= rp 1)
+      (min (- n 1) (+ k cn))
+      (if (< k (+ st cn)) (max 0 (- st 1)) (min (- n 1) k)))))
+
+
+(defkernel nle_ripple_delete [x y c]
+  (let [n (frame-count)
+        cn (min count (max 0 (- n 1)))
+        outn (max 1 (if (= ripple 1) (- n cn) n))
+        pos (min position (max 0 (- outn 1)))
+        i0 (floor pos)
+        f (- pos i0)
+        s0 (ripple-src i0 n start cn ripple)
+        s1 (ripple-src (min (- outn 1) (+ i0 1)) n start cn ripple)]
+    (if (< n 2) (pixel x y c)
+      (mix (frame-at s0 x y c) (frame-at s1 x y c) f))))

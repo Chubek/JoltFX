@@ -1,0 +1,61 @@
+;; @kernel       temporal_field_blend
+;; @category     temporal
+;; @description  Blends fields together.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The second field frame arrives in the resource array as width*height*4 floats. This
+;; is the weighted average of the two fields rather than a hard weave: each field is
+;; measured for local sharpness and the field carrying the detail is given proportionally
+;; more of the output, so the field that was sampled cleanly wins and the line doubling
+;; artefacts of the other are attenuated. `detail` is the sharpness exponent - at 1 the
+;; blend is proportional to measured sharpness, and raising it makes the blend pick the
+;; sharper field outright. `field_order` names which field owns which row parity (0 is
+;; even-field-first) and `motion_adaptive` leans on that ownership where the two fields
+;; disagree, because there the detail measure is measuring motion, not sharpness.
+;; field order; 0 even-field-first, 1 odd-field-first; range [0, 1].
+(param field_order 0 0 1 1)
+;; sharpness measure; 0 vertical gradient, 1 horizontal gradient, 2 local contrast; range [0, 2].
+(param method 0 0 2 1)
+;; sharpness exponent of the blend weights; range [0.25, 8].
+(param detail 1 0.25 8 0)
+;; lean on field ownership where the fields disagree; range [0, 1].
+(param motion_adaptive 1 0 1 1)
+
+
+(defkernel temporal_field_blend [x y c]
+  (let [s (pixel x y c)
+        o (to-frame x y c)
+        ;; neighbours used by every sharpness measure
+        dx (min (- width 1) (+ x 1))
+        dy (min (- height 1) (+ y 1))
+        ;; sharpness of the source field at this pixel
+        ss (if (= method 0) (abs (- s (sample x dy c 1 1)))
+             (if (= method 1) (abs (- s (sample dx y c 1 1)))
+               (- (max (max s (sample x dy c 1 1)) (max (sample dx y c 1 1) (sample dx dy c 1 1)))
+                  (min (min s (sample x dy c 1 1)) (min (sample dx y c 1 1) (sample dx dy c 1 1))))))
+        ;; sharpness of the other field at the same pixel
+        so (if (= method 0) (abs (- o (to-frame x dy c)))
+             (if (= method 1) (abs (- o (to-frame dx y c)))
+               (- (max (max o (to-frame x dy c)) (max (to-frame dx y c) (to-frame dx dy c)))
+                  (min (min o (to-frame x dy c)) (min (to-frame dx y c) (to-frame dx dy c))))))
+        ;; each field claims output in proportion to its sharpness, plus a floor so a
+        ;; flat field still contributes instead of the weights collapsing to one
+        ws (pow (+ .02 ss) detail)
+        wo (pow (+ .02 so) detail)
+        w (clamp01 (/ ws (+ ws wo)))
+        parity (mod y 2)
+        ;; 1 when the source field is the one that scanned this row
+        own (if (= field_order 0) (if (= parity 0) 1 0) (if (= parity 0) 0 1))
+        ;; where the fields disagree the sharpness measure is measuring motion, so fall
+        ;; back toward the field that actually owns the row
+        bias (if (= motion_adaptive 1)
+                (* .5 (- 1 (smooth 0 .2 (abs (- s o)))))
+                0)
+        wf (clamp01 (mix w (if (= own 1) 1 0) bias))
+        a (mix (to-frame x y 3) (pixel x y 3) wf)]
+    (if (= c 3) a (finish (mix o s wf) a 0))))

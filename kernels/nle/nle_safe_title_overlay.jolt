@@ -1,0 +1,77 @@
+;; @kernel       nle_safe_title_overlay
+;; @category     nle
+;; @description  Overlays safe title area guides.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; Broadcast safe-area guides: the title-safe rectangle at the wider inset and the
+;; action-safe rectangle inside it, where all on-screen text and graphics must
+;; stay. safe_margin is the title-safe inset as a fraction of the smaller frame
+;; dimension (10% for 16:9 broadcast title safe); action_inset is the additional
+;; inset to the action-safe rectangle (5% for HD action safe). Both are drawn as
+;; antialiased outlines with a centre cross and rule-of-thirds grid optionally
+;; added, so the guide set matches a real grading monitor overlay.
+;; title-safe inset as a fraction of the smaller frame dimension; range [0, 0.25].
+(param safe_margin 0.1 0 0.25 0)
+;; extra inset from title safe to action safe; range [0, 0.15].
+(param action_inset 0.05 0 0.15 0)
+;; rule line weight as a fraction of the smaller dimension; range [0, 0.01].
+(param line_weight 0.002 0 0.01 0)
+;; draw the centre cross and thirds grid; range [0, 1].
+(param show_grid 1 0 1 1)
+
+
+;; Antialiased distance to a line segment, 1 px soft.
+(defn line-cov [px py ax ay bx by t]
+  (clamp01 (/ (- (+ t 1) (dist-to-seg px py ax ay bx by)) 2)))
+
+
+;; Outline of an axis-aligned rectangle.
+(defn rect-cov [px py l tp r b t]
+  (min 1 (+ (line-cov px py l tp r tp t)
+            (line-cov px py r tp r b t)
+            (line-cov px py r b l b t)
+            (line-cov px py l b l tp t))))
+
+
+(defkernel nle_safe_title_overlay [x y c]
+  (let [m (* 0.5 (min width height))
+        lw (max 0.35 (* line_weight m))
+        ;; title-safe box
+        tl (* safe_margin m)
+        tt (* safe_margin m)
+        tr (- width tl)
+        tb (- height tt)
+        ;; action-safe box, inset further inside the title-safe box
+        al (* (+ safe_margin action_inset) m)
+        at (* (+ safe_margin action_inset) m)
+        ar (- width al)
+        ab (- height at)
+        tcov (rect-cov x y tl tt tr tb lw)
+        acov (rect-cov x y al at ar ab lw)
+        ;; centre cross, broken in the middle so it never obscures the subject
+        cx (* width 0.5)
+        cy (* height 0.5)
+        arm (* m 0.12)
+        hcov (min 1 (max (line-cov x y (- cx arm) cy (+ cx arm) cy lw)
+                         (line-cov x y cx (- cy arm) cx (+ cy arm) lw)))
+        ;; rule-of-thirds grid
+        gx1 (* width (/ 1 3))
+        gx2 (* width (/ 2 3))
+        gy1 (* height (/ 1 3))
+        gy2 (* height (/ 2 3))
+        gcov (* show_grid (min 1 (+ (line-cov x y gx1 0 gx1 height lw)
+                                     (line-cov x y gx2 0 gx2 height lw)
+                                     (line-cov x y 0 gy1 width gy1 lw)
+                                     (line-cov x y 0 gy2 width gy2 lw))))
+        base (pixel x y c)
+        ;; guide colours: green title safe, magenta action safe, amber centre
+        title (* tcov 0.85 (channel c 0.1 1 0.25))
+        action (* acov 0.85 (channel c 1 0.2 0.8))
+        centre (* hcov 0.8 (channel c 1 0.78 0.15))
+        grid (* gcov 0.4 (channel c 0.8 0.85 1))]
+    (if (= c 3) base (finish (+ base title action centre grid) (pixel x y 3) 1))))

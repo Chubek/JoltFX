@@ -1,0 +1,50 @@
+;; @kernel       nle_ripple_insert
+;; @category     nle
+;; @description  Inserts frames and ripples subsequent frames backward.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the incoming shot, N RGBA frames packed back to back,
+;; each width*height*4 floats; it is the material inserted into the sequence. The
+;; source frame is the clip the insert lands in. Inserting `count` copies at
+;; `insert_index` pushes every later frame one place back; output positions are
+;; mapped back onto that array, and an empty resource degrades to the source.
+;; output playhead in frames; range [0, 600].
+(param position 8 0 600 0)
+;; insertion index in the clip; range [0, 599].
+(param insert_index 4 0 599 1)
+;; number of inserted frames; range [1, 120].
+(param count 3 1 120 1)
+;; soften the insert with a short dissolve; range [0, 1].
+(param softness 0.5 0 1 0)
+
+
+;; Map an output index to the incoming-array index it now shows. The inserted
+;; frames occupy [idx, idx+count) and read the source frame; later output
+;; positions are the original frames shifted forward by count.
+(defn insert-src [k n idx cn]
+  (if (all2 (>= k idx) (< k (+ idx cn))) -1 (if (< k idx) (min (- n 1) k) (min (- n 1) (- k cn)))))
+
+
+(defkernel nle_ripple_insert [x y c]
+  (let [n (frame-count)
+        cn (max 1 count)
+        outn (max 1 (+ n cn))
+        pos (min position (max 0 (- outn 1)))
+        i0 (floor pos)
+        f (- pos i0)
+        i1 (min (- outn 1) (+ i0 1))
+        s0 (insert-src i0 n insert_index cn)
+        s1 (insert-src i1 n insert_index cn)
+        ;; inserted material: the incoming array when present, else the source
+        ia (if (> n 1) (frame-clamped (max 0 s0) x y c) (pixel x y c))
+        ib (if (> n 1) (frame-clamped (max 0 s1) x y c) (pixel x y c))
+        ;; a short dissolve either side of the insert hides the discontinuity
+        pad (* softness 1.5)
+        w (clamp01 (/ (min (min (- i0 insert_index) (- insert_index (+ cn 1) i0))
+                            (- (+ insert_index cn) i1)) (max pad 0.001)))]
+    (mix ia ib (if (>= w 1) f (* f w)))))

@@ -1,0 +1,45 @@
+;; @kernel       temporal_frame_rate_down
+;; @category     temporal
+;; @description  Decreases frame rate by decimation.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the source frames, each frame width*height*4 floats.
+;; `index` is the output frame index along the time axis. Decimation keeps one frame
+;; per group of `factor` inputs, the group being the frames at
+;; index index*factor .. (index+1)*factor-1. Dropping a frame loses temporal detail,
+;; so `method` picks a representative: the first frame of the group, the group mean,
+;; or the frame nearest the centre of the group.
+;; output frame index along the time axis; range [0, 8191].
+(param index 0 0 8191 1)
+;; keep every Nth frame; range [1, 16].
+(param factor 2 1 16 1)
+;; group representative; 0 first frame, 1 group mean, 2 frame nearest the centre; range [0, 2].
+(param method 0 0 2 1)
+;; cross-fade the kept frame toward the group mean, which trades judder for ghosting; range [0, 1].
+(param blend 0 0 1 0)
+
+
+(defkernel temporal_frame_rate_down [x y c]
+  (let [fs (* 4 (* width height))
+        nf (if (= fs 0) 0 (floor (/ (data-count) fs)))
+        idx (+ (* 4 (+ (* y width) x)) c)]
+    (if (= nf 0) (pixel x y c)
+      (let [first (* factor (floor (/ index (max 1 factor))))
+            ;; number of frames this group contributes, at least one so the mean is safe
+            count (max 1 (min factor (max 1 (- nf first))))
+            ;; offset of the representative inside the group
+            pick (if (= method 2) (floor (/ count 2)) 0)
+            ;; the kept frame, clamped to the frames actually supplied
+            k (min (- nf 1) (+ first pick))
+            kept (data (+ (* k fs) idx))
+            ;; average of the frames the decimation throws away, clamped at the end
+            mean (/ (sum j 0 count
+                      (data (+ (* (min (- nf 1) (+ first j)) fs) idx)))
+                    count)
+            out (if (= method 1) mean kept)]
+        (mix out mean blend)))))

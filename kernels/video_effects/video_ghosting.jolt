@@ -13,11 +13,14 @@
 (param opacity 0.4 0 1 0)
 ;; blend mode; 0 normal, 1 add, 2 screen; range [0, 2].
 (param blend_mode 1 0 2 1)
+;; ghost radius in pixels; 0 samples the previous frame directly; range [0, 16].
+(param radius 0 0 16 0)
 
 
 (defkernel video_ghosting [x y c]
   (let [base (pixel x y c)
-        prev (to-frame x y c)
+        ;; a radius averages the ghost over a neighbourhood, giving a soft trail
+        prev (if (= radius 0) (to-frame x y c) (box-blur x y c (ceil radius)))
         v (if (= blend_mode 0) (mix base prev opacity)
             (if (= blend_mode 1) (min 1 (+ base (* prev opacity)))
               (blend-screen base (* prev opacity))))]

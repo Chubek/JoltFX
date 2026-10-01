@@ -1,0 +1,54 @@
+;; @kernel       depth_map_shade
+;; @category     3d
+;; @description  Derives surface shading from depth variations in a depth frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src = the colour frame (premultiplied RGBA); the resource array holds
+;; the depth frame as width*height*4 floats and is read with `to-frame`, whose red
+;; channel is the depth value. Output: image dst, same dimensions as src.
+;; Module: jolt.fx.kernels.3d; shared functions: common/image.jolt.
+;; The depth field is differentiated with a central difference and scaled by
+;; depth_scale into a surface gradient; the normal is the vector (-dz/dx, dz/dy, 1)
+;; normalised against its own length, so flat depth yields (0,0,1) rather than a
+;; degenerate direction (screen Y points down, so a depth rising downwards tilts the
+;; normal downwards). That normal is lit by light_x/y/z, giving a Lambert term,
+;; remapped from ambient at full shadow to 1 at full light. With an empty resource the
+;; depth read falls back to the source pixel, so the kernel degrades into gradient
+;; shading of the colour frame.
+;; light direction x; range [-1, 1].
+(param light_x 0 -1 1 0)
+;; light direction y; range [-1, 1].
+(param light_y 0 -1 1 0)
+;; light direction z; range [-1, 1].
+(param light_z 1 -1 1 0)
+;; depth gradient gain; range [0.1, 200].
+(param depth_scale 24 0.1 200 0)
+;; light left in shadow, 0 fully black; range [0, 1].
+(param ambient 0.15 0 1 0)
+
+
+;; Depth-frame red channel at a pixel coordinate, clamped to the frame.
+(defn depth-at [px py]
+  (to-frame (max 0 (min (- width 1) (round px))) (max 0 (min (- height 1) (round py))) 0))
+
+
+(defkernel depth_map_shade [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [gx (* 0.5 (* depth_scale (- (depth-at (+ x 1) y) (depth-at (- x 1) y))))
+          gy (* 0.5 (* depth_scale (- (depth-at x (+ y 1)) (depth-at x (- y 1)))))
+          ;; normalise (-gx, gy, 1) by its full length, which is never below 1, so
+          ;; flat depth gives the head-on normal instead of a huge z component
+          nl (sqrt (+ (* gx gx) (* gy gy) 1))
+          nx (/ (- gx) nl)
+          ny (/ gy nl)
+          nz (/ 1.0 nl)
+          ll (max 0.000001 (sqrt (+ (* light_x light_x) (* light_y light_y) (* light_z light_z))))
+          lx (/ light_x ll)
+          ly (/ light_y ll)
+          lz (/ light_z ll)
+          ndl (max 0 (+ (* nx lx) (* ny ly) (* nz lz)))
+          lit (+ ambient (* (- 1 ambient) ndl))]
+      (finish (* (pixel x y c) lit) (pixel x y 3) 0))))

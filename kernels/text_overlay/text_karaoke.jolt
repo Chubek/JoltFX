@@ -1,0 +1,128 @@
+;; @kernel       text_karaoke
+;; @category     text_overlay
+;; @description  Overlays karaoke text with highlighting.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; Text run resource layout (no string or font type in this profile, so the text
+;; engine supplies the rasterised run):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The progress param sweeps a highlight front left to right; a glyph lights when
+;; the front passes its centre. Every read is guarded, so an absent (empty) run
+;; resource is a no-op.
+;; The CSV String parameter becomes an integer selector:
+;; 0 plain colour change at the front, 1 highlighted cells behind the front,
+;; 2 a bright edge riding the front. range [0, 2].
+(param style 0 0 2 1)
+;; highlight front as a fraction of the run; range [0, 1].
+(param progress 0.5 0 1 0)
+;; run centre x in normalized frame coordinates; range [0, 1].
+(param position_x 0.5 0 1 0)
+;; run bottom y in normalized frame coordinates; range [0, 1].
+(param position_y 0.9 0 1 0)
+;; run height as a fraction of frame height; range [0.01, 1].
+(param size 0.09 0.01 1 0)
+;; run opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+(defkernel text_karaoke [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [n (run-n)
+          e (max .02 (text-extent))
+          boxh (* size height)
+          boxw (* size width)
+          inkw (* e boxw)
+          ox (- (* position_x width) (* .5 inkw))
+          oy (- (* position_y height) boxh)
+          front (* progress (max .02 e))
+          cv (text-coverage x y ox oy boxw boxh)
+          u (/ (- x ox) (max .0001 boxw))
+          v (/ (- y oy) (max .0004 boxh))
+          ; glyph index, its centre and whether the front has passed it
+          gi (text-glyph-at u n)
+          centre (* .5 (+ (glyph-left gi) (glyph-right gi)))
+          lit (if (< centre front) 1 0)
+          cell (clamp01 (* .55 (min (smooth 0 .08 u) (- 1 (smooth .92 1 u)))))
+          block (if (= style 1) (* lit cell) 0)
+          edge (* lit (clamp01 (/ (- front u) (* .06 e))))
+          ink (if (> cv 0) (* opacity cv) 0)
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          hic (channel c 1 .84 .12)
+          dimmix (channel c (mix .42 1 lit) (mix .42 .84 lit) (mix .46 .12 lit))]
+      (finish (mix (mix (mix base (channel c .06 .05 .12) block)
+                        (if (> n 0) dimmix (channel c .42 .42 .46)) ink)
+                   hic (* (if (= style 2) edge (* lit (* .35 ink)))))
+              (pixel x y 3) 1))))

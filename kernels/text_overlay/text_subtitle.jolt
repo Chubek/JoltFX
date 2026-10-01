@@ -1,0 +1,65 @@
+;; @kernel       text_subtitle
+;; @category     text_overlay
+;; @description  Composites a rasterised subtitle run over a frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; Text run resource layout (the profile has no string or font type, so the text
+;; engine supplies rasterised coverage):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width in run-box pixels
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The run box is mapped into the frame by position and size, so one rasterised run
+;; can be placed, scaled and recoloured without re-rasterising.
+;; horizontal position in normalized frame coordinates; range [0, 1].
+(param position_x 0.5 0 1 0)
+;; vertical position in normalized frame coordinates; range [0, 1].
+(param position_y 0.9 0 1 0)
+;; run height as a fraction of frame height; range [0.01, 4].
+(param size 0.08 0.01 4 0)
+;; text opacity; range [0, 1].
+(param opacity 1 0 1 0)
+;; text color red; range [0, 1].
+(param color_r 1 0 1 0)
+;; text color green; range [0, 1].
+(param color_g 1 0 1 0)
+;; text color blue; range [0, 1].
+(param color_b 1 0 1 0)
+
+
+;; Glyph index at run-box coordinate u, counting the advances already passed.
+(defn text-advance [j]
+  (let [n (round (data 0))]
+    (if (all2 (> n 0) (< j n)) (data (+ 1 n j)) 0)))
+
+
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (+ 0.5 (sum j 0 (+ i 1) (text-advance j)))) 1 0)))))
+
+
+;; Coverage of the run at this frame pixel; 0 outside the run box.
+(defn text-coverage [x y position_x position_y size]
+  (let [n (round (data 0))]
+    (if (< n 1) 0
+      (let [h (* size height)
+            w (* h (/ width (max 1 height)))
+            u (/ (- x (- (* position_x width) (/ w 2))) (max .0001 w))
+            v (/ (- y (- (* position_y height) h)) (max .0004 h))
+            idx (+ (* (floor v) width) (floor u))]
+        (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (< v 1))))
+          (max 0 (data (+ (+ n (* 2 n)) 1 idx)))
+          0)))))
+
+
+(defkernel text_subtitle [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [cov (clamp01 (* (text-coverage x y position_x position_y size) opacity))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          ink (channel c color_r color_g color_b)]
+      (finish (mix base ink cov) (pixel x y 3) 1))))

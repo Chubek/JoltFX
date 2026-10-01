@@ -1,0 +1,64 @@
+;; @kernel       particle_trail
+;; @category     particle
+;; @description  Renders particle motion history as trails in an output frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.particle; shared functions: common/image.jolt.
+;; ParticleSystem resource layout (the profile has no particle struct, so the
+;; simulation hands over a flat record array):
+;;   data[0]   = particle count P
+;;   data[1 .. 5P] = P records of (x, y, vx, vy, life), where x,y are in [0,1]
+;;             normalized frame coordinates, vx,vy are velocities in normalized
+;;             units per second, and life is the remaining lifetime in [0,1]
+;; Every particle is drawn as a soft additive dot, streaked back along its velocity
+;; by the trail length and faded by its remaining life. The record count is bounded
+;; by the array actually supplied, so an absent (empty) resource is a no-op.
+;; number of trail segments drawn behind each particle; range [1, 64].
+(param trail_length 12 1 64 1)
+;; dot radius as a fraction of frame height; range [0.5, 40].
+(param dot_radius 3 0.5 40 0)
+;; life fade applied to a fully lit particle; range [0, 1].
+(param fade 0.9 0 1 0)
+;; velocity streak gain, as a fraction of frame height per unit velocity; range [0, 1].
+(param streak 0.25 0 1 0)
+;; blend mode for the additive glow: 0 add, 1 screen, 2 over. range [0, 2].
+(param blend_mode 0 0 2 1)
+
+(defkernel particle_trail [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [dc (data-count)
+          p (if (> dc 5) (max 0 (min (round (data 0)) (floor (/ (- dc 1) 5)))) 0)
+          trail (* .012 trail_length)
+          r (* dot_radius (max 1 height))
+          ; each record contributes a soft dot at its head and along its streak
+          acc (if (> p 0)
+                (sum i 0 p
+                  (let [b (+ 1 (* 5 i))
+                        px (* (data b) width)
+                        py (* (data (+ b 1)) height)
+                        vx (data (+ b 2))
+                        vy (data (+ b 3))
+                        lf (max 0 (min 1 (data (+ b 4))))
+                        tailx (- px (* vx trail streak width))
+                        taily (- py (* vy trail streak height))
+                        dx (- x px)
+                        dy (- y py)
+                        d (dist-to-seg x y px py tailx taily)
+                        glow (max 0 (- 1 (/ d (max 1 r))))
+                        soft (* glow glow (* fade lf))]
+                    (* soft (min 1 soft))))
+                0)
+          amt (min 1 (* 2 acc))
+          basec (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          dotc (channel c .98 .78 .40)]
+      (finish (if (= blend_mode 0)
+                (+ basec (* amt dotc))
+                (if (= blend_mode 1)
+                  (- 1 (* (- 1 basec) (- 1 (* amt dotc))))
+                  (mix basec dotc amt)))
+              (pixel x y 3)
+              0))))

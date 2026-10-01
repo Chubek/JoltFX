@@ -1,0 +1,32 @@
+;; @kernel       video_glitch_scanline_shift
+;; @category     video_effects
+;; @description  Displaces horizontal scanline bands to produce a digital glitch.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; Rows are bucketed into bands; each band is displaced by a hash of its index, so the
+;; shift is stable along a row and the image tears in horizontal slabs.
+;; band height in pixels; range [1, 64].
+(param band_height 4 1 64 1)
+;; displacement amplitude in pixels; range [0, 128].
+(param amount 24 0 128 0)
+;; randomness; 0 coherent, 1 per-band noise; range [0, 1].
+(param chaos 0.5 0 1 0)
+;; keep a fraction of the bands undisplaced; range [0, 1].
+(param keep 0.7 0 1 0)
+
+
+(defkernel video_glitch_scanline_shift [x y c]
+  (let [bh (max 1 band_height)
+        band (floor (/ y bh))
+        r (hash2 band 0 17)
+        ;; coherent mode displaces by a smooth wave; chaos mode by the band hash
+        wave (sin (+ band chaos))
+        jitter (mix wave (- (* 2 r) 1) chaos)
+        skip (if (> keep 1) 0 (if (< (hash2 band 1 23) keep) 0 1))
+        dx (* (* amount jitter) (- 1 skip))]
+    (if (= skip 1) (pixel x y c) (sample (+ x dx) y c 1 1))))

@@ -1,0 +1,64 @@
+;; @kernel       comp_layer_camera
+;; @category     compositing
+;; @description  Simulates camera layer with 3D transform.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer seen by the camera, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; A camera layer places the layers below it in 3D. `position_x/y/z` is the camera
+;; position in plane units (half the frame width is 1, positive Z is away from the
+;; camera) and `rotation_x/y/z` are XYZ Euler angles in degrees with matrix order
+;; Rz Ry Rx, the same convention as transform3d. The focal length is fixed at 1,
+;; which makes the neutral camera sit one unit from the layer so the identity
+;; transform is the default. The layer is placed by inverting the pinhole
+;; projection: with the screen point (u,v) in [-1,1], substituting the depth row
+;; of the rotation matrix into the projection leaves a 2x2 linear system whose
+;; solution is the layer's local plane coordinate, so translating or rotating the
+;; camera produces a real perspective divide and a visible scale with depth rather
+;; than a resize. A surface at or behind the camera plane produces no valid sample,
+;; which is sampled with transparent borders rather than failing as a singular transform.
+;; camera position x in plane units; range [-16, 16].
+(param position_x 0 -16 16 0)
+;; camera position y in plane units; range [-16, 16].
+(param position_y 0 -16 16 0)
+;; camera position z, positive away from the camera; range [-0.95, 16].
+(param position_z 1 -0.95 16 0)
+;; camera pitch about X in degrees; range [-360, 360].
+(param rotation_x 0 -360 360 0)
+;; camera yaw about Y in degrees; range [-360, 360].
+(param rotation_y 0 -360 360 0)
+;; camera roll about Z in degrees; range [-360, 360].
+(param rotation_z 0 -360 360 0)
+
+
+(defkernel comp_layer_camera [x y c]
+  (let [crx (cos (radians rotation_x)) srx (sin (radians rotation_x))
+        cry (cos (radians rotation_y)) sry (sin (radians rotation_y))
+        crz (cos (radians rotation_z)) srz (sin (radians rotation_z))
+        ;; rotation matrix rows for Rz Ry Rx; the layer sits on the local z = 0 plane
+        m00 (* crz cry) m01 (- (* crz sry srx) (* srz crx))
+        m10 (* srz cry) m11 (+ (* srz sry srx) (* crz crx))
+        m20 (- sry) m21 (* cry srx)
+        ;; the neutral camera is one unit from the layer plane
+        tz (+ 1 position_z)
+        ;; screen point in [-1,1]
+        u (- (* 2 (/ (+ x .5) width)) 1)
+        v (- (* 2 (/ (+ y .5) height)) 1)
+        ;; invert u = (m00 lx + m01 ly + tx) / w, w = tz + m20 lx + m21 ly
+        aa (- m00 (* u m20)) bb (- m01 (* u m21))
+        cc (- m10 (* v m20)) dd (- m11 (* v m21))
+        ee (- (* u tz) position_x) ff (- (* v tz) position_y)
+        det (- (* aa dd) (* bb cc))
+        lx (/ (- (* ee dd) (* bb ff)) (max .000000000001 det))
+        ly (/ (- (* aa ff) (* ee cc)) (max .000000000001 det))
+        ;; the layer's own depth after the camera rotation; behind the camera
+        wz (- tz (* (- lx) m20) (* (- ly) m21))
+        ;; layer plane coordinates back to source texels
+        qx (- (/ (* (+ lx 1) width) 2) .5)
+        qy (- (/ (* (+ ly 1) height) 2) .5)]
+    ;; the layer is a finite quad on its plane, so anything the projection misses,
+    ;; including a surface behind the camera plane, samples as transparent
+    (if (< wz 0) 0 (sample qx qy c 1 0))))

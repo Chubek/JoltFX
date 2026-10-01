@@ -1,0 +1,75 @@
+;; @kernel       nle_speed_ramp
+;; @category     nle
+;; @description  Creates variable speed ramp over time.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the clip, N RGBA frames packed back to back, each
+;; width*height*4 floats. The curve resource (bare increasing (x,y) pairs) is the
+;; speed profile: y at position x is the rate there. The source position is the
+;; running integral of that profile rather than the playhead itself, so an
+;; accelerating ramp really does move further per output frame. The integral is a
+;; fixed-step average over the ramp domain, which keeps the cost bounded
+;; regardless of clip length. Method 0 evaluates the curve linearly, method 1
+;; with Hermite tangents for a smoother ramp. An instantaneous rate above 1 spans
+;; more than one source frame per output frame, so the extra covered frames are
+;; mixed in as a smear instead of being skipped. An empty curve degrades to
+;; constant speed and an empty frame resource is a no-op.
+;; output playhead in frames; range [0, 600].
+(param position 20 0 600 0)
+;; clip length in frames used as the ramp domain; range [1, 600].
+(param duration 60 1 600 1)
+;; curve evaluation method; 0 linear, 1 hermite; range [0, 1].
+(param method_param 0 0 1 1)
+;; interpolation; 0 nearest frame, 1 blend between frames; range [0, 1].
+(param interpolation 1 0 1 1)
+;; smear weight for rates above real time; range [0, 1].
+(param smear 0.35 0 1 0)
+
+
+;; A ramp needs two resources -- the frame sequence and the speed curve -- but the
+;; profile carries one array, so the two shapes are told apart by size: a Frame[]
+;; sequence is `frame-count` whole frames long, while a Curve is a short run of
+;; (x,y) pairs. Anything that fills at least one frame is read as frames, and only
+;; an array too short to be a frame is read as a curve, which also keeps a
+;; malformed curve from tripping the library's ordering check.
+(defn ramp-curve? []
+  (all3 (> (data-count) 2) (= (frame-count) 0) (<= (data-count) 512)))
+
+
+;; Instantaneous rate at normalized time u; 1 (real time) with no curve.
+(defn ramp-rate [u m]
+  (if (ramp-curve?) (max 0.05 (curve-value (clamp01 u) m)) 1))
+
+
+(defkernel nle_speed_ramp [x y c]
+  (let [n (frame-count)
+        dl (max 1 duration)
+        u (clamp01 (/ position dl))
+        ;; running integral of the rate profile up to the playhead; a fixed
+        ;; four-step midpoint rule keeps the cost bounded whatever the curve
+        ;; length, and the curve is sampled rather than scanned
+        avg (/ (sum k 0 4 (ramp-rate (* u (/ (+ k 0.5) 4)) method_param)) 4)
+        ;; instantaneous rate, which sets how many source frames one output covers
+        inst (ramp-rate u method_param)
+        raw (* position avg)
+        last (- (max 1 n) 1)
+        i0 (max 0 (min last raw))
+        ;; frame reads need whole indices: snap down and carry the remainder
+        ;; into the blend weight, so sub-frame speed still interpolates
+        k0 (max 0 (min last (floor i0)))
+        k1 (max 0 (min last (+ k0 1)))
+        w (clamp01 (- i0 k0))
+        ;; a fast ramp covers k0..k0+inst, so mix the far end in as a smear
+        i2 (max 0 (min last (+ k0 (max 1 (round inst)))))
+        sm (* smear (clamp01 (- inst 1)))]
+    (if (< n 1) (pixel x y c)
+      (let [near (if (= interpolation 0)
+                    (frame-at k0 x y c)
+                    (mix (frame-at k0 x y c) (frame-at k1 x y c) w))
+            far (frame-at i2 x y c)]
+        (mix near far sm)))))

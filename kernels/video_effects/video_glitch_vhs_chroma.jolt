@@ -1,0 +1,35 @@
+;; @kernel       video_glitch_vhs_chroma
+;; @category     video_effects
+;; @description  Simulates VHS chroma bleed and color smearing.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The chroma of a VHS tape is recorded on a lower bandwidth than the luma, so colour
+;; lags the picture. The luma is taken from the undisplaced pixel while the colour is
+;; a horizontal smear of the source, stepped by `amount` pixels per tap over
+;; 2 * blur_radius + 1 taps, and drifting vertically over time when animated. Mixing
+;; the smeared colour back against the sharp luma at `saturation` is the bleed.
+;; horizontal chroma smear step in pixels; range [0, 32].
+(param amount 6 0 32 0)
+;; half width of the chroma smear in taps; range [0, 8].
+(param blur_radius 2 0 8 1)
+;; retained chroma, 0 luma only, 1 the full smear; range [0, 1].
+(param saturation 1 0 1 0)
+;; animate; 0 a fixed vertical offset, 1 the chroma drifts with time; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_glitch_vhs_chroma [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (max 0 (min 8 blur_radius))
+          ;; the colour band wanders up and down the raster when animated
+          vy (if (= animate 1) (* 0.6 amount (sin (* 0.6 pass))) 0)
+          smear (/ (sum i (- r) (+ r 1) (sample (+ x (* amount i)) (+ y vy) c 1 1))
+                   (+ (* 2 r) 1))
+          ;; luma stays anchored to the current pixel, so colour trails behind it
+          sharp (* (pixel x y 3) (luminance x y))]
+      (finish (mix sharp smear saturation) (pixel x y 3) 1))))

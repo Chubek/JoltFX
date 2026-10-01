@@ -1,0 +1,132 @@
+;; @kernel       text_title_safe
+;; @category     text_overlay
+;; @description  Overlays title safe area guides.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (frame to be measured, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; This kernel needs no text resource: the guides are drawn procedurally.
+;; title/action safe inset as a fraction of the frame width/height; range [0, 0.25].
+(param safe_margin 0.1 0 0.25 0)
+;; guide line thickness as a fraction of frame height; range [0.0005, 0.05].
+(param guide_width 0.004 0.0005 0.05 0)
+;; centre cross and thirds ticks: 0 off, 1 on; range [0, 1].
+(param show_center 1 0 1 1)
+;; guide brightness; range [0, 1].
+(param guide_intensity 0.9 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (+ 0.5 (sum j 0 (+ i 1) (text-advance j)))) 1 0)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+;; Coverage of a rectangular guide ring with half-extents (w,h) and thickness t.
+(defn guide-ring [x y cx cy w h t]
+  (let [dx (max 0 (- (abs (- x cx)) (- (* .5 w) t)))
+        dy (max 0 (- (abs (- y cy)) (- (* .5 h) t)))]
+    (clamp01 (/ (- t (max dx dy)) (max .0005 t)))))
+
+
+(defkernel text_title_safe [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [mx (* safe_margin width)
+          my (* safe_margin height)
+          t (* guide_width height)
+          ; action safe is the outer box, title safe the inner one
+          action (guide-ring x y (* .5 width) (* .5 height)
+                      (- width (* 2 mx)) (- height (* 2 my)) t)
+          title (guide-ring x y (* .5 width) (* .5 height)
+                     (- width (* 4 mx)) (- height (* 4 my)) t)
+          ; corner crop marks: two short bars turning inward at each action-safe corner
+          mark (sum k 0 4
+                  (let [cx (if (= (mod k 2) 0) mx (- width mx))
+                        cy (if (< k 2) my (- height my))
+                        ax (if (= (mod k 2) 0) 1 -1)
+                        ay (if (< k 2) 1 -1)
+                        ex (* ax t 3)
+                        ey (* ay t 3)
+                        hx (all2 (>= x (min cx (+ cx ex))) (<= x (max cx (+ cx ex))))
+                        hy (all2 (>= y (min cy (+ cy ey))) (<= y (max cy (+ cy ey))))
+                        hit (max (if (all2 hx (< (abs (- y cy)) (* t .5))) 1 0)
+                                 (if (all2 hy (< (abs (- x cx)) (* t .5))) 1 0))]
+                    (clamp01 hit)))
+          ; centre cross, a plus of half-length 2t
+          dxc (abs (- x (* .5 width)))
+          dyc (abs (- y (* .5 height)))
+          centre (* show_center (clamp01 (/ (max 0 (- (* 2 t) (max dxc dyc))) (max .0005 t))))
+          ; rule-of-thirds ticks riding on the title safe box
+          thirds (sum k 1 3
+                   (let [tx (+ mx (* k (/ (- width (* 2 mx)) 3)))
+                         ty (+ my (* k (/ (- height (* 2 my)) 3)))
+                         dx (min (abs (- x tx)) (abs (- x (- width tx))))
+                         dy (min (abs (- y ty)) (abs (- y (- height ty))))]
+                     (if (all2 (< (max dx dy) t) (< (min dx dy) (* t 5))) 1 0)))
+          bright (clamp01 guide_intensity)
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+          g (* bright (max (max action title) (max mark thirds)))
+          cr (* bright centre)]
+      (finish (+ base (* g (channel c 1 1 1)) (* cr (channel c 1 .2 .2)))
+              (pixel x y 3) 0))))

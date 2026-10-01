@@ -1,0 +1,31 @@
+;; @kernel       temporal_temporal_smooth
+;; @category     temporal
+;; @description  Smooths a frame sequence in the time domain to reduce noise.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs `window` frames, each width*height*4 floats, and the
+;; source is treated as the newest. A triangular weight keeps the newest frame
+;; heaviest, which tracks motion instead of ghosting it.
+;; temporal window; range [1, 16].
+(param window 3 1 16 1)
+;; blend strength; range [0, 1].
+(param strength 0.5 0 1 0)
+;; reject frames that differ sharply, to keep cuts from smearing; range [0, 1].
+(param reject 0.25 0 1 0)
+
+
+(defkernel temporal_temporal_smooth [x y c]
+  (let [n (min window (frame-count))
+        ;; triangular weights: newest frame has the largest weight
+        wsum (sum k 0 n (- n k))
+        mean (if (= wsum 0) (pixel x y c)
+                 (/ (sum k 0 n (* (- n k) (frame-clamped (- (- n 1) k) x y c))) wsum))
+        ;; a large jump from the source means a cut, so hold the source instead
+        dev (abs (- (pixel x y c) mean))
+        safe (if (> reject 0) (min (pixel x y c) (mix mean (pixel x y c) (smooth 0 reject dev))) mean)]
+    (finish (mix (pixel x y c) safe strength) (pixel x y 3) 0)))

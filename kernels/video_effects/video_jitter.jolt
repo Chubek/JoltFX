@@ -1,0 +1,32 @@
+;; @kernel       video_jitter
+;; @category     video_effects
+;; @description  Creates frame position jitter effect.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The picture is diced into frequency-sized blocks and each block is displaced by
+;; its own hashed offset, so the frame shatters into a grid that shifts as a whole.
+;; Blocks hold their offset for two output frames before re-rolling, which is what
+;; reads as a dropped or unstable frame rather than per-pixel noise.
+;; peak block displacement in pixels; range [0, 64].
+(param amount 6 0 64 0)
+;; jitter block size in pixels; range [1, 128].
+(param frequency 8 1 128 1)
+;; jitter seed; range [0, 4095].
+(param seed 11 0 4095 1)
+;; animate; 0 a frozen lattice, 1 the blocks re-roll every other frame; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_jitter [x y c]
+  (let [bs (max 1 frequency)
+        bx (floor (/ x bs))
+        by (floor (/ y bs))
+        k (if (= animate 1) (floor (/ pass 2)) 0)
+        ox (* amount (- (* 2 (hash2 (+ bx k) (+ by k) (+ 1 seed))) 1))
+        oy (* amount (- (* 2 (hash2 (+ bx k) (+ by 5 k) (+ 2 seed))) 1))]
+    (sample (+ x ox) (+ y oy) c 1 1)))

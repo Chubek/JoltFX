@@ -1,0 +1,86 @@
+;; @kernel       comp_layer_precompose
+;; @category     compositing
+;; @description  Pre-composes layers into single frame.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the bottom layer of the stack, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; A pre-compose flattens the whole stack into one frame that can then be treated as
+;; a single layer. Slot 0 of the stack is `src`; the resource array packs the
+;; remaining layers as RGBA frames of width*height*4 floats back to back and is read
+;; with `frame-clamped`, which returns the source pixel past the end so a short
+;; stack degrades safely. `order` is the flatten order; the profile has no string
+;; type, so a named order is an integer code: 0 back to front (slot 0 drawn first,
+;; the exact source-over), 1 front to back (the whole stack is reversed, so the
+;; source layer ends up on top), 2 flat average (order independent, a coverage
+;; weighted mean). `opacity` is the opacity shared by every layer. `background` is
+;; the matte colour of the flattened layer: `opaque_output` blends the stack onto
+;; that plate so a pre-composed layer composites over a solid, and the result stays
+;; premultiplied by the stack alpha so an empty stack remains fully transparent.
+;; flatten order; 0 back-to-front, 1 front-to-back, 2 flat average; range [0, 2].
+(param order 0 0 2 1)
+;; number of stack slots to flatten, the source layer included; range [1, 6].
+(param layers 3 1 6 1)
+;; opacity shared by every flattened layer; range [0, 1].
+(param opacity 0.85 0 1 0)
+;; matte colour of the plate behind the flattened stack; range [0, 1].
+(param background 0.5 0 1 0)
+;; strength of that background plate; 0 keeps the stack matte transparent; range [0, 1].
+(param opaque_output 1 0 1 0)
+
+
+;; Resource frame index drawn at stack slot s, or -1 for the source layer.
+(defn slot [s n]
+  (let [t (if (= order 1) (- (- n 1) s) s)]
+    (if (= t 0) -1 (- t 1))))
+
+
+;; Opacity-weighted coverage of stack slot s.
+(defn slot-cover [px py s n o]
+  (let [i (slot s n)]
+    (if (< i 0) (min 1 (* o (pixel px py 3))) (min 1 (* o (frame-clamped i px py 3))))))
+
+
+;; Premultiplied colour of stack slot s.
+(defn slot-col [px py ch s n]
+  (let [i (slot s n)]
+    (if (< i 0) (pixel px py ch) (frame-clamped i px py ch))))
+
+
+;; Unpremultiplied colour of stack slot s, zero where the slot is empty.
+(defn slot-straight [px py ch s n]
+  (let [i (slot s n)
+        a (if (< i 0) (pixel px py 3) (frame-clamped i px py 3))]
+    (if (> a 0) (/ (if (< i 0) (pixel px py ch) (frame-clamped i px py ch)) a) 0)))
+
+
+;; Premultiplied colour of slots [s, n) folded back to front. `p` is the
+;; transmittance of the slots behind s, so the fold carries no extra state.
+(defn flat-fold [px py ch s n o p]
+  (if (>= s n) 0
+    (let [ca (slot-cover px py s n o)
+          p1 (* p (- 1 ca))
+          rest (flat-fold px py ch (+ s 1) n o p1)
+          ra (- 1 p1)
+          bs (if (> ra 0) (/ rest ra) 0)]
+      (+ (* ca p1 (slot-straight px py ch s n)) rest))))
+
+
+(defkernel comp_layer_precompose [x y c]
+  (let [n (min layers (max 1 (frame-count)))
+        ;; transmittance of the whole stack as a sum of logs
+        pc (if (= order 2) 0 (exp (sum s 0 n (let [a (slot-cover x y s n opacity)]
+          (log (max .000000001 (- 1 a)))))))
+        ;; the flat average is an order-independent coverage weighted mean
+        pm (if (= order 2)
+             (/ (sum s 0 n (* (slot-cover x y s n opacity) (slot-col x y c s n)))
+                (max .000001 (sum s 0 n (slot-cover x y s n opacity))))
+             (flat-fold x y c 0 n opacity 1))
+        sa (if (= order 2) (min 1 (sum s 0 n (slot-cover x y s n opacity)))
+                     (- 1 pc))]
+    (if (= c 3) sa
+      ;; the flattened layer, optionally composited onto its background plate
+      (+ pm (* background sa opaque_output)))))

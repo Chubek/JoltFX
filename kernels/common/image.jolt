@@ -418,3 +418,47 @@
     (let [r (straight x y 0) g (straight x y 1) b (straight x y 2)
           l (max .000001 (luma r g b)) k (/ target l)]
       (* (channel c r g b) k))))
+
+;; ---------------------------------------------------------------------------
+;; Multi-frame resources. `frame-count` frames are packed back to back, each one
+;; width*height*4 floats. An out-of-range index falls back to the source so a
+;; caller can supply fewer frames than a kernel asks for.
+(defn frame-size [] (* 4 (* width height)))
+(defn frame-count []
+  (let [fs (frame-size)] (if (= fs 0) 0 (floor (/ (data-count) fs)))))
+(defn frame-at [k x y c]
+  (let [idx (+ (* 4 (+ (* y width) x)) c)]
+    (if (all2 (>= k 0) (< k (frame-count))) (data (+ (* k (frame-size)) idx)) (pixel x y c))))
+(defn frame-clamped [k x y c]
+  (frame-at (max 0 (min (- (frame-count) 1) k)) x y c))
+
+;; ---------------------------------------------------------------------------
+;; Single-channel plane resources (matte, mask, map). A plane is width*height
+;; floats; a two-plane resource is two such planes back to back.
+(defn plane-count [] (/ (data-count) (max 1 (* width height))))
+(defn plane-at [p x y]
+  (let [idx (+ (* y width) x)]
+    (if (all2 (>= p 0) (< p (plane-count))) (data (+ (* p (* width height)) idx)) 1)))
+
+;; ---------------------------------------------------------------------------
+;; Audio resources. data[0] = sample count M, then M mono samples in [-1,1].
+;; There is no complex type, so the spectrum uses a real DFT over sin/cos.
+(defn audio-count [] (if (> (data-count) 1) (max 1 (round (data 0))) 0))
+(defn audio-at [i] (if (all2 (>= i 0) (< i (audio-count))) (data (+ 1 i)) 0))
+(defn audio-rms []
+  (if (= (audio-count) 0) 0
+    (/ (sqrt (sum i 0 (audio-count) (* (audio-at i) (audio-at i)))) (audio-count))))
+(defn audio-peak []
+  (if (= (audio-count) 0) 0
+    (/ (sum i 0 (audio-count) (abs (audio-at i))) (audio-count))))
+;; The magnitude of DFT bin k, normalised to [-1,1]. There is no complex type in
+;; the profile, so the real and imaginary parts are accumulated separately. This
+;; is a direct transform, not a fast one: it costs O(M) trig calls per bin, so
+;; kernels using it are marked @gpu No.
+(defn audio-bin [k]
+  (let [m (audio-count)]
+    (if (all2 (>= k 1) (> m k))
+      (let [re (sum i 0 m (* (audio-at i) (cos (* (/ (* 2 pi k) m) i))))
+            im (sum i 0 m (* (audio-at i) (sin (* (/ (* 2 pi k) m) i))))]
+        (/ (sqrt (+ (* re re) (* im im))) (* 0.5 m)))
+      0)))

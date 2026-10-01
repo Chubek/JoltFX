@@ -1,0 +1,73 @@
+;; @kernel       comp_layer_light
+;; @category     compositing
+;; @description  Simulates light layer for illumination.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the illuminated layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the layer being lit. `light_x/y` is the emitter position in normalized
+;; frame coordinates and `color_r/g/b` is the light colour. The surface normal is
+;; estimated from the straight Rec.709 luminance gradient over a 3x3 neighbourhood,
+;; the usual relief-light construction, so the layer is genuinely shaded by a
+;; diffuse term and a Blinn-Phong highlight instead of being uniformly multiplied.
+;; The emitter sits a quarter of the shorter side above the surface and its
+;; attenuation is the rational 1/(1+d^2/r^2), so the falloff exponent needs no
+;; separate control. The resource array holds an optional emitter shape as
+;; width*height*4 floats whose alpha masks the emitter, which is how a light layer
+;; is shaped by a matte; `to-frame` falls back to the source pixel when the array is
+;; empty. `intensity` scales the whole contribution and the lighting multiplies the
+;; layer colour, so an empty layer stays empty.
+;; light position x in normalized frame coordinates; range [-2, 2].
+(param light_x 0.5 -2 2 0)
+;; light position y in normalized frame coordinates; range [-2, 2].
+(param light_y 0.4 -2 2 0)
+;; light colour red; range [0, 1].
+(param color_r 1 0 1 0)
+;; light colour green; range [0, 1].
+(param color_g 1 0 1 0)
+;; light colour blue; range [0, 1].
+(param color_b 1 0 1 0)
+;; light intensity; range [0, 8].
+(param intensity 1.5 0 8 0)
+
+
+;; Straight Rec.709 luminance of the source at a clamped offset.
+(defn lit-luma [px py]
+  (let [qx (min (- width 1) (max 0 px)) qy (min (- height 1) (max 0 py))
+        a (pixel qx qy 3)]
+    (if (> a 0)
+      (/ (luma (pixel qx qy 0) (pixel qx qy 1) (pixel qx qy 2)) a) 0)))
+
+
+;; Optional emitter mask: the resource frame's alpha, or the source alpha if absent.
+(defn emit-shape [px py] (min 1 (to-frame px py 3)))
+
+
+(defkernel comp_layer_light [x y c]
+  (let [;; relief normal estimated from the local luminance gradient
+        gx (- (lit-luma (+ x 1) y) (lit-luma (- x 1) y))
+        gy (- (lit-luma x (+ y 1)) (lit-luma x (- y 1)))
+        nx0 (* -6 gx) ny0 (* -6 gy)
+        nn (sqrt (+ 1 (+ (* nx0 nx0) (* ny0 ny0))))
+        nx (/ nx0 nn) ny (/ ny0 nn) nz (/ 1 nn)
+        ;; the emitter sits a quarter of the shorter side above the surface
+        rad (max 1 (* .25 (min width height)))
+        ex (- (* light_x width) x) ey (- (* light_y height) y) ez rad
+        dd (+ (* ex ex) (* ey ey) (* ez ez))
+        dl (sqrt dd)
+        lx (/ ex dl) ly (/ ey dl) lz (/ ez dl)
+        diff (max 0 (+ (* nx lx) (* ny ly) (* nz lz)))
+        ;; Blinn-Phong highlight between the light and the view direction
+        hz (+ lz 1) hn (sqrt (+ (* lx lx) (+ (* ly ly) (* hz hz))))
+        spec (pow (/ (max 0 (+ (* nx lx) (* ny ly) (* nz hz))) hn) 32)
+        ;; rational falloff and the emitter mask
+        r2 (* rad rad)
+        att (/ r2 (+ r2 (* 4 dd)))
+        lit (* intensity att (emit-shape x y))
+        base (channel c (straight x y 0) (straight x y 1) (straight x y 2))
+        tint (channel c color_r color_g color_b)]
+    (if (= c 3) (pixel x y 3)
+      (finish (* base (+ .2 (* lit (+ (* diff tint) spec)))) (pixel x y 3) 1))))

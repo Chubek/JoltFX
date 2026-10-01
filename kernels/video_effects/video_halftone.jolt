@@ -1,0 +1,46 @@
+;; @kernel       video_halftone
+;; @category     video_effects
+;; @description  Creates halftone print effect with dot pattern.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; A real halftone screen: the sampling grid is rotated by `angle`, each cell holds
+;; one ink cell, and its radius follows the local tone, so dark areas print large dots
+;; on white paper and highlights almost none. The dot metric picks the cell shape.
+;; The screened result is then blended back over the source by `blend`.
+;; cell pitch in pixels; range [2, 64].
+(param dot_size 6 2 64 0)
+;; screen rotation in degrees, positive clockwise; range [0, 360].
+(param angle 45 0 360 0)
+;; cell shape; 0 dot, 1 square, 2 line; range [0, 2].
+(param shape 0 0 2 1)
+;; tone gain, higher means larger dots for the same darkness; range [0, 4].
+(param contrast 1.2 0 4 0)
+;; blend of the screened print back over the source; range [0, 1].
+(param blend 1 0 1 0)
+
+
+(defkernel video_halftone [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [cell (max 2 dot_size)
+          ca (cos (radians angle))
+          sa (sin (radians angle))
+          ;; rotate the screen grid so the halftone runs at the print angle
+          u (+ (* ca x) (* sa y))
+          v (- (* sa x) (* ca y))
+          fx (- (wrap u cell) (* 0.5 cell))
+          fy (- (wrap v cell) (* 0.5 cell))
+          ;; dot metric: round, square, or a horizontal line cell
+          dist (if (= shape 0) (sqrt (+ (* fx fx) (* fy fy)))
+                (if (= shape 1) (max (abs fx) (abs fy)) (abs fy)))
+          ;; dot radius follows local tone: darker prints larger dots
+          tone (clamp01 (* contrast (- 1 (luminance x y))))
+          rad (* tone (* 0.5 cell))
+          aa (max 0.0001 (* 0.08 cell))
+          ink (clamp01 (/ (+ rad aa (- dist)) (* 2 aa)))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (mix base (mix 1 base ink) blend) (pixel x y 3) 1))))

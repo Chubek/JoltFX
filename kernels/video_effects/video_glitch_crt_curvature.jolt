@@ -1,0 +1,54 @@
+;; @kernel       video_glitch_crt_curvature
+;; @category     video_effects
+;; @description  Applies CRT screen curvature distortion.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; Output texels are inverse-mapped through a barrel: with the centre-relative radius
+;; t normalised so the frame corner is t = 1, the source radius is scaled by
+;; 1 + curvature * t^2, which pushes the picture outwards and pinches the corners.
+;; Sampling stops at the tube rim, a circle just inside the frame corner whose radius
+;; shrinks as corner_radius falls; anything the rim cannot reach is filled with
+;; border_r/g/b fading out, which is the bezel seen around a curved tube, and the
+;; sampled raster is vignetted quadratically inside it.
+;; barrel strength; 0 flat, 1 strongly curved; range [0, 1].
+(param curvature 0.2 0 1 0)
+;; rim roundness, 1 a full circle to the corner, 0 a strongly cut corner; range [0, 1].
+(param corner_radius 0.85 0 1 0)
+;; raster vignette towards the rim; range [0, 1].
+(param vignette 0.35 0 1 0)
+;; bezel red; range [0, 1].
+(param border_r 0.02 0 1 0)
+;; bezel green; range [0, 1].
+(param border_g 0.02 0 1 0)
+;; bezel blue; range [0, 1].
+(param border_b 0.02 0 1 0)
+
+
+(defkernel video_glitch_crt_curvature [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [u (- (/ (+ x 0.5) width) 0.5)
+          v (- (/ (+ y 0.5) height) 0.5)
+          ;; centre-relative radius, and the same in source units
+          r (sqrt (+ (* u u) (* v v)))
+          rmax (* 0.5 (sqrt (+ (* width width) (* height height))))
+          t (min 1 (/ r rmax))
+          sc (+ 1 (* curvature t t))
+          su (* u sc)
+          sv (* v sc)
+          rs (sqrt (+ (* su su) (* sv sv)))
+          ;; the tube rim sits inside the frame corner, closer as corner_radius falls
+          rim (* rmax (- 1 (* 0.12 (- 1 corner_radius))))
+          vig (max 0 (- 1 (* vignette t t)))
+          ;; phosphor visible past the rim fades out into the bezel
+          fade (clamp01 (/ (- (* rim 1.35) rs) (* rim 0.35)))]
+      (if (<= rs rim)
+        (finish (* (sample (- (* width (+ su 0.5)) 0.5)
+                         (- (* height (+ sv 0.5)) 0.5) c 1 1)
+                   vig)
+               (pixel x y 3) 1)
+        (finish (* (channel c border_r border_g border_b) fade) (pixel x y 3) 1)))))

@@ -1,0 +1,75 @@
+;; @kernel       comp_layer_stack
+;; @category     compositing
+;; @description  Stacks multiple layers in z-order.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (bottom backdrop, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The resource array packs the layer stack: `layers` RGBA frames of width*height*4
+;; floats back to back, read with `frame-clamped`, which returns the source pixel
+;; for an index past the end so a short stack degrades safely. `src` is the
+;; backdrop that the flattened stack is composited over. `order` is the ordering
+;; convention; the profile has no string type, so a named order is an integer
+;; code: 0 back to front (index 0 drawn first), 1 front to back (index 0 drawn
+;; last, so the stack is reversed), 2 additive light accumulation (order
+;; independent). `blend` is the per-layer blend mode against the composite already
+;; behind that layer (see common/image.jolt `blend-mode`); colour dodge and colour
+;; burn are guarded against a zero operand so modes 12 and 13 stay finite.
+;; stack order; 0 back-to-front, 1 front-to-back, 2 additive; range [0, 2].
+(param order 0 0 2 1)
+;; number of stack frames to read from the resource; range [1, 6].
+(param layers 3 1 6 1)
+;; per-layer opacity applied before compositing; range [0, 1].
+(param opacity 0.75 0 1 0)
+;; per-layer blend mode; see blend-mode codes; range [0, 13].
+(param blend 0 0 13 1)
+;; composite the flattened stack over the backdrop; range [0, 1].
+(param over 1 0 1 1)
+
+
+;; Coverage of one stack frame, including the reversed index for order 1.
+(defn stack-cover [px py k n o]
+  (let [idx (if (= order 1) (- (- n 1) k) k)]
+    (min 1 (* o (frame-clamped idx px py 3)))))
+
+
+;; Premultiplied colour of stack frames [k, n), folded back to front. `p` is the
+;; transmittance of the frames behind k, so the fold carries no extra state and a
+;; blend mode sees the composite already behind the layer it is applied to.
+(defn stack-col [px py ch k n o mode p]
+  (if (>= k n) 0
+    (let [idx (if (= order 1) (- (- n 1) k) k)
+          la (frame-clamped idx px py 3)
+          a (min 1 (* o la))
+          p1 (* p (- 1 a))
+          ls (if (> la 0) (/ (frame-clamped idx px py ch) la) 0)
+          rest (stack-col px py ch (+ k 1) n o mode p1)
+          ra (- 1 p1)
+          bs (if (> ra 0) (/ rest ra) 0)
+          bl (if (= mode 12) (blend-color-dodge (max bs .000001) ls)
+               (if (= mode 13) (blend-color-burn bs (max ls .000001))
+                 (blend-mode mode bs ls)))]
+      (+ (* a p1 bl) rest))))
+
+
+(defkernel comp_layer_stack [x y c]
+  (let [n (min layers (frame-count))
+        ;; transmittance of the whole stack, a product turned into a sum of logs
+        pc (if (= order 2) 0 (exp (sum k 0 n (let [a (stack-cover x y k n opacity)]
+          (log (max .000000001 (- 1 a)))))))
+        ;; additive accumulation is a plain order-independent sum
+        pm (if (= order 2)
+             (sum k 0 n (let [a (stack-cover x y k n opacity)
+                              la (frame-clamped k x y 3)]
+                         (* a (if (> la 0) (/ (frame-clamped k x y c) la) 0))))
+             (stack-col x y c 0 n opacity blend 1))
+        sa (if (= order 2) (min 1 (sum k 0 n (stack-cover x y k n opacity)))
+                     (- 1 pc))
+        ;; the flattened stack, then the backdrop underneath it
+        oa (if (= over 1) (+ sa (* (pixel x y 3) (- 1 sa))) (pixel x y 3))
+        bs (if (> (pixel x y 3) 0) (/ (pixel x y c) (pixel x y 3)) 0)
+        pre (+ pm (* (* (pixel x y 3) bs) (- 1 (if (= over 1) sa 0))))]
+    (if (= c 3) oa (if (> oa 0) (/ pre oa) 0))))

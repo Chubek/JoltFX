@@ -1,0 +1,88 @@
+;; @kernel       nle_chapter_marker
+;; @category     nle
+;; @description  Inserts chapter marker at specified frame.
+;; @complexity   Medium
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the clip, N RGBA frames packed back to back, each
+;; width*height*4 floats; its length sets the chapter boundaries, which are
+;; derived by splitting the frame count into `chapters` equal parts. A timeline
+;; strip runs along the bottom of the frame: alternating chapter bands, a filled
+;; progress bar up to marker_frame, a bright rule at each chapter boundary, and a
+;; playhead caret at the marker frame itself. label_mode 0 draws bare bands,
+;; 1 adds the boundary rules, 2 adds the playhead caret and label block. An empty
+;; resource falls back to a single chapter so the strip still renders.
+;; playhead frame within the clip; range [0, 100000].
+(param marker_frame 24 0 100000 1)
+;; number of chapter boundaries derived from the frame count; range [1, 64].
+(param chapters 6 1 64 1)
+;; strip height as a fraction of frame height; range [0.02, 0.4].
+(param strip_height 0.1 0.02 0.4 0)
+;; detail level; 0 bands, 1 bands plus rules, 2 rules plus playhead block; range [0, 2].
+(param label_mode 2 0 2 1)
+;; tint; 0 amber, 1 green, 2 white, 3 magenta, 4 blue; range [0, 4].
+(param color_code 0 0 4 1)
+
+
+;; Tint colour for the requested code.
+(defn tint [code ch]
+  (channel ch
+    (if (= code 0) 1 (if (= code 1) 0.2 (if (= code 2) 0.95 (if (= code 3) 1 0.3))))
+    (if (= code 0) 0.72 (if (= code 1) 0.9 (if (= code 2) 0.95 (if (= code 3) 0.25 0.55))))
+    (if (= code 0) 0.1 (if (= code 1) 0.3 (if (= code 2) 0.95 (if (= code 3) 0.85 1))))))
+
+
+;; Antialiased distance to a vertical line at px = ax.
+(defn vline [px ax t] (clamp01 (/ (- (+ t 1) (abs (- px ax))) 2)))
+
+
+;; Antialiased distance to a horizontal line at py = ay.
+(defn hline [py ay t] (clamp01 (/ (- (+ t 1) (abs (- py ay))) 2)))
+
+
+(defkernel nle_chapter_marker [x y c]
+  (let [;; the frame count sets the chapter length: boundaries are equal slices
+        n (max 1 (frame-count))
+        last (- n 1)
+        nc (max 1 (min 64 chapters))
+        sh (* strip_height height)
+        sy (- height sh)
+        in-strip (if (>= y sy) 1 0)
+        ;; playhead position along the strip, 0 at the first frame and 1 at the last
+        prog (clamp01 (/ (min (max 0 marker_frame) last) (max 1 last)))
+        px (* prog width)
+        u (/ (+ x 0.5) width)
+        ;; which chapter this pixel falls in, and how much of it is played
+        ci (min (- nc 1) (floor (* u nc)))
+        band (if (= (mod ci 2) 1) 1 0)
+        played (if (< u prog) 1 0)
+        ;; boundary rules: this pixel is nearest the two bounding chapter edges
+        step (/ width nc)
+        dnear (* step (floor (/ u step)))
+        rule (min 1 (+ (vline x dnear (max 0.6 (* 0.0025 width)))
+                       (vline x (+ dnear step) (max 0.6 (* 0.0025 width)))))
+        rule-on (* in-strip (if (>= label_mode 1) rule 0))
+        ;; playhead caret at the marker frame, plus its stem along the strip
+        caret (min 1 (+ (vline x px (max 0.8 (* 0.004 width)))
+                       (hline y sy (max 0.8 (* 0.004 width)))
+                       (vline x (+ px (* 0.02 width)) (max 0.8 (* 0.004 width)))))
+        caret-on (min 1 (* (if (>= label_mode 2) caret 0)
+                          (+ in-strip (* 0.5 (if (< y sy) 1 0)))))
+        ;; chapter label block, a short bar sitting just above the strip
+        blk (min 1 (* (if (>= label_mode 2)
+                        (if (all2 (>= x (- px (* 0.03 width))) (<= x (+ px (* 0.03 width))))
+                            (if (all2 (>= y (- sy (* 0.35 sh))) (< y sy)) 1 0) 0)
+                        0)
+                       (+ in-strip (* 0.6 (if (< y sy) 1 0)))))
+        ;; strip background, then the band fill: played chapters read brighter
+        base (mix (pixel x y c) (tint color_code (* 0.16 in-strip)) (* 0.75 in-strip))
+        fill (* 0.45 in-strip (mix (if (= band 1) 1 0.55) 1 played))
+        out (+ base (* fill (tint color_code c))
+                (* rule-on (tint color_code c))
+                (* caret-on 0.9)
+                (* blk 0.5 (tint color_code c)))]
+    (if (= c 3) (pixel x y 3) (finish (min 1 out) (pixel x y 3) 1))))

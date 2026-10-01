@@ -1,0 +1,39 @@
+;; @kernel       temporal_motion_compensate
+;; @category     temporal
+;; @description  Compensates motion between frames.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The flow arrives as a two-plane resource, plane 0 = u and plane 1 = v, each one
+;; width*height floats, in pixels of motion per frame interval. The profile exposes one
+;; image, `src`, which the host binds to whichever of the pair the flow was estimated
+;; against, and compensation is applied to it: each output pixel reads the source at
+;; its own compensated position (x + u, y + v). That is the standard forward
+;; formulation of motion compensation, dst(p) = src(p + v(p)). `scale` scales the
+;; vectors, `strength` cross-fades the resample against the uncompensated source, and a
+;; resource that is not a two-plane flow degrades to an uncompensated passthrough.
+;; flow magnitude multiplier; range [-4, 4].
+(param scale 1 -4 4 0)
+;; compensation strength; range [0, 1].
+(param strength 1 0 1 0)
+;; 0 nearest neighbour, 1 bilinear; range [0, 1].
+(param interpolation 1 0 1 1)
+;; clamp the compensated position to the frame instead of reading it as transparent; range [0, 1].
+(param clamp_border 1 0 1 1)
+
+
+(defkernel temporal_motion_compensate [x y c]
+  (let [planes (plane-count)
+        has (if (< planes 2) 0 1)
+        u (* scale (if (= has 1) (plane-at 0 x y) 0))
+        v (* scale (if (= has 1) (plane-at 1 x y) 0))
+        ;; the compensated destination position, sampled on the second frame
+        cx (+ x u)
+        cy (+ y v)
+        edge (if (= clamp_border 1) 1 0)
+        warped (sample cx cy c interpolation edge)]
+    (finish (mix (pixel x y c) warped strength) (pixel x y 3) 0)))

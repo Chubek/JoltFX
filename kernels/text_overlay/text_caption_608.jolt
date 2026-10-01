@@ -1,0 +1,134 @@
+;; @kernel       text_caption_608
+;; @category     text_overlay
+;; @description  Overlays CEA-608 closed caption.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; Text run resource layout (no string or font type in this profile, so the text
+;; engine supplies the rasterised run):
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; CEA-608 paints captions on a fixed grid: `cells` columns by two rows, one
+;; glyph per cell, so each cell samples only its own glyph's advance span of the
+;; run. Every read is guarded, so an absent (empty) run resource is a no-op.
+;; The CSV String parameter becomes an integer selector:
+;; 0 both caption rows, 1 upper row only, 2 lower row only, 3 both rows inside a
+;; drawn cell grid. range [0, 3].
+(param style 0 0 3 1)
+;; caption reveal as a fraction of the cell grid; range [0, 1].
+(param progress 1 0 1 0)
+;; caption columns; range [8, 42].
+(param cells 32 8 42 1)
+;; caption block centre y in normalized frame coordinates; range [0, 1].
+(param position_y 0.88 0 1 0)
+;; caption cell height as a fraction of frame height; range [0.01, 1].
+(param size 0.07 0.01 1 0)
+;; caption opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+(defkernel text_caption_608 [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [n (run-n)
+          ch (* size height)
+          cellw (/ width cells)
+          stack (* 2 ch)
+          top (- (* position_y height) (* .5 stack))
+          ; row and column are clamped so the glyph index is never negative
+          r (max 0 (floor (/ (- y top) (max .0001 ch))))
+          col (max 0 (floor (/ x (max .0001 cellw))))
+          ; CEA-608 row 1 and row 2 occupy the two grid rows; the style picks which
+          rows (if (= style 1) 1 (if (= style 2) 1 2))
+          inrow (if (< r rows) 1 0)
+          uc (- (/ x cellw) col)
+          g (+ col (* r cells))
+          gl (glyph-left g)
+          gr (glyph-right g)
+          ; one cell shows one glyph, sampled across that glyph's advance span
+          u (+ gl (* uc (max .00001 (- gr gl))))
+          v (/ (- y top) (max .0004 (* ch rows)))
+          live (if (< g n) 1 0)
+          shown (if (< col (* progress cells)) 1 0)
+          cv (* opacity (if (all2 (= inrow 1) (all2 (> live 0) (> shown 0))) (run-coverage u v) 0))
+          ; style 3 outlines every cell of the 608 grid
+          gu (/ (- x (* col cellw)) (max .0001 cellw))
+          gv (/ (- y (+ top (* r ch))) (max .0001 ch))
+          gline (* (if (all2 (>= gu 0) (all2 (< gu 1) (all2 (>= gv 0) (< gv 1))))
+                    1 0)
+                   (max (max (clamp01 (/ (- gu .02) .02)) (clamp01 (/ (- .98 gu) .02)))
+                        (max (clamp01 (/ (- gv .04) .04)) (clamp01 (/ (- .96 gv) .04)))))
+          grid (* opacity (if (= style 3) (if (all2 (< r rows) (< col cells)) gline 0) 0))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (mix (mix base (channel c .14 .20 .32) grid) (channel c 1 1 1) cv)
+              (pixel x y 3) 1))))

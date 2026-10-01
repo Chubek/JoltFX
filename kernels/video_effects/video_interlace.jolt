@@ -19,7 +19,8 @@
 
 (defkernel video_interlace [x y c]
   (let [this_field (mod y 2)
-        want (if (= odd_field 1) 1 0)
+        ;; animate flips the field order every pass, so the comb crawls in time
+        want (if (= (mod (+ odd_field (if (= animate 1) (mod pass 2) 0)) 2) 1) 1 0)
         a (pixel x y c)
         b (to-frame x y c)]
     (if (= this_field want) a

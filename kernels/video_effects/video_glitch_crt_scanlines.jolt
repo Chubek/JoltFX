@@ -1,0 +1,44 @@
+;; @kernel       video_glitch_crt_scanlines
+;; @category     video_effects
+;; @description  Overlays CRT monitor scanlines on the frame.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; Three CRT artefacts are layered on the picture: a parabolic scanline profile that
+;; dims the gaps between every `spacing` raster lines, an aperture-grille phosphor
+;; mask that lets every third column of a triad dominate its own primary, and a tube
+;; curvature term that darkens the raster quadratically towards the glass edge.
+;; scanline pitch in pixels; range [1, 16].
+(param spacing 3 1 16 1)
+;; scanline depth, 0 flat, 1 full black between lines; range [0, 1].
+(param intensity 0.45 0 1 0)
+;; overall raster gain; range [0, 4].
+(param brightness 1.2 0 4 0)
+;; tube curvature darkening towards the edges; range [0, 1].
+(param curvature 0.35 0 1 0)
+;; animate; 0 a locked raster, 1 the beam drifts down two lines per pass; range [0, 1].
+(param animate 1 0 1 1)
+
+
+(defkernel video_glitch_crt_scanlines [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [sp (max 1 spacing)
+          drift (if (= animate 1) (floor (* 2 pass)) 0)
+          ;; 0 in the gap between two lines, 1 at the centre of a scanline
+          p (/ (mod (+ y drift) sp) sp)
+          scan (+ 1 (* intensity (- 1 (* 4 p (- 1 p)))))
+          ;; aperture-grille triad: each column favours one phosphor
+          tri (mod (floor x) 3)
+          mask (if (all2 (= tri 0) (= c 0)) 1
+                (if (all2 (= tri 1) (= c 1)) 1
+                  (if (all2 (= tri 2) (= c 2)) 1 0.72)))
+          ;; tube curvature: the raster dims towards the glass edge
+          ex (- (+ x 0.5) (* 0.5 width))
+          ey (- (+ y 0.5) (* 0.5 height))
+          r2 (/ (+ (* ex ex) (* ey ey)) (* 0.25 (+ (* width width) (* height height))))
+          edge (max 0 (- 1 (* curvature r2)))]
+      (finish (* (* (pixel x y c) scan) (* mask edge) brightness) (pixel x y 3) 1))))

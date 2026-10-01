@@ -18,7 +18,19 @@
 
 (defkernel video_pixelate [x y c]
   (let [bs block_size
-        bx (* bs (floor (/ x bs)))
+        ;; animate drifts the sampling lattice so the pixel grid crawls
+        drift (if (= animate 1) (mod pass 2) 0)
+        sx (* drift bs)
+        bx (* bs (floor (/ (+ x sx) bs)))
         by (* bs (floor (/ y bs)))
+        ;; shape 1 rounds each tile off, which reads as circular dabs
+        gx (- x (+ sx bx))
+        gy (- y by)
+        dx (- gx (/ bs 2))
+        dy (- gy (/ bs 2))
+        rad (if (= shape 1) (/ bs 2) (+ bs 1))
+        inside (if (= shape 1)
+                 (if (<= (+ (* dx dx) (* dy dy)) (* rad rad)) 1 0)
+                 1)
         val (sample bx by c 0 1)]
-    val))
+    (* val inside)))

@@ -23,12 +23,13 @@
 (defkernel video_noise_grain [x y c]
   (let [sx (/ x size)
         sy (/ y size)
-        g (if (= monochrome 1)
-            (hash2 sx sy seed)
-            (if (= c 0) (hash2 sx sy seed)
-              (if (= c 1) (hash2 sx sy seed)
-                (hash2 sx sy seed))))]
+        ;; animate re-rolls the grain field every pass so it shimmers
+        s0 (+ seed (if (= animate 1) (mod pass 8) 0))
+        g (hash2 sx sy s0)]
     (let [val (pixel x y c)
-          grain (* amount (- (* 2 g) 1))]
+          ;; monochrome re-rolls an independent value per channel so the grain is
+          ;; coloured; otherwise one value drives all three channels
+          g1 (if (= monochrome 1) g (hash2 sx sy (+ s0 1)))
+          grain (* amount (- (* 2 (if (= c 0) g g1)) 1))]
       (if (= c 3) (pixel x y 3)
         (min 1 (max 0 (+ val grain)))))))

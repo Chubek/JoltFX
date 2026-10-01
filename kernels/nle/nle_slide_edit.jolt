@@ -1,0 +1,57 @@
+;; @kernel       nle_slide_edit
+;; @category     nle
+;; @description  Moves a clip while maintaining adjacent clip positions.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the clip underneath); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the sliding clip, N RGBA frames packed back to back,
+;; each width*height*4 floats. One clip slides over another: the resource clip is
+;; drawn at an offset that travels from off-frame to the frame origin while the
+;; source stays put underneath, so the adjacent clip positions are preserved. The
+;; slide vector (Vec2, flattened to slide_x/slide_y) sets the direction and extent
+;; of the travel. An empty resource degrades to the source and is a no-op.
+;; output playhead in frames; range [0, 600].
+(param position 10 0 600 0)
+;; length of the slide in frames; range [1, 240].
+(param duration 24 1 240 1)
+;; slide travel x, in fractions of the frame; range [-1, 1].
+(param slide_x 1 -1 1 0)
+;; slide travel y, in fractions of the frame; range [-1, 1].
+(param slide_y 0 -1 1 0)
+;; source index mode; 0 hold, 1 wrap, 2 mirror; range [0, 2].
+(param boundary_mode 0 0 2 1)
+
+
+(defn slide-resolve [k n mode]
+  (if (< n 1) 0
+    (if (= mode 0) (max 0 (min (- n 1) k))
+      (if (= mode 1) (mod k n)
+        (let [d (mod k (* 2 (max 1 (- n 1))))]
+          (if (< d (max 1 (- n 1))) d (- (* 2 (max 1 (- n 1))) d)))))))
+
+
+(defkernel nle_slide_edit [x y c]
+  (let [n (frame-count)
+        dur (max 1 duration)
+        ;; slide progress: 0 while the clip is off-frame, 1 once it has landed
+        t (clamp01 (/ (mod position dur) dur))
+        ox (* (- 1 t) slide_x width)
+        oy (* (- 1 t) slide_y height)
+        ;; the sliding clip advances one frame per `duration` of output
+        si (slide-resolve (floor (/ (+ position dur) dur)) n boundary_mode)
+        ;; coverage of the slid clip: 1 where the slid coordinate lands inside
+        ;; the frame, ramping to 0 over the outermost pixel of each edge
+        ax (clamp01 (+ (+ x ox) 0.5))
+        bx (clamp01 (- (+ width -0.5) (+ x ox)))
+        ay (clamp01 (+ (+ y oy) 0.5))
+        by (clamp01 (- (+ height -0.5) (+ y oy)))
+        cov (min 1 (* (min ax bx) (min ay by)))
+        ;; the frame read is clamped, so a clip slid past the edge repeats it
+        sx (max 0 (min (- width 1) (floor (+ x ox))))
+        sy (max 0 (min (- height 1) (floor (+ y oy))))]
+    (if (< n 1) (pixel x y c)
+      (mix (pixel x y c) (frame-at si sx sy c) cov))))

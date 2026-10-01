@@ -1,0 +1,100 @@
+;; @kernel       temporal_judder_reduction
+;; @category     temporal
+;; @description  Reduces temporal judder.
+;; @complexity   High
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs the frame window, each frame width*height*4 floats. Judder
+;; is a whole-frame sub-pixel jitter, so one translation is estimated for the entire
+;; frame by the same bounded phase-correlation-style integer search the stabiliser uses:
+;; a probe lattice over the frame is compared against the newest supplied frame over the
+;; whole box [-radius, radius]^2, with the source lattice held still and the reference
+;; lattice displaced. The profile has no fold primitive and no argmin, so the box cannot
+;; be scanned for a minimum; each candidate is weighted by exp(-error/tau) and the
+;; estimate is the weighted centroid of that cost surface, which is a smooth argmin and
+;; falls back to zero on a flat frame where every candidate scores the same. Every window
+;; frame is then read back at that integer offset before being combined: the offset is a
+;; whole number, so window frames are read exactly and only the source is resampled.
+;; `method` picks the combiner: a mean averages independent jitter away, a median rejects
+;; the frames that moved during the window. `preserve_motion` fades the whole correction
+;; out on pixels whose temporal spread says the scene is moving there.
+;; Green-channel value of frame k at (rx, ry); a read outside the frame or the array
+;; falls back to the source.
+(defn fgrn [k rx ry]
+  (let [px (+ (* (floor (+ ry .5)) width) (floor (+ rx .5)))
+        i (+ (* k (* 4 (* width height))) (* 4 px) 1)]
+    (if (all2 (>= px 0) (>= i 0))
+        (if (< i (data-count)) (data i) (pixel rx ry 1))
+        (pixel rx ry 1))))
+;; Channel ch of frame k at integer (rx, ry); out-of-range reads clamp to the source.
+(defn fpx [k rx ry ch]
+  (let [px (+ (* ry width) rx)
+        i (+ (* k (* 4 (* width height))) (* 4 px) ch)]
+    (if (all2 (all2 (>= px 0) (>= i 0)) (< i (data-count))) (data i) (pixel rx ry ch))))
+;; Cost of one candidate judder offset: the source's probe lattice is held still and the
+;; newest frame's lattice is displaced by (dx, dy). The cost has to be recomputed per
+;; candidate, which is why it is a function and not a binding.
+(defn probe-err [x y dx dy pi]
+  (sum i 0 3
+    (sum j 0 3
+      (let [px (* (+ .5 i) (/ width 3))
+            py (* (+ .5 j) (/ height 3))
+            d (- (pixel px py 1) (fgrn pi (+ px dx) (+ py dy)))]
+        (* d d)))))
+
+
+;; fraction of the aligned window to blend in; range [0, 1].
+(param strength 1 0 1 0)
+;; bounded integer search radius in pixels; range [0, 4].
+(param radius 2 0 4 1)
+;; window of frames to align and combine; range [1, 8].
+(param window 4 1 8 1)
+;; window combiner; 0 mean, 1 median; range [0, 1].
+(param method 0 0 1 1)
+;; fade the correction out on pixels that genuinely moved; range [0, 1].
+(param preserve_motion 1 0 1 1)
+
+
+(defkernel temporal_judder_reduction [x y c]
+  (let [nf (frame-count)
+        n (min window nf)
+        ;; newest supplied frame is the alignment reference
+        pi (max 0 (- nf 1))
+        r (max 0 (round radius))
+        ;; softmax temperature, set well below one probe lattice's worth of mismatch so
+        ;; the centroid is an effectively exact integer argmin
+        tau (max .000001 (/ (* 3 3) 500))
+        wsum (max .000001
+                (sum dx (- r) (+ r 1)
+                  (sum dy (- r) (+ r 1)
+                    (exp (/ (* -1 (probe-err x y dx dy pi)) tau)))))
+        ;; per-axis translation: the weighted centroid of the cost surface
+        cx (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (probe-err x y dx dy pi)) tau))]
+                    (* w dx)))) wsum)
+        cy (/ (sum dx (- r) (+ r 1)
+                (sum dy (- r) (+ r 1)
+                  (let [w (exp (/ (* -1 (probe-err x y dx dy pi)) tau))]
+                    (* w dy)))) wsum)
+        base (pixel x y c)
+        ;; temporal spread about the source value: how much this pixel moved
+        spread (/ (+ (abs (- base (fpx pi x y c)))
+                     (sum k 0 n (abs (- (fpx (- (- n 1) k) x y c) base))))
+                  (+ n 1))
+        gate (if (= preserve_motion 1) (- 1 (smooth 0 .25 spread)) 1)
+        ;; every window frame read back at the estimated offset
+        sx (floor (+ .5 (* (+ x cx) gate)))
+        sy (floor (+ .5 (* (+ y cy) gate)))
+        rank (round (/ n 2))
+        mean (/ (sum k 0 n (fpx (- (- n 1) k) sx sy c)) (max 1 n))
+        med (sum k 0 n
+              (let [v (fpx (- (- n 1) k) sx sy c)
+                    below (sum j 0 n (if (<= (fpx (- (- n 1) j) sx sy c) v) 1 0))]
+                (if (= below rank) v 0)))
+        aligned (if (= method 1) med mean)]
+    (finish (mix base aligned strength) (pixel x y 3) 0)))

@@ -1,0 +1,173 @@
+;; @kernel       text_timecode
+;; @category     text_overlay
+;; @description  Overlays timecode display.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (background, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.text_overlay; shared functions: common/image.jolt.
+;; The profile has no font type, so the readout is drawn procedurally as seven
+;; segment strokes. It needs no text resource: the digits come from the timecode
+;; parameter, and the colon separators blink once a second.
+;; The CSV String parameter becomes an integer selector for the readout format:
+;; 0 HH:MM:SS, 1 MM:SS, 2 HH:MM:SS:FF at 30 fps, 3 HH:MM. range [0, 3].
+(param format 0 0 3 1)
+;; timecode in seconds from the start of the reel; range [0, 86400].
+(param timecode 0 0 86400 0)
+;; readout centre x in normalized frame coordinates; range [0, 1].
+(param position_x 0.12 0 1 0)
+;; readout bottom y in normalized frame coordinates; range [0, 1].
+(param position_y 0.95 0 1 0)
+;; digit height as a fraction of frame height; range [0.01, 1].
+(param size 0.09 0.01 1 0)
+;; readout opacity; range [0, 1].
+(param opacity 1 0 1 0)
+
+;; ---------------------------------------------------------------------------
+;; Rasterised text run resource, shared accessors. The image profile has no
+;; string or font type, so the text engine hands the kernel the glyph run it has
+;; already rasterised:
+;;   data[0]         = glyph count N
+;;   data[1 .. N]    = per-glyph character code
+;;   data[N+1 .. 2N] = per-glyph advance width, in run-box widths
+;;   data[2N+1 .. ]  = glyph coverage plane, width*height floats
+;; The plane is a frame-sized rasterisation of the run, so a run box placed in the
+;; frame samples it: one rasterised run can be placed, scaled and recoloured
+;; without re-rasterising. Every read below is guarded, so an absent (empty)
+;; resource degrades to a no-op instead of failing.
+
+;; Glyph count, bounded by the array actually supplied.
+(defn run-n []
+  (if (> (data-count) 2)
+    (max 0 (min (round (data 0)) (floor (/ (- (data-count) 1) 2))))
+    0))
+
+;; Advance of glyph j, expressed in run-box widths.
+(defn text-advance [j]
+  (let [n (run-n)]
+    (if (all2 (> n 0) (all2 (< j n) (< (+ (+ n 1) j) (data-count)))) (data (+ (+ n 1) j)) 0)))
+
+;; Index of the glyph covering run coordinate u: the number of glyph start edges
+;; at or before u, minus one.
+(defn text-glyph-at [u n]
+  (max 0 (min (- n 1) (sum i 0 n
+    (if (< u (sum j 0 i (text-advance j))) 0 1)))))
+
+;; Left and right edges of glyph i, and the extent of the whole run.
+(defn glyph-left [i] (sum j 0 i (text-advance j)))
+(defn glyph-right [i] (+ (glyph-left i) (text-advance i)))
+(defn text-extent [] (glyph-left (run-n)))
+
+;; Coverage plane index for run-box coordinates (u,v), or -1 outside the run.
+(defn run-index [u v]
+  (let [n (run-n)
+        p (+ 1 (* 2 n))
+        w (max 1 width)
+        h (max 1 height)
+        i (+ (* (floor (* v h)) w) (floor (* u w)))]
+    (if (all2 (>= u 0) (all2 (< u 1) (all2 (>= v 0) (all2 (< v 1) (< (+ p i) (data-count))))))
+      (+ p i)
+      -1)))
+
+;; Coverage of the run at run-box coordinates (u,v).
+(defn run-coverage [u v]
+  (let [i (run-index u v)] (if (< i 0) 0 (max 0 (data i)))))
+
+;; Coverage of the run at frame pixel (x,y), given the run box top-left and size
+;; in pixels. This is the entry point every text kernel samples through.
+(defn text-coverage [x y ox oy boxw boxh]
+  (let [n (run-n)]
+    (if (< n 1) 0
+      (run-coverage (/ (- x ox) (max .0001 boxw)) (/ (- y oy) (max .0004 boxh))))))
+
+;; Ink of the run box counting only glyphs at or below `revealed`. The glyph
+;; index lookup is quadratic in the glyph count, so it is gated on real coverage.
+(defn text-reveal-coverage [x y ox oy boxw boxh revealed]
+  (let [cv (text-coverage x y ox oy boxw boxh)]
+    (if (> cv 0)
+      (let [n (run-n) u (/ (- x ox) (max .0001 boxw))]
+        (if (all2 (> n 0) (<= (text-glyph-at u n) revealed)) cv 0))
+      0)))
+
+;; Segment bit mask of a decimal digit: a=1 b=2 c=4 d=8 e=16 f=32 g=64.
+(defn digit-mask [d]
+  (if (= d 0) 63
+    (if (= d 1) 6
+      (if (= d 2) 91
+        (if (= d 3) 79
+          (if (= d 4) 102
+            (if (= d 5) 109
+              (if (= d 6) 125
+                (if (= d 7) 7
+                  (if (= d 8) 127
+                    (if (= d 9) 111 0)))))))))))
+
+;; Seven-segment ink at digit-box coordinates (du,dv), mask m, stroke th wide.
+;; Segment s runs a(top) b c d(bottom) e f g(middle), numbered 0..6: the
+;; multiples of three are the horizontal bars, the rest are the verticals.
+(defn seven-cover [du dv m th]
+  (clamp01 (sum s 0 7
+    (if (> (mod (floor (/ m (pow 2 s))) 2) 0)
+      (let [hy (+ .05 (* .45 (floor (/ s 3))))
+            vx (if (< s 3) .86 .14)
+            vy (if (= (mod s 2) 1) .05 .50)]
+        (if (= (mod s 3) 0)
+          (clamp01 (/ (- th (dist-to-seg du dv .14 hy .86 hy)) th))
+          (clamp01 (/ (- th (dist-to-seg du dv vx vy vx (+ vy .45))) th))))
+      0))))
+(defkernel text_timecode [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [secs (max 0 (floor timecode))
+          fr (mod (floor (* timecode 30)) 30)
+          hh (mod (floor (/ secs 3600)) 24)
+          mm (mod (floor (/ secs 60)) 60)
+          ss (mod secs 60)
+          ; format selects the digit count, the cell count and the packed value
+          ndig (if (= format 0) 6 (if (= format 2) 8 4))
+          cells (if (= format 0) 8 (if (= format 2) 11 5))
+          packed (if (= format 0) (+ (* hh 10000) (+ (* mm 100) ss))
+                  (if (= format 2) (+ (* hh 1000000) (+ (* mm 10000) (+ (* ss 100) fr)))
+                    (if (= format 1) (+ (* mm 100) ss) (+ (* hh 100) mm))))
+          dh (* size height)
+          cw (* dh .78)
+          boxw (* cells cw)
+          ox (- (* position_x width) (* .5 boxw))
+          oy (- (* position_y height) dh)
+          u (/ (- x ox) (max .0001 boxw))
+          cu (* u cells)
+          k (floor cu)
+          ccu (- cu k)
+          ; the colons sit at fixed cells, so counting them before a cell gives the
+          ; digit slot and the difference between consecutive counts flags a colon
+          cb (if (= format 2) (+ (if (> k 2) 1 0) (+ (if (> k 5) 1 0) (if (> k 8) 1 0)))
+             (if (= format 0) (+ (if (> k 2) 1 0) (if (> k 5) 1 0)) (if (> k 2) 1 0)))
+          cb1 (if (= format 2) (+ (if (> (+ k 1) 2) 1 0) (+ (if (> (+ k 1) 5) 1 0) (if (> (+ k 1) 8) 1 0)))
+             (if (= format 0) (+ (if (> (+ k 1) 2) 1 0) (if (> (+ k 1) 5) 1 0)) (if (> (+ k 1) 2) 1 0)))
+          colon (- cb1 cb)
+          slot (- k cb)
+          valid (all2 (>= slot 0) (< slot ndig))
+          du (/ (- ccu .11) .78)
+          dv (/ (- y oy) (max .0004 dh))
+          inb (all2 (>= du 0) (all2 (<= du 1) (all2 (>= dv 0) (<= dv 1))))
+          value (mod (floor (/ packed (pow 10 (- (- ndig 1) slot)))) 10)
+          th .055
+          digit (if (all2 valid inb) (seven-cover du dv (digit-mask value) th) 0)
+          ; a colon cell draws two round dots that blink once a second
+          dotr (* dh .06)
+          ddx (* (- ccu .5) cw)
+          d1 (sqrt (+ (* ddx ddx) (* (* (- dv .28) dh) (* (- dv .28) dh))))
+          d2 (sqrt (+ (* ddx ddx) (* (* (- dv .72) dh) (* (- dv .72) dh))))
+          blink (if (= (mod secs 2) 1) 1 .25)
+          sep (if (all2 (= colon 1) (all2 (>= dv 0) (<= dv 1)))
+                (max (clamp01 (/ (- dotr d1) dotr)) (clamp01 (/ (- dotr d2) dotr))) 0)
+          ink (* opacity (max digit (* blink sep)))
+          ; a dark plate behind the readout keeps the digits legible
+          plate (* opacity (min (clamp01 (/ (- x (- ox (* dh .3))) 1.5))
+                               (min (clamp01 (/ (- (+ ox boxw (* dh .3)) x) 1.5))
+                                 (min (clamp01 (/ (- y (- oy (* dh .18))) 1.5))
+                                   (clamp01 (/ (- (+ oy dh (* dh .18)) y) 1.5))))))
+          base (channel c (straight x y 0) (straight x y 1) (straight x y 2))]
+      (finish (mix (mix base (channel c .02 .02 .03) plate) (channel c 1 1 1) ink)
+              (pixel x y 3) 1))))

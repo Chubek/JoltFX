@@ -1,0 +1,85 @@
+;; @kernel       temporal_hdr_merge
+;; @category     temporal
+;; @description  Merges HDR frames with different exposures.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.temporal; shared functions: common/image.jolt.
+;; The resource array packs two things back to back: the frame window first, `n` frames
+;; of width*height*4 floats, then one exposure plane of width*height floats. The plane
+;; is a per-pixel exposure bias in stops and is applied as gain = 2^(bias * exposure);
+;; a caller fills it in by reading the brackets back into HDR and recording which regions
+;; each bracket under- or over-exposed. The merge is an inverse-variance blend: every
+;; frame is weighted by how well it agrees with the temporal mean, so a region is
+;; reconstructed from the brackets that actually saw it, and a frame that disagrees is
+;; dropped instead of being averaged in. `tolerance` sets how fast that weight falls
+;; off and so doubles as the ghost rejection threshold. `method` chooses the error basis
+;; the weights and the blend are measured on: linear light, log light (equal error in
+;; stops, the photometric choice, merged geometrically), or luminance alone, which lets
+;; the brightest bracket carry a clipped highlight. RGB is deliberately left unclamped
+;; so the result keeps real high-dynamic-range headroom above 1.0.
+;; Rec.709 luma of resource frame k at (rx, ry); k indexes the frame array.
+(defn flum [k rx ry]
+  (let [i (+ (+ (* k (* 4 (* width height))) (* 4 (+ (* (floor (+ ry .5)) width) (floor (+ rx .5))))) 3)]
+    (if (all2 (>= i 3) (< i (data-count)))
+      (let [a (data i)]
+        (if (> a 0)
+            (luma (/ (data (- i 3)) a) (/ (data (- i 2)) a) (/ (data (- i 1)) a))
+            0))
+      (luminance rx ry))))
+;; Value of the exposure plane that follows the frames; a missing plane reads as 0 stops.
+(defn plane-val [off rx ry]
+  (let [i (+ off (+ (* (floor (+ ry .5)) width) (floor (+ rx .5))))]
+    (if (all2 (>= i 0) (< i (data-count))) (data i) 0)))
+;; Inverse-variance weight of frame k for channel ch, on the chosen error basis.
+(defn frame-weight [k ch mean lmean x y n]
+  (let [v (frame-clamped (- (- n 1) k) x y ch)]
+    (if (= method 2)
+        ;; luminance basis: the brightest bracket carries a clipped highlight
+        (exp (/ (- (flum (- (- n 1) k) x y) lmean) tolerance))
+        (if (= method 1)
+            ;; equal error in stops: the photometric basis
+            (exp (* -1 (pow (/ (abs (- (log (+ v .0001)) (log (+ mean .0001))))
+                                 tolerance)
+                               2)))
+            ;; inverse variance in linear light
+            (exp (* -1 (pow (/ (abs (- v mean)) tolerance) 2)))))))
+
+
+;; frames merged; range [1, 8].
+(param window 4 1 8 1)
+;; exposure bias scale applied to the supplied plane, in stops; range [-4, 4].
+(param exposure 1 -4 4 0)
+;; weight basis; 0 linear deviation, 1 log-light deviation, 2 luminance only; range [0, 2].
+(param method 1 0 2 1)
+;; inverse-variance tolerance and ghost rejection threshold; range [0.01, 1].
+(param tolerance 0.2 0.01 1 0)
+;; blend of the merge against the source; range [0, 1].
+(param strength 1 0 1 0)
+
+
+(defkernel temporal_hdr_merge [x y c]
+  (let [fs (* 4 (* width height))
+        nf (if (= fs 0) 0 (floor (/ (data-count) fs)))
+        n (min window nf)
+        ;; the exposure plane starts where the frames stop
+        off (* nf fs)
+        ;; per-pixel exposure bias from the supplied plane, in stops
+        gain (pow 2 (* (plane-val off x y) exposure))
+        base (pixel x y c)
+        ;; temporal mean of the window: the reference every bracket is judged against
+        mean (/ (+ base (sum k 0 n (frame-clamped (- (- n 1) k) x y c))) (+ n 1))
+        lmean (/ (+ (luminance x y) (sum k 0 n (flum (- (- n 1) k) x y))) (+ n 1))
+        wsum (sum k 0 n (frame-weight k c mean lmean x y n))
+        merged (/ (sum k 0 n
+                    (* (frame-weight k c mean lmean x y n)
+                       ;; the log-light merge is geometric, the others are linear
+                       (if (= method 1)
+                           (exp (log (+ (frame-clamped (- (- n 1) k) x y c) .0001)))
+                           (frame-clamped (- (- n 1) k) x y c))))
+                  (max .000001 wsum))]
+    ;; the exposure bias is applied in light, and the result is left unclamped
+    (finish (mix base (* (max 0 merged) gain) strength) (pixel x y 3) 0)))

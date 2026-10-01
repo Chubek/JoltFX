@@ -1,0 +1,53 @@
+;; @kernel       comp_layer_track_matte
+;; @category     compositing
+;; @description  Uses track matte for layer compositing.
+;; @complexity   Low
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; `src` is the layer being matted. The resource array holds the matte frame as
+;; width*height*4 floats, read with `to-frame`, which returns the source pixel
+;; when the array is empty and so degrades to a matte driven by the layer itself.
+;; `matte_source` selects the matte channel; the profile has no string type, so a
+;; named matte mode is an integer code: 0 the matte alpha, 1 the matte Rec.709
+;; luminance of the premultiplied RGB, 2 red, 3 green, 4 blue. `feather` widens
+;; the matte with a small box average of the matte channel itself, giving the soft
+;; matte edge a track matte needs; the offsets are clamped because `to-frame` does
+;; not bound its coordinate. `invert` flips the matte. The output is premultiplied:
+;; the matte scales the layer colour and the layer alpha together.
+;; matte channel; 0 alpha, 1 luma, 2 red, 3 green, 4 blue; range [0, 4].
+(param matte_source 1 0 4 1)
+;; 1 inverts the matte; range [0, 1].
+(param invert 0 0 1 1)
+;; matte edge feather radius in pixels; range [0, 2].
+(param feather 1 0 2 0)
+;; overall matte gain; range [0, 1].
+(param opacity 1 0 1 0)
+
+
+;; The selected matte channel of the matte frame at (px, py).
+(defn matte-raw [px py]
+  (if (= matte_source 0) (to-frame px py 3)
+    (if (= matte_source 1) (luma (to-frame px py 0) (to-frame px py 1) (to-frame px py 2))
+      (if (= matte_source 2) (to-frame px py 0)
+        (if (= matte_source 3) (to-frame px py 1) (to-frame px py 2))))))
+
+
+;; The matte with an optional box feather around it.
+(defn matte-at [px py]
+  (let [fr (round feather)]
+    (if (= fr 0) (matte-raw px py)
+      (/ (sum i (- 0 fr) (+ fr 1)
+           (sum j (- 0 fr) (+ fr 1)
+             (matte-raw (min (- width 1) (max 0 (+ px i))) (min (- height 1) (max 0 (+ py j))))))
+         (* (+ fr 1) (+ fr 1))))))
+
+
+(defkernel comp_layer_track_matte [x y c]
+  (let [m0 (clamp01 (matte-at x y))
+        m1 (clamp01 (if (= invert 1) (- 1 m0) m0))
+        a (min 1 (* m1 opacity))]
+    (if (= c 3) (* (pixel x y 3) a) (* (pixel x y c) a))))

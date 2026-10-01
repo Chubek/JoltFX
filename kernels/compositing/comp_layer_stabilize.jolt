@@ -1,0 +1,105 @@
+;; @kernel       comp_layer_stabilize
+;; @category     compositing
+;; @description  Stabilizes layer motion.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer at the current time, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The resource array packs a frame window as RGBA frames of width*height*4 floats
+;; back to back, read through `stab-frame`, which returns the source pixel for an
+;; index the window does not cover, so an absent window measures no motion and the
+;; kernel is a pure crop. The camera translation is measured from a luma-weighted
+;; centroid and second moment of each window frame on a 2x2 luma quadrature, the
+;; standard estimator for global-motion stabilisation. The compensation is the
+;; distance between the current frame's centroid and the triangularly weighted
+;; centroid of the window, so the output samples the source along the smoothed
+;; camera path. `method` selects what is compensated; the profile has no string type,
+;; so a named method is an integer code: 0 translation only, 1 translation plus the
+;; apparent scale taken from the ratio of the window's mean spread to the current
+;; frame's spread, which locks a zoom as well as a pan. `smoothing` is the
+;; compensation gain, 0 leaving the raw camera motion in and 1 locking the frame to
+;; the smoothed path, and `crop` zooms the sampling window about the frame centre to
+;; hide the border the translation exposes. `window` is the number of frames the
+;; smoothed path is averaged over.
+;; stabilisation compensation gain; range [0, 1].
+(param smoothing 0.75 0 1 0)
+;; extra zoom about the frame centre that hides the exposed border; range [0, 0.6].
+(param crop 0.15 0 0.6 0)
+;; compensation method; 0 translation, 1 translation and scale; range [0, 1].
+(param method 0 0 1 1)
+;; number of frames the smoothed path is averaged over; range [1, 3].
+(param window 3 1 3 1)
+
+
+;; Frame k of the packed window, or the source pixel when the window is short.
+(defn stab-frame [nf k ch px py]
+  (if (all2 (> nf 1) (all2 (>= k 0) (< k nf)))
+    (data (+ (* k (* 4 (* width height))) ch (* 4 (+ (* py width) px))))
+    (pixel px py ch)))
+
+
+;; Premultiplied Rec.709 luma of window frame k at a clamped position.
+(defn stab-w [nf k px py]
+  (let [qx (min (- width 1) (max 0 px)) qy (min (- height 1) (max 0 py))]
+    (luma (stab-frame nf k 0 qx qy) (stab-frame nf k 1 qx qy) (stab-frame nf k 2 qx qy))))
+
+
+;; Luma-weighted centroid moment of frame k along x over the quadrature.
+(defn stab-cxm [nf k a b]
+  (sum j 0 2 (sum i 0 2
+    (let [px (if (= i 0) a b) py (if (= j 0) a b)]
+      (* (stab-w nf k px py) px)))))
+
+
+;; Luma-weighted centroid moment of frame k along y over the quadrature.
+(defn stab-cym [nf k a b]
+  (sum j 0 2 (sum i 0 2
+    (let [px (if (= i 0) a b) py (if (= j 0) a b)]
+      (* (stab-w nf k px py) py)))))
+
+
+;; Luma-weighted second moment of frame k about the frame centre.
+(defn stab-msm [nf k a b]
+  (sum j 0 2 (sum i 0 2
+    (let [px (if (= i 0) a b) py (if (= j 0) a b)]
+      (* (stab-w nf k px py)
+         (+ (* (- px a) (- px a)) (* (- py a) (- py a))))))))
+
+
+(defkernel comp_layer_stabilize [x y c]
+  (let [fs (max 1 (* 4 (* width height)))
+        nf (max 0 (floor (/ (data-count) fs)))
+        cx0 (/ (- width 1) 2) cy0 (/ (- height 1) 2)
+        ;; 2x2 luma quadrature at a quarter and three quarters of the frame
+        qx0 (/ width 4) qx1 (* .75 width) qy0 (/ height 4) qy1 (* .75 height)
+        kc (max 0 (- nf 1))
+        lo (max 0 (- kc (- window 1)))
+        cnt (+ 1 (- kc lo))
+        ;; the smoothed path moments, skipped entirely without a frame window
+        wm (if (> nf 0) (sum j 0 cnt (sum i 0 2 (sum h 0 2
+          (stab-w nf (+ lo j) (if (= i 0) qx0 qx1) (if (= h 0) qy0 qy1))))) 0)
+        smx (if (> nf 0) (sum j 0 cnt (* (- cnt j) (stab-cxm nf (+ lo j) qx0 qx0))) 0)
+        smy (if (> nf 0) (sum j 0 cnt (* (- cnt j) (stab-cym nf (+ lo j) qx0 qx0))) 0)
+        cm (if (> nf 0) (max .000001 (sum i 0 2 (sum h 0 2
+          (stab-w nf kc (if (= i 0) qx0 qx1) (if (= h 0) qy0 qy1))))) 1)
+        cmx (if (> nf 0) (stab-cxm nf kc qx0 qx0) 0)
+        cmy (if (> nf 0) (stab-cym nf kc qx0 qx0) 0)
+        ;; compensation: the distance from the current path to the smoothed one
+        dxa (if (> nf 0) (* smoothing (- (/ cmx cm) (if (> wm 0) (/ smx wm) (/ cmx cm)))) 0)
+        dya (if (> nf 0) (* smoothing (- (/ cmy cm) (if (> wm 0) (/ smy wm) (/ cmy cm)))) 0)
+        ;; optional scale compensation from the window-to-current spread ratio
+        sc (if (all2 (= method 1) (> nf 0))
+             (let [cw (if (> wm 0) wm 1)
+                   cm2 (max .000001 (sum i 0 2 (sum h 0 2
+                     (stab-w nf kc (if (= i 0) qx0 qx1) (if (= h 0) qy0 qy1)))))
+                   cms (max .000001 (stab-msm nf kc qx0 qx0))
+                   sms (sum j 0 cnt (* (- cnt j) (stab-msm nf (+ lo j) qx0 qx0)))]
+               (max .25 (min 4 (/ (sqrt (/ sms cw)) (sqrt (/ cms cm2))))))
+             1)
+        zoom (* (+ 1 crop) (max .25 (min 4 sc)))
+        ux (+ cx0 (* zoom (- x cx0)) dxa)
+        uy (+ cy0 (* zoom (- y cy0)) dya)]
+    (sample ux uy c 1 1)))

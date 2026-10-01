@@ -1,0 +1,49 @@
+;; @kernel       nle_reverse_playback
+;; @category     nle
+;; @description  Reverses playback direction of frames.
+;; @complexity   Low
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (image dst, same dimensions).
+;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
+;; The resource array holds the clip, N RGBA frames packed back to back, each
+;; width*height*4 floats. The playhead is mirrored inside the window so the
+;; sequence reads back to front. Maintaining duration ping-pongs the mirrored
+;; position, so a reversed clip still fills its full slot instead of running out
+;; halfway. An empty resource is a no-op.
+;; output playhead in frames; range [0, 600].
+(param position 12 0 600 0)
+;; clip length in frames; range [1, 600].
+(param duration 48 1 600 1)
+;; play backwards; range [0, 1].
+(param reverse 1 0 1 1)
+;; keep the clip duration by ping-ponging; range [0, 1].
+(param maintain_duration 1 0 1 1)
+;; interpolation; 0 nearest frame, 1 blend between frames; range [0, 1].
+(param interpolation 1 0 1 1)
+
+
+;; Mirror a playhead inside a window of n frames.
+(defn reverse-pos [p dl n rv md]
+  (let [q (clamp01 (/ p dl))
+        ;; at least one frame of span, so the ping-pong period is never zero
+        m (max 1 (- dl 1))
+        base (* (if (= rv 1) (- 1 q) q) m)
+        tri (if (= md 1)
+              (let [d (mod base (* 2 m))] (if (< d m) d (- (* 2 m) d)))
+              base)]
+    (min (- n 1) (max 0 (min m tri)))))
+
+
+(defkernel nle_reverse_playback [x y c]
+  (let [n (frame-count)
+        pos (reverse-pos position duration n reverse maintain_duration)
+        i0 (floor pos)
+        f (- pos i0)
+        i1 (min (- (max 1 n) 1) (+ i0 1))
+        j0 (if (= interpolation 0) (round i0) i0)
+        j1 (if (= interpolation 0) (round i1) i1)]
+    (if (< n 1) (pixel x y c)
+      (mix (frame-at j0 x y c) (frame-at j1 x y c) (clamp01 f)))))

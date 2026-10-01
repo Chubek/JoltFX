@@ -1,0 +1,40 @@
+;; @kernel       video_glitch_digital_noise
+;; @category     video_effects
+;; @description  Adds digital noise artifacts and block corruption.
+;; @complexity   Medium
+;; @gpu          Yes
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.video_effects; shared functions: common/image.jolt.
+;; The picture is cut into macroblocks; a hashed share of them is replaced by a
+;; displaced, coarsely quantised copy of the source, which reads as corrupt
+;; compressed blocks. Out-of-range reads land on transparent pixels, so a
+;; displacement that runs off the frame produces black block edges.
+;; corrupted block share, 0 clean, 1 every block; range [0, 1].
+(param amount 0.35 0 1 0)
+;; block size in pixels; range [1, 128].
+(param block_size 8 1 128 1)
+;; noise seed; range [0, 4095].
+(param seed 1 0 4095 1)
+;; colour noise; 0 luminance only, 1 tints each block differently; range [0, 1].
+(param color_noise 1 0 1 1)
+
+
+(defkernel video_glitch_digital_noise [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [bs (max 1 block_size)
+          bx (floor (/ x bs))
+          by (floor (/ y bs))
+          ;; one decision and one displacement per macroblock
+          pick (hash2 (+ bx seed) (+ by (* 7 seed)) 907)
+          jx (floor (* bs (* 4 (hash2 bx (+ by 3) (+ seed 11)))))
+          jy (floor (* bs (* 2 (hash2 (+ bx 5) by (+ seed 13)))))
+          ;; quantise the recovered sample: fewer levels read as bit loss
+          levels (max 2 (* 24 amount))
+          quantised (/ (floor (* (sample (- (* bs bx) jx) (- (* bs by) jy) c 0 0) levels)) levels)
+          tint (if (= color_noise 1) (+ 0.4 (* 0.9 (hash2 bx by (+ seed 29)))) 1)]
+      (if (< pick amount)
+        (min 1 (max 0 (* quantised tint)))
+        (pixel x y c)))))

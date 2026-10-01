@@ -1,0 +1,69 @@
+;; @kernel       comp_layer_cc_cylinder
+;; @category     compositing
+;; @description  Applies CC cylinder distortion.
+;; @complexity   High
+;; @gpu          Partial
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Execution: CPU image profile; @gpu describes parallel suitability, not dispatch support.
+;; Input: image src (the layer to wrap, premultiplied RGBA); output: image dst, same dimensions.
+;; Module: jolt.fx.kernels.compositing; shared functions: common/image.jolt.
+;; The CC cylinder effect wraps the layer onto a vertical cylinder, which is the
+;; projection a cylindrical panorama produces and the one that keeps vertical lines
+;; straight. `center_x` is the cylinder axis in normalized frame coordinates and
+;; `radius` is the cylinder radius as a fraction of the shorter frame side, so the
+;; cylinder is circular in cross-section whatever the frame aspect. A column at
+;; normalized horizontal offset u from the axis sits on the cylinder at the angle
+;; asin(u), and the source is read at the arc length that angle maps to, which
+;; compresses the middle of the source into the visible face and wraps the rest round
+;; the sides. There is no asin in the profile, so it is built from atan2 and sqrt,
+;; which is exact over the [-1,1] domain the offset is clamped to. Unlike the sphere
+;; variant the vertical axis is not refracted, which is what leaves verticals straight;
+;; `center_y` places the cylinder vertically and the extent is the same radius, so the
+;; wrap reads as a vertical bar. The cosine of the wrap angle is the cylinder normal
+;; towards the camera, and `shading` uses it with a u^2 Fresnel rim for the glass
+;; falloff. `strength` is the colour correction across the cylinder, strongest at the
+;; rim where the wrap stretches the source most. Outside the cylinder the layer is
+;; transparent, and both edges are feathered over about one pixel.
+;; cylinder axis x in normalized frame coordinates; range [-1, 2].
+(param center_x 0.5 -1 2 0)
+;; cylinder centre y in normalized frame coordinates; range [-1, 2].
+(param center_y 0.5 -1 2 0)
+;; cylinder radius as a fraction of the shorter frame side; range [0.02, 1.5].
+(param radius 0.4 0.02 1.5 0)
+;; colour correction strength across the cylinder; range [-1, 2].
+(param strength 0.5 -1 2 0)
+;; glass shading amount; range [0, 1].
+(param shading 0.6 0 1 0)
+
+
+(defkernel comp_layer_cc_cylinder [x y c]
+  (let [sc (max 1 (min width height))
+        rad (* radius sc)
+        ;; position on the unit cylinder: u wraps round, v is the untwisted axis
+        u (/ (- (+ x .5) (* center_x width)) rad)
+        v (/ (- (+ y .5) (* center_y height)) rad)
+        ;; clamped copy for the asin, which is only defined on [-1,1]
+        uq (max -.999999 (min .999999 u))
+        ;; wrap angle: asin(u) from atan2 and sqrt
+        ang (atan2 uq (sqrt (max 0 (- 1 (* uq uq)))))
+        ;; the source column is the arc length the angle maps to
+        sx (+ (* center_x width) (* ang rad))
+        sy y
+        sa (max .000001 (sample sx sy 3 1 0))
+        r (/ (sample sx sy 0 1 0) sa)
+        g (/ (sample sx sy 1 1 0) sa)
+        b (/ (sample sx sy 2 1 0) sa)
+        lm (luma r g b)
+        ;; the grade is strongest where the wrap stretches the source most
+        rim (* uq uq)
+        amt (* strength rim)
+        nzc (sqrt (max 0 (- 1 (* uq uq))))
+        lit (+ (- 1 shading) (* shading (+ (* .4 nzc) (* .6 rim))))
+        base (channel c r g b)
+        graded (max 0 (+ lm (* (- base lm) (+ 1 amt))))
+        ;; one pixel of feather on both edges of the cylinder
+        e (/ 1 rad)
+        cov (min (- 1 (smooth (- 1 e) (+ 1 e) (abs u)))
+                 (- 1 (smooth (- 1 e) (+ 1 e) (abs v))))]
+    (if (= c 3) (* (sample sx sy 3 1 0) cov) (* graded lit cov))))
