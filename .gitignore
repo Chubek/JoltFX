@@ -48,7 +48,7 @@ docs/_build/
 # Test outputs
 test_results/
 *.log
-
+Testing
 # ImGui persists its layout in the platform's per-user config directory now
 # (see frontends/desktop/src/desktop_frontend.cpp), but an older build or a
 # run with no writable config directory can still drop one in the source tree.
