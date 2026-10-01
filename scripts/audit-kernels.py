@@ -143,8 +143,8 @@ def main():
 
         # 3/4. params
         ps = re.findall(r"^\(param (\w+) (\S+) (\S+) (\S+) (\d)\)", text, re.M)
-        # A Color flattens to 3 scalars and a Matrix3 to 9, so a kernel carrying
-        # one of those legitimately exceeds 6. Only count params outside a group.
+        # A Color flattens to 3 scalars and a Matrix3 to 9, but each is one logical
+        # parameter, so a group is counted once rather than as its member count.
         group = set()
         names = [p[0] for p in ps]
         for i, nm in enumerate(names):
@@ -154,10 +154,12 @@ def main():
                        and names[i + 1][: -2] == nm[: -2] and names[i + 2][: -2] == nm[: -2]:
                         group.update({i, i + 1, i + 2})
         mat = {i for i, nm in enumerate(names) if re.search(r"\bm\d\d$", nm)}
-        effective = len(ps) - len(group | mat)
+        colors = len(group) // 3
+        mats = len(mat) // 9
+        effective = len(ps) - 2 * colors - 8 * mats
         if not (3 <= effective <= 6):
-            issues.append(f"{rel}: {len(ps)} params ({effective} outside a Color/Matrix "
-                          f"group; convention is 3-6)")
+            issues.append(f"{rel}: {len(ps)} params = {effective} logical "
+                          f"(convention is 3-6)")
         body = text[text.rindex("(defkernel"):] if "(defkernel" in text else ""
         # A param may be used in a local defn helper rather than in the kernel body
         # itself, so search the whole file with the (param ...) lines removed.

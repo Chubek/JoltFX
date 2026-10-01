@@ -95,3 +95,28 @@
 [submodule "third_party/PCRE2"]
 	path = third_party/PCRE2
 	url = https://github.com/PCRE2Project/PCRE2.git
+[submodule "third_party/opencolorio"]
+	path = third_party/opencolorio
+	url = https://github.com/AcademySoftwareFoundation/OpenColorIO.git
+
+[submodule "/mnt/warble/joltfx/third_party/opencolorio"]
+	path = /mnt/warble/joltfx/third_party/opencolorio
+	url = https://github.com/AcademySoftwareFoundation/OpenColorIO
+[submodule "/mnt/warble/joltfx/third_party/ctl"]
+	path = /mnt/warble/joltfx/third_party/ctl
+	url = https://github.com/aces-aswf/CTL
+[submodule "/mnt/warble/joltfx/third_party/libraw"]
+	path = /mnt/warble/joltfx/third_party/libraw
+	url = https://github.com/LibRaw/LibRaw
+[submodule "/mnt/warble/joltfx/third_party/openexr"]
+	path = /mnt/warble/joltfx/third_party/openexr
+	url = https://github.com/AcademySoftwareFoundation/openexr
+[submodule "/mnt/warble/joltfx/third_party/xsimd"]
+	path = /mnt/warble/joltfx/third_party/xsimd
+	url = https://github.com/xtensor-stack/xsimd
+[submodule "/mnt/warble/joltfx/third_party/eigen"]
+	path = /mnt/warble/joltfx/third_party/eigen
+	url = https://github.com/PX4/eigen
+[submodule "/mnt/warble/joltfx/third_party/simdette"]
+	path = /mnt/warble/joltfx/third_party/simdette
+	url = https://github.com/Chubek/simdette

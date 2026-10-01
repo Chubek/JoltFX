@@ -259,6 +259,50 @@ add_submodule "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
     "vma" \
     "master"
 
+# ===============================================================================
+# Color Grading Libraries
+# ===============================================================================
+
+# OpenColorIO
+add_submodule "https://github.com/AcademySoftwareFoundation/OpenColorIO" \
+	"opencolorio" \
+	"main"
+
+# Color Transformation Language
+add_submodule "https://github.com/aces-aswf/CTL" \
+	"ctl" \
+	"master"
+
+# libraw
+add_submodule "https://github.com/LibRaw/LibRaw" \
+	"libraw" \
+	"master"
+
+# OpenEXR
+add_submodule "https://github.com/AcademySoftwareFoundation/openexr" \
+	"openexr" \
+	"main"
+
+# =============================================================================
+# Numerical Libraries
+# =============================================================================
+
+# xsimd
+add_submodule "https://github.com/xtensor-stack/xsimd" \
+	"xsimd" \
+	"master"
+
+# EIGEN
+add_submodule "https://github.com/PX4/eigen" \
+	"eigen" \
+	"master"
+
+# Simdette
+add_submodule "https://github.com/Chubek/simdette" \
+	"simdette" \
+	"master"
+
+
 # =============================================================================
 # Initialize and update all submodules
 # =============================================================================
