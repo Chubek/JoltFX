@@ -5,4 +5,4 @@
 (param blur_radius 0.5 0.5 0.5 0)
 (param focus_width 0.5 0.5 0.5 0)
 (defkernel test_tilt_shift [x y c]
-  (assert-pixel 0 0 3 2.25))
+  (assert-pixel 0 0 3 1))

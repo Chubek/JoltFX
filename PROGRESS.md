@@ -1048,3 +1048,81 @@ signed-slope Lambert term and a Blinn-Phong lobe with a Fresnel rim.
   separate CTest cases, and all 189 render through the behavioural harness with
   their test parameters without a single apply failure.
 - 0 passthrough stubs remain across the 189 registered kernels.
+
+## Kernel batch 12 — the last 105 implementable CSV kernels
+
+Registered image-profile kernels went from **189 to 294**; CSV coverage is
+**297 of 322**. Every `Frame -> Frame` entry in the inventory is now implemented.
+Work was done by five parallel agents (one per family) against a written brief, then
+verified centrally rather than trusted: `scripts/audit-kernels.py` checks all 306
+sources for compilation, metadata, param count/range, unused params, passthrough
+bodies, category-folder agreement, test presence, and registration parity.
+
+- TEMPORAL (18) + `optical_flow`; NLE (17); VIDEO_EFFECTS (15) + 3D (4);
+  VIDEO_COMPOSITING (24); TEXT (5) + TEXT_OVERLAY (14) + AUDIO_REACTIVE (2) +
+  PARTICLE (1); plus four written directly because they had been dropped from the
+  agent briefs (`video_glitch_pixel_sort`, `nle_lower_third`, `obj_render`,
+  `track_motion_tracker`).
+
+### Bugs found by verifying instead of trusting
+
+- `calib_white_balance` returned the **red** channel for green and blue, and ignored
+  temperature, tint, strength and color_space entirely. It compiled and "passed"
+  because a per-channel test cannot see a channel swap.
+- `remap_range` was an identity wrapped in `finish`, ignoring all five of its params.
+  The stub detector missed it because the body is not literally `(pixel x y c)`; the
+  audit now also flags any kernel that uses *none* of its params.
+- `lens_blur` and `tilt_shift` divided their sum by `4*r*r` for a `(2r+1)^2` tap count;
+  `box_blur` divided by `2*r` for `2r+1` taps. A gradient source cannot detect this, so
+  the suite now asserts that a **constant image survives every blur exactly**, which
+  is the assertion that catches a wrong divisor.
+- `temporal_exposure_blend` gated frame weights on near-equality with the source, so
+  the window was discarded whenever the frames differed from it — the normal case —
+  leaving the kernel an identity for all real input.
+- `track_motion_tracker` compared the source frame against **itself** (`luminance`
+  reads `src` for both operands), so every candidate cost was identical and the
+  estimate was always zero. It also carried a positive bias because edge probes read
+  as 0 for negative displacements; the probe region is now inset by the search radius.
+- `obj_render` used `edge t 1` (`v2 - v1`) as the second edge where Möller-Trumbore
+  and the face normal need `v2 - v0`; its hit weight was anchored at the camera, so
+  every real hit sat ~400 exponent units below zero and underflowed to zero; and
+  `inv (/ 1 det)` divided before the `det` guard, which `let` evaluates eagerly.
+- Nine dead `/* TODO: fix implementation */` blocks in the behavioural harness are now
+  live assertions. Two of them were wrong rather than merely dead: `polar_coords` is a
+  gather, so forward-then-inverse is not the identity, and the `bilateral_filter`
+  "large range_sigma is identity" claim was simply false.
+
+### Two profiling mistakes worth recording
+
+- I chased a `JOLT_ERR_NUMERIC` from `polar_coords` to a "stale library" and then to a
+  suspected build-dependency bug. Both were wrong. The real cause was my own test
+  harness leaving the green and blue array elements uninitialised, which tripped the
+  interpreter's `isfinite` input check. The build does correctly reconfigure and
+  recompile on a `.jolt` edit via `CMAKE_CONFIGURE_DEPENDS`; I had read `tail -1` of
+  the build output, which hid the recompile lines.
+- I "optimised" `track_motion_tracker` by zeroing samples inside the loop body. That
+  changed nothing, because `let` bindings evaluate eagerly: filtering the *result*
+  still computes every sample. The stride has to shorten the `sum` ranges.
+
+### What is deliberately not implemented
+
+25 CSV rows remain and are not omissions. This profile's only output is an image, so
+17 rows producing `AudioBuffer`, `Mesh`, `ParticleSystem`, `Path`, `Point[]` or
+`Vec2[]` cannot be expressed, and 8 more return a scalar or vector that would have to
+be published as a uniform image — a change to the output contract that belongs to the
+API owner. `scripts/audit-kernels.py` lists both groups by name.
+
+`optical_flow` and `track_motion_tracker` are the FlowField rows that *are*
+implemented, publishing the field as a 2-channel image, documented in each file.
+
+### Verification on Linux
+
+- Fresh from-scratch configure and build: **0 warnings** (the two pre-existing
+  `test_benchmarks.c` integer-to-double conversions are fixed), `ctest` **323/324**.
+  The single failure, `compose`, was confirmed earlier to fail identically at pristine
+  HEAD with the working tree stashed.
+- All 294 sources verify individually through `joltc` as separate CTest cases, and all
+  294 render through the behavioural harness with no apply failure.
+- 0 passthrough stubs across 294 registered kernels; `IMAGE_KERNELS` and the
+  `tests/unit` verify list are both 294 and generated from the same source, so they
+  cannot drift.

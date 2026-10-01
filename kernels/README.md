@@ -336,8 +336,47 @@ transparent inputs, analytic non-default outputs, non-square frames, resource
 ordering, multiple blur passes, in-place calls, and error atomicity.
 `test_image_program` tests syntax, scopes, lazy branches, recursion/step limits,
 invalid sampling/data access, and numeric failures. The compiler driver checks
-all one hundred eighty-nine sources as separate CTest cases.
+all two hundred ninety-four sources as separate CTest cases.
 
 CPU/GPU parity cannot be claimed for this profile until a GPU implementation
 exists. The legacy JBC1 conformance tests continue to cover their own backend
 path. This batch does not replace unsupported operations with no-op stubs.
+
+## Coverage and what the profile cannot express
+
+`scripts/audit-kernels.py` reports the current state: **294 registered image-profile
+kernels**, covering **297 of the 322 CSV rows**, with **0 passthrough stubs**. The
+legacy 12-effect JBC1 catalogue in `kernels/color/` is separate and is exempt.
+
+The 25 remaining rows are not omissions; their output type is not an image, and this
+profile's only output is an image. They split into two groups:
+
+- **17 that cannot be represented at all**, because they produce something other than
+  a frame: `AudioBuffer` (`nle_audio_crossfade`, `nle_audio_ducking`), `Mesh`
+  (`extrude_path`), `ParticleSystem` (5 `particle_*` except `particle_trail`),
+  `Path` (`track_planar_tracker`), `Point[]` (5), `Vec2[]` (3).
+- **8 that are a scalar or a vector** (`Float`, `Vec2`, `Vec3`): 6 `track_*` and
+  2 `audio_*`. A global estimate is a whole-frame reduction, and the profile has no
+  way to publish one except as a uniform image, which changes the output contract.
+  That is a decision for the API owner, not something to smuggle in here.
+
+`optical_flow` and `track_motion_tracker` are the exceptions that do return a
+FlowField: they publish it as a 2-channel image (c=0 is u, c=1 is v), which is
+documented in each file.
+
+## Cost model: reductions are expensive here
+
+A kernel is invoked per `(x,y,c)` and cannot share work between output pixels, so a
+whole-frame reduction costs `O(frame area)` *per pixel*. `histogram_compute`,
+`optical_flow` and `track_motion_tracker` are all in that class. They are correct,
+they are `@gpu No`, and they are not usable at delivery resolution. This is a
+property of the profile, not of the individual kernels, and it is the main reason
+some CSV operations do not belong in an image kernel at all.
+
+Two substitutions recur because the profile has no fold and no tuple type:
+
+- **argmin/argmax** become a log-sum-exp or an exponentially weighted average over
+  the candidate set (`worley-soft`, `alpha-max`, `soft-max-luma`, and the
+  nearest-hit selection in `obj_render` and `track_motion_tracker`).
+- **3-vectors** become three scalar functions, recomputing the shared part
+  (`tri-n` in `obj_render`). There is no way to return a tuple.

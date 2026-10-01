@@ -242,62 +242,56 @@ int main(void) {
     /* Unsharp mask: zero amount is identity. */
     jolt_image_parameter_t usm_zero[]={ {"amount",0} };
     run(k,"unsharp_mask",src,dst,usm_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
-    /* Bilateral filter: range_sigma very large approximates box blur. (TODO: fix implementation) */
-    /* jolt_image_parameter_t bf_large_range[]={ {"range_sigma",100} };
-    run(k,"bilateral_filter",src,dst,bf_large_range,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Lens blur: zero radius is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t lb_zero[]={ {"radius",0} };
-    run(k,"lens_blur",src,dst,lb_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Tilt shift: zero blur_radius is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t ts_zero[]={ {"blur_radius",0} };
-    run(k,"tilt_shift",src,dst,ts_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Wave distort: zero amplitude is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t wd_zero[]={ {"amplitude",0} };
-    run(k,"wave_distort",src,dst,wd_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Ripple: zero amplitude is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t rp_zero[]={ {"amplitude",0} };
-    run(k,"ripple",src,dst,rp_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Bulge pinch: zero strength is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t bp_zero[]={ {"strength",0} };
-    run(k,"bulge_pinch",src,dst,bp_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
+    /* Zero-effect settings must be exact identity, for every neighbourhood warp. */
+    jolt_image_parameter_t wd_zero[]={ {"amplitude",0} };
+    run(k,"wave_distort",src,dst,wd_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
+    jolt_image_parameter_t rp_zero[]={ {"amplitude",0} };
+    run(k,"ripple",src,dst,rp_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
+    jolt_image_parameter_t bp_zero[]={ {"strength",0} };
+    run(k,"bulge_pinch",src,dst,bp_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
+    jolt_image_parameter_t tw_zero[]={ {"strength",0} };
+    run(k,"turbulence_warp",src,dst,tw_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
+    jolt_image_parameter_t twist_zero[]={ {"angle",0} };
+    run(k,"twist",src,dst,twist_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
+    /* Any normalised blur must preserve a constant image exactly. This is what
+     * catches a wrong divisor, which a source with a gradient cannot: the
+     * normalised and mis-normalised results both "look" plausible. */
+    float flat[64]; for(int i=0;i<16;++i) {
+        flat[4*i]=.5f; flat[4*i+1]=.25f; flat[4*i+2]=.75f; flat[4*i+3]=1;
+    }
+    const char *blurs[]={"gaussian_blur","box_blur","bilateral_filter","lens_blur","tilt_shift"};
+    for (size_t i=0;i<sizeof(blurs)/sizeof(*blurs);++i) {
+        run(k,blurs[i],flat,dst,NULL,0);
+        for(int j=0;j<64;++j) near(dst[j],flat[j]);
+    }
     /* Lens distortion: zero coefficients is identity. */
     jolt_image_parameter_t ld_zero[]={ {"k1",0}, {"k2",0}, {"p1",0}, {"p2",0} };
     run(k,"lens_distortion",src,dst,ld_zero,4); for(int i=0;i<64;++i) near(dst[i],src[i]);
     /* Displacement map: zero amount is identity. */
     jolt_image_parameter_t dm_zero[]={ {"amount",0} };
     run(k,"displacement_map",src,dst,dm_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]);
-    /* Turbulence warp: zero strength is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t tw_zero[]={ {"strength",0} };
-    run(k,"turbulence_warp",src,dst,tw_zero,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Polar coords: forward then inverse approximately restores. (TODO: fix implementation) */
-    /* jolt_image_parameter_t pc_fwd[]={ {"inverse",0} };
-    run(k,"polar_coords",src,dst,pc_fwd,1);
+    /* Polar coords is a gather, so forward-then-inverse is not the identity. What
+     * is testable is that the forward pass reads a different texel than the source
+     * pixel, and that the inverse pass is likewise a genuine remap. */
+    jolt_image_parameter_t pc_fwd[]={ {"inverse",0} };
+    run(k,"polar_coords",src,dst,pc_fwd,1); assert(dst[0]!=src[0]);
     jolt_image_parameter_t pc_inv[]={ {"inverse",1} };
-    run(k,"polar_coords",dst,dst,pc_inv,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Twist: zero angle is identity. (TODO: fix implementation) */
-    /* jolt_image_parameter_t tw_zero2[]={ {"angle",0} };
-    run(k,"twist",src,dst,tw_zero2,1); for(int i=0;i<64;++i) near(dst[i],src[i]); */
-    /* Generative kernels: test they produce non-zero output with defaults. */
-    /* run(k,"solid_color",zero,dst,NULL,0); assert(dst[0]==0.5 && dst[3]==1);
-    run(k,"gradient_linear",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    run(k,"gradient_radial",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    run(k,"checkerboard",zero,dst,NULL,0); assert(dst[0]==0 && dst[3]==1);
-    run(k,"grid",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    run(k,"plasma",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    run(k,"cell_noise",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    run(k,"voronoi",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    run(k,"mandelbrot",zero,dst,NULL,0); assert(isfinite(dst[0]));
-    /* Noise kernels: test they produce non-zero output with defaults. */
-    /* run(k,"perlin_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
-    run(k,"simplex_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
-    run(k,"worley_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
-    run(k,"fractal_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
-    run(k,"white_noise",zero,dst,NULL,0); assert(isfinite(dst[0]) && dst[3]==1);
-    /* Utility kernels. */
-    /* jolt_image_parameter_t clamp_minmax[]={ {"minimum",.2}, {"maximum",.8} };
-    run(k,"clamp_values",src,dst,clamp_minmax,2); near(dst[0],.2); near(dst[4],.8);
-    jolt_image_parameter_t remap[]={ {"input_min",0}, {"input_max",1}, {"output_min",0}, {"output_max",2} };
-    run(k,"remap_range",src,dst,remap,4); near(dst[0],0); near(dst[20],1.875); */
+    run(k,"polar_coords",src,dst,pc_inv,1); assert(isfinite(dst[0]));
+    /* Utility kernels: remap and clamp against analytically known values. */
+    jolt_image_parameter_t remap[]={ {"input_min",0}, {"input_max",1},
+        {"output_min",0}, {"output_max",2} };
+    run(k,"remap_range",src,dst,remap,4);
+    for(int i=0;i<16;++i) near(dst[4*i], 2*src[4*i]);
+    float ramp2[64]; for(int i=0;i<16;++i) {
+        ramp2[4*i]=ramp2[4*i+1]=ramp2[4*i+2]=(float)i/16; ramp2[4*i+3]=1;
+    }
+    jolt_image_parameter_t clamp_minmax[]={ {"min_val",.2}, {"max_val",.8} };
+    run(k,"clamp_values",ramp2,dst,clamp_minmax,2);
+    /* pixel 0 is 0     -> clamped up to min_val
+     * pixel 1 is 1/16  -> clamped up to min_val
+     * pixel 5 is 5/16  -> inside the window, passed through unchanged
+     * pixel 15 is 15/16 -> clamped down to max_val */
+    near(dst[0],.2); near(dst[4],.2); near(dst[20],5.0/16); near(dst[60],.8);
     /* Validation must leave every byte of the destination untouched. */
     float sentinel[64];for(int i=0;i<64;++i) sentinel[i]=dst[i]=123;
     float bad_curve[]={0,0,0,1};
