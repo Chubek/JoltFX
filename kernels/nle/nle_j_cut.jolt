@@ -28,7 +28,9 @@
         d (- x bx)
         ;; 0 to the left of the bar (outgoing picture), 1 to the right
         t (clamp01 (/ (+ d sw) (* 2 sw)))
-        out (mix (pixel x y c) (to-frame x y c) t)
+        ;; the incoming frame is only read when the array actually holds one
+        inc (if (> (data-count) (* 4 width height)) (to-frame x y c) (pixel x y c))
+        out (mix (pixel x y c) inc t)
         ;; the wipe bar itself is a soft bright stripe
         bar (clamp01 (- 1 (/ (abs d) sw)))]
     (if (= c 3) (pixel x y 3)

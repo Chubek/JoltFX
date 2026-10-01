@@ -10,15 +10,18 @@
 ;; Module: jolt.fx.kernels.nle; shared functions: common/image.jolt.
 ;; The resource array holds the multicam take: `angles` groups of frames, one
 ;; group per camera, each group the same length, so frame a*f + k is angle a at
-;; local frame k. Each angle is aligned to angle 0, the reference, by a small
-;; integer-search correlation: over a search radius of a couple of pixels the
-;; offset with the smallest luma difference is chosen by an exponentially
-;; weighted mean, and the live angle is then sampled at that offset so it lines
-;; up with the reference. The switcher cuts between angles on the interval: each
-;; interval of timecode holds one angle, crossfading across the boundary.
-;; sync_method 0 uses plain luma SAD; 1 adds the frame difference so matching
-;; detail dominates the estimate and exposure differences matter less. A missing
-;; angle falls back to the source frame rather than reading out of range.
+;; local frame k. Each angle is aligned to angle 0, the reference, before being
+;; shown: a small integer-search correlation over a radius of a couple of pixels
+;; finds the offset whose difference against the reference is smallest, and the
+;; live angle is sampled at that offset so it lines up. The search uses one
+;; luma channel over two taps, and is a soft argmin -- an exponentially weighted
+;; mean of the whole (2r+1)^2 window -- which is effectively the integer argmin
+;; because a two-tap SAD is bounded. sync_method 0 measures plain luma
+;; difference; method 1 adds the local frame difference so matching structure
+;; dominates and differences in exposure between angles matter less. The switcher
+;; then cuts between angles on the interval: each interval of timecode holds one
+;; angle, crossfading across the boundary. A missing angle falls back to the
+;; source frame rather than reading out of range.
 ;; timecode position within the take, in frames; range [0, 100000].
 (param timecode 0 0 100000 0)
 ;; number of camera angles packed into the resource; range [1, 8].
@@ -27,7 +30,7 @@
 (param frames_per_angle 40 1 600 1)
 ;; cut interval on the switcher, in timecode frames; range [1, 600].
 (param interval 10 1 600 1)
-;; correlation method; 0 luma SAD, 1 frame difference; range [0, 1].
+;; correlation method; 0 luma difference, 1 with frame difference; range [0, 1].
 (param sync_method 0 0 1 1)
 ;; integer alignment search radius, in pixels; range [1, 3].
 (param search_radius 2 1 3 1)
@@ -38,59 +41,68 @@
   (frame-at k (max 0 (min (- width 1) px)) (max 0 (min (- height 1) py)) pc))
 
 
-;; Luma of the resource frame k, unpremultiplied.
-(defn cam-luma [k px py]
-  (let [a (cam-at k px py 3)]
-    (if (> a 0) (/ (+ (* 0.2126 (cam-at k px py 0)) (* 0.7152 (cam-at k px py 1))
-                       (* 0.0722 (cam-at k px py 2))) a) 0)))
-
-
-;; One SAD tap at (px,py) between the reference angle and the candidate angle
-;; displaced by (dx,dy). Method 1 adds the frame difference so the search keys on
-;; matching structure rather than absolute exposure.
+;; Difference between the reference angle and the candidate angle displaced by
+;; (dx,dy). Method 1 adds the horizontal frame difference of each side, so the
+;; search keys on matching structure rather than absolute exposure.
 (defn cam-sad [ref cand px py dx dy sm]
-  (let [r0 (cam-luma ref px py)
-        r1 (cam-luma ref (+ px 1) py)
-        r2 (cam-luma ref px (+ py 1))
-        c0 (cam-luma cand (+ px dx) (+ py dy))
-        c1 (cam-luma cand (+ px dx 1) (+ py dy))
-        c2 (cam-luma cand (+ px dx) (+ py dy 1))]
-    (if (= sm 1)
-      (+ (abs (- r0 r1)) (abs (- r0 r2))
-         (abs (- (- r0 r1) (- c0 c1))) (abs (- (- r0 r2) (- c0 c2))))
-      (+ (abs (- r0 c0)) (abs (- r1 c1)) (abs (- r2 c2))))))
+  (+ (abs (- (cam-at ref px py 1) (cam-at cand (+ px dx) (+ py dy) 1)))
+     (abs (- (cam-at ref (+ px 1) py 1) (cam-at cand (+ px dx 1) (+ py dy) 1)))
+     (* sm (abs (- (- (cam-at ref px py 1) (cam-at ref (+ px 1) py 1))
+                    (- (cam-at cand (+ px dx) (+ py dy) 1)
+                       (cam-at cand (+ px dx 1) (+ py dy) 1)))))))
 
 
-;; Soft-argmin weight for a candidate offset: exp(-k * sad) peaks on the match.
-(defn cam-w [ref cand px py dx dy sm]
-  (exp (* -6 (cam-sad ref cand px py dx dy sm))))
+;; Window geometry: (2r+1)^2 candidates, with dx and dy decoded from one code.
+(defn win-n [] (let [r (max 1 (min 3 search_radius))] (* (+ 1 (* 2 r)) (+ 1 (* 2 r)))))
+(defn code-dx [code]
+  (let [r (max 1 (min 3 search_radius))] (- (mod code (* 2 (+ 1 r))) r)))
+(defn code-dy [code]
+  (let [r (max 1 (min 3 search_radius))] (- (floor (/ code (* 2 (+ 1 r)))) r)))
+
+
+;; Soft-argmin weight of one candidate alignment.
+(defn cam-w [ref cand px py code sm]
+  (let [r (max 1 (min 3 search_radius))
+        dx (- (mod code (* 2 (+ 1 r))) r)
+        dy (- (floor (/ code (* 2 (+ 1 r)))) r)]
+    (exp (* -12 (cam-sad ref cand px py dx dy sm)))))
+
+
+;; Alignment of the live angle against the reference, as the weighted mean of the
+;; window. Where the window is flat the mean falls on the centre by symmetry, so
+;; no spurious offset is introduced.
+(defn cam-align-dx [ref cand px py sm wt]
+  (/ (sum i 0 (win-n) (* (cam-w ref cand px py i sm) (code-dx i))) wt))
+
+
+(defn cam-align-dy [ref cand px py sm wt]
+  (/ (sum i 0 (win-n) (* (cam-w ref cand px py i sm) (code-dy i))) wt))
 
 
 (defkernel nle_multicam_sync [x y c]
   (let [n (frame-count)
         na (max 1 (min 8 angles))
         fpa (max 1 frames_per_angle)
-        r (max 1 (min 3 search_radius))
         iv (max 1 interval)
+        ;; timecode may be fractional; frame indices must be whole, so the
+        ;; cut position and the local frame are floored before use
+        tc (max 0 timecode)
         ;; switcher state: which angle is live and how far into the cut we are
-        cut (floor (/ (max 0 timecode) iv))
+        cut (floor (/ tc iv))
         ai (mod cut na)
         prev (mod (+ (- cut 1) na) na)
-        blend (clamp01 (/ (mod (max 0 timecode) iv) iv))
+        blend (clamp01 (/ (mod tc iv) iv))
         ;; local frame inside each angle
-        lf (mod (max 0 timecode) fpa)
+        lf (mod (floor tc) fpa)
         refk (min (- n 1) lf)
         ck (min (- n 1) (+ (* ai fpa) lf))
         pk (min (- n 1) (+ (* prev fpa) lf))
         ;; integer-search alignment of the live angle against the reference
-        w (max 0.000001 (sum j (- r) (+ r 1)
-                          (sum i (- r) (+ r 1) (cam-w refk ck x y i j sync_method))))
-        wsumx (sum j (- r) (+ r 1)
-                 (sum i (- r) (+ r 1) (* (cam-w refk ck x y i j sync_method) i)))
-        wsumy (sum j (- r) (+ r 1)
-                 (sum i (- r) (+ r 1) (* (cam-w refk ck x y i j sync_method) j)))
-        dx (/ wsumx w)
-        dy (/ wsumy w)
+        wt (max 1e-9 (sum i 0 (win-n) (cam-w refk ck x y i sync_method)))
+        dx (cam-align-dx refk ck x y sync_method wt)
+        dy (cam-align-dy refk ck x y sync_method wt)
+        ;; the live angle is sampled at the alignment offset so it matches the
+        ;; reference; the outgoing angle is shown as it was recorded
         sx (max 0 (min (- width 1) (round (+ x dx))))
         sy (max 0 (min (- height 1) (round (+ y dy))))
         live (cam-at ck sx sy c)

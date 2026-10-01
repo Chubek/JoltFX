@@ -86,9 +86,12 @@
         mm (mod (floor (/ total (* 25 60))) 60)
         hh (min 99 (floor (/ total (* 25 60 60))))
         nd (if (= format 0) 8 (if (= format 3) 4 6))
-        dh (* 0.15 height)
-        dw (* dh 0.56)
-        pitch (* dw 1.42)
+        ;; digit cell: about twice as tall as wide, the usual seven-segment shape.
+        ;; The gap between cells holds the colon, so it is generous enough that
+        ;; the dots do not touch the neighbouring digits.
+        dh (* 0.13 height)
+        dw (* dh 0.5)
+        pitch (* dw 1.9)
         totalw (* nd pitch)
         ox (- (* position_x width) (* totalw 0.5))
         oy (- (* position_y height) (* dh 0.5))
@@ -104,12 +107,15 @@
         d (slot-digit (max 0 slot) format hh mm ss ff)
         m (seg-mask (max 0 (min 9 d)))
         lit (* inside (clamp01 (sum s 0 7 (if (= (seg-on m s) 1) (seg-cover s u v th aa) 0))))
-        ;; colon separators live in the gap after every second cell
+        ;; colon separators live in the gap after every second cell; like the
+        ;; digits they must stay inside the readout's row and column range
+        row (if (all2 (>= v 0) (<= v 1)) 1 0)
         in-gap (if (all2 (> u 1) (< u (+ (/ (- pitch dw) dw) 1))) 1 0)
         odd (if (= (mod slot 2) 1) 1 0)
+        shown (if (all2 (>= slot 0) (< slot nd)) 1 0)
         cu (+ 1 (/ (- pitch dw) (* 2 dw)))
         dots (max (seg-dot u v cu 0.3 0.16 0.16) (seg-dot u v cu 0.7 0.16 0.16))
-        colon (* in-gap odd dots)
+        colon (* in-gap odd dots row shown)
         ;; dark plate behind the readout for legibility
         in-plate (if (all2 (>= relx (- (* 0.15 dw))) (<= relx (+ totalw (* 0.15 dw))))
           (if (all2 (>= rely (- (* 0.06 dh))) (<= rely (* 1.06 dh))) 1 0) 0)

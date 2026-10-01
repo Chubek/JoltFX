@@ -32,7 +32,9 @@
         dh (- cy y)
         d (max dv dh)
         t (clamp01 (/ (- sw d) (* 2 sw)))
-        out (mix (pixel x y c) (to-frame x y c) t)
+        ;; the incoming frame is only read when the array actually holds one
+        inc (if (> (data-count) (* 4 width height)) (to-frame x y c) (pixel x y c))
+        out (mix (pixel x y c) inc t)
         bar (clamp01 (- 1 (/ (abs d) sw)))]
     (if (= c 3) (pixel x y 3)
       (finish (+ out (* bar 0.4)) (pixel x y 3) 1))))

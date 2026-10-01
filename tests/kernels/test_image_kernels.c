@@ -5,7 +5,16 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-static void near(double a, double b) { assert(fabs(a-b) < 2e-4); }
+static const char *near_context = "";
+static void near_ctx(const char *what) { near_context = what; }
+/* Report before asserting: a bare assert() here names no assertion, so a failure
+ * in a 400-line harness gave no indication of which check had failed. */
+static void near(double a, double b) {
+    if (!(fabs(a-b) < 2e-4))
+        fprintf(stderr, "near(%.9g, %.9g) failed [diff %.3g] while checking: %s\n",
+                a, b, fabs(a-b), near_context);
+    assert(fabs(a-b) < 2e-4);
+}
 static void run(jolt_image_kernels_t *k, const char *name, const float *src,
                 float *dst, const jolt_image_parameter_t *p, size_t n) {
     jolt_status_t s = jolt_image_kernels_apply(k, name, src, 4, 4, p, n,
@@ -292,6 +301,106 @@ int main(void) {
      * pixel 5 is 5/16  -> inside the window, passed through unchanged
      * pixel 15 is 15/16 -> clamped down to max_val */
     near(dst[0],.2); near(dst[4],.2); near(dst[20],5.0/16); near(dst[60],.8);
+    /* Resource-driven layouts. The per-kernel .test.jolt files all run with an
+     * empty resource array, so without these a kernel whose whole purpose is a
+     * resource lookup would pass while only its empty fallback ever executed. */
+    float ramp3[64]; for(int i=0;i<16;++i) {
+        ramp3[4*i]=(float)i/16; ramp3[4*i+1]=(float)i/16; ramp3[4*i+2]=(float)i/16; ramp3[4*i+3]=1;
+    }
+    /* Curve: a flat (x,y) pair list. Invert, so a known input maps to a known
+     * output; this is the tightest legal packing and so also the bounds check. */
+    float inv_curve[]={0,1,1,0};
+    assert(jolt_image_kernels_apply(k,"curves",ramp3,4,4,NULL,0,inv_curve,4,1024,10000000,dst)==JOLT_OK);
+    near_ctx("flat curve: invert");
+    near(dst[0],1.0); near(dst[8],1.0-2.0/16); near(dst[60],1.0-15.0/16);
+    /* Two-point identity curve must be an exact identity. */
+    float id_curve[]={0,0,1,1};
+    assert(jolt_image_kernels_apply(k,"curves",ramp3,4,4,NULL,0,id_curve,4,1024,10000000,dst)==JOLT_OK);
+    near_ctx("flat curve: identity is an exact identity");
+    for(int i=0;i<64;++i) { if(fabs(dst[i]-ramp3[i])>=2e-4)
+        fprintf(stderr,"curves identity: idx %d in %.6f out %.6f\n",i,ramp3[i],dst[i]); near(dst[i],ramp3[i]); }
+    /* A curve with non-increasing x, and one with a single point, are rejected. */
+    float bad_order[]={1,0,0,1};
+    assert(jolt_image_kernels_apply(k,"curves",ramp3,4,4,NULL,0,bad_order,4,1024,10000000,dst)!=JOLT_OK);
+    float one_point[]={0,.5};
+    assert(jolt_image_kernels_apply(k,"curves",ramp3,4,4,NULL,0,one_point,2,1024,10000000,dst)!=JOLT_OK);
+    /* Four length-prefixed curves packed back to back, each ending exactly at the
+     * next one's count. This is the layout that was silently reading the point
+     * count as the first x. */
+    float packed_curves[]={2,0,0,1,1,  2,0,0,1,1,  2,0,0,1,1,  2,0,0,1,1};
+    assert(jolt_image_kernels_apply(k,"grade_rgb_curves",ramp3,4,4,NULL,0,
+        packed_curves,(int)(sizeof packed_curves/sizeof *packed_curves),1024,10000000,dst)==JOLT_OK);
+    near_ctx("packed curves: identity pack");
+    for(int i=0;i<64;++i) { if(fabs(dst[i]-ramp3[i])>=2e-4)
+        fprintf(stderr,"packed identity: idx %d in %.6f out %.6f\n",i,ramp3[i],dst[i]); near(dst[i],ramp3[i]); }
+    /* A gamma-like master curve must change the picture, and stay ordered. */
+    float gamma_curves[]={2,0,0,1,.25,1,1,  2,0,0,1,.25,1,1,  2,0,0,1,.25,1,1,  2,0,0,1,.25,1,1};
+    assert(jolt_image_kernels_apply(k,"grade_rgb_curves",ramp3,4,4,NULL,0,
+        gamma_curves,(int)(sizeof gamma_curves/sizeof *gamma_curves),1024,10000000,dst)==JOLT_OK);
+    assert(dst[60]<ramp3[60]);
+    /* ColorMap: data[0] = entry count, then N RGB triples. A two-entry map sends
+     * the black half of the ramp to entry 0 and the white half to entry 1. */
+    float colormap[]={2, 0,0,0,  1,0,0};
+    assert(jolt_image_kernels_apply(k,"grade_gradient_map",ramp3,4,4,NULL,0,
+        colormap,(int)(sizeof colormap/sizeof *colormap),1024,10000000,dst)==JOLT_OK);
+    near_ctx("colormap: two entries");
+    near(dst[0],0); near(dst[4*15],1);
+    /* Cube LUT: 2x2x2 RGB triples, red index fastest. A swap of red and blue must
+     * move the channels, and the same table through calib_3d_lut_calib must agree. */
+    float cube[24];
+    for(int b=0;b<2;++b) for(int g=0;g<2;++g) for(int r=0;r<2;++r) {
+        int idx=3*(r+2*(g+2*b));
+        cube[idx]=(float)b; cube[idx+1]=(float)g; cube[idx+2]=(float)r;
+    }
+    assert(jolt_image_kernels_apply(k,"calib_3d_lut_calib",ramp3,4,4,NULL,0,cube,24,1024,10000000,dst)==JOLT_OK);
+    float lut3[64]; for(int i=0;i<16;++i) { lut3[4*i]=1; lut3[4*i+1]=0; lut3[4*i+2]=0; lut3[4*i+3]=1; }
+    assert(jolt_image_kernels_apply(k,"calib_3d_lut_calib",lut3,4,4,NULL,0,cube,24,1024,10000000,dst)==JOLT_OK);
+    near_ctx("cube LUT: red input maps to blue output");
+    near(dst[0],0); near(dst[1],0); near(dst[2],1);
+    /* A malformed LUT length is rejected rather than read out of bounds. */
+    assert(jolt_image_kernels_apply(k,"calib_3d_lut_calib",ramp3,4,4,NULL,0,cube,23,1024,10000000,dst)!=JOLT_OK);
+    /* A frame resource: a second frame of constant colour, so any kernel that
+     * blends against it must move. */
+    float frame_b[64]; for(int i=0;i<16;++i) {
+        frame_b[4*i]=0; frame_b[4*i+1]=0; frame_b[4*i+2]=1; frame_b[4*i+3]=1;
+    }
+    assert(jolt_image_kernels_apply(k,"cross_dissolve",ramp3,4,4,NULL,0,
+        frame_b,(int)(sizeof frame_b/sizeof *frame_b),1024,10000000,dst)==JOLT_OK);
+    near_ctx("frame resource: dissolve against a blue frame");
+    /* progress defaults to 0.5, so the result is the mean of source and frame:
+     * pixel 0 starts black, so red/green stay 0 and blue lands on 0.5. */
+    near(dst[0],0); near(dst[1],0); near(dst[2],0.5);
+    /* pixel 15 starts at 15/16 in every channel and the frame is blue. */
+    near(dst[4*15], 0.5*15.0/16); near(dst[4*15+2], 0.5*(15.0/16+1));
+    /* A single-plane mask: a plane of zeros must key the layer out entirely. */
+    float plane[16]={0};
+    float keyed[64]; for(int i=0;i<16;++i) {
+        keyed[4*i]=1; keyed[4*i+1]=1; keyed[4*i+2]=1; keyed[4*i+3]=1;
+    }
+    assert(jolt_image_kernels_apply(k,"comp_layer_mask",keyed,4,4,NULL,0,plane,16,1024,10000000,dst)==JOLT_OK);
+    for(int i=0;i<16;++i) {
+        if (fabs(dst[4*i+3])>=2e-4)
+            fprintf(stderr,"plane mask: pixel %d alpha=%g (expected 0)\n",i,dst[4*i+3]);
+        near(dst[4*i+3],0);
+    }
+    /* A text run: N glyph codes, N advances, then the coverage plane. */
+    float run_txt[2+2+16];
+    run_txt[0]=2; run_txt[1]=65; run_txt[2]=66; run_txt[3]=2; run_txt[4]=2;
+    for(int i=0;i<16;++i) run_txt[6+i]=1;
+    /* The default run height is 8% of the frame, which on a 4x4 is a third of a
+     * pixel and so covers no pixel centre at all. Size the run to the test frame
+     * so the box actually contains texels, then the covered ones take the ink. */
+    jolt_image_parameter_t run_big[]={ {"size",1}, {"position_x",0.5}, {"position_y",0.5} };
+    assert(jolt_image_kernels_apply(k,"text_subtitle",ramp3,4,4,run_big,3,run_txt,20,1024,10000000,dst)==JOLT_OK);
+    for(int i=0;i<64;++i) assert(isfinite(dst[i]));
+    {   int covered=0;
+        for(int i=0;i<16;++i) if (dst[4*i]>ramp3[4*i]+0.5) covered=1;
+        assert(covered);
+    }
+    /* With no run resource the same kernel is an exact identity. */
+    assert(jolt_image_kernels_apply(k,"text_subtitle",ramp3,4,4,NULL,0,NULL,0,1024,10000000,dst)==JOLT_OK);
+    for(int i=0;i<64;++i) near(dst[i],ramp3[i]);
+
     /* Validation must leave every byte of the destination untouched. */
     float sentinel[64];for(int i=0;i<64;++i) sentinel[i]=dst[i]=123;
     float bad_curve[]={0,0,0,1};

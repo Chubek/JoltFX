@@ -28,7 +28,8 @@
         t (clamp01 (/ (+ d sw) (* 2 sw)))
         ;; left of the divider shows the outgoing frame, right the incoming one
         l (sample x y c 1 0)
-        r (to-frame x y c)
+        ;; the incoming frame is only read when the array actually holds one
+        r (if (> (data-count) (* 4 width height)) (to-frame x y c) l)
         out (mix l r t)
         ;; narrow bright divider rule, plus a soft glow
         core (clamp01 (- 1 (/ (abs d) rule)))
