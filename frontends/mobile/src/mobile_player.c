@@ -6,6 +6,13 @@
 
 #include "jfx/mobile_player.h"
 
+jfx_result_t jfx_mobile_player_export_begin(jfx_mobile_player_t *p,const jfx_export_options_t *o,jfx_export_job_t **out) {
+    return jfx_export_begin(jfx_mobile_player_editor(p),o,out);
+}
+jfx_result_t jfx_mobile_player_audio_mixer(jfx_mobile_player_t *p,uint32_t rate,jfx_audio_mixer_t **out) {
+    return jfx_audio_mixer_create(jfx_editor_timeline(jfx_mobile_player_editor(p)),rate,out);
+}
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,6 +47,13 @@ static uint8_t to_unorm8(float value) {
     if (!(value > 0.0f)) return 0u; /* also catches NaN */
     if (value >= 1.0f) return 255u;
     return (uint8_t)lrintf(value * 255.0f);
+}
+static double duration(const jfx_mobile_player_t *p) {
+    if (p->editing && jfx_editor_kind(p->editor)==JFX_PROJECT_KIND_SEQUENCE) {
+        const jfx_timeline_t *t=jfx_editor_timeline(p->editor);
+        return (double)jfx_timeline_duration(t)/jfx_timeline_fps(t);
+    }
+    return p->duration_seconds;
 }
 
 jfx_result_t jfx_mobile_player_create(const jfx_mobile_player_config_t *config,
@@ -113,7 +127,7 @@ jfx_result_t jfx_mobile_player_swipe(jfx_mobile_player_t *player,
     double horizontal_pixels) {
     if (!player || !isfinite(horizontal_pixels)) return JFX_ERROR_INVALID_ARGUMENT;
     player->time_seconds = clamp(player->time_seconds + horizontal_pixels / (double)player->width *
-        player->duration_seconds, 0.0, player->duration_seconds);
+        duration(player), 0.0, duration(player));
     return JFX_SUCCESS;
 }
 
@@ -130,9 +144,9 @@ static void advance(jfx_mobile_player_t *player, double elapsed_seconds) {
         return;
     }
     player->time_seconds += elapsed_seconds;
-    while (player->time_seconds >= player->duration_seconds) {
-        player->time_seconds -= player->duration_seconds;
-    }
+    double end=duration(player);
+    if (end<=0) { player->time_seconds=0; player->playing=0; }
+    else if (player->time_seconds>=end) player->time_seconds=fmod(player->time_seconds,end);
 }
 
 jfx_result_t jfx_mobile_player_render(jfx_mobile_player_t *player,
@@ -262,7 +276,7 @@ jfx_result_t jfx_mobile_player_load_document(jfx_mobile_player_t *player, const 
     char *out_error, size_t error_size) {
     if (!player) return JFX_ERROR_INVALID_ARGUMENT;
     jfx_result_t r = jfx_editor_load(player->editor, text, length, out_error, error_size);
-    if (r == JFX_SUCCESS) player->editing = true;
+    if (r == JFX_SUCCESS) { player->editing = true; player->time_seconds=0; player->playing=0; }
     return r;
 }
 jfx_result_t jfx_mobile_player_save_document(jfx_mobile_player_t *player, char *out_text, size_t capacity, size_t *out_written) {
@@ -273,6 +287,30 @@ jfx_result_t jfx_mobile_player_edit(jfx_mobile_player_t *player, const char *op,
     uint32_t c, double value, const char *text) {
     if (!player) return JFX_ERROR_INVALID_ARGUMENT;
     jfx_result_t r=jfx_editor_command(player->editor,op,a,b,c,value,text);
-    if (r==JFX_SUCCESS) player->editing=true;
+    if (r==JFX_SUCCESS) {
+        player->editing=true;
+        if (!strcmp(op,"sequence.new") || !strcmp(op,"graph.new")) { player->time_seconds=0; player->playing=0; }
+    }
     return r;
+}
+jfx_result_t jfx_mobile_player_seek(jfx_mobile_player_t *player,double seconds) {
+    if (!player || !isfinite(seconds) || seconds<0 || seconds>1.e9) return JFX_ERROR_INVALID_ARGUMENT;
+    player->time_seconds=seconds; return JFX_SUCCESS;
+}
+jfx_result_t jfx_mobile_player_sequence_state(jfx_mobile_player_t *player,char *out,size_t capacity) {
+    return player?jfx_editor_sequence_state(player->editor,out,capacity):JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_mobile_player_write_frame(jfx_mobile_player_t *player,uint64_t frame,const char *path) {
+    if (!player) return JFX_ERROR_INVALID_ARGUMENT;
+    const jfx_timeline_t *t=jfx_editor_timeline(player->editor);
+    return jfx_editor_write_frame(player->editor,frame,jfx_timeline_width(t),jfx_timeline_height(t),path);
+}
+jfx_result_t jfx_mobile_player_graph_state(jfx_mobile_player_t *p,char *out,size_t cap) {
+    return p?jfx_editor_graph_state(p->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_mobile_player_render_graph(jfx_mobile_player_t *p,uint32_t node,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
+    return p?jfx_editor_render_graph(p->editor,node,seconds,w,h,out,cap):JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_mobile_player_write_graph(jfx_mobile_player_t *p,uint32_t node,double seconds,const char *path) {
+    return p?jfx_editor_write_graph(p->editor,node,seconds,jfx_editor_graph_width(p->editor),jfx_editor_graph_height(p->editor),path):JFX_ERROR_INVALID_ARGUMENT;
 }

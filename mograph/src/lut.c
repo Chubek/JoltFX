@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "tilly/allocator.h"
+#include "tilly/attributes.h"
 
 #define JFX_LUT_FILE_MAX ((size_t)64u * 1024u * 1024u)
 
@@ -67,6 +68,7 @@ static uint8_t to_unorm8(float value) {
     return (uint8_t)lrintf(value * 255.0f);
 }
 
+TILLY_PRINTF_LIKE(3, 4)
 static void set_error(char *out_error, size_t out_error_size, const char *fmt, ...) {
     if (!out_error || !out_error_size) {
         return;

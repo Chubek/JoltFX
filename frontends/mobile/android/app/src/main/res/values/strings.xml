@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JoltFX</string>
+    <string name="preview_description">Preview. Tap to play or pause; swipe horizontally to seek.</string>
+    <string name="parameter_range">%1$s [%2$s, %3$s]</string>
+    <string name="apply_parameter">Apply %1$s</string>
+    <string name="port_type">%1$s (%2$s)</string>
+    <string name="select_node">Select a node or add a source.</string>
+    <string name="preview_error">Preview could not be rendered. Check the graph and resource paths.</string>
+    <string name="video_export_progress">Video export: %1$d frames</string>
+    <string name="video_export_error">Video export failed (%1$d)</string>
+</resources>

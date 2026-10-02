@@ -5,6 +5,14 @@ build/
 build-*/
 build_*/
 cmake-build-*/
+frontends/mobile/android/.gradle/
+frontends/mobile/android/.kotlin/
+frontends/mobile/android/app/.cxx/
+frontends/mobile/android/app/build/
+frontends/mobile/android/local.properties
+frontends/web/public/joltfx_web.js
+frontends/web/public/joltfx_web.wasm
+frontends/web/public/joltfx_web.wasm.map
 *.o
 *.a
 *.so
@@ -58,4 +66,3 @@ imgui.ini
 *.bin
 *.dat
 *.cache
-

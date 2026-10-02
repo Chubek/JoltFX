@@ -21,6 +21,7 @@ list(APPEND JFX_INSTALL_TARGETS
     jfx_backend_software
     jolt_effects
     jfx_api
+    jfx_ffmpeg
 )
 
 foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
@@ -72,7 +73,7 @@ install(TARGETS ${JFX_INSTALL_TARGETS_PRESENT}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(DIRECTORY core/include/jfx
+install(DIRECTORY mograph/include/jfx
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(DIRECTORY backends/common/include/jfx
@@ -123,6 +124,14 @@ endforeach()
 if(JFX_INSTALL_DOCS_PRESENT)
     install(FILES ${JFX_INSTALL_DOCS_PRESENT}
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
+endif()
+install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(FILES third_party/miniaudio/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/miniaudio)
+if(JFX_VIDEO_FFMPEG AND JFX_MEDIA_FFMPEG_BUNDLED)
+    install(FILES third_party/ffmpeg/COPYING.LGPLv2.1
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/ffmpeg)
 endif()
 
 install(EXPORT JoltFXTargets

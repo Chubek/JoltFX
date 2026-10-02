@@ -16,6 +16,10 @@ int cmd_lut(int argc, char **argv);
 int cmd_render_graph(int argc, char **argv);
 int cmd_render_sequence(int argc, char **argv);
 int cmd_edit(int argc, char **argv);
+int cmd_nle(int argc, char **argv);
+int cmd_compose(int argc, char **argv);
+int cmd_media_export(int argc, char **argv);
+int cmd_color(int argc, char **argv, int calibration);
 int cmd_project(int argc, char **argv);
 
 /* Help output shared with main.c. */

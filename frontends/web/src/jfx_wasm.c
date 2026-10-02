@@ -1,5 +1,24 @@
 #include "jfx/web_session.h"
 
+jfx_result_t jfx_web_session_export_begin(jfx_web_session_t *s,const char *path,const char *codec,
+    uint32_t start,uint32_t count,bool audio,jfx_export_job_t **out) {
+    jfx_export_options_t o={.size=sizeof(o),.path=path,.video_codec=codec && *codec?codec:NULL,
+        .start_frame=start,.frame_count=count,.audio=audio};
+    return jfx_export_begin(jfx_web_session_editor(s),&o,out);
+}
+uint32_t jfx_web_export_completed(const jfx_export_job_t *job) { return (uint32_t)jfx_export_completed_frames(job); }
+jfx_result_t jfx_web_session_audio_mixer(jfx_web_session_t *s,uint32_t rate,jfx_audio_mixer_t **out) {
+    return jfx_audio_mixer_create(jfx_editor_timeline(jfx_web_session_editor(s)),rate,out);
+}
+jfx_result_t jfx_web_audio_mixer_render(jfx_audio_mixer_t *m,double sample,uint32_t frames,float *out,size_t capacity) {
+    if (!(sample>=0 && sample<=1.e12) || (double)(uint64_t)sample!=sample) return JFX_ERROR_INVALID_ARGUMENT;
+    return jfx_audio_mixer_render(m,(uint64_t)sample,frames,out,capacity);
+}
+jfx_result_t jfx_web_session_render_audio(jfx_web_session_t *s,double sample,uint32_t rate,uint32_t frames,float *out,size_t capacity) {
+    if (!(sample>=0 && sample<=1.e12) || (double)(uint64_t)sample!=sample) return JFX_ERROR_INVALID_ARGUMENT;
+    return jfx_timeline_render_audio(jfx_editor_timeline(jfx_web_session_editor(s)),(uint64_t)sample,rate,frames,out,capacity);
+}
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -156,6 +175,9 @@ jfx_result_t jfx_web_session_load_document(jfx_web_session_t *session, const cha
 jfx_result_t jfx_web_session_save_document(jfx_web_session_t *session, char *out_text, size_t capacity, size_t *out_written) {
     return session ? jfx_editor_save(session->editor, out_text, capacity, out_written) : JFX_ERROR_INVALID_ARGUMENT;
 }
+jfx_result_t jfx_web_session_save_sequence(jfx_web_session_t *session,char *out,size_t cap,size_t *written) {
+    return session?jfx_project_save_sequence(jfx_editor_timeline(session->editor),out,cap,written):JFX_ERROR_INVALID_ARGUMENT;
+}
 
 jfx_result_t jfx_web_session_edit(jfx_web_session_t *session, const char *op, uint32_t a, uint32_t b,
     uint32_t c, double value, const char *text) {
@@ -163,4 +185,16 @@ jfx_result_t jfx_web_session_edit(jfx_web_session_t *session, const char *op, ui
     jfx_result_t r=jfx_editor_command(session->editor,op,a,b,c,value,text);
     if (r==JFX_SUCCESS) session->editing=true;
     return r;
+}
+jfx_result_t jfx_web_session_sequence_state(jfx_web_session_t *session,char *out,size_t capacity) {
+    return session?jfx_editor_sequence_state(session->editor,out,capacity):JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_web_session_render_frame(jfx_web_session_t *session,uint32_t frame,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
+    return session?jfx_editor_render_frame(session->editor,frame,w,h,out,cap):JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_web_session_graph_state(jfx_web_session_t *s,char *out,size_t cap) {
+    return s?jfx_editor_graph_state(s->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_web_session_render_graph(jfx_web_session_t *s,uint32_t node,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
+    return s?jfx_editor_render_graph(s->editor,node,seconds,w,h,out,cap):JFX_ERROR_INVALID_ARGUMENT;
 }

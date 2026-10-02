@@ -115,6 +115,11 @@ The engine owns all allocations. External callers and kernels never call `malloc
 
 The scheduler owns all worker threads. Engine-internal code must not spawn threads. Synchronization primitives live in `execution/sync/`.
 
+Non-pthread Emscripten builds retain the bounded priority queue but drain tasks
+on the caller during `scheduler_wait_idle`, engine ticks and shutdown. Native
+and pthread-enabled Emscripten builds use worker threads. The scheduler unit
+test covers priority/FIFO order, queue capacity and draining in serial builds.
+
 ```c
 // Crossing the CPU/GPU boundary
 jfx_fence_t fence = jfx_gpu_submit(ctx, cmd_list);
@@ -129,6 +134,40 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 ---
 
 ## Public API Conventions
+
+The implemented color API is `include/jfx/jfx_color.h` (1.0.0). Its immutable
+descriptors come from `cmake/ColorKernels.cmake` and `.jolt` parameter declarations.
+`src/color.c` marshals straight RGBA and LUT resources into the budgeted image
+runner. Editor 1.4 includes section-local `grade.*`/`calibration.*` commands; effect
+storage and render order remain in the timeline. Preserve quoted/empty LUT paths
+when changing project serialization. See `docs/editor.md` and color/frontend tests.
+
+Timeline 1.2 and editor 1.4 provide the NLE edit primitives, sequence-state JSON,
+exact-frame rendering/export and bounded sequence history. Keys use a persistent
+clip-reference offset so split/head trims preserve interpolation samples. Do not
+shift raw key timestamps when repositioning clips. Command keyframes are in
+sequence time; raw key APIs remain in reference time. Preserve `track_state`,
+`clip_state`, `clip_keys` and `effect_state` during interchange. Borrowed timeline
+handles must be reacquired after load/new/undo/redo. See `docs/nle.md` and
+`tests/unit/color/test_nle.c` / frontend conformance tests.
+
+Composition 1.1 and editor 1.4 add persistent node positions, validated scalar
+editing, deep duplication, graph-state/node-catalog JSON and output/interior
+preview/export. Graph and sequence edits share a 32-step/32-MiB history; snapshots
+restore their target document and prior mode while retaining the other model.
+Preserve explicit output, layout, quoted/empty labels/strings and float precision
+in `.jfx`. Empty graphs use `graph` and `output 0`. The CPU evaluator allocates
+reachable frames only, under a 512-MiB scratch bound. See `docs/composition.md`,
+`tests/unit/color/test_composition_editor.c` and composition frontend conformance.
+
+Audio/export APIs 1.0 are `jfx_audio.h` and `jfx_export.h`. Preserve positional
+`track_audio`/`clip_audio` state, original fade reference length and signed sample
+clock offsets when editing split/trim timing. The mixer compiles the bundled
+audio kernel through Glue and executes stereo JBC1 in Execution. Media readers
+are lazy/bounded; missing/unsupported assigned media fails, while video with no
+audio stream is silent. Snapshot mixers/jobs own model settings, not file bytes.
+Jobs run on one owner thread, never create workers, and replace output only after
+codec/trailer/stream success. See `docs/media.md` and audio/media conformance tests.
 
 All public symbols use the `jfx_` prefix. Types end in `_t`. Opaque handles end in `_handle_t`. Return codes are `jfx_result_t`; success is `JFX_OK`.
 

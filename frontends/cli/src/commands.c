@@ -1,4 +1,5 @@
 #include "commands.h"
+#include "jfx/jfx_export.h"
 
 #include "headless_frontend.h"
 #include "jfx/jfx_engine.h"
@@ -31,13 +32,63 @@ void print_usage(void) {
     printf("  info EFFECT|FILE           Show effect or kernel details\n");
     printf("  render [options]           Render one frame to a binary PPM (P6)\n");
     printf("  export [options]           Render a frame range to a PPM sequence\n");
+    printf("  export-video DOC.jfx -o OUT.mp4  Encode a sequence or composition with mixed audio\n");
     printf("  capabilities               Report this build's frontend capabilities\n");
     printf("  version                    Show version information\n");
     printf("  help [COMMAND]             Show help\n");
+    printf("\nNon-Linear Editor (dedicated section):\n");
+    printf("  nle new OUT.jfx [--size W H] [--fps NUM DEN]\n");
+    printf("  nle edit IN.jfx OUT.jfx     Shared terminal editor, or pipe edit commands\n");
+    printf("  nle info IN.jfx            NLE state as JSON\n");
+    printf("  nle render IN.jfx -o PREFIX Render a PPM sequence\n");
+    printf("  compose new/edit/info/render Node-based composition editor and PPM export\n");
+    printf("\nColor Grading (dedicated section):\n");
+    printf("  grade list                 List grading kernels and parameter ranges\n");
+    printf("  grade apply KIND IN OUT    Grade an image; append name=value or --lut FILE\n");
+    printf("\nColor Calibration (dedicated section):\n");
+    printf("  calibration list           List calibration kernels and parameter ranges\n");
+    printf("  calibration apply KIND IN OUT [name=value ...] [--lut FILE]\n");
+    printf("  edit IN.jfx OUT.jfx         Terminal editor: grade.* and calibration.* commands\n");
     printf("\nRun 'joltfx help COMMAND' for command-specific options.\n");
 }
 
 void print_command_help(const char *command) {
+    if (command && !strcmp(command,"export-video")) {
+        printf("Usage: joltfx export-video DOC.jfx -o OUT.mp4|OUT.mov|OUT.mkv\n"
+            "       [--start FRAME --frames COUNT] [--width W --height H]\n"
+            "       [--codec ENCODER --audio-codec ENCODER] [--sample-rate HZ] [--no-audio]\n"
+            "Count 0 exports the remaining sequence; graph exports require a count (30/1 fps).\n"
+            "Default codecs: MP4 MPEG-4/AAC, MOV ProRes/PCM, MKV FFV1/PCM.\n"
+            "Also available as 'export DOC.jfx', 'nle export DOC.jfx', 'compose export DOC.jfx'.\n"
+            "Encoder names (e.g. libx264) must exist in the linked FFmpeg build.\n"); return;
+    }
+    if (command && !strcmp(command,"compose")) {
+        printf("Usage: joltfx compose new OUT.jfx [--size W H]\n"
+            "       joltfx compose edit IN.jfx OUT.jfx\n"
+            "       joltfx compose info IN.jfx\n"
+            "       joltfx compose render IN.jfx -o OUT.ppm [--time S] [--node N] [--size W H]\n"
+            "Terminal commands: node.add/connect/disconnect/param/path/label/position/duplicate/reset/remove/output,\n"
+            "graph.size/new, undo, redo, composition (JSON state), nodes (library), show, save.\n"
+            "Commands use OP A B C VALUE TEXT, with zero-based node/port indices.\n"
+            "See docs/composition.md for port typing, layout, history and examples.\n"); return;
+    }
+    if (command && (!strcmp(command,"nle") || !strcmp(command,"edit"))) {
+        printf("Usage: joltfx nle new OUTPUT.jfx [--size W H] [--fps NUM DEN]\n"
+            "       joltfx nle edit INPUT.jfx OUTPUT.jfx\n"
+            "       joltfx nle info INPUT.jfx\n"
+            "       joltfx nle render INPUT.jfx -o PREFIX [--start N --end N]\n"
+            "Editor syntax: OP TRACK CLIP TARGET VALUE TEXT (zero-based indices).\n"
+            "NLE commands: clip.add/trim/move/split/duplicate/slip/remove/ripple_delete,\n"
+            "track.add/remove/name/move/mute/solo/insert_gap. Also: undo, redo, timeline, show, save, quit.\n"
+            "Audio: clip.audio.enabled/gain/pan/fade_in/fade_out; track.audio.gain.\n"
+            "See docs/nle.md for timing and source in-point semantics.\n"); return;
+    }
+    if (command && (!strcmp(command,"grade") || !strcmp(command,"calibration"))) {
+        printf("Usage: joltfx %s list\n       joltfx %s apply KIND INPUT OUTPUT.ppm [name=value ...] [--lut FILE]\n",command,command);
+        printf("Kernels run through the shared graph and budgeted CPU executor.\n"
+            "For ordered, animated grades use 'edit' and 'project render'.\n");
+        return;
+    }
     if (command == NULL || strcmp(command, "compile") == 0) {
         printf("Usage: joltfx compile FILE [-o OUTPUT]\n\n");
         printf("Validates a Joltscript kernel (MVP defkernel form) and, with -o,\n");
@@ -615,6 +666,7 @@ static int export_progress(size_t current, size_t total, double elapsed, void *u
 }
 
 int cmd_export(int argc, char **argv) {
+    if (argc>0 && argv[0][0]!='-') return cmd_media_export(argc,argv);
     const char *effect = "brightness";
     const char *output = "frames";
     const char *backend = NULL;
@@ -708,6 +760,7 @@ int cmd_capabilities(void) {
             (capabilities & bit) ? "yes" : "no (not implemented)");
     }
     printf("\nbackend: %s\n", jfx_headless_backend_name(probe));
+    printf("audio_mixing: yes (WAV/FLAC/MP3; optional FFmpeg containers)\nencoded_video: %s\n",jfx_export_available()?"yes":"no (FFmpeg unavailable)");
     jfx_frontend_shutdown(probe);
     return 0;
 }

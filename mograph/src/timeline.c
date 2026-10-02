@@ -7,6 +7,7 @@
  * stack, or the timeline. See jfx_timeline.h for the model. */
 
 #include "jfx/jfx_timeline.h"
+#include "jfx/jfx_audio.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -50,7 +51,7 @@ static float lerp(float a, float b, float t) {
 typedef struct {
     uint64_t frame;
     float value;
-} key_t;
+} timeline_key_t;
 
 typedef struct {
     /* The kind's own parameter values, plus the text fields it declares. */
@@ -61,7 +62,7 @@ typedef struct {
     jfx_blend_mode_t blend;
     jfx_interp_t interp;
     const jfx_node_kind_t *kind;
-    key_t *keys[JFX_NODE_MAX_PARAMS];
+    timeline_key_t *keys[JFX_NODE_MAX_PARAMS];
     size_t key_counts[JFX_NODE_MAX_PARAMS];
 } effect_t;
 
@@ -73,10 +74,12 @@ typedef struct {
     uint64_t start_frame;
     uint64_t length_frames;
     uint64_t in_point;
+    int64_t key_offset;
     float opacity;
     jfx_blend_mode_t blend_mode;
     bool enabled;
     effect_t effects[JFX_TIMELINE_MAX_EFFECTS];
+    jfx_clip_audio_t audio;
     size_t effect_count;
 } clip_t;
 
@@ -86,6 +89,7 @@ typedef struct {
     bool solo;
     float opacity;
     jfx_blend_mode_t blend;
+    float audio_gain;
     clip_t clips[JFX_TIMELINE_MAX_CLIPS_PER_TRACK];
     size_t clip_count;
 } track_t;
@@ -123,7 +127,7 @@ static void clip_release(clip_t *clip) {
 /* ---- Source names -------------------------------------------------------- */
 
 static const char *const kSourceNames[JFX_CLIP_SOURCE_COUNT] = { "solid", "gradient", "checker",
-    "sweep", "image", "video" };
+    "sweep", "image", "video", "audio" };
 
 const char *jfx_clip_source_name(jfx_clip_source_t source) {
     if (source < 0 || source >= JFX_CLIP_SOURCE_COUNT) {
@@ -251,7 +255,7 @@ jfx_result_t jfx_timeline_timecode(const jfx_timeline_t *timeline, uint64_t fram
      * rather than truncating matters here: 29.97 truncated is 29, which is not
      * the rate the frames actually play at. */
     const uint32_t den = timeline->fps_den ? timeline->fps_den : 1u;
-    uint32_t rate = (uint32_t)((timeline->fps_num + den / 2u) / den);
+    uint32_t rate = (uint32_t)(((uint64_t)timeline->fps_num + den / 2u) / den);
     if (rate == 0u) {
         rate = 1u;
     }
@@ -273,7 +277,7 @@ jfx_result_t jfx_timeline_timecode(const jfx_timeline_t *timeline, uint64_t fram
 
 uint32_t jfx_timeline_add_track(jfx_timeline_t *timeline, const char *name) {
     if (!timeline) {
-        return 0;
+        return UINT32_MAX;
     }
     if (timeline->track_count >= JFX_TIMELINE_MAX_TRACKS) {
         return UINT32_MAX;
@@ -281,6 +285,7 @@ uint32_t jfx_timeline_add_track(jfx_timeline_t *timeline, const char *name) {
     track_t *track = &timeline->tracks[timeline->track_count];
     memset(track, 0, sizeof(*track));
     track->opacity = 1.0f;
+    track->audio_gain = 1.0f;
     track->blend = JFX_BLEND_NORMAL;
     snprintf(track->name, sizeof(track->name), "%s", name && name[0] ? name : "Track");
     timeline->track_count++;
@@ -307,6 +312,18 @@ jfx_result_t jfx_timeline_remove_track(jfx_timeline_t *timeline, uint32_t track)
 
 size_t jfx_timeline_track_count(const jfx_timeline_t *timeline) {
     return timeline ? timeline->track_count : 0u;
+}
+
+jfx_result_t jfx_timeline_move_track(jfx_timeline_t *timeline, uint32_t track, uint32_t to) {
+    if (!track_ok(timeline,track) || !track_ok(timeline,to)) return JFX_ERROR_INVALID_ARGUMENT;
+    if (track==to) return JFX_SUCCESS;
+    track_t *moving=alloc_bytes(sizeof(*moving));
+    if (!moving) return JFX_ERROR_OUT_OF_MEMORY;
+    *moving=timeline->tracks[track];
+    if (track<to) memmove(timeline->tracks+track,timeline->tracks+track+1,(to-track)*sizeof(*moving));
+    else memmove(timeline->tracks+to+1,timeline->tracks+to,(track-to)*sizeof(*moving));
+    timeline->tracks[to]=*moving; free_bytes(moving);
+    return JFX_SUCCESS;
 }
 
 const char *jfx_timeline_track_name(const jfx_timeline_t *timeline, uint32_t track) {
@@ -382,12 +399,16 @@ uint32_t jfx_timeline_add_clip(jfx_timeline_t *timeline, uint32_t track,
     if (desc->source < 0 || desc->source >= JFX_CLIP_SOURCE_COUNT || !desc->length_frames) {
         return UINT32_MAX;
     }
-    if ((desc->source == JFX_CLIP_IMAGE || desc->source == JFX_CLIP_VIDEO) && (!desc->image_path || !desc->image_path[0])) {
+    if (desc->length_frames>INT64_MAX || desc->start_frame>(uint64_t)INT64_MAX-desc->length_frames ||
+        desc->in_point>(uint64_t)INT64_MAX-desc->length_frames) return UINT32_MAX;
+    for (size_t i=0;i<8;++i) if (!isfinite(desc->source_params[i])) return UINT32_MAX;
+    if ((desc->source == JFX_CLIP_IMAGE || desc->source == JFX_CLIP_VIDEO || desc->source == JFX_CLIP_AUDIO) && (!desc->image_path || !desc->image_path[0])) {
         return UINT32_MAX;
     }
     if (desc->blend_mode < 0 || desc->blend_mode >= JFX_BLEND_COUNT) {
         return UINT32_MAX;
     }
+    if (desc->image_path && strlen(desc->image_path)>=JFX_NODE_PATH_MAX) return UINT32_MAX;
     if (!isfinite(desc->opacity)) {
         return UINT32_MAX;
     }
@@ -414,6 +435,8 @@ uint32_t jfx_timeline_add_clip(jfx_timeline_t *timeline, uint32_t track,
     clip->opacity = clamp01(desc->opacity);
     clip->blend_mode = desc->blend_mode;
     clip->enabled = desc->enabled;
+    clip->audio=(jfx_clip_audio_t){sizeof(jfx_clip_audio_t),
+        desc->source==JFX_CLIP_VIDEO || desc->source==JFX_CLIP_AUDIO,1,0,0,0,desc->length_frames};
     t->clip_count++;
     return (uint32_t)(t->clip_count - 1u);
 }
@@ -538,13 +561,14 @@ jfx_result_t jfx_timeline_relocate_clip(jfx_timeline_t *timeline, uint32_t track
     }
     track_t *from = &timeline->tracks[track];
     track_t *to = &timeline->tracks[to_track];
+    if (keep_index) to_index=clip;
     if (to == from && (to_index >= from->clip_count || (keep_index && to_index == clip))) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     if (to != from && to->clip_count >= JFX_TIMELINE_MAX_CLIPS_PER_TRACK) {
         return JFX_ERROR_OUT_OF_MEMORY;
     }
-    if (to != from && !keep_index && to_index > to->clip_count) {
+    if (to != from && to_index > to->clip_count) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     /* Move the clip out without destroying it. Going through
@@ -576,21 +600,122 @@ jfx_result_t jfx_timeline_relocate_clip(jfx_timeline_t *timeline, uint32_t track
 jfx_result_t jfx_timeline_trim_clip(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     int64_t new_start, int64_t new_length) {
     clip_t *c = clip_at(timeline, track, clip);
-    if (!c || new_length < 1) {
+    if (!c || new_length < 1 || new_start<0 || new_start>INT64_MAX-new_length) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
-    /* Trimming the head moves the clip earlier, which also moves the source
-     * window later so the same first visible frame stays visible. Trimming the
-     * tail shortens the clip without moving the source window. */
+    /* Advancing the head advances the source and animation clocks by the same
+     * amount, preserving the samples that remain visible. A tail-only trim
+     * changes neither clock. */
     const int64_t old_start = (int64_t)c->start_frame;
     const int64_t delta = new_start - old_start;
-    const int64_t new_in = (int64_t)c->in_point + delta;
-    if (new_start < 0 || new_in < 0) {
+    if ((delta<0 && c->in_point<(uint64_t)(-delta)) ||
+        (delta>0 && c->in_point>(uint64_t)INT64_MAX-(uint64_t)delta)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    const uint64_t new_in=delta<0?c->in_point-(uint64_t)(-delta):c->in_point+(uint64_t)delta;
+    if (new_in>(uint64_t)INT64_MAX-(uint64_t)new_length) return JFX_ERROR_INVALID_ARGUMENT;
+    if ((delta>0 && c->key_offset>INT64_MAX-delta) ||
+        (delta<0 && c->key_offset<-INT64_MAX-delta)) return JFX_ERROR_INVALID_ARGUMENT;
+    int64_t offset=c->key_offset+delta;
+    if (offset>INT64_MAX-new_length) return JFX_ERROR_INVALID_ARGUMENT;
     c->start_frame = (uint64_t)new_start;
     c->length_frames = (uint64_t)new_length;
-    c->in_point = (uint64_t)new_in;
+    c->in_point = new_in;
+    c->key_offset=offset;
+    return JFX_SUCCESS;
+}
+
+/* Copy owned strings and key arrays before publishing a new clip. */
+static jfx_result_t clip_copy(const clip_t *src, clip_t *out) {
+    *out=*src; out->image_path=NULL;
+    for (size_t e=0;e<out->effect_count;++e) {
+        memset(out->effects[e].strings,0,sizeof(out->effects[e].strings));
+        memset(out->effects[e].keys,0,sizeof(out->effects[e].keys));
+    }
+    if (src->image_path && !(out->image_path=dup_string(src->image_path))) goto oom;
+    for (size_t e=0;e<src->effect_count;++e) {
+        for (size_t s=0;s<JFX_GRAPH_MAX_STRING_PARAMS;++s)
+            if (src->effects[e].strings[s] && !(out->effects[e].strings[s]=dup_string(src->effects[e].strings[s]))) goto oom;
+        for (size_t p=0;p<JFX_NODE_MAX_PARAMS;++p) {
+            size_t bytes=src->effects[e].key_counts[p]*sizeof(timeline_key_t);
+            if (!bytes) continue;
+            out->effects[e].keys[p]=alloc_bytes(bytes);
+            if (!out->effects[e].keys[p]) goto oom;
+            memcpy(out->effects[e].keys[p],src->effects[e].keys[p],bytes);
+        }
+    }
+    return JFX_SUCCESS;
+oom:
+    clip_release(out); return JFX_ERROR_OUT_OF_MEMORY;
+}
+jfx_result_t jfx_timeline_position_clip(jfx_timeline_t *t,uint32_t track,uint32_t clip,
+    uint32_t to,uint64_t start) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || !track_ok(t,to) || start>(uint64_t)INT64_MAX-c->length_frames) return JFX_ERROR_INVALID_ARGUMENT;
+    if (track!=to && t->tracks[to].clip_count>=JFX_TIMELINE_MAX_CLIPS_PER_TRACK) return JFX_ERROR_OUT_OF_MEMORY;
+    c->start_frame=start;
+    if (track!=to) return jfx_timeline_relocate_clip(t,track,clip,to,(uint32_t)t->tracks[to].clip_count,false);
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_duplicate_clip(jfx_timeline_t *t,uint32_t track,uint32_t clip,
+    uint32_t to,uint64_t start) {
+    const clip_t *src=clip_at_const(t,track,clip);
+    if (!src || !track_ok(t,to) || start>(uint64_t)INT64_MAX-src->length_frames) return JFX_ERROR_INVALID_ARGUMENT;
+    if (t->tracks[to].clip_count>=JFX_TIMELINE_MAX_CLIPS_PER_TRACK) return JFX_ERROR_OUT_OF_MEMORY;
+    clip_t copy; jfx_result_t r=clip_copy(src,&copy);
+    if (r!=JFX_SUCCESS) return r;
+    copy.start_frame=start;
+    t->tracks[to].clips[t->tracks[to].clip_count++]=copy;
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_split_clip(jfx_timeline_t *t,uint32_t track,uint32_t clip,uint64_t frame) {
+    clip_t *src=clip_at(t,track,clip);
+    if (!src || frame<=src->start_frame || frame>=src->start_frame+src->length_frames) return JFX_ERROR_INVALID_ARGUMENT;
+    track_t *lane=&t->tracks[track];
+    if (lane->clip_count>=JFX_TIMELINE_MAX_CLIPS_PER_TRACK) return JFX_ERROR_OUT_OF_MEMORY;
+    clip_t right; jfx_result_t r=clip_copy(src,&right);
+    if (r!=JFX_SUCCESS) return r;
+    uint64_t left=frame-src->start_frame;
+    right.start_frame=frame; right.in_point+=left; right.length_frames-=left;
+    right.key_offset+=(int64_t)left;
+    src->length_frames=left;
+    memmove(lane->clips+clip+2,lane->clips+clip+1,(lane->clip_count-clip-1)*sizeof(clip_t));
+    lane->clips[clip+1]=right; lane->clip_count++;
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_slip_clip(jfx_timeline_t *t,uint32_t track,uint32_t clip,int64_t delta) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || delta==INT64_MIN || (delta<0 && c->in_point<(uint64_t)(-delta)) ||
+        (delta>0 && (uint64_t)delta>(uint64_t)INT64_MAX-c->in_point-c->length_frames)) return JFX_ERROR_INVALID_ARGUMENT;
+    c->in_point=delta<0?c->in_point-(uint64_t)(-delta):c->in_point+(uint64_t)delta;
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_ripple_delete(jfx_timeline_t *t,uint32_t track,uint32_t clip) {
+    const clip_t *c=clip_at_const(t,track,clip);
+    if (!c) return JFX_ERROR_INVALID_ARGUMENT;
+    uint64_t start=c->start_frame, length=c->length_frames, end=start+length;
+    track_t *lane=&t->tracks[track];
+    for (size_t i=0;i<lane->clip_count;++i) {
+        const clip_t *other=lane->clips+i;
+        if (i==clip) continue;
+        if (other->start_frame<end && other->start_frame+other->length_frames>start) return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    for (size_t i=0;i<lane->clip_count;++i) if (lane->clips[i].start_frame>=end) {
+        lane->clips[i].start_frame-=length;
+    }
+    return jfx_timeline_remove_clip(t,track,clip);
+}
+jfx_result_t jfx_timeline_ripple_insert(jfx_timeline_t *t,uint32_t track,uint64_t frame,uint64_t length) {
+    if (!track_ok(t,track) || !length || length>INT64_MAX || frame>(uint64_t)INT64_MAX-length) return JFX_ERROR_INVALID_ARGUMENT;
+    track_t *lane=&t->tracks[track];
+    for (size_t i=0;i<lane->clip_count;++i) {
+        const clip_t *c=lane->clips+i;
+        if (c->start_frame<frame && c->start_frame+c->length_frames>frame) return JFX_ERROR_INVALID_ARGUMENT;
+        if (c->start_frame>=frame && c->start_frame+c->length_frames>(uint64_t)INT64_MAX-length) return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    for (size_t i=0;i<lane->clip_count;++i) if (lane->clips[i].start_frame>=frame) {
+        lane->clips[i].start_frame+=length;
+    }
     return JFX_SUCCESS;
 }
 
@@ -638,6 +763,19 @@ uint64_t jfx_timeline_clip_length(const jfx_timeline_t *timeline, uint32_t track
 uint64_t jfx_timeline_clip_in_point(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip) {
     const clip_t *c = clip_at_const(timeline, track, clip);
     return c ? c->in_point : 0u;
+}
+int64_t jfx_timeline_clip_key_offset(const jfx_timeline_t *t,uint32_t track,uint32_t clip) {
+    const clip_t *c=clip_at_const(t,track,clip); return c?c->key_offset:0;
+}
+jfx_result_t jfx_timeline_set_clip_key_offset(jfx_timeline_t *t,uint32_t track,uint32_t clip,int64_t offset) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || offset==INT64_MIN || offset>INT64_MAX-(int64_t)c->length_frames) return JFX_ERROR_INVALID_ARGUMENT;
+    c->key_offset=offset; return JFX_SUCCESS;
+}
+static uint64_t clip_key_frame(const clip_t *c,uint64_t frame) {
+    uint64_t local=frame>=c->start_frame?frame-c->start_frame:0;
+    if (c->key_offset<0) return local>(uint64_t)(-c->key_offset)?local-(uint64_t)(-c->key_offset):0;
+    return local>UINT64_MAX-(uint64_t)c->key_offset?UINT64_MAX:local+(uint64_t)c->key_offset;
 }
 
 float jfx_timeline_clip_opacity(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip) {
@@ -834,7 +972,8 @@ float jfx_timeline_effect_param(const jfx_timeline_t *timeline, uint32_t track, 
 jfx_result_t jfx_timeline_set_effect_string(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect, size_t index, const char *text) {
     effect_t *e = effect_at(timeline, track, clip, effect);
-    if (!e || index >= e->kind->string_count || index >= JFX_GRAPH_MAX_STRING_PARAMS) {
+    if (!e || index >= e->kind->string_count || index >= JFX_GRAPH_MAX_STRING_PARAMS ||
+        (text && strlen(text)>=JFX_NODE_PATH_MAX)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     /* A NULL text clears the slot, which is how a panel says "no file chosen". */
@@ -888,7 +1027,7 @@ size_t jfx_timeline_key_count(const jfx_timeline_t *timeline, uint32_t track, ui
 
 /* Keys are held sorted by frame with a binary search, because evaluation looks
  * up the bracketing pair on every rendered frame. */
-static key_t *key_find(const effect_t *effect, size_t param, uint64_t frame) {
+static timeline_key_t *key_find(const effect_t *effect, size_t param, uint64_t frame) {
     size_t low = 0, high = effect->key_counts[param];
     while (low < high) {
         const size_t mid = low + (high - low) / 2u;
@@ -920,7 +1059,7 @@ static size_t key_lower_bound(const effect_t *effect, size_t param, uint64_t fra
 jfx_result_t jfx_timeline_add_key(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect_index, size_t param, uint64_t frame, float value) {
     effect_t *e = effect_at(timeline, track, clip, effect_index);
-    if (!e || param >= e->kind->param_count || param >= JFX_NODE_MAX_PARAMS || !isfinite(value)) {
+    if (!e || param >= e->kind->param_count || param >= JFX_NODE_MAX_PARAMS || !isfinite(value) || frame>INT64_MAX) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     if (key_find(e, param, frame)) {
@@ -933,15 +1072,15 @@ jfx_result_t jfx_timeline_add_key(jfx_timeline_t *timeline, uint32_t track, uint
     }
     const size_t at = key_lower_bound(e, param, frame);
     const size_t grown = e->key_counts[param] + 1u;
-    key_t *keys = alloc_bytes(grown * sizeof(key_t));
+    timeline_key_t *keys = alloc_bytes(grown * sizeof(timeline_key_t));
     if (!keys) {
         return JFX_ERROR_OUT_OF_MEMORY;
     }
-    memcpy(keys, e->keys[param], at * sizeof(key_t));
+    if (at) memcpy(keys, e->keys[param], at * sizeof(timeline_key_t));
     keys[at].frame = frame;
     keys[at].value = value;
-    memcpy(keys + at + 1u, e->keys[param] + at,
-        (e->key_counts[param] - at) * sizeof(key_t));
+    if (e->key_counts[param]>at) memcpy(keys + at + 1u, e->keys[param] + at,
+        (e->key_counts[param] - at) * sizeof(timeline_key_t));
     free_bytes(e->keys[param]);
     e->keys[param] = keys;
     e->key_counts[param] = grown;
@@ -959,7 +1098,7 @@ jfx_result_t jfx_timeline_remove_key(jfx_timeline_t *timeline, uint32_t track, u
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     memmove(&e->keys[param][at], &e->keys[param][at + 1u],
-        (e->key_counts[param] - at - 1u) * sizeof(key_t));
+        (e->key_counts[param] - at - 1u) * sizeof(timeline_key_t));
     e->key_counts[param]--;
     return JFX_SUCCESS;
 }
@@ -982,7 +1121,7 @@ bool jfx_timeline_key_at(const jfx_timeline_t *timeline, uint32_t track, uint32_
     if (!c || effect_index >= c->effect_count || param >= JFX_NODE_MAX_PARAMS) {
         return false;
     }
-    const key_t *key = key_find(&c->effects[effect_index], param, frame);
+    const timeline_key_t *key = key_find(&c->effects[effect_index], param, frame);
     if (!key) {
         return false;
     }
@@ -1001,7 +1140,7 @@ static float evaluate_param(const effect_t *effect, size_t param, uint64_t frame
     if (count == 0u) {
         return effect->params[param];
     }
-    const key_t *keys = effect->keys[param];
+    const timeline_key_t *keys = effect->keys[param];
     if (frame <= keys[0].frame) {
         return keys[0].value;
     }
@@ -1012,8 +1151,8 @@ static float evaluate_param(const effect_t *effect, size_t param, uint64_t frame
     if (at < count && keys[at].frame == frame) {
         return keys[at].value;
     }
-    const key_t *lo = &keys[at - 1u];
-    const key_t *hi = &keys[at];
+    const timeline_key_t *lo = &keys[at - 1u];
+    const timeline_key_t *hi = &keys[at];
     if (effect->interp == JFX_INTERP_HOLD) {
         return lo->value;
     }
@@ -1058,6 +1197,12 @@ float jfx_timeline_effect_param_at(const jfx_timeline_t *timeline, uint32_t trac
         return 0.0f;
     }
     return evaluate_param(&c->effects[effect_index], param, frame);
+}
+float jfx_timeline_effect_param_on_timeline(const jfx_timeline_t *t,uint32_t track,uint32_t clip,
+    uint32_t effect,size_t param,uint64_t frame) {
+    const clip_t *c=clip_at_const(t,track,clip);
+    if (!c || effect>=c->effect_count || param>=JFX_NODE_MAX_PARAMS) return 0;
+    return evaluate_param(c->effects+effect,param,clip_key_frame(c,frame));
 }
 
 /* ---- Rendering ----------------------------------------------------------- */
@@ -1159,7 +1304,7 @@ static jfx_result_t build_clip_graph(const clip_t *clip, uint64_t frame, jfx_gra
         /* A keyframed parameter is evaluated at this frame, in the clip's own
          * time base: a clip's frame 0 is the start of the clip, so a wipe
          * written against the clip behaves the same wherever it sits. */
-        const uint64_t local = frame >= clip->start_frame ? frame - clip->start_frame : 0u;
+        const uint64_t local = clip_key_frame(clip,frame);
         for (size_t p = 0; p < effect->kind->param_count && p < JFX_NODE_MAX_PARAMS; ++p) {
             const size_t keys = effect->key_counts[p];
             const float value = keys ? evaluate_param(effect, p, local) : effect->params[p];
@@ -1223,14 +1368,15 @@ jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame,
         uint8_t *layer = NULL;
         for (size_t c = 0; c < track->clip_count; ++c) {
             const clip_t *clip = &track->clips[c];
-            if (!clip->enabled || !jfx_timeline_clip_covers(timeline, (uint32_t)t, (uint32_t)c,
+            if (clip->source==JFX_CLIP_AUDIO || !clip->enabled || !jfx_timeline_clip_covers(timeline, (uint32_t)t, (uint32_t)c,
                     frame)) {
                 continue;
             }
             jfx_graph_t *graph = NULL;
             uint32_t output = 0;
-            if (build_clip_graph(clip, frame, &graph, &output) != JFX_SUCCESS) {
-                continue;
+            const jfx_result_t built=build_clip_graph(clip,frame,&graph,&output);
+            if (built!=JFX_SUCCESS) {
+                free_bytes(layer); return built;
             }
             uint8_t *clip_pixels = alloc_bytes(pixel_count * 4u);
             if (!clip_pixels) {
@@ -1248,6 +1394,9 @@ jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame,
                 return status;
             }
             if (!layer) {
+                /* The first live clip must obey its opacity too. Preserve straight
+                 * RGB while scaling alpha over the track's transparent backdrop. */
+                for (size_t p=0;p<pixel_count;++p) clip_pixels[p*4+3]=(uint8_t)lrintf((float)clip_pixels[p*4+3]*clip->opacity);
                 layer = clip_pixels;
                 continue;
             }
@@ -1263,6 +1412,27 @@ jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame,
         free_bytes(layer);
     }
     return JFX_SUCCESS;
+}
+
+jfx_result_t jfx_timeline_get_clip_audio(const jfx_timeline_t *t,uint32_t track,uint32_t clip,jfx_clip_audio_t *out) {
+    const clip_t *c=clip_at_const(t,track,clip);
+    if (!c || !out || out->size<sizeof(*out)) return JFX_ERROR_INVALID_ARGUMENT;
+    *out=c->audio; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_set_clip_audio(jfx_timeline_t *t,uint32_t track,uint32_t clip,const jfx_clip_audio_t *audio) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || !audio || audio->size<sizeof(*audio) || !isfinite(audio->gain) || audio->gain<0 || audio->gain>16 ||
+        !isfinite(audio->pan) || audio->pan<-1 || audio->pan>1 || !audio->reference_frames || audio->reference_frames>INT64_MAX ||
+        audio->fade_in_frames>INT64_MAX || audio->fade_out_frames>INT64_MAX ||
+        (audio->enabled && c->source!=JFX_CLIP_AUDIO && c->source!=JFX_CLIP_VIDEO)) return JFX_ERROR_INVALID_ARGUMENT;
+    c->audio=*audio; c->audio.size=sizeof(c->audio); return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_set_track_audio_gain(jfx_timeline_t *t,uint32_t track,float gain) {
+    if (!track_ok(t,track) || !isfinite(gain) || gain<0 || gain>16) return JFX_ERROR_INVALID_ARGUMENT;
+    t->tracks[track].audio_gain=gain; return JFX_SUCCESS;
+}
+float jfx_timeline_track_audio_gain(const jfx_timeline_t *t,uint32_t track) {
+    return track_ok(t,track)?t->tracks[track].audio_gain:0;
 }
 
 jfx_result_t jfx_timeline_render_image(const jfx_timeline_t *timeline, uint64_t frame,

@@ -25,6 +25,11 @@ void jolt_image_kernels_destroy(jolt_image_kernels_t *k) {
 }
 size_t jolt_image_kernels_count(void) { return IMAGE_COUNT; }
 const char *jolt_image_kernels_name(size_t i) { return i<IMAGE_COUNT ? image_catalog[i].name : NULL; }
+jolt_status_t jolt_image_kernel_compile(const char *name,jolt_image_program_t **out,jolt_diagnostic_t *d) {
+    if (!name || !out) return JOLT_ERR_ARGUMENT;
+    size_t i=find_image(name);
+    return i<IMAGE_COUNT ? jolt_image_compile(image_source_image,image_catalog[i].source,out,d) : JOLT_ERR_NOT_FOUND;
+}
 size_t jolt_image_kernels_parameter_count(const jolt_image_kernels_t *k,const char *name) {
     size_t i=find_image(name);
     return k && i<IMAGE_COUNT ? jolt_image_parameter_count(k->programs[i]) : 0;

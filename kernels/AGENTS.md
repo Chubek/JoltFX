@@ -394,6 +394,13 @@ Don't assume `f32` precision is sufficient for accumulation. Use `f64` locals fo
 - **Performance tuning**: `#joltfx-perf`
 ## Implemented CPU image profile (first CSV batch)
 
+Color frontend integration uses the curated catalog in `cmake/ColorKernels.cmake`.
+`grade_primary`, `grade_lut` and `calib_lut` extend the existing kernels; LUT
+wrappers share domain-aware sampling in `common/image.jolt`. Add/edit parameters
+in source, then reconfigure to regenerate frontend metadata. Shared helpers count
+toward the interpreter's 160-function bound; run the complete image batch after
+changing the common library. Color resource details are in `docs/editor.md`.
+
 The first 20 missing CSV entries execute through `jolt_image_kernels_apply`;
 see `README.md` for the exact parameter/resource contract. Their algorithms
 are in `.jolt`, with shared functions in `common/image.jolt`. The image profile
@@ -408,3 +415,10 @@ per-kernel `.test.jolt` assertions use `tests/helpers.jolt` and are invoked by
 `tests/kernels/test_image_kernels.c`. Image-profile GPU dispatch is not yet
 implemented: preserve the CSV suitability metadata, but do not claim GPU
 conformance. Preserve the separate, existing 12-effect JBC1 catalog.
+
+`audio_reactive/audio_mix.jolt` uses the scalar JBC1 profile to accumulate stereo
+samples with gain, balance and dual fades. It is embedded independently of the
+12-effect catalog, compiled by Glue and dispatched by the stereo Execution task.
+JBC1 lanes 0/1 carry audio and lanes 2/3 are unused. Frame/sample clock conversion
+and decoding stay outside the kernel. `tests/kernels/audio_mix.test.jolt` holds
+executable reference vectors consumed by `audio_task`; no GPU claim is made.

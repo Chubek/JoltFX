@@ -34,9 +34,8 @@ extern "C" {
  * transparency and an effect may reduce it.
  *
  * The graph has no dependency on the render backends: it produces RGBA8, which
- * is what the compositor and the timeline consume. Per-pixel work that the
- * backends can accelerate is dispatched to a backend through
- * `jfx_graph_set_backend`; without one, the arithmetic runs on the CPU. */
+ * is what the compositor and the timeline consume. Evaluation is the synchronous
+ * CPU reference path; kernel-backed color nodes use Glue and Execution. */
 
 #define JFX_GRAPH_MAX_NODES 256
 #define JFX_GRAPH_MAX_INPUTS 4
@@ -44,6 +43,8 @@ extern "C" {
 #define JFX_NODE_LABEL_MAX 64
 #define JFX_NODE_PATH_MAX 512
 #define JFX_GRAPH_MAX_STRING_PARAMS 2
+#define JFX_COMPOSE_API_MAJOR 1
+#define JFX_COMPOSE_API_MINOR 1
 
 /* ---- Blend modes --------------------------------------------------------- */
 
@@ -123,6 +124,9 @@ typedef struct {
 size_t jfx_node_kind_count(void);
 const jfx_node_kind_t *jfx_node_kind_at(size_t index);
 const jfx_node_kind_t *jfx_node_kind_find(const char *name);
+/* JSON descriptors for every node kind: typed inputs/outputs, parameter ranges,
+ * integer hints and string fields. OUT_OF_MEMORY means the buffer is too small. */
+jfx_result_t jfx_node_catalog(char *out_json, size_t capacity);
 
 /* ---- Parameter values ---------------------------------------------------- */
 
@@ -160,12 +164,21 @@ jfx_result_t jfx_graph_add_node(jfx_graph_t *graph, const char *kind_name, const
  * one so the array stays in creation order, which is what a node list shows;
  * indices below the hole are unchanged. */
 jfx_result_t jfx_graph_remove_node(jfx_graph_t *graph, uint32_t node);
+/* Deep-copy values/strings and incoming edges; outgoing edges stay on the
+ * original. Appends the copy with a 32-unit layout offset. Atomic on failure. */
+jfx_result_t jfx_graph_duplicate_node(jfx_graph_t *graph, uint32_t node, uint32_t *out_node);
 
 const jfx_node_kind_t *jfx_graph_node_kind(const jfx_graph_t *graph, uint32_t node);
 const char *jfx_graph_node_label(const jfx_graph_t *graph, uint32_t node);
 jfx_result_t jfx_graph_set_node_label(jfx_graph_t *graph, uint32_t node, const char *label);
 const jfx_node_value_t *jfx_graph_node_value(const jfx_graph_t *graph, uint32_t node);
 jfx_node_value_t *jfx_graph_node_value_mut(jfx_graph_t *graph, uint32_t node);
+/* Validated parameter editing for descriptor-driven inspectors. */
+jfx_result_t jfx_graph_set_node_param(jfx_graph_t *graph, uint32_t node, size_t param, float value);
+/* Persistent graph-space layout, independent of a frontend's zoom/pan. Finite
+ * coordinates in [-1e6,1e6]; new nodes receive a deterministic grid position. */
+jfx_result_t jfx_graph_set_node_position(jfx_graph_t *graph, uint32_t node, float x, float y);
+jfx_result_t jfx_graph_node_position(const jfx_graph_t *graph, uint32_t node, float *out_x, float *out_y);
 
 /* Marks a node and everything downstream of it stale, so the next render
  * recomputes. Values are changed through the returned pointer, so a UI must
@@ -197,9 +210,9 @@ bool jfx_graph_has_cycle(const jfx_graph_t *graph);
 
 /* Renders `output` into `out_pixels` as tightly packed RGBA8, `width` x
  * `height`. `time_seconds` drives the kinds that animate. Any node whose
- * required input is unconnected is treated as transparent, and a required image
- * input left empty is a hard error only if the whole output depends on it, which
- * `jfx_graph_topological_order` reports first. */
+ * required image input is unconnected is treated as transparent. Assigned missing
+ * resources and evaluation failures return errors without overwriting output.
+ * Only reachable nodes allocate frames, under a 512-MiB float-frame budget. */
 jfx_result_t jfx_graph_render(const jfx_graph_t *graph, uint32_t output, uint32_t width,
     uint32_t height, float time_seconds, uint8_t *out_pixels);
 

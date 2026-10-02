@@ -6,8 +6,13 @@ add_library(jfx_core STATIC
     src/lut.c
     src/image.c
     src/compose.c
+    src/composition.c
+    src/color.c
     src/timeline.c
     src/editor.c
+    src/nle.c
+    src/audio.c
+    src/export.c
     src/project.c
     src/scheduler.c
     src/memory.c
@@ -23,7 +28,9 @@ target_include_directories(jfx_core PUBLIC
 
 # The engine compiles Joltscript and dispatches JBC1 bytecode, so the Glue
 # layer sits underneath it. The Glue layer never links back.
-target_link_libraries(jfx_core PUBLIC joltscript_glue jfx_api)
+target_link_libraries(jfx_core PUBLIC joltscript_glue jfx_api jolt_effects)
+include(${CMAKE_SOURCE_DIR}/cmake/ColorKernels.cmake)
+target_include_directories(jfx_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # stb_image is vendored and header-only; image.c is the single translation unit
 # that instantiates it.

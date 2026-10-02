@@ -606,6 +606,16 @@ static void test_every_kind_renders(void) {
         jfx_graph_t *graph = jfx_graph_create();
         uint32_t node = 0;
         assert(jfx_graph_add_node(graph, kind->name, NULL, &node) == JFX_SUCCESS);
+        /* An unassigned source previews transparent; an assigned missing video
+         * reports its path/decoder error instead of hiding it. */
+        if (!strcmp(kind->name, "video")) {
+            assert(jfx_graph_render(graph,node,4,3,0.5f,g_frame)==JFX_SUCCESS && g_frame[3]==0);
+            assert(jfx_graph_set_node_string(graph,node,0,"/missing/composition-video.mp4")==JFX_SUCCESS);
+            jfx_result_t missing=jfx_graph_render(graph,node,4,3,0.5f,g_frame);
+            assert(missing==JFX_ERROR_NOT_FOUND || missing==JFX_ERROR_NOT_IMPLEMENTED);
+            jfx_graph_destroy(graph);
+            continue;
+        }
         /* Wire a solid into any required image input so the node has something
          * real to work on. */
         uint32_t solid = 0;

@@ -161,6 +161,72 @@ echo "ok: export wrote the requested frame sequence"
 check_fail "export bad range" "$CLI" export --start 5 --end 1 -o "$TMP/frames"
 check_fail "export missing dir option" "$CLI" export --width 0 -o "$TMP/frames"
 
+check_ok "color grading catalog" "$CLI" grade list
+check_ok "color calibration catalog" "$CLI" calibration list
+printf 'P6\n1 1\n255\n\100\040\020' > "$TMP/color.ppm"
+check_ok "kernel-backed exposure" "$CLI" grade apply grade_primary "$TMP/color.ppm" "$TMP/graded.ppm" exposure=1
+printf 'P6\n1 1\n255\n\200\100\040' > "$TMP/expected.ppm"
+check_ok "exposure pixels" cmp "$TMP/graded.ppm" "$TMP/expected.ppm"
+check_fail "wrong color section" "$CLI" calibration apply grade_primary "$TMP/color.ppm" "$TMP/bad.ppm"
+check_fail "bad color parameter" "$CLI" grade apply grade_primary "$TMP/color.ppm" "$TMP/bad.ppm" exposure=100
+check_fail "missing color LUT" "$CLI" grade apply grade_lut "$TMP/color.ppm" "$TMP/bad.ppm" --lut "$TMP/missing.cube"
+
+check_ok "new rational-rate NLE sequence" "$CLI" nle new "$TMP/new.jfx" --size 2 1 --fps 30000 1001
+cat > "$TMP/edit.txt" <<'EOF'
+clip.add 0 0 0 12
+clip.split 0 0 0 6
+clip.move 0 1 0 20
+clip.slip 0 1 0 3
+clip.duplicate 0 1 0 40
+clip.ripple_delete 0 1 0 0
+undo
+redo
+calibration.add 0 1 0 0 calib_lut
+grade.add 0 1 0 0 grade_primary
+grade.param 0 1 0 1 exposure
+save
+EOF
+check_ok "terminal NLE and color edit pipeline" "$CLI" nle edit "$TMP/new.jfx" "$TMP/edit.jfx" < "$TMP/edit.txt"
+check_ok "NLE JSON state" "$CLI" nle info "$TMP/edit.jfx"
+"$CLI" nle info "$TMP/edit.jfx" > "$TMP/nle-state.json"
+check_ok "NLE rational rate persisted" grep -q '"fpsNum":30000,"fpsDen":1001' "$TMP/nle-state.json"
+check_ok "NLE ripple position persisted" grep -q '"start":34,"length":6,"inPoint":9' "$TMP/nle-state.json"
+check_ok "NLE scaled export" "$CLI" nle render "$TMP/edit.jfx" -o "$TMP/nle-frame" --start 34 --end 35 --width 1 --height 1
+check_ok "NLE exported frame exists" test -s "$TMP/nle-frame0034.ppm"
+check_fail "NLE bad raster" "$CLI" nle new "$TMP/bad.jfx" --size 0 10
+check_fail "NLE bad rate" "$CLI" nle new "$TMP/bad.jfx" --fps 30 0
+check_fail "NLE bad export range" "$CLI" nle render "$TMP/edit.jfx" -o "$TMP/bad" --start -1
+
+check_ok "new composition" "$CLI" compose new "$TMP/comp.jfx" --size 1 1
+cat > "$TMP/nodes.txt" <<'EOF'
+node.add 0 0 0 0 color
+node.param 1 0 0 0 g
+node.param 1 0 0 0 b
+node.connect 1 0 0 0
+node.position 0 0 0 -12.25 123.5
+node.label 0 0 0 0 Output #1 with spaces
+node.duplicate 1 0 0 0
+node.param 2 0 0 0 r
+node.remove 2 0 0 0
+undo
+redo
+composition
+save
+EOF
+check_ok "terminal composition edit pipeline" "$CLI" compose edit "$TMP/comp.jfx" "$TMP/comp-edited.jfx" < "$TMP/nodes.txt"
+check_ok "composition output and layout JSON" "$CLI" compose info "$TMP/comp-edited.jfx"
+"$CLI" compose info "$TMP/comp-edited.jfx" > "$TMP/comp-state.json"
+check_ok "composition explicit output persisted" grep -q '"output":0' "$TMP/comp-state.json"
+check_ok "composition node layout persisted" grep -q '"x":-12.25,"y":123.5' "$TMP/comp-state.json"
+check_ok "composition export" "$CLI" compose render "$TMP/comp-edited.jfx" -o "$TMP/composed.ppm"
+printf 'P6\n1 1\n255\n\377\000\000' > "$TMP/comp-expected.ppm"
+check_ok "composition export pixels" cmp "$TMP/composed.ppm" "$TMP/comp-expected.ppm"
+check_ok "composition interior node preview" "$CLI" compose render "$TMP/comp-edited.jfx" -o "$TMP/comp-node.ppm" --node 1 --time 2 --size 2 1
+check_fail "composition invalid raster" "$CLI" compose new "$TMP/bad.jfx" --size 4097 1
+check_fail "composition invalid preview time" "$CLI" compose render "$TMP/comp-edited.jfx" -o "$TMP/bad.ppm" --time nan
+check_fail "composition invalid output node" "$CLI" compose render "$TMP/comp-edited.jfx" -o "$TMP/bad.ppm" --node 99
+check_fail "composition rejects sequence state" "$CLI" compose info "$TMP/edit.jfx"
+
 # Legacy run entry point still works.
 check_ok "run" "$CLI" run
 

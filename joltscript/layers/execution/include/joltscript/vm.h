@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 #define JOLT_EXEC_ABI_MAJOR 0
-#define JOLT_EXEC_ABI_MINOR 3
+#define JOLT_EXEC_ABI_MINOR 5
 #define JOLT_MAX_INPUTS 32u
 #define JOLT_MAX_OUTPUTS 4u
 #define JOLT_MAX_STACK 128u

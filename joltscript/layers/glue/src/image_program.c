@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #define NODE_LIMIT 8192
-#define FUNCTION_LIMIT 128
+#define FUNCTION_LIMIT 160
 #define PARAM_LIMIT 64
 #define LOCAL_LIMIT 512
 #define ARG_LIMIT 32
@@ -90,12 +90,13 @@ static int register_form(reader_t *r,int id) {
         if(p->nodes[a].list || p->nodes[a].number || !p->nodes[b].number || !p->nodes[c].number || !p->nodes[d].number || !p->nodes[e].number)
             return parse_error(r,"invalid parameter declaration");
         double def=p->nodes[b].value,lo=p->nodes[c].value,hi=p->nodes[d].value,integer=p->nodes[e].value;
-        if(lo>def || hi<def || (integer!=0 && integer!=1) || (integer && (floor(def)!=def || floor(lo)!=lo || floor(hi)!=hi)))
+        if(lo>def || hi<def || (integer!=0 && integer!=1) || (integer!=0 && (floor(def)!=def || floor(lo)!=lo || floor(hi)!=hi)))
             return parse_error(r,"invalid parameter range");
         for(size_t i=0;i<p->param_count;++i) if(!strcmp(p->params[i].name,p->nodes[a].text)) return parse_error(r,"duplicate parameter");
         p->params[p->param_count++]=(jolt_image_parameter_info_t){p->nodes[a].text,def,lo,hi,(int)integer};
     } else if(!strcmp(kind,"defn") || !strcmp(kind,"defkernel")) {
-        if(length(p,a)!=3 || p->function_count==FUNCTION_LIMIT) return parse_error(r,"expected function name, bindings and body");
+        if(length(p,a)!=3) return parse_error(r,"expected function name, bindings and body");
+        if(p->function_count==FUNCTION_LIMIT) return parse_error(r,"function limit exceeded");
         int args=next(p,a),body=next(p,args);
         size_t arity=length(p,p->nodes[args].child);
         if(p->nodes[a].list || p->nodes[a].number || !p->nodes[args].list || arity>ARG_LIMIT || lookup_function(p,p->nodes[a].text)>=0 ||
@@ -232,7 +233,7 @@ static double border_index(double x,size_t size,int border) {
 static double texel(context_t *ctx,double x,double y,int c,int border) {
     x=border_index(x,ctx->width,border); y=border_index(y,ctx->height,border);
     if(x<0 || x>=(double)ctx->width || y<0 || y>=(double)ctx->height) return 0;
-    return ctx->src[4*((size_t)y*ctx->width+(size_t)x)+(size_t)c];
+    return (double)ctx->src[4*((size_t)y*ctx->width+(size_t)x)+(size_t)c];
 }
 static double sample(context_t *ctx,const double *a) {
     double x=a[0],y=a[1];
@@ -278,7 +279,7 @@ static double builtin(context_t *ctx,const char *op,const double *a,size_t n) {
     if(!strcmp(op,"data-count")) return (double)ctx->data_count;
     if(!strcmp(op,"data")) {
         if(a[0]<0 || a[0]>=(double)ctx->data_count || floor(a[0])!=a[0]) return error(ctx,JOLT_ERR_ARGUMENT);
-        return ctx->data[(size_t)a[0]];
+        return (double)ctx->data[(size_t)a[0]];
     }
     return error(ctx,JOLT_ERR_SYNTAX);
 }

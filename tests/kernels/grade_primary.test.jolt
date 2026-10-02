@@ -1,0 +1,4 @@
+;; One stop doubles the ramp and preserves alpha.
+(param exposure 1 1 1 0)
+(defkernel test_grade_primary [x y c]
+  (* (assert-pixel 1 0 0 .125) (assert-pixel 0 0 1 .4) (assert-pixel 0 0 3 1)))

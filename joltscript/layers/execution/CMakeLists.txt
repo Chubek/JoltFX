@@ -2,6 +2,8 @@ add_library(joltscript_execution STATIC
     src/vm.c
     src/bytecode.c
     src/pipeline.c
+    src/image_task.c
+    src/audio_task.c
 )
 
 target_include_directories(joltscript_execution PUBLIC

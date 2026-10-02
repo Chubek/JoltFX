@@ -1,4 +1,5 @@
 import { JoltPlayer, type JoltWasmBridge } from "./player.js";
+import { JoltEditor, type EditorBridge } from "./editor.js";
 export { EmscriptenJoltBridge } from "./emscripten_bridge.js";
 
 declare global {
@@ -13,3 +14,11 @@ export function mountJoltPlayer(canvasId = "jolt-canvas"): JoltPlayer {
 }
 
 export { JoltEditor } from "./editor.js";
+export { NLETimeline, type SequenceState, type SequenceClip } from "./nle.js";
+export { CompositionCanvas, type GraphState, type NodeKind, type GraphNode, type NodePort } from "./composition.js";
+
+export function mountJoltEditor(bridge: EditorBridge, rootId = "jolt-editor"): JoltEditor {
+  const root = document.getElementById(rootId);
+  if (!root) throw new Error(`editor #${rootId} was not found`);
+  return new JoltEditor(root, bridge);
+}

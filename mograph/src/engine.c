@@ -169,7 +169,12 @@ static const jfx_backend_entry_t *find_backend(const char *name) {
 
 static uint64_t timestamp_ns(void) {
     struct timespec timestamp;
+#if defined(__ANDROID__)
+    /* timespec_get is only exported by Bionic starting at API 29. */
+    if (clock_gettime(CLOCK_REALTIME, &timestamp) != 0) return 0;
+#else
     if (timespec_get(&timestamp, TIME_UTC) != TIME_UTC) return 0;
+#endif
     return (uint64_t)timestamp.tv_sec * UINT64_C(1000000000) +
         (uint64_t)timestamp.tv_nsec;
 }

@@ -30,13 +30,16 @@ extern "C" {
  *     size 1920 1080
  *     node sweep                 Bars
  *     node exposure              Hot
- *     param 1 stops 1.0
+ *     param 2 stops 1.0
  *     link 1 0 -> 2 0
  *     output 2
  *
  * Node numbers are 1-based. With no `output` line the last node declared is the
  * output. `param` and `string` name their node explicitly, so a document can be
- * edited without being read strictly in order.
+ * edited without being read strictly in order. `graph` identifies an empty graph;
+ * `output 0` means no output. `position NODE X Y` preserves graph-space layout.
+ * Labels and string values may be quoted, with escaped whitespace, quotes and
+ * backslashes. Legacy unquoted graph labels/strings consume the rest of the line.
  *
  * A sequence document:
  *
@@ -51,25 +54,29 @@ extern "C" {
  *     disable 1 1
  *     key 1 1 0 60 0.0
  *
- * A `clip` line is: source, then (for an image) its path, then the start frame
+ * A `clip` line is: source, then (for image/video/audio) its path, then the start frame
  * and length, then the eight source parameters, then an optional name. An
  * `effect` line is a kind, then its text fields, then its numeric parameters. A
  * `key`, `disable` or `opacity` line names a clip and an effect by their 1-based
  * order on the track.
+ * Track/clip names and paths may be quoted with escaped quotes, backslashes and
+ * whitespace. Sequence state directives track_state, clip_state, clip_keys and
+ * effect_state retain source in-points, animation offsets and layer state;
+ * track_audio and clip_audio preserve gain, balance, enable and fade clocks. See
+ * docs/nle.md for their positional arguments and reference-clock key semantics.
  *
- * `param` and `link` apply to the most recently added node, so a graph reads in
- * the order it is built. Every other directive is positional. */
+ * `param`, `string`, `position` and `link` name their node(s) explicitly. */
 
 /* The largest document either reader accepts, so a malformed file cannot make a
  * caller allocate without bound. */
 #define JFX_PROJECT_MAX_BYTES ((size_t)8u * 1024u * 1024u)
-#define JFX_PROJECT_MAX_NODES 32
+#define JFX_PROJECT_MAX_NODES JFX_GRAPH_MAX_NODES
 
 /* ---- Graphs -------------------------------------------------------------- */
 
 /* Parses a graph document. On success `*out_graph` owns a new graph and
- * `*out_output` is the index of its last node, which is the natural output.
- * Both are untouched on failure. */
+ * `*out_output` is the explicit output, or the last node when omitted. Empty
+ * documents/no output use UINT32_MAX. All output arguments are untouched on failure. */
 jfx_result_t jfx_project_load_graph(const char *text, size_t length, jfx_graph_t **out_graph,
     uint32_t *out_output, uint32_t *out_width, uint32_t *out_height, char *out_error,
     size_t out_error_size);

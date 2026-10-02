@@ -633,6 +633,12 @@ int main(void) {
 - **Error handling**: `#joltfx-diagnostics`
 ## CPU image source execution
 
+Color adapters compile individual bundled kernels with `jolt_image_kernel_compile`.
+OpenColorIO is found as a system package or built from `third_party/opencolorio`
+with `JFX_COLOR_OCIO_BUNDLED=ON`. `color_io.cpp` bakes extended file transforms to
+LUT resources consumed by the image executor; see `docs/editor.md` for domain
+limits. Keep third-party APIs below this boundary.
+
 `src/image_program.c` and `include/joltscript/image_program.h` implement a
 bounded Joltscript image profile with independently versioned `JOLT_IMAGE_ABI`
 (initial 0.1.0). This additive API leaves JBC1 and the existing ABI registry
@@ -641,3 +647,16 @@ algorithms belong in `kernels/*.jolt` category directories. Keep programs
 immutable, use engine allocation, validate expressions before execution, bound
 recursion/loops/steps, and publish output only after successful completion.
 See `kernels/README.md` and `tests/kernels/test_image_program.c` for the contract.
+
+## Media adapters (Glue ABI 0.4)
+
+`audio_io.h` streams stereo float through vendored miniaudio or FFmpeg, preserving
+EOF, seek/resampling and delayed stream behavior. `JOLT_AUDIO_NO_STREAM` means a
+valid container has no audio; unavailable/invalid decoding must remain an error.
+`media_writer.h` owns FFmpeg conversion, encoder/FIFO/mux state over a borrowed
+seekable FILE. Struct options are size-guarded. Flush errors propagate before
+the caller publishes output. Keep third-party types here, clamp encoder audio
+only at this boundary, and flatten alpha only for opaque pixel formats. Codec
+threads/network are disabled in the bundled profile. `cmake/FFmpeg.cmake` builds
+the vendored profile for native/WASM/Android/single-architecture iOS toolchains;
+native builds can use pkg-config packages. See `docs/media.md`.

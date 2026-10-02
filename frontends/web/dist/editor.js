@@ -1,3 +1,35 @@
+import { NLETimeline } from "./nle.js";
+import { CompositionCanvas } from "./composition.js";
+/** Read the shared sequence format, retaining section-local selection and bypass. */
+export function colorLayers(document, selectedTrack, selectedClip, operators) {
+    let track = -1, clip = -1, effect = -1;
+    const layers = [];
+    for (const line of document.split("\n")) {
+        const words = line.trim().match(/"(?:\\.|[^"\\])*"|[^\s]+/g)?.map(word => word.startsWith('"') ? JSON.parse(word) : word) ?? [];
+        if (words[0] === "track") {
+            track++;
+            clip = -1;
+        }
+        if (words[0] === "clip") {
+            clip++;
+            effect = -1;
+        }
+        if (words[0] === "effect") {
+            effect++;
+            if (track === selectedTrack && clip === selectedClip) {
+                const op = operators.find(candidate => candidate.name === words[1]);
+                if (op)
+                    layers.push({ op, words, enabled: true, index: effect });
+            }
+        }
+        if (words[0] === "disable" && track === selectedTrack && +words[1] === selectedClip + 1) {
+            const layer = layers.find(candidate => candidate.index === +words[2] - 1);
+            if (layer)
+                layer.enabled = false;
+        }
+    }
+    return layers;
+}
 /** All edits and rendering are native. DOM state contains only selection and the clock. */
 export class JoltEditor {
     root;
@@ -17,40 +49,110 @@ export class JoltEditor {
     node = this.number(0, 0);
     fps = 30;
     duration = 300;
+    loop = true;
+    nle;
+    composition;
+    graphState;
+    previewNode = null;
+    refreshGraph = () => { };
+    sequence;
+    refreshNLE = () => { };
     document = "";
+    refreshColors = [];
+    audioContext;
+    audioSources = new Set();
+    audioSample = 0;
+    audioWhen = 0;
+    exportJob;
+    exportRequest = 0;
     listener = (event) => {
         const target = event.target;
         if (target === this.frame) {
+            this.stopAudio();
             this.time = Number(this.frame.value) / this.fps;
             this.render();
+        }
+        if (target === this.track || target === this.clip) {
+            this.refreshNLE();
+            this.refreshColors.forEach(refresh => refresh());
+            this.render();
+        }
+        if (target === this.node) {
+            if (this.previewNode !== null)
+                this.previewNode = +this.node.value;
+            this.refreshGraph();
+            this.render();
+        }
+    };
+    shortcuts = (event) => {
+        if (event.target.closest("input, select, textarea"))
+            return;
+        const modifier = event.ctrlKey || event.metaKey;
+        if (modifier && event.key.toLowerCase() === "z") {
+            event.preventDefault();
+            this.perform(() => this.bridge.edit(event.shiftKey ? "redo" : "undo"));
+        }
+        else if (event.key === "Delete" || event.key.toLowerCase() === "s" && !modifier) {
+            if (this.graphState?.active) {
+                if (event.key === "Delete") {
+                    event.preventDefault();
+                    this.perform(() => this.bridge.edit("node.remove", +this.node.value));
+                }
+                return;
+            }
+            event.preventDefault();
+            this.perform(() => this.bridge.edit(event.key === "Delete" ? event.shiftKey ? "clip.ripple_delete" : "clip.remove" : "clip.split", +this.track.value, +this.clip.value, 0, this.currentFrame()));
+        }
+        else if (modifier && event.key.toLowerCase() === "d" && this.graphState?.active) {
+            event.preventDefault();
+            this.perform(() => this.duplicateNode());
         }
     };
     constructor(root, bridge) {
         this.root = root;
         this.bridge = bridge;
         root.classList.add("jolt-editor");
+        root.tabIndex = 0;
+        root.addEventListener("keydown", this.shortcuts);
         const toolbar = document.createElement("nav");
         root.append(toolbar, this.preview, this.status);
         toolbar.append(this.button("Play / pause", () => {
             this.playing = !this.playing;
+            this.stopAudio();
+            if (this.playing && globalThis.AudioContext && this.bridge.renderAudio) {
+                this.audioContext ??= new AudioContext();
+                void this.audioContext.resume().catch(error => this.fail(error));
+            }
             this.previous = 0;
             if (this.playing)
                 this.frameRequest = requestAnimationFrame(this.tick);
             else
                 cancelAnimationFrame(this.frameRequest);
         }), this.button("New sequence", () => {
-            bridge.loadDocument("size 320 180\nfps 30 1\ntrack V1\nclip solid 0 300 0.6 0.3 0.15 1 0 0 0 0 First\n");
-        }), this.button("Save project", () => this.download()));
+            bridge.edit("sequence.new", 320, 180, 30, 1);
+            this.time = 0;
+        }), this.button("Stop", () => { this.playing = false; this.time = 0; cancelAnimationFrame(this.frameRequest); }), this.button("Undo", () => bridge.edit("undo")), this.button("Redo", () => bridge.edit("redo")), this.button("Toggle loop", () => { this.loop = !this.loop; }), this.button("Save project", () => this.download()));
         const open = document.createElement("input");
         open.type = "file";
         open.accept = ".jfx";
         open.setAttribute("aria-label", "Open project");
         open.onchange = () => { const f = open.files?.[0]; if (f)
-            void f.text().then(text => this.perform(() => bridge.loadDocument(text))).catch(e => this.fail(e)); };
+            void f.text().then(text => this.perform(() => { bridge.loadDocument(text); this.previewNode = null; this.time = 0; this.playing = false; cancelAnimationFrame(this.frameRequest); })).catch(e => this.fail(e)); };
         toolbar.append(open);
         const nle = this.panel("NLE timeline");
+        const rasterWidth = this.number(320, 1, 4096), rasterHeight = this.number(180, 1, 4096);
+        const fpsNumerator = this.number(30, 1), fpsDenominator = this.number(1, 1);
+        this.field(nle, "New sequence width", rasterWidth);
+        this.field(nle, "New sequence height", rasterHeight);
+        this.field(nle, "FPS numerator", fpsNumerator);
+        this.field(nle, "FPS denominator", fpsDenominator);
+        nle.append(this.button("Create empty sequence", () => {
+            bridge.edit("sequence.new", +rasterWidth.value, +rasterHeight.value, +fpsNumerator.value, +fpsDenominator.value);
+            this.time = 0;
+        }));
         const start = this.number(0, 0), length = this.number(90, 1), media = this.text("");
-        const source = this.select(["solid", "gradient", "checker", "sweep", "image", "video"]);
+        const destinationTrack = this.number(0, 0), slip = this.number(0), name = this.text("");
+        const source = this.select(["solid", "gradient", "checker", "sweep", "image", "video", "audio"]);
         this.field(nle, "Frame", this.frame);
         this.field(nle, "Track (0-based)", this.track);
         this.field(nle, "Clip (0-based)", this.clip);
@@ -58,18 +160,70 @@ export class JoltEditor {
         this.field(nle, "Length", length);
         this.field(nle, "Source", source);
         this.field(nle, "Media path", media);
-        nle.append(this.assetPicker(media), this.button("Preview sequence", () => bridge.edit("sequence")), this.button("Add track", () => bridge.edit("track.add", 0, 0, 0, 0, "Video")), this.button("Add clip", () => bridge.edit("clip.add", +this.track.value, source.selectedIndex, +start.value, +length.value, media.value)), this.button("Trim clip", () => bridge.edit("clip.trim", +this.track.value, +this.clip.value, +start.value, +length.value)), this.button("Delete clip", () => bridge.edit("clip.remove", +this.track.value, +this.clip.value)), this.timeline);
-        this.timeline.width = 900;
-        this.timeline.height = 160;
-        this.timeline.onclick = (event) => {
-            const box = this.timeline.getBoundingClientRect();
-            this.time = Math.max(0, Math.min(this.duration - 1, (event.clientX - box.left) / box.width * this.duration)) / this.fps;
-            this.frame.value = String(Math.floor(this.time * this.fps));
-            this.render();
+        this.field(nle, "Destination track", destinationTrack);
+        this.field(nle, "Slip delta (frames)", slip);
+        this.field(nle, "Name", name);
+        nle.append(this.button("Export frame as PPM", () => {
+            const result = bridge.renderSequenceFrame(Math.floor(this.time * this.fps + 1e-7));
+            const header = new TextEncoder().encode(`P6\n${result.width} ${result.height}\n255\n`);
+            const ppm = new Uint8Array(header.length + result.width * result.height * 3);
+            ppm.set(header);
+            for (let i = 0; i < result.width * result.height; i++)
+                for (let c = 0; c < 3; c++)
+                    ppm[header.length + i * 3 + c] = result.pixels[i * 4 + c];
+            const url = URL.createObjectURL(new Blob([ppm], { type: "image/x-portable-pixmap" }));
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `frame_${Math.round(this.time * this.fps)}.ppm`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }));
+        nle.append(this.assetPicker(media), this.button("Preview sequence", () => bridge.edit("sequence")), this.button("Add track", () => bridge.edit("track.add", 0, 0, 0, 0, "Video")), this.button("Add clip", () => bridge.edit("clip.add", +this.track.value, source.selectedIndex, +start.value, +length.value, media.value)), this.button("Trim clip", () => bridge.edit("clip.trim", +this.track.value, +this.clip.value, +start.value, +length.value)), this.button("Move clip", () => bridge.edit("clip.move", +this.track.value, +this.clip.value, +destinationTrack.value, +start.value)), this.button("Split at playhead", () => bridge.edit("clip.split", +this.track.value, +this.clip.value, 0, this.currentFrame())), this.button("Duplicate clip", () => bridge.edit("clip.duplicate", +this.track.value, +this.clip.value, +destinationTrack.value, +start.value)), this.button("Slip source", () => bridge.edit("clip.slip", +this.track.value, +this.clip.value, 0, +slip.value)), this.button("Rename clip", () => bridge.edit("clip.name", +this.track.value, +this.clip.value, 0, 0, name.value)), this.button("Enable clip", () => bridge.edit("clip.enabled", +this.track.value, +this.clip.value, 0, 1)), this.button("Disable clip", () => bridge.edit("clip.enabled", +this.track.value, +this.clip.value, 0, 0)), this.button("Delete clip", () => bridge.edit("clip.remove", +this.track.value, +this.clip.value)), this.button("Ripple delete", () => bridge.edit("clip.ripple_delete", +this.track.value, +this.clip.value)), this.button("Insert gap", () => bridge.edit("track.insert_gap", +this.track.value, 0, +start.value, +length.value)), this.button("Rename track", () => bridge.edit("track.name", +this.track.value, 0, 0, 0, name.value)), this.button("Mute / unmute track", () => bridge.edit("track.mute", +this.track.value, 0, 0, this.sequence?.tracks[+this.track.value]?.muted ? 0 : 1)), this.button("Solo / unsolo track", () => bridge.edit("track.solo", +this.track.value, 0, 0, this.sequence?.tracks[+this.track.value]?.solo ? 0 : 1)), this.button("Move track", () => bridge.edit("track.move", +this.track.value, 0, 0, +destinationTrack.value)), this.button("Remove track", () => bridge.edit("track.remove", +this.track.value)), this.button("Fit timeline", () => this.nle.fit()), this.button("Toggle snapping", () => { this.nle.snapping = !this.nle.snapping; }), this.timeline);
+        this.nle = new NLETimeline(this.timeline, (track, clip) => {
+            this.track.value = String(track);
+            this.clip.value = String(clip);
+            this.refreshNLE();
+            this.refreshColors.forEach(refresh => refresh());
+        }, frame => { this.playing = false; this.stopAudio(); cancelAnimationFrame(this.frameRequest); this.time = frame / this.fps; this.render(); }, (op, a, b, c, value) => this.perform(() => { bridge.edit(op, a, b, c, value); if (op === "clip.move") {
+            this.track.value = String(c);
+            this.clip.value = String(c === a ? b : bridge.sequenceState().tracks[c].clips.length - 1);
+        } }));
+        this.refreshNLE = () => {
+            this.sequence = bridge.sequenceState();
+            this.fps = this.sequence.fpsNum / this.sequence.fpsDen;
+            this.duration = this.sequence.duration;
+            const selected = this.sequence.tracks[+this.track.value]?.clips[+this.clip.value];
+            if (selected) {
+                start.value = String(selected.start);
+                length.value = String(selected.length);
+                name.value = selected.name;
+            }
+            this.nle.update(this.sequence, +this.track.value, +this.clip.value, this.currentFrame());
+            const audio = selected?.audio;
+            clipGain.value = String(audio?.gain ?? 1);
+            pan.value = String(audio?.pan ?? 0);
+            fadeIn.value = String(audio?.fadeIn ?? 0);
+            fadeOut.value = String(audio?.fadeOut ?? 0);
+            trackGain.value = String(this.sequence.tracks[+this.track.value]?.audioGain ?? 1);
         };
+        const audioPanel = this.panel("Audio mixing"), clipGain = this.number(1, 0, 16), trackGain = this.number(1, 0, 16);
+        const pan = this.number(0, -1, 1), fadeIn = this.number(0, 0), fadeOut = this.number(0, 0);
+        for (const [title, input, op] of [["Clip gain", clipGain, "clip.audio.gain"], ["Stereo pan", pan, "clip.audio.pan"],
+            ["Fade in (frames)", fadeIn, "clip.audio.fade_in"], ["Fade out (frames)", fadeOut, "clip.audio.fade_out"],
+            ["Track audio gain", trackGain, "track.audio.gain"]]) {
+            this.field(audioPanel, title, input);
+            input.onchange = () => this.perform(() => bridge.edit(op, +this.track.value, +this.clip.value, 0, +input.value));
+        }
+        audioPanel.append(this.button("Enable clip audio", () => bridge.edit("clip.audio.enabled", +this.track.value, +this.clip.value, 0, 1)), this.button("Mute clip audio", () => bridge.edit("clip.audio.enabled", +this.track.value, +this.clip.value, 0, 0)));
+        const exportPanel = this.panel("Encoded video export"), exportName = this.text("sequence.mp4"), exportStart = this.number(0, 0), exportFrames = this.number(0, 0), codec = this.text("");
+        this.field(exportPanel, "Video output (.mp4/.mov/.mkv/.webm)", exportName);
+        this.field(exportPanel, "Export start frame", exportStart);
+        this.field(exportPanel, "Export frame count (0: full sequence)", exportFrames);
+        this.field(exportPanel, "Video encoder (empty: default)", codec);
+        exportPanel.append(this.button("Export video with audio", () => this.startExport(exportName.value, +exportStart.value, +exportFrames.value, true, codec.value)), this.button("Export silent video", () => this.startExport(exportName.value, +exportStart.value, +exportFrames.value, false, codec.value)), this.button("Cancel video export", () => { this.exportJob?.cancel(); this.exportJob?.dispose(); this.exportJob = undefined; cancelAnimationFrame(this.exportRequest); }));
         const layers = this.panel("Layer Effects");
-        const kind = this.select(["exposure", "contrast", "saturation", "lift_gamma_gain", "lut", "invert", "blur", "opacity"]);
-        const param = this.text("stops"), amount = this.number(0), destination = this.number(0, 0);
+        const kind = this.select(["invert", "opacity", "posterize", "transform", "luma_key"]);
+        const param = this.text("amount"), amount = this.number(0), destination = this.number(0, 0);
         this.field(layers, "Effect", this.effect);
         this.field(layers, "Operator", kind);
         this.field(layers, "Parameter name", param);
@@ -80,37 +234,101 @@ export class JoltEditor {
         const opacity = this.number(1, 0, 1);
         this.field(layers, "Effect opacity", opacity);
         layers.append(this.button("Set opacity", () => stack("effect.opacity", +opacity.value)));
-        const grade = this.panel("Color Grading");
-        const lut = this.text("");
-        this.field(grade, "LUT path", lut);
-        grade.append(this.assetPicker(lut));
-        const mix = this.number(1, 0, 1);
-        this.field(grade, "Mix", mix);
-        grade.append(this.button("Add LUT layer", () => stack("effect.add", 0, "lut")), this.button("Load LUT into selected effect", () => stack("effect.path", 0, lut.value)), this.button("Set LUT mix", () => stack("effect.param", +mix.value, "mix")), this.button("Add Lift / Gamma / Gain layer", () => stack("effect.add", 0, "lift_gamma_gain")));
-        for (const control of ["lift", "gamma", "gain"])
-            for (const channel of ["r", "g", "b"]) {
-                const value = this.number(control === "lift" ? 0 : 1, control === "lift" ? -1 : control === "gamma" ? 0.1 : 0, control === "lift" ? 1 : 4);
-                this.field(grade, `${control} ${channel}`, value);
-                value.onchange = () => this.perform(() => stack("effect.param", +value.value, `${control}_${channel}`));
-            }
+        const colors = bridge.colorOperators();
+        this.colorPanel("Color Calibration", "calibration", colors);
+        this.colorPanel("Color Grading", "grade", colors);
         const nodes = this.panel("Node Compositing");
-        const nodeKind = this.text("exposure"), from = this.number(0, 0), port = this.number(0, 0), nodeParam = this.text("stops"), nodeValue = this.number(0);
-        this.field(nodes, "Selected node", this.node);
+        const catalog = bridge.nodeKinds(), nodeKind = this.select([]), search = this.text("");
+        const populate = () => {
+            nodeKind.replaceChildren();
+            const find = search.value.toLowerCase();
+            for (const k of catalog)
+                if (`${k.category} ${k.label} ${k.name}`.toLowerCase().includes(find)) {
+                    const option = document.createElement("option");
+                    option.value = k.name;
+                    option.textContent = `${k.category} / ${k.label}`;
+                    nodeKind.append(option);
+                }
+        };
+        search.oninput = populate;
+        populate();
+        this.field(nodes, "Find operator", search);
         this.field(nodes, "Node kind", nodeKind);
-        this.field(nodes, "Connect from node", from);
-        this.field(nodes, "Input port", port);
-        this.field(nodes, "Parameter", nodeParam);
-        this.field(nodes, "Value", nodeValue);
-        nodes.append(this.button("Preview graph", () => bridge.edit("graph")), this.button("Add node", () => bridge.edit("node.add", 0, 0, 0, 0, nodeKind.value)), this.button("Connect", () => bridge.edit("node.connect", +from.value, +this.node.value, +port.value)), this.button("Disconnect", () => bridge.edit("node.disconnect", +this.node.value, +port.value)), this.button("Set output", () => bridge.edit("node.output", +this.node.value)), this.button("Set parameter", () => bridge.edit("node.param", +this.node.value, 0, 0, +nodeValue.value, nodeParam.value)), this.button("Delete node", () => bridge.edit("node.remove", +this.node.value)), this.graph);
-        this.graph.width = 900;
-        this.graph.height = 240;
-        this.graph.onclick = event => {
-            const box = this.graph.getBoundingClientRect();
-            const x = (event.clientX - box.left) * 900 / box.width, y = (event.clientY - box.top) * 240 / box.height;
-            this.node.value = String(Math.max(0, Math.floor(x / 180) + Math.floor(y / 65) * 5));
+        this.field(nodes, "Selected node (0-based)", this.node);
+        const graphWidth = this.number(320, 1, 4096), graphHeight = this.number(180, 1, 4096), seconds = this.number(0, 0);
+        this.field(nodes, "Composition width", graphWidth);
+        this.field(nodes, "Composition height", graphHeight);
+        this.field(nodes, "Preview seconds", seconds);
+        seconds.onchange = () => { this.time = +seconds.value; this.render(); };
+        this.node.step = "1";
+        nodes.append(this.button("Preview graph", () => { bridge.edit("graph"); this.previewNode = null; }), this.button("New composition", () => { bridge.edit("graph.new", +graphWidth.value, +graphHeight.value); this.node.value = "0"; this.previewNode = null; this.time = 0; }), this.button("Set composition size", () => bridge.edit("graph.size", +graphWidth.value, +graphHeight.value)), this.button("Add node", () => { bridge.edit("node.add", 0, 0, 0, 0, nodeKind.value); this.node.value = String(bridge.graphState().nodes.length - 1); }), this.button("Set output", () => { bridge.edit("node.output", +this.node.value); bridge.edit("graph"); this.previewNode = null; }), this.button("Preview selected node", () => { bridge.edit("graph"); this.previewNode = +this.node.value; }), this.button("Duplicate node", () => this.duplicateNode()), this.button("Reset node", () => bridge.edit("node.reset", +this.node.value)), this.button("Delete node", () => { bridge.edit("node.remove", +this.node.value); this.previewNode = null; }), this.button("Fit nodes", () => this.composition.fit()), this.button("Export composition as PPM", () => {
+            const state = bridge.graphState();
+            this.downloadPPM(bridge.renderGraphNode(null, this.time, state.width, state.height), "composition.ppm");
+        }), this.graph);
+        this.composition = new CompositionCanvas(this.graph, catalog, node => { this.node.value = String(node); if (this.previewNode !== null)
+            this.previewNode = node; this.refreshGraph(); this.render(); }, (op, a, b, c, value, text) => this.perform(() => bridge.edit(op, a, b, c, value, text)));
+        const inspector = document.createElement("div");
+        nodes.append(inspector);
+        this.refreshGraph = () => {
+            const state = bridge.graphState();
+            this.graphState = state;
+            graphWidth.value = String(state.width);
+            graphHeight.value = String(state.height);
+            if (!Number.isInteger(+this.node.value) || +this.node.value < 0 || +this.node.value >= state.nodes.length)
+                this.node.value = "0";
+            if (this.previewNode !== null && this.previewNode >= state.nodes.length)
+                this.previewNode = null;
+            this.composition.update(state, +this.node.value);
+            inspector.replaceChildren();
+            const n = +this.node.value, node = state.nodes[n], kind = catalog.find(k => k.name === node?.kind);
+            if (!kind || !node) {
+                inspector.textContent = "Add a source to begin composing.";
+                return;
+            }
+            const label = this.text(node.label);
+            this.field(inspector, "Node label", label);
+            label.onchange = () => this.perform(() => bridge.edit("node.label", n, 0, 0, 0, label.value));
+            kind.inputs.forEach((port, p) => {
+                const connection = this.select(["Disconnected"]);
+                connection.options[0].value = "";
+                state.nodes.forEach((source, s) => {
+                    if (s === n)
+                        return;
+                    catalog.find(k => k.name === source.kind)?.outputs.forEach((output, o) => {
+                        if (output.type !== port.type)
+                            return;
+                        const option = document.createElement("option");
+                        option.value = `${s}:${o}`;
+                        option.textContent = `${s}: ${source.label} / ${output.label}`;
+                        connection.append(option);
+                    });
+                });
+                const edge = node.inputs[p];
+                connection.value = edge ? `${edge.source}:${edge.port}` : "";
+                this.field(inspector, `${port.label} (${port.type}${port.required ? ", required" : ""})`, connection);
+                connection.onchange = () => this.perform(() => {
+                    if (!connection.value)
+                        bridge.edit("node.disconnect", n, p);
+                    else {
+                        const [source, output] = connection.value.split(":").map(Number);
+                        bridge.edit("node.connect", source, n, p, output);
+                    }
+                });
+            });
+            kind.params.forEach((param, p) => {
+                const input = this.number(node.values[p], param.min, param.max);
+                input.step = param.integer ? "1" : "any";
+                this.field(inspector, param.label, input);
+                input.onchange = () => this.perform(() => bridge.edit("node.param", n, 0, 0, +input.value, param.name));
+            });
+            kind.strings.forEach((name, s) => {
+                const input = this.text(node.strings[s] ?? "");
+                this.field(inspector, name, input);
+                inspector.append(this.assetPicker(input), this.button(`Apply ${name}`, () => bridge.edit("node.path", n, s, 0, 0, input.value)), this.button(`Clear ${name}`, () => bridge.edit("node.path", n, s, 0, 0, "")));
+            });
         };
         root.addEventListener("change", this.listener);
-        this.perform(() => bridge.edit("sequence"));
+        this.perform(() => bridge.edit(bridge.graphState().active ? "graph" : "sequence"));
     }
     panel(title) {
         const section = document.createElement("section"), heading = document.createElement("h2");
@@ -118,6 +336,47 @@ export class JoltEditor {
         section.append(heading);
         this.root.append(section);
         return section;
+    }
+    colorPanel(title, section, catalog) {
+        const panel = this.panel(title), operators = catalog.filter(op => op.section === section);
+        const add = this.select(operators.map(op => op.name)), selected = this.select([]);
+        for (let i = 0; i < operators.length; ++i)
+            add.options[i].textContent = operators[i].label;
+        // Values are stable identifiers even when display labels are translated.
+        operators.forEach((op, i) => { add.options[i].value = op.name; });
+        add.value = section === "grade" ? "grade_primary" : "calib_white_balance";
+        const controls = document.createElement("div");
+        const command = (action, value = 0, text = "") => this.bridge.edit(`${section}.${action}`, +this.track.value, +this.clip.value, action === "add" ? 0 : selected.selectedIndex, value, text);
+        this.field(panel, "Add operator", add);
+        panel.append(this.button("Add", () => command("add", 0, add.value)));
+        this.field(panel, "Color layer", selected);
+        panel.append(this.button("Enable", () => command("enabled", 1)), this.button("Bypass", () => command("enabled", 0)), this.button("Reset", () => command("reset")), this.button("Remove", () => command("remove")), this.button("Move up", () => command("move", selected.selectedIndex - 1)), this.button("Move down", () => command("move", selected.selectedIndex + 1)), controls);
+        const refresh = () => {
+            const layers = colorLayers(this.document, +this.track.value, +this.clip.value, operators);
+            const index = Math.max(0, Math.min(selected.selectedIndex, layers.length - 1));
+            selected.replaceChildren();
+            layers.forEach((layer, i) => { const option = document.createElement("option"); option.textContent = `${i + 1}. ${layer.op.label}${layer.enabled ? "" : " (bypassed)"}`; selected.append(option); });
+            selected.selectedIndex = layers.length ? index : -1;
+            controls.replaceChildren();
+            const layer = layers[index];
+            if (!layer) {
+                controls.textContent = "Add a color operator to the selected timeline clip.";
+                return;
+            }
+            if (layer.op.path) {
+                const path = this.text(layer.words[2] ?? "");
+                this.field(controls, "LUT file", path);
+                controls.append(this.assetPicker(path), this.button("Load LUT", () => command("path", 0, path.value)), this.button("Clear LUT", () => command("path", 0, "")));
+            }
+            layer.op.params.forEach((param, i) => {
+                const input = this.number(Number(layer.words[2 + (layer.op.path ? 1 : 0) + i] ?? param.default), param.min, param.max);
+                input.step = param.integer ? "1" : "any";
+                this.field(controls, param.label, input);
+                input.onchange = () => this.perform(() => command("param", +input.value, param.name));
+            });
+        };
+        selected.onchange = refresh;
+        this.refreshColors.push(refresh);
     }
     number(value, min, max) {
         const input = document.createElement("input");
@@ -158,91 +417,164 @@ export class JoltEditor {
         file.onchange = () => {
             const asset = file.files?.[0];
             if (asset)
-                void asset.arrayBuffer().then(bytes => { path.value = this.bridge.importAsset(asset.name, new Uint8Array(bytes)); }).catch(e => this.fail(e));
+                void asset.arrayBuffer().then(bytes => { this.stopAudio(); path.value = this.bridge.importAsset(asset.name, new Uint8Array(bytes)); }).catch(e => this.fail(e));
         };
         return file;
     }
     perform(action) {
+        this.stopAudio();
         try {
             action();
-            this.document = this.bridge.saveDocument();
+            this.composition.cancel();
+            this.document = this.bridge.sequenceDocument();
             this.status.textContent = "";
-            this.drawDocuments();
+            this.refreshNLE();
+            this.refreshColors.forEach(refresh => refresh());
+            this.refreshGraph();
             this.render();
         }
         catch (error) {
             this.fail(error);
         }
     }
+    duplicateNode() {
+        this.bridge.edit("node.duplicate", +this.node.value);
+        this.node.value = String(this.bridge.graphState().nodes.length - 1);
+    }
     fail(error) { this.status.textContent = error instanceof Error ? error.message : String(error); }
+    currentFrame() { return Math.floor(this.time * this.fps + 1e-7); }
     render() {
         try {
-            const result = this.bridge.renderFrame(this.time);
+            const result = this.graphState?.active && this.previewNode !== null ? this.bridge.renderGraphNode(this.previewNode, this.time) : this.bridge.renderFrame(this.time);
             this.preview.width = result.width;
             this.preview.height = result.height;
             this.preview.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(result.pixels), result.width, result.height), 0, 0);
-            this.frame.value = String(Math.floor(this.time * this.fps));
+            this.frame.value = String(this.currentFrame());
+            if (this.sequence)
+                this.nle.update(this.sequence, +this.track.value, +this.clip.value, this.currentFrame());
         }
         catch (error) {
             this.playing = false;
+            this.stopAudio();
             this.fail(error);
         }
     }
-    drawDocuments() {
-        const ctx = this.timeline.getContext("2d"), graph = this.graph.getContext("2d");
-        if (!ctx || !graph)
-            return;
-        ctx.clearRect(0, 0, 900, 160);
-        graph.clearRect(0, 0, 900, 240);
-        const lines = this.document.split("\n");
-        let track = -1, node = 0;
-        const clips = [];
-        for (const line of lines) {
-            const words = line.trim().split(/\s+/);
-            if (words[0] === "fps")
-                this.fps = +words[1] / +words[2];
-            if (words[0] === "track")
-                track++;
-            if (words[0] === "clip") {
-                const offset = ["image", "video"].includes(words[1]) ? 3 : 2;
-                clips.push({ track, start: +words[offset], length: +words[offset + 1], name: words[1] });
-            }
-            if (words[0] === "node") {
-                const x = node % 5 * 180, y = Math.floor(node / 5) * 65;
-                graph.fillStyle = "#285d78";
-                graph.fillRect(x + 2, y + 2, 160, 45);
-                graph.fillStyle = "white";
-                graph.fillText(`${node}: ${words.slice(1).join(" ")}`, x + 8, y + 27);
-                node++;
-            }
-            if (words[0] === "link") {
-                const from = +words[1] - 1, to = +words[4] - 1;
-                graph.strokeStyle = "#69b9e8";
-                graph.beginPath();
-                graph.moveTo(from % 5 * 180 + 160, Math.floor(from / 5) * 65 + 22);
-                graph.lineTo(to % 5 * 180, Math.floor(to / 5) * 65 + 22);
-                graph.stroke();
-            }
-        }
-        if (clips.length)
-            this.duration = Math.max(...clips.map(c => c.start + c.length));
-        for (const clip of clips) {
-            ctx.fillStyle = "#285d78";
-            ctx.fillRect(clip.start / this.duration * 900, clip.track * 35 + 2, clip.length / this.duration * 900, 30);
-            ctx.fillStyle = "white";
-            ctx.fillText(clip.name, clip.start / this.duration * 900 + 4, clip.track * 35 + 22);
-        }
+    downloadPPM(result, name) {
+        const header = new TextEncoder().encode(`P6\n${result.width} ${result.height}\n255\n`);
+        const ppm = new Uint8Array(header.length + result.width * result.height * 3);
+        ppm.set(header);
+        for (let i = 0; i < result.width * result.height; i++)
+            for (let c = 0; c < 3; c++)
+                ppm[header.length + i * 3 + c] = result.pixels[i * 4 + c];
+        const url = URL.createObjectURL(new Blob([ppm], { type: "image/x-portable-pixmap" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        URL.revokeObjectURL(url);
     }
     tick = (timestamp) => {
         if (!this.playing)
             return;
         if (this.previous)
-            this.time = (this.time + (timestamp - this.previous) / 1000) % (this.duration / this.fps);
+            this.time += (timestamp - this.previous) / 1000;
+        const end = this.graphState?.active ? 10 : this.duration / this.fps;
+        if (end <= 0) {
+            this.time = 0;
+            this.playing = false;
+        }
+        else if (this.time >= end) {
+            if (this.loop) {
+                this.time %= end;
+                this.stopAudio();
+            }
+            else {
+                this.time = this.graphState?.active ? end : Math.max(0, (this.duration - 1) / this.fps);
+                this.playing = false;
+            }
+        }
         this.previous = timestamp;
         this.render();
         if (this.playing)
+            this.scheduleAudio();
+        else
+            this.stopAudio();
+        if (this.playing)
             this.frameRequest = requestAnimationFrame(this.tick);
     };
+    stopAudio() {
+        for (const source of this.audioSources)
+            source.stop();
+        this.audioSources.clear();
+        this.audioWhen = 0;
+    }
+    scheduleAudio() {
+        const context = this.audioContext;
+        if (!context || !this.bridge.renderAudio || this.graphState?.active)
+            return;
+        try {
+            if (!this.audioWhen || this.audioWhen < context.currentTime) {
+                this.audioSample = Math.floor(this.time * context.sampleRate);
+                this.audioWhen = context.currentTime + 0.03;
+            }
+            while (this.audioWhen < context.currentTime + 0.2) {
+                const count = 4096, pcm = this.bridge.renderAudio(this.audioSample, count, context.sampleRate);
+                const buffer = context.createBuffer(2, count, context.sampleRate);
+                for (let c = 0; c < 2; ++c) {
+                    const samples = buffer.getChannelData(c);
+                    for (let i = 0; i < count; ++i)
+                        samples[i] = pcm[i * 2 + c];
+                }
+                const source = context.createBufferSource();
+                source.buffer = buffer;
+                source.connect(context.destination);
+                this.audioSources.add(source);
+                source.onended = () => { this.audioSources.delete(source); source.disconnect(); };
+                source.start(this.audioWhen);
+                this.audioSample += count;
+                this.audioWhen += count / context.sampleRate;
+            }
+        }
+        catch (error) {
+            this.playing = false;
+            this.stopAudio();
+            this.fail(error);
+        }
+    }
+    startExport(name, start, count, audio, codec) {
+        if (!this.bridge.beginVideoExport)
+            throw new Error("Encoded export bridge unavailable");
+        if (this.exportJob)
+            throw new Error("An export is already running");
+        this.exportJob = this.bridge.beginVideoExport(name, start, count || (this.graphState?.active ? 300 : 0), audio, codec);
+        const step = () => {
+            const job = this.exportJob;
+            if (!job)
+                return;
+            try {
+                const result = job.step();
+                this.status.textContent = `Exported ${result.completed} frames`;
+                if (!result.done) {
+                    this.exportRequest = requestAnimationFrame(step);
+                    return;
+                }
+                const url = URL.createObjectURL(new Blob([new Uint8Array(result.bytes)], { type: "application/octet-stream" }));
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = name;
+                link.click();
+                URL.revokeObjectURL(url);
+                job.dispose();
+                this.exportJob = undefined;
+            }
+            catch (error) {
+                job.dispose();
+                this.exportJob = undefined;
+                this.fail(error);
+            }
+        };
+        this.exportRequest = requestAnimationFrame(step);
+    }
     download() {
         const url = URL.createObjectURL(new Blob([this.bridge.saveDocument()], { type: "text/plain" }));
         const link = document.createElement("a");
@@ -251,5 +583,16 @@ export class JoltEditor {
         link.click();
         URL.revokeObjectURL(url);
     }
-    dispose() { this.playing = false; cancelAnimationFrame(this.frameRequest); this.root.removeEventListener("change", this.listener); this.root.replaceChildren(); }
+    dispose() {
+        this.playing = false;
+        this.stopAudio();
+        void this.audioContext?.close();
+        cancelAnimationFrame(this.frameRequest);
+        cancelAnimationFrame(this.exportRequest);
+        this.exportJob?.dispose();
+        this.exportJob = undefined;
+        this.root.removeEventListener("change", this.listener);
+        this.root.removeEventListener("keydown", this.shortcuts);
+        this.root.replaceChildren();
+    }
 }

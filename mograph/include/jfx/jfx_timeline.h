@@ -15,7 +15,7 @@ extern "C" {
 /* Non-linear editing.
  *
  * A timeline holds tracks; a track holds clips; a clip holds an ordered stack
- * of effects. Rendering a frame walks the tracks from the top down, resolves the
+ * of effects. Rendering a frame walks the tracks from the bottom up, resolves the
  * clips that are live at that frame, renders each clip's source, runs its effect
  * stack, and composites the result onto the accumulated frame. That is the whole
  * model, and it is the same model the layer-based effects panel edits: a clip's
@@ -24,18 +24,20 @@ extern "C" {
  *
  * Time is counted in frames against an exact rational frame rate, so a 30000/1001
  * sequence is not rounded to 29.97 and drift never accumulates. A clip's
- * `in_point` is the frame of its source that lands on the timeline's frame zero,
- * which is what makes a trim and a speed change expressible.
+ * `in_point` is the frame of its source that lands on the clip's start frame,
+ * which makes trim and source-slip edits expressible.
  *
  * Clip sources are the graph's source nodes, so a clip can be a flat colour, a
- * gradient, a still image or a test pattern, and its effect stack is applied by
- * reusing the node evaluator rather than a second implementation. */
+ * gradient, a still image, video (with FFmpeg) or a test pattern. Its effect stack
+ * reuses the node evaluator rather than a second implementation. */
 
 #define JFX_TIMELINE_MAX_TRACKS 16
 #define JFX_TIMELINE_MAX_CLIPS_PER_TRACK 128
 #define JFX_TIMELINE_MAX_EFFECTS 32
 #define JFX_TIMELINE_MAX_KEYS 64
 #define JFX_TIMELINE_NAME_MAX 64
+#define JFX_TIMELINE_API_MAJOR 1
+#define JFX_TIMELINE_API_MINOR 2
 
 /* How a value between two keyframes is chosen. */
 typedef enum {
@@ -52,6 +54,7 @@ typedef enum {
     JFX_CLIP_SWEEP,       /* a test pattern */
     JFX_CLIP_IMAGE,       /* a still image on disk */
     JFX_CLIP_VIDEO,       /* local video file; requires FFmpeg */
+    JFX_CLIP_AUDIO,       /* local audio; no visual contribution */
     JFX_CLIP_SOURCE_COUNT
 } jfx_clip_source_t;
 
@@ -81,10 +84,12 @@ jfx_result_t jfx_timeline_timecode(const jfx_timeline_t *timeline, uint64_t fram
 
 /* ---- Tracks -------------------------------------------------------------- */
 
-/* Track indices are creation order and are stable; tracks render from the
- * highest index down, so a later track sits above an earlier one. */
+/* Track indices are creation order until reordering/removal shifts them.
+ * Tracks render bottom-up, so a later track sits above an earlier one. */
 uint32_t jfx_timeline_add_track(jfx_timeline_t *timeline, const char *name);
 jfx_result_t jfx_timeline_remove_track(jfx_timeline_t *timeline, uint32_t track);
+/* Reorders compositing layers; indices between the endpoints shift. */
+jfx_result_t jfx_timeline_move_track(jfx_timeline_t *timeline, uint32_t track, uint32_t to_index);
 size_t jfx_timeline_track_count(const jfx_timeline_t *timeline);
 const char *jfx_timeline_track_name(const jfx_timeline_t *timeline, uint32_t track);
 jfx_result_t jfx_timeline_set_track_name(jfx_timeline_t *timeline, uint32_t track,
@@ -118,7 +123,7 @@ typedef struct {
      * A gradient and a checker need two colours, so the array is eight wide
      * rather than four. */
     float source_params[8];
-    const char *image_path;         /* required for JFX_CLIP_IMAGE, else may be NULL */
+    const char *image_path;         /* required for IMAGE/VIDEO, else may be NULL */
     uint64_t start_frame;           /* where the clip sits on the timeline */
     uint64_t length_frames;         /* how long it lasts; must be at least 1 */
     uint64_t in_point;              /* which frame of the source is at start_frame */
@@ -158,6 +163,23 @@ jfx_result_t jfx_timeline_relocate_clip(jfx_timeline_t *timeline, uint32_t track
  * adjusting `in_point` so the same source frames stay visible. */
 jfx_result_t jfx_timeline_trim_clip(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     int64_t new_start, int64_t new_length);
+/* Frame-accurate NLE edits, atomic on error. Position keeps the source in-point
+ * and carries clip-relative animation with it. Split inserts a deep copy after the left
+ * clip, preserving interpolated effects. Duplicate appends an independent copy.
+ * Frame ranges and source ranges must fit INT64_MAX. */
+jfx_result_t jfx_timeline_position_clip(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
+    uint32_t to_track, uint64_t start_frame);
+jfx_result_t jfx_timeline_split_clip(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
+    uint64_t frame);
+jfx_result_t jfx_timeline_duplicate_clip(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
+    uint32_t to_track, uint64_t start_frame);
+jfx_result_t jfx_timeline_slip_clip(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
+    int64_t delta_frames);
+/* Track-local ripple: delete closes the selected interval, insert opens a gap.
+ * Rejects intersecting/straddling clips rather than destructively cutting them. */
+jfx_result_t jfx_timeline_ripple_delete(jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
+jfx_result_t jfx_timeline_ripple_insert(jfx_timeline_t *timeline, uint32_t track,
+    uint64_t frame, uint64_t length_frames);
 
 /* A clip's source and its four source parameters, so a UI can show them and a
  * document can round-trip them. Per source: `solid` is (r, g, b, a);
@@ -175,6 +197,12 @@ uint32_t jfx_timeline_fps_den(const jfx_timeline_t *timeline);
 uint64_t jfx_timeline_clip_start(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
 uint64_t jfx_timeline_clip_length(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
 uint64_t jfx_timeline_clip_in_point(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
+/* Keys are stored in an original clip-relative reference clock. Head trims and
+ * splits advance this offset so even smooth curves keep identical samples.
+ * Reference time = timeline frame - clip start + key offset. Used by project
+ * interchange; moving/slipping the source does not alter the animation offset. */
+int64_t jfx_timeline_clip_key_offset(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
+jfx_result_t jfx_timeline_set_clip_key_offset(jfx_timeline_t *timeline, uint32_t track, uint32_t clip, int64_t offset);
 float jfx_timeline_clip_opacity(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
 jfx_blend_mode_t jfx_timeline_clip_blend(const jfx_timeline_t *timeline, uint32_t track,
     uint32_t clip);
@@ -219,10 +247,14 @@ jfx_result_t jfx_timeline_set_effect_param(jfx_timeline_t *timeline, uint32_t tr
     uint32_t effect, size_t param, float value);
 float jfx_timeline_effect_param(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect, size_t param);
-/* The keyframed value at a timeline frame, interpolated per the effect's
- * interpolation mode. */
+/* The keyframed value in the clip's reference clock, interpolated per the
+ * effect's interpolation mode (the original getter's convention). */
 float jfx_timeline_effect_param_at(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect, size_t param, uint64_t frame);
+/* The value at a sequence frame, including split/head-trim animation offset;
+ * exactly the clock used by the renderer. */
+float jfx_timeline_effect_param_on_timeline(const jfx_timeline_t *timeline, uint32_t track,
+    uint32_t clip, uint32_t effect, size_t param, uint64_t frame);
 jfx_result_t jfx_timeline_set_effect_string(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect, size_t index, const char *text);
 const char *jfx_timeline_effect_string(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
@@ -236,7 +268,8 @@ jfx_interp_t jfx_timeline_effect_interp(const jfx_timeline_t *timeline, uint32_t
     uint32_t clip, uint32_t effect);
 size_t jfx_timeline_key_count(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect, size_t param);
-/* Adds a key, replacing any key already on that frame. */
+/* Adds a key in the clip's reference clock, replacing any key on that frame.
+ * Editor effect.key.* commands convert timeline frames to this clock. */
 jfx_result_t jfx_timeline_add_key(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
     uint32_t effect, size_t param, uint64_t frame, float value);
 jfx_result_t jfx_timeline_remove_key(jfx_timeline_t *timeline, uint32_t track, uint32_t clip,
@@ -258,7 +291,7 @@ bool jfx_timeline_key_at(const jfx_timeline_t *timeline, uint32_t track, uint32_
 /* ---- Rendering ----------------------------------------------------------- */
 
 /* Renders the frame at `frame` into tightly packed RGBA8 `out_pixels`. Tracks
- * composite from the top down; within a track, later clips sit over earlier ones.
+ * composite from the bottom up; within a track, later clips sit over earlier ones.
  * `time_seconds` is the wall-clock time, used only by the animated source
  * patterns. */
 jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame, float time_seconds,

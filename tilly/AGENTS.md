@@ -928,7 +928,9 @@ TillyStatus load_config(const char* path) {
 
 ### WASM
 
-- Uses Emscripten's `sbrk()` for arena allocation.
+- The implemented bootstrap uses Emscripten's anonymous `mmap`/`munmap`
+  emulation for owned arenas. Caller-provided aligned buffers retain ownership.
+  Other WASM environments must provide an arena buffer.
 - File I/O is virtual (memory-backed or async fetch).
 - Threading uses Web Workers (limited).
 - `dlopen`/`dlsym` emulated via preloaded module table.

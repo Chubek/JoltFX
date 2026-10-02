@@ -122,7 +122,8 @@ static void pool_reset(tilly_allocator_t *alloc) {
     pthread_mutex_lock(&state->lock);
     state->free_list = NULL;
     for (size_t i = 0; i < state->block_count; i++) {
-        pool_block_t *block = (pool_block_t *)(state->blocks + i * state->block_size);
+        // The allocation and fixed 64-byte stride preserve block alignment.
+        pool_block_t *block = (pool_block_t *)(void *)(state->blocks + i * state->block_size);
         block->next = state->free_list;
         state->free_list = block;
     }
@@ -285,7 +286,7 @@ tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_
             // Initialize free list
             state->free_list = NULL;
             for (size_t i = 0; i < block_count; i++) {
-                pool_block_t *block = (pool_block_t *)(state->blocks + i * block_size);
+                pool_block_t *block = (pool_block_t *)(void *)(state->blocks + i * block_size);
                 block->next = state->free_list;
                 state->free_list = block;
             }

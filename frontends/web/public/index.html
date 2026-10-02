@@ -1,5 +1,19 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JoltFX Player</title><link rel="stylesheet" href="styles.css"></head>
-  <body><main><canvas id="jolt-canvas" width="1280" height="720"></canvas><p>Load a signed JoltFX package through the embedding application.</p></main><script type="module" src="../dist/main.js"></script></body>
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JoltFX NLE, Color and Composition Editor</title><link rel="stylesheet" href="styles.css"></head>
+  <body>
+    <main id="jolt-editor"><p id="loading">Loading JoltFX editor…</p></main>
+    <script src="joltfx_web.js"></script>
+    <script type="module">
+      import { EmscriptenJoltBridge, mountJoltEditor } from "../dist/main.js";
+      const loading = document.getElementById("loading");
+      try {
+        const module = await window.JoltFX();
+        const bridge = new EmscriptenJoltBridge(module, 320, 180);
+        loading.remove();
+        const editor = mountJoltEditor(bridge);
+        window.addEventListener("pagehide", () => { editor.dispose(); bridge.dispose(); }, { once: true });
+      } catch (error) { loading.textContent = `Unable to load editor: ${error.message}. Place joltfx_web.js and .wasm in public/.`; }
+    </script>
+  </body>
 </html>

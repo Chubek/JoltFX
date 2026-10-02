@@ -80,12 +80,12 @@ int main(void) {
     jolt_image_kernels_t *k = jolt_image_kernels_create(&diagnostic);
     if(!k) fprintf(stderr,"%zu:%zu: %s\n",diagnostic.line,diagnostic.column,diagnostic.message);
     assert(k);
-    assert(jolt_image_kernels_count() == 294);
+    assert(jolt_image_kernels_count() == 297);
     float src[64], dst[64], zero[64] = {0};
     for (int i=0;i<16;++i) {
         src[4*i]=.1f; src[4*i+1]=.2f; src[4*i+2]=.3f; src[4*i+3]=.5f;
     }
-    for (size_t i=0;i<294;++i) {
+    for (size_t i=0;i<jolt_image_kernels_count();++i) {
         const char *name=jolt_image_kernels_name(i); assert(name);
         run(k,name,src,dst,NULL,0);
         for (int j=0;j<64;++j) assert(isfinite(dst[j]));
@@ -317,8 +317,11 @@ int main(void) {
     float id_curve[]={0,0,1,1};
     assert(jolt_image_kernels_apply(k,"curves",ramp3,4,4,NULL,0,id_curve,4,1024,10000000,dst)==JOLT_OK);
     near_ctx("flat curve: identity is an exact identity");
-    for(int i=0;i<64;++i) { if(fabs(dst[i]-ramp3[i])>=2e-4)
-        fprintf(stderr,"curves identity: idx %d in %.6f out %.6f\n",i,ramp3[i],dst[i]); near(dst[i],ramp3[i]); }
+    for(int i=0;i<64;++i) {
+        if(fabsf(dst[i]-ramp3[i])>=2e-4f)
+            fprintf(stderr,"curves identity: idx %d in %.6f out %.6f\n",i,(double)ramp3[i],(double)dst[i]);
+        near(dst[i],ramp3[i]);
+    }
     /* A curve with non-increasing x, and one with a single point, are rejected. */
     float bad_order[]={1,0,0,1};
     assert(jolt_image_kernels_apply(k,"curves",ramp3,4,4,NULL,0,bad_order,4,1024,10000000,dst)!=JOLT_OK);
@@ -331,8 +334,11 @@ int main(void) {
     assert(jolt_image_kernels_apply(k,"grade_rgb_curves",ramp3,4,4,NULL,0,
         packed_curves,(int)(sizeof packed_curves/sizeof *packed_curves),1024,10000000,dst)==JOLT_OK);
     near_ctx("packed curves: identity pack");
-    for(int i=0;i<64;++i) { if(fabs(dst[i]-ramp3[i])>=2e-4)
-        fprintf(stderr,"packed identity: idx %d in %.6f out %.6f\n",i,ramp3[i],dst[i]); near(dst[i],ramp3[i]); }
+    for(int i=0;i<64;++i) {
+        if(fabsf(dst[i]-ramp3[i])>=2e-4f)
+            fprintf(stderr,"packed identity: idx %d in %.6f out %.6f\n",i,(double)ramp3[i],(double)dst[i]);
+        near(dst[i],ramp3[i]);
+    }
     /* A gamma-like master curve must change the picture, and stay ordered. */
     float gamma_curves[]={2,0,0,1,.25,1,1,  2,0,0,1,.25,1,1,  2,0,0,1,.25,1,1,  2,0,0,1,.25,1,1};
     assert(jolt_image_kernels_apply(k,"grade_rgb_curves",ramp3,4,4,NULL,0,
@@ -380,21 +386,21 @@ int main(void) {
     assert(jolt_image_kernels_apply(k,"comp_layer_mask",keyed,4,4,NULL,0,plane,16,1024,10000000,dst)==JOLT_OK);
     for(int i=0;i<16;++i) {
         if (fabs(dst[4*i+3])>=2e-4)
-            fprintf(stderr,"plane mask: pixel %d alpha=%g (expected 0)\n",i,dst[4*i+3]);
+            fprintf(stderr,"plane mask: pixel %d alpha=%g (expected 0)\n",i,(double)dst[4*i+3]);
         near(dst[4*i+3],0);
     }
     /* A text run: N glyph codes, N advances, then the coverage plane. */
-    float run_txt[2+2+16];
+    float run_txt[1+3*2+16]={0};
     run_txt[0]=2; run_txt[1]=65; run_txt[2]=66; run_txt[3]=2; run_txt[4]=2;
-    for(int i=0;i<16;++i) run_txt[6+i]=1;
+    for(int i=0;i<16;++i) run_txt[7+i]=1;
     /* The default run height is 8% of the frame, which on a 4x4 is a third of a
      * pixel and so covers no pixel centre at all. Size the run to the test frame
      * so the box actually contains texels, then the covered ones take the ink. */
     jolt_image_parameter_t run_big[]={ {"size",1}, {"position_x",0.5}, {"position_y",0.5} };
-    assert(jolt_image_kernels_apply(k,"text_subtitle",ramp3,4,4,run_big,3,run_txt,20,1024,10000000,dst)==JOLT_OK);
+    assert(jolt_image_kernels_apply(k,"text_subtitle",ramp3,4,4,run_big,3,run_txt,sizeof(run_txt)/sizeof(*run_txt),1024,10000000,dst)==JOLT_OK);
     for(int i=0;i<64;++i) assert(isfinite(dst[i]));
     {   int covered=0;
-        for(int i=0;i<16;++i) if (dst[4*i]>ramp3[4*i]+0.5) covered=1;
+        for(int i=0;i<16;++i) if (dst[4*i]>ramp3[4*i]+0.5f) covered=1;
         assert(covered);
     }
     /* With no run resource the same kernel is an exact identity. */

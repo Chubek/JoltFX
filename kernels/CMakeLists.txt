@@ -19,6 +19,8 @@ set_project_warnings(jolt_effects)
 # Frame kernels use the CPU image-source profile. Keep the old JBC1 catalog
 # unchanged: its callers have neither image dimensions nor resource bindings.
 set(IMAGE_KERNELS
+    color_grading/grade_primary color_grading/grade_lut
+    color_calibration/calib_lut
     
     transform/translate2d transform/scale2d transform/rotate2d
     transform/skew2d transform/transform3d transform/perspective_warp
@@ -172,3 +174,10 @@ foreach(path IN LISTS IMAGE_KERNELS)
 endforeach()
 file(APPEND "${IMAGE_HEADER}" "};\n")
 target_sources(jolt_effects PRIVATE src/image_kernels.c)
+
+set(audio_source "${CMAKE_CURRENT_SOURCE_DIR}/audio_reactive/audio_mix.jolt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${audio_source}")
+file(READ "${audio_source}" audio_hex HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," audio_bytes "${audio_hex}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/audio_source.h" "/* Embedded Joltscript audio kernel. */\nstatic const char audio_mix_source[] = {${audio_bytes}0};\n")
+target_sources(jolt_effects PRIVATE src/audio_kernels.c)

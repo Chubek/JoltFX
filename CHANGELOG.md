@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Shared timeline audio mixing: audio-only/video clips, clip/track gain, stereo
+  balance, fades, source in-points, mute/solo, sample-rate conversion and
+  split/trim-preserving rational clocks. Persistent controls, history and JSON;
+  audio API 1.0, timeline API 1.2 and editor API 1.4.
+- Vendored miniaudio 0.11.23 and FFmpeg release/8.0; Glue streaming media readers
+  and encoded writer, a new `audio_mix.jolt` kernel and failure-atomic stereo
+  Execution task (Glue ABI 0.4, Execution ABI 0.5).
+- Encoded MP4/MOV/MKV export with mixed audio, immutable document snapshots,
+  incremental progress/cancellation and transactional output. Export API 1.0,
+  optional system codecs and bundled native/WASM/Android/iOS FFmpeg builds.
+- Desktop SDL2, browser WebAudio, Android AudioTrack and iOS AVAudioEngine
+  playback; shared encoded export controls, CLI routes and portable host APIs.
+  Native/sanitizer/frontend/real-WASM and independent FFmpeg A/V regression tests.
+
+- Node-based composition tool across desktop, CLI/terminal, web, Android, iOS and
+  all three host bridges. Typed canvas wiring, persistent node layout, generated
+  inspectors, duplicate/rename/reset, interior/output preview and PPM export.
+  Composition API 1.1, editor API 1.3 and shared graph-state/node-catalog JSON.
+- Shared bounded graph/sequence undo/redo, empty graph persistence, exact output
+  selection, quoted labels/resource strings and full-precision graph parameters.
+  Reachable-only graph frame allocation with a 512-MiB scratch bound; native,
+  cross-frontend/host, CLI and web interaction regression coverage.
+- Runnable Android Gradle/JNI application project with a checksum-pinned wrapper,
+  and iOS UIKit library/application CMake targets with launch entry points.
+- Real compiled-WASM integration tests through the production JavaScript bridge,
+  including virtual resources, growable memory and native render parity.
+
+- Shared kernel-backed Color Calibration and Color Grading sections across the
+  desktop, CLI/terminal, web and mobile surfaces, plus SDK-independent host color
+  descriptors and frame processing. The catalog exposes 29 image-profile color
+  operators and derives parameter metadata from their Joltscript declarations.
+- `grade_primary`, domain-aware `grade_lut` and `calib_lut` kernels; a transactional
+  CPU image-task executor (execution ABI 0.4), color API 1.0.0 and section-local
+  editor commands (now API 1.4). Optional vendored OpenColorIO build integration.
+- Cross-frontend pixel conformance, executor failure/budget tests, LUT/alpha/path
+  persistence tests and an actual OpenColorIO transform integration fixture.
+- Frame-accurate NLE split, move, duplicate, trim, source-slip and track-local
+  ripple edits; track ordering and bounded sequence undo/redo (now editor API 1.4,
+  timeline API 1.2). Shared sequence-state JSON and exact-frame preview/PPM export.
+- Interactive desktop/web/Android timelines, an embeddable iOS NLE controller
+  linked to color panels, CLI/terminal `nle new/edit/info/render` workflows and
+  NLE sessions for all three host bridges. Raster/rational-rate sequence setup
+  and frame export controls accompany the shared Calibration/Grading surfaces.
+- Complete NLE state persistence, with quoted names/media paths, exact integer
+  timing, source in-points, track/clip/effect states and animation reference
+  offsets. Native/frontend/host/CLI and browser-independent NLE regression tests.
+
 - **Colour grading, non-linear editing and node compositing, defined bottom-up
   through the strata.** Four new modules in `core`, each with a conformance
   suite, all reachable from every frontend through one shared text format and
@@ -50,6 +97,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the Hald CLUT reader and the NLE's image clips.
 
 ### Fixed
+
+- Emscripten bootstrap arena allocation/cleanup and monotonic time; serial
+  priority-queue scheduling for modules built without pthread support.
+- Graph image sampling now preserves the last source row/column and every texel
+  at native resolution, with full-extent nearest-neighbour scaling.
+- Android API-26 native builds: avoid the system `key_t` typedef collision and
+  use a Bionic-supported clock function for engine timestamps.
+
+- Honor explicit graph outputs during loading; preserve node labels, layout and
+  empty/quoted paths across save/load/history. Reject fractional integer node
+  parameters and disconnects on nonexistent ports before changing the graph.
+
+- Preserve empty and quoted LUT effect paths through project save/load; surface
+  assigned missing LUTs as render errors.
+- Preserve smooth animated pixels across split/head trim/move and undo/redo;
+  carry clip-relative keys rather than translating them as sequence timestamps.
+- Honor the first clip's opacity, clear history after successful load, preserve
+  exact frames during scaled export, treat persisted source in-points as absolute,
+  and avoid unintended trims on web tail clicks.
+- Expand the bounded image interpreter's function capacity for the shared LUT
+  helpers, correct the image-kernel test's text-resource stack overflow, and
+  align the generic graph test with required video-resource errors.
 
 Defects found by the new conformance suites while this work landed, all of which
 had shipped or would have shipped as wrong pixels, lost edits or crashes:

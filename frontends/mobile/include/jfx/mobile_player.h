@@ -6,6 +6,7 @@
 
 #include "jfx/jfx_engine.h"
 #include "jfx/jfx_editor.h"
+#include "jfx/jfx_export.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,12 +65,21 @@ jfx_result_t jfx_mobile_player_render_rgba8(jfx_mobile_player_t *player,
 
 /* The borrowed session is shared by NLE, layer effects, grading and nodes. */
 jfx_editor_t *jfx_mobile_player_editor(jfx_mobile_player_t *player);
+jfx_result_t jfx_mobile_player_export_begin(jfx_mobile_player_t *player,const jfx_export_options_t *options,jfx_export_job_t **out_job);
+jfx_result_t jfx_mobile_player_audio_mixer(jfx_mobile_player_t *player,uint32_t rate,jfx_audio_mixer_t **out_mixer);
 jfx_result_t jfx_mobile_player_load_document(jfx_mobile_player_t *player, const char *text, size_t length,
     char *out_error, size_t error_size);
 jfx_result_t jfx_mobile_player_save_document(jfx_mobile_player_t *player, char *out_text, size_t capacity, size_t *out_written);
 
 jfx_result_t jfx_mobile_player_edit(jfx_mobile_player_t *player, const char *op, uint32_t a,
     uint32_t b, uint32_t c, double value, const char *text);
+jfx_result_t jfx_mobile_player_seek(jfx_mobile_player_t *player, double seconds);
+jfx_result_t jfx_mobile_player_sequence_state(jfx_mobile_player_t *player, char *out_json, size_t capacity);
+jfx_result_t jfx_mobile_player_write_frame(jfx_mobile_player_t *player,uint64_t frame,const char *path);
+jfx_result_t jfx_mobile_player_graph_state(jfx_mobile_player_t *player,char *out_json,size_t capacity);
+jfx_result_t jfx_mobile_player_render_graph(jfx_mobile_player_t *player,uint32_t node,double seconds,
+    uint32_t width,uint32_t height,uint8_t *out_rgba,size_t capacity);
+jfx_result_t jfx_mobile_player_write_graph(jfx_mobile_player_t *player,uint32_t node,double seconds,const char *path);
 #ifdef __cplusplus
 }
 #endif

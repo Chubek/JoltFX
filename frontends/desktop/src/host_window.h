@@ -34,6 +34,9 @@ jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_
     char *out_error, size_t out_error_size);
 
 void jfx_desktop_window_destroy(jfx_desktop_window_t *window);
+bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *window,const float *stereo,uint32_t frames);
+uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *window);
+void jfx_desktop_window_clear_audio(jfx_desktop_window_t *window);
 
 /* Pumps OS events, feeds them to ImGui and opens a new ImGui frame. Returns
  * false once the user has asked to close the window. */

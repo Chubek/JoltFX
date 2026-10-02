@@ -1,0 +1,8 @@
+;; Executable stereo vectors consumed by test_audio_task.
+;; Arguments: left right accumulated_left accumulated_right gain pan fade_in fade_out expected_left expected_right.
+(assert_audio_mix 0.25 -0.5 0 0 1 0 1 1 0.25 -0.5)
+(assert_audio_mix 0.25 -0.5 0.5 0.5 2 1 1 1 0.5 -0.5)
+(assert_audio_mix 0.25 -0.5 0 0 2 -1 1 1 0.5 0)
+(assert_audio_mix 0.25 -0.5 0.5 0.5 2 0 0.5 0.25 0.625 0.25)
+(assert_audio_mix 1 1 0 0 256 0 1 1 256 256)
+(assert_audio_mix 1 1 0.5 -0.5 1 0 -1 2 0.5 -0.5)

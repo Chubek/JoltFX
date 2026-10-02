@@ -1,4 +1,7 @@
 import type { JoltFrame, JoltWasmBridge } from "./player.js";
+import type { ColorOperator, VideoExport } from "./editor.js";
+import type { SequenceState } from "./nle.js";
+import type { GraphState, NodeKind } from "./composition.js";
 
 type NativeFunction = (...args: Array<number | string>) => number;
 
@@ -6,7 +9,7 @@ export interface EmscriptenModule {
   HEAPU8: Uint8Array;
   _malloc(bytes: number): number;
   _free(pointer: number): void;
-  FS?: { writeFile(path: string, bytes: Uint8Array): void };
+  FS?: { writeFile(path: string, bytes: Uint8Array): void; readFile?(path: string): Uint8Array; unlink?(path: string): void };
   cwrap(name: string, returnType: "number" | null, argumentTypes: string[]): NativeFunction;
 }
 
@@ -23,6 +26,10 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
   private readonly setEffect: NativeFunction;
   private readonly renderRgba: NativeFunction;
   private readonly session: number;
+  private audioMixer = 0;
+  private audioRate = 0;
+  private exportNumber = 0;
+  private readonly exports = new Set<VideoExport>();
 
   public constructor(
     private readonly module: EmscriptenModule,
@@ -54,10 +61,15 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
     const load = this.module.cwrap("jfx_web_session_load_document", "number", ["number", "string", "number", "number", "number"]);
     const result = load(this.session, text, bytes.length, 0, 0);
     if (result !== 0) throw new Error(`Project rejected (${result})`);
+    this.resetAudio();
   }
 
   public saveDocument(): string {
-    const save = this.module.cwrap("jfx_web_session_save_document", "number", ["number", "number", "number", "number"]);
+    return this.saveText("jfx_web_session_save_document");
+  }
+  public sequenceDocument(): string { return this.saveText("jfx_web_session_save_sequence"); }
+  private saveText(name: string): string {
+    const save = this.module.cwrap(name, "number", ["number", "number", "number", "number"]);
     const capacity = 8 * 1024 * 1024;
     const pointer = this.module._malloc(capacity + 4);
     if (!pointer) throw new Error("WASM heap allocation failed");
@@ -70,17 +82,66 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
   }
 
   public edit(op: string, a = 0, b = 0, c = 0, value = 0, text = ""): void {
+    if (![a, b, c].every(index => Number.isInteger(index) && index >= 0 && index <= 0xffffffff) || !Number.isFinite(value))
+      throw new RangeError("Edit indices must be nonnegative integers and the value must be finite");
     const command = this.module.cwrap("jfx_web_session_edit", "number",
       ["number", "string", "number", "number", "number", "number", "string"]);
     const result = command(this.session, op, a, b, c, value, text);
     if (result !== 0) throw new Error(`Edit rejected (${result})`);
+    this.resetAudio();
+  }
+
+  public colorOperators(): ColorOperator[] {
+    const catalog = this.module.cwrap("jfx_color_catalog", "number", ["number", "number"]);
+    const capacity = 65536, pointer = this.module._malloc(capacity);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      if (catalog(pointer, capacity) !== 0) throw new Error("Unable to read color operator metadata");
+      const end = this.module.HEAPU8.indexOf(0, pointer);
+      return JSON.parse(new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, end))) as ColorOperator[];
+    } finally { this.module._free(pointer); }
+  }
+
+  public sequenceState(): SequenceState {
+    const state = this.module.cwrap("jfx_web_session_sequence_state", "number", ["number", "number", "number"]);
+    const capacity = 4 * 1024 * 1024, pointer = this.module._malloc(capacity);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      if (state(this.session, pointer, capacity) !== 0) throw new Error("Unable to read NLE state");
+      const end = this.module.HEAPU8.indexOf(0, pointer);
+      return JSON.parse(new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, end))) as SequenceState;
+    } finally { this.module._free(pointer); }
+  }
+  private jsonExport<T>(name: string, session: boolean): T {
+    const capacity = 1024 * 1024, pointer = this.module._malloc(capacity);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      const call = this.module.cwrap(name, "number", session ? ["number", "number", "number"] : ["number", "number"]);
+      if ((session ? call(this.session, pointer, capacity) : call(pointer, capacity)) !== 0) throw new Error(`Unable to read ${name}`);
+      const end = this.module.HEAPU8.subarray(pointer, pointer + capacity).indexOf(0);
+      if (end < 0) throw new Error("Native JSON is not terminated");
+      return JSON.parse(new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, pointer + end))) as T;
+    } finally { this.module._free(pointer); }
+  }
+  public nodeKinds(): NodeKind[] { return this.jsonExport("jfx_node_catalog", false); }
+  public graphState(): GraphState { return this.jsonExport("jfx_web_session_graph_state", true); }
+  public renderGraphNode(node: number | null, seconds: number, width = this.width, height = this.height): JoltFrame {
+    if (node !== null && (!Number.isInteger(node) || node < 0 || node >= 256) || !Number.isFinite(seconds) || seconds < 0 || seconds > 1e9 ||
+      ![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 4096)) throw new RangeError("Invalid graph preview node, time or raster");
+    const length = width * height * 4, pointer = this.module._malloc(length);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      const render = this.module.cwrap("jfx_web_session_render_graph", "number", ["number", "number", "number", "number", "number", "number", "number"]);
+      if (render(this.session, node ?? 0xffffffff, seconds, width, height, pointer, length) !== 0) throw new Error("Unable to render composition");
+      return { width, height, pixels: new Uint8ClampedArray(this.module.HEAPU8.slice(pointer, pointer + length)) };
+    } finally { this.module._free(pointer); }
   }
 
   public importAsset(name: string, bytes: Uint8Array): string {
     if (!this.module.FS) throw new Error("This WASM build has no virtual filesystem");
     if (bytes.length > 64 * 1024 * 1024) throw new RangeError("Asset exceeds 64 MiB");
     const path = "/" + name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    this.module.FS.writeFile(path, bytes); return path;
+    this.module.FS.writeFile(path, bytes); this.resetAudio(); return path;
   }
 
   public async loadPackage(bytes: Uint8Array): Promise<void> {
@@ -112,8 +173,78 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
       this.module._free(pointer);
     }
   }
+  public renderSequenceFrame(frame: number): JoltFrame {
+    if (!Number.isInteger(frame) || frame < 0 || frame > 0xffffffff) throw new RangeError("Invalid sequence frame");
+    const render = this.module.cwrap("jfx_web_session_render_frame", "number", ["number", "number", "number", "number", "number", "number"]);
+    const length = this.width * this.height * 4, pointer = this.module._malloc(length);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      if (render(this.session, frame, this.width, this.height, pointer, length) !== 0) throw new Error("Unable to render sequence frame");
+      return { width: this.width, height: this.height, pixels: new Uint8ClampedArray(this.module.HEAPU8.slice(pointer, pointer + length)) };
+    } finally { this.module._free(pointer); }
+  }
 
-  public dispose(): void { this.destroy(this.session); }
+  public renderAudio(sample: number, frames: number, rate = 48000): Float32Array {
+    if (!Number.isSafeInteger(sample) || sample < 0 || sample > 1e12 || !Number.isInteger(frames) || frames < 1 || frames > 65536 ||
+      !Number.isInteger(rate) || rate < 8000 || rate > 192000) throw new RangeError("Invalid audio sample range");
+    if (this.audioRate !== rate) this.resetAudio();
+    const pointer = this.module._malloc(frames * 8 + 4);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      if (!this.audioMixer) {
+        const create = this.module.cwrap("jfx_web_session_audio_mixer", "number", ["number", "number", "number"]);
+        if (create(this.session, rate, pointer) !== 0) throw new Error("Unable to create audio mixer");
+        this.audioMixer = new DataView(this.module.HEAPU8.buffer).getUint32(pointer, true); this.audioRate = rate;
+      }
+      const mix = this.module.cwrap("jfx_web_audio_mixer_render", "number", ["number", "number", "number", "number", "number"]);
+      const result = mix(this.audioMixer, sample, frames, pointer, frames * 2);
+      if (result !== 0) throw new Error(`Audio mix failed (${result})`);
+      return new Float32Array(this.module.HEAPU8.slice(pointer, pointer + frames * 8).buffer);
+    } finally { this.module._free(pointer); }
+  }
+  private resetAudio(): void {
+    if (this.audioMixer) this.module.cwrap("jfx_audio_mixer_destroy", null, ["number"])(this.audioMixer);
+    this.audioMixer = this.audioRate = 0;
+  }
+  public beginVideoExport(name: string, start = 0, frames = 0, audio = true, codec = ""): VideoExport {
+    if (![start, frames].every(n => Number.isInteger(n) && n >= 0 && n <= 0xffffffff) || !/\.(mp4|mov|mkv|webm)$/.test(name)) throw new RangeError("Invalid export name or frame range");
+    const fs = this.module.FS;
+    if (!fs?.readFile || !fs.unlink) throw new Error("This WASM build has no export filesystem");
+    const path = `/jfx_export_${this.session}_${++this.exportNumber}.${name.split(".").pop()}`;
+    const pointer = this.module._malloc(4); if (!pointer) throw new Error("WASM heap allocation failed");
+    let job: number;
+    try {
+      const begin = this.module.cwrap("jfx_web_session_export_begin", "number", ["number", "string", "string", "number", "number", "number", "number"]);
+      const result = begin(this.session, path, codec, start, frames, audio ? 1 : 0, pointer);
+      if (result !== 0) throw new Error(result === -9 ? "Encoder unavailable in this build; enable bundled FFmpeg" : `Export rejected (${result})`);
+      job = new DataView(this.module.HEAPU8.buffer).getUint32(pointer, true);
+    } finally { this.module._free(pointer); }
+    const step = this.module.cwrap("jfx_export_step", "number", ["number", "number"]);
+    const state = this.module.cwrap("jfx_export_state", "number", ["number"]);
+    const completed = this.module.cwrap("jfx_web_export_completed", "number", ["number"]);
+    let disposed = false;
+    const handle: VideoExport = {
+      step: () => {
+        if (disposed) throw new Error("Export is closed");
+        const result = step(job, 1);
+        if (result !== 0) throw new Error(`Export failed (${result})`);
+        const done = state(job) === 1;
+        return { completed: completed(job), done, bytes: done ? fs.readFile!(path).slice() : undefined };
+      },
+      cancel: () => { if (!disposed) this.module.cwrap("jfx_export_cancel", null, ["number"])(job); },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true; this.module.cwrap("jfx_export_destroy", null, ["number"])(job);
+        try { fs.unlink!(path); } catch { /* cancelled jobs never publish a target */ }
+        this.exports.delete(handle);
+      },
+    };
+    this.exports.add(handle); return handle;
+  }
+  public dispose(): void {
+    for (const job of this.exports) job.dispose();
+    this.resetAudio(); this.destroy(this.session);
+  }
 
   private isEffectPackage(value: unknown): value is EffectPackage {
     if (typeof value !== "object" || value === null || !("effect" in value)) return false;

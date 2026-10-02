@@ -1,0 +1,26 @@
+# Two straight-alpha sources, a merge and an unused color operator.
+graph
+size 2 1
+node color "Blue background #1"
+position 1 0 0
+param 1 r 0
+param 1 g 0
+param 1 b 1
+node solid "Background image"
+position 2 240 0
+node color "Red foreground"
+position 3 0 160
+param 3 g 0
+param 3 b 0
+param 3 a 0.5
+node solid "Foreground image"
+position 4 240 160
+node blend "Composite"
+position 5 480 80
+node grade_primary "Unused look"
+position 6 720 240
+link 1 0 -> 2 0
+link 3 0 -> 4 0
+link 4 0 -> 5 0
+link 2 0 -> 5 1
+output 5

@@ -1,0 +1,13 @@
+;; @kernel       calib_lut
+;; @category     color_calibration
+;; @description  Applies a calibration LUT or a transform imported through OpenColorIO Glue.
+;; @complexity   Medium
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Premultiplied RGBA; same domain-aware resource layout as grade_lut.
+;; Mix [0,1]; interpolation 0 nearest, 1 linear/trilinear.
+(param mix 1 0 1 0)
+(param interpolation 1 0 1 1)
+(defkernel calib_lut [x y c]
+  (color-table x y c mix interpolation))

@@ -33,6 +33,7 @@ void copy_error(char *out_error, size_t out_error_size, const char *reason) {
 } // namespace
 
 struct jfx_desktop_window {
+    SDL_AudioDeviceID audio;
     SDL_Window *sdl_window;
     SDL_GLContext gl_context;
     uint32_t width;
@@ -47,6 +48,19 @@ struct jfx_desktop_window {
 };
 
 bool jfx_desktop_window_available(void) { return true; }
+bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *w,const float *pcm,uint32_t frames) {
+    if (!w || !pcm || !frames || frames>65536) return false;
+    if (!w->audio) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
+        SDL_AudioSpec spec={}; spec.freq=48000; spec.format=AUDIO_F32SYS; spec.channels=2; spec.samples=1024;
+        w->audio=SDL_OpenAudioDevice(nullptr,0,&spec,nullptr,0);
+        if (!w->audio) return false;
+        SDL_PauseAudioDevice(w->audio,0);
+    }
+    return SDL_QueueAudio(w->audio,pcm,frames*8)==0;
+}
+uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *w) { return w && w->audio?SDL_GetQueuedAudioSize(w->audio):0; }
+void jfx_desktop_window_clear_audio(jfx_desktop_window_t *w) { if (w && w->audio) SDL_ClearQueuedAudio(w->audio); }
 
 const char *jfx_desktop_window_backend_name(void) { return "sdl2"; }
 
@@ -139,6 +153,7 @@ jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_
 }
 
 void jfx_desktop_window_destroy(jfx_desktop_window_t *window) {
+    if (window && window->audio) SDL_CloseAudioDevice(window->audio);
     if (!window) {
         return;
     }
@@ -282,6 +297,9 @@ jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_
 }
 
 void jfx_desktop_window_destroy(jfx_desktop_window_t *) {}
+bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *,const float *,uint32_t) { return false; }
+uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *) { return 0; }
+void jfx_desktop_window_clear_audio(jfx_desktop_window_t *) {}
 
 bool jfx_desktop_window_begin_frame(jfx_desktop_window_t *) { return false; }
 

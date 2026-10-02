@@ -79,6 +79,7 @@ void tilly_log_shutdown(void) {
 }
 
 /* Formats and dispatches one entry. The caller has already filtered by level. */
+TILLY_PRINTF_LIKE(5, 0)
 static void emit(tilly_log_level_t level, const char *module, const char *file,
     uint32_t line, const char *fmt, va_list args) {
     char message[TILLY_LOG_MESSAGE_MAX];

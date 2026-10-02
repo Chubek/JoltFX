@@ -9,6 +9,7 @@
 #include "jfx/jfx_timeline.h"
 #include "jfx/jfx_compose.h"
 #include "jfx/jfx_lut.h"
+#include "jfx/jfx_export.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,7 @@ typedef enum {
     JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_CONSOLE,
     JFX_DESKTOP_PANEL_STATISTICS,
+    JFX_DESKTOP_PANEL_COLOR_CALIBRATION,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
@@ -71,6 +73,12 @@ bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *frontend,
     jfx_desktop_panel_t panel);
 
 /* Timeline control (delegates to the internal timeline) */
+jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *frontend,const char *op,
+    uint32_t a,uint32_t b,uint32_t c,double value,const char *text);
+jfx_result_t jfx_desktop_frontend_sequence_state(jfx_desktop_frontend_t *frontend,char *out_json,size_t capacity);
+jfx_result_t jfx_desktop_frontend_write_frame(jfx_desktop_frontend_t *frontend,uint64_t frame,const char *path);
+jfx_result_t jfx_desktop_frontend_export_begin(jfx_desktop_frontend_t *frontend,const jfx_export_options_t *options,jfx_export_job_t **out_job);
+jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t *frontend,uint32_t rate,jfx_audio_mixer_t **out_mixer);
 jfx_result_t jfx_desktop_frontend_timeline_play(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_timeline_pause(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_timeline_seek(jfx_desktop_frontend_t *frontend, double time_seconds);
@@ -132,6 +140,10 @@ jfx_result_t jfx_desktop_frontend_node_compositing_set_output(jfx_desktop_fronte
 uint32_t jfx_desktop_frontend_node_compositing_output(const jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_node_compositing_render(jfx_desktop_frontend_t *frontend,
     uint32_t width, uint32_t height, uint8_t *out_rgba, size_t out_size);
+jfx_result_t jfx_desktop_frontend_graph_state(jfx_desktop_frontend_t *frontend,char *out_json,size_t capacity);
+jfx_result_t jfx_desktop_frontend_render_graph(jfx_desktop_frontend_t *frontend,uint32_t node,double seconds,
+    uint32_t width,uint32_t height,uint8_t *out_rgba,size_t capacity);
+jfx_result_t jfx_desktop_frontend_write_graph(jfx_desktop_frontend_t *frontend,uint32_t node,double seconds,const char *path);
 
 /* Legacy effect preview (kept for compatibility) */
 jfx_result_t jfx_desktop_frontend_set_effect(jfx_desktop_frontend_t *frontend,

@@ -1,0 +1,20 @@
+;; @kernel       grade_primary
+;; @category     color_grading
+;; @description  Exposure, pivoted contrast and Rec.709 luminance-preserving saturation.
+;; @complexity   Low
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Premultiplied RGBA; exposure in stops [-8,8], contrast/saturation multipliers.
+(param exposure 0 -8 8 0)
+(param contrast 1 0 4 0)
+(param pivot .5 0 1 0)
+(param saturation 1 0 2 0)
+(defn primary-channel [v]
+  (+ pivot (* contrast (- (* v (pow 2 exposure)) pivot))))
+(defkernel grade_primary [x y c]
+  (if (= c 3) (pixel x y 3)
+    (let [r (primary-channel (straight x y 0))
+          g (primary-channel (straight x y 1))
+          b (primary-channel (straight x y 2))]
+      (finish (mix (luma r g b) (channel c r g b) saturation) (pixel x y 3) 0))))

@@ -1,0 +1,14 @@
+;; @kernel       grade_lut
+;; @category     color_grading
+;; @description  Applies a domain-aware 1D or 3D LUT without implicit transfer conversions.
+;; @complexity   Medium
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; Premultiplied RGBA. Data header: dimension (1/3), edge, RGB minima, RGB maxima,
+;; then RGB triples, red-fastest for cubes. Missing resource is identity.
+;; Mix [0,1]; interpolation 0 nearest, 1 linear/trilinear.
+(param mix 1 0 1 0)
+(param interpolation 1 0 1 1)
+(defkernel grade_lut [x y c]
+  (color-table x y c mix interpolation))

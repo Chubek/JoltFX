@@ -4,6 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test tests/player.test.mjs"
+    "test": "npm run build && node --test tests/player.test.mjs",
+    "test:wasm": "npm run build && node --test tests/wasm.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
   }
 }

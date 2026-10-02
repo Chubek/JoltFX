@@ -74,6 +74,25 @@ joltscript/layers/execution/
 
 ## Core Components
 
+### Implemented CPU image task runner (ABI 0.4)
+
+`include/joltscript/image_task.h` and `src/image_task.c` provide synchronous,
+budgeted callback execution for Glue image programs. The callback must write
+the entire output frame and honor the remaining scratch budget. Input/output
+must be finite; output is published only after success, including aliased calls.
+No compiler dependency or worker thread is introduced. Color graph nodes use
+this runner; `tests/unit/joltscript/test_image_task.c` covers failure atomicity.
+
+### Implemented stereo audio task (ABI 0.5)
+
+`audio_task.h/.c` dispatch immutable validated 8-input/4-output JBC1 programs over
+bounded stereo blocks. Inputs bind source L/R, accumulated L/R, gain, balance and
+normalized dual fades; outputs use lanes 0/1. Integer/double clock normalization
+stays in the runner; audio math belongs in `kernels/audio_reactive/audio_mix.jolt`.
+Use engine allocation and scratch output, preserving caller bytes on numerical
+or program failure. No compiler dependency or worker thread is introduced.
+`audio_task`, `audio_mixing` and `media_export` cover these contracts.
+
 ### 1. Scheduler
 
 The Scheduler determines the order in which kernels execute, respecting data dependencies, resource availability, and user-defined priorities. It operates in three modes: **immediate** (execute-on-submit for interactive tools), **deferred** (batch-optimize for rendering), and **timeline** (timeline playback with frame deadlines).

@@ -5,7 +5,8 @@
 #include <string.h>
 #include <time.h>
 
-#if !defined(_WIN32) && !defined(__wasm__) && !defined(__EMSCRIPTEN__)
+#if !defined(_WIN32) && (!defined(__wasm__) || defined(__EMSCRIPTEN__))
+/* Emscripten implements anonymous mappings in its linear-memory allocator. */
 #include <sys/mman.h>
 #include <unistd.h>
 #elif defined(_WIN32)
@@ -13,7 +14,7 @@
 #endif
 
 static uint64_t get_timestamp_ns(void) {
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__APPLE__) || defined(__EMSCRIPTEN__)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
@@ -325,7 +326,7 @@ tillyz_context_t *tillyz_init(const tillyz_config_t *config) {
     if (!arena_base && arena_size >= sizeof(tillyz_context_t)) {
 #if defined(_WIN32)
         arena_base = VirtualAlloc(NULL, arena_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#else
+#elif !defined(__wasm__) || defined(__EMSCRIPTEN__)
         arena_base = mmap(NULL, arena_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (arena_base == MAP_FAILED) arena_base = NULL;
 #endif
@@ -337,14 +338,15 @@ tillyz_context_t *tillyz_init(const tillyz_config_t *config) {
         ((uintptr_t)arena_base % _Alignof(tillyz_context_t)) != 0) {
 #if defined(_WIN32)
         if (owns_arena) VirtualFree(arena_base, 0, MEM_RELEASE);
-#else
+#elif !defined(__wasm__) || defined(__EMSCRIPTEN__)
         if (owns_arena) munmap(arena_base, arena_size);
 #endif
         return NULL;
     }
     
     // Place context at start of arena
-    tillyz_context_t *ctx = (tillyz_context_t *)arena_base;
+    // Alignment has been checked above, including caller-owned storage.
+    tillyz_context_t *ctx = (tillyz_context_t *)(void *)arena_base;
     
     ctx->owns_arena = owns_arena;
     ctx->arena.base = arena_base;
@@ -363,7 +365,7 @@ tillyz_context_t *tillyz_init(const tillyz_config_t *config) {
 void tillyz_shutdown(tillyz_context_t *ctx) {
     if (!ctx) return;
     
-#if !defined(_WIN32) && !defined(__wasm__) && !defined(__EMSCRIPTEN__)
+#if !defined(_WIN32) && (!defined(__wasm__) || defined(__EMSCRIPTEN__))
     // If we allocated the arena, free it
     if (ctx->owns_arena && ctx->arena.base) {
         munmap(ctx->arena.base, ctx->arena.size);

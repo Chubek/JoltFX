@@ -1,0 +1,3 @@
+;; An unbound LUT is identity; resource and interpolation cases are in C tests.
+(defkernel test_grade_lut [x y c]
+  (* (assert-pixel 1 0 0 .0625) (assert-pixel 0 0 1 .2) (assert-pixel 0 0 3 1)))

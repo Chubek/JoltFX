@@ -9,7 +9,8 @@
 extern "C" {
 #endif
 
-// Initialize scheduler with worker thread count
+// Initialize scheduler with worker thread count. Non-pthread Emscripten builds
+// drain the bounded priority queue on the caller in wait_idle/tick/shutdown.
 bool scheduler_init(uint32_t worker_count);
 
 // Shutdown scheduler

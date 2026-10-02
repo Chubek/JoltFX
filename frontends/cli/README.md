@@ -11,6 +11,28 @@ cmake --build build --target joltfx_cli
 
 ## Commands
 
+- `joltfx compose new OUT.jfx [--size W H]` — new Solid-source composition.
+- `joltfx compose edit IN.jfx OUT.jfx` — terminal/piped node edits and history;
+  `composition` prints state JSON, `nodes` prints the typed library.
+- `joltfx compose info IN.jfx` — graph raster, nodes, layout, values, wires and output.
+- `joltfx compose render IN.jfx -o OUT.ppm [--time S] [--node N] [--size W H]`
+  — output/interior node preview and PPM export. See [the composition workflow](../../docs/composition.md).
+
+- `joltfx nle new OUT.jfx [--size W H] [--fps NUM DEN]` — empty sequence with
+  exact rational FPS.
+- `joltfx nle edit IN.jfx OUT.jfx` — terminal or piped frame-accurate edits,
+  color commands and undo/redo; `timeline` prints JSON state.
+- `joltfx nle info IN.jfx` — raster, timing, tracks and clips as JSON.
+- `joltfx nle render IN.jfx -o PREFIX [--start N --end N] [--width W --height H]`
+  — PPM frames, start-inclusive/end-exclusive, with optional scaled output.
+  See [the NLE workflow and command reference](../../docs/nle.md).
+
+- `joltfx grade list`, `joltfx calibration list` — separate color operator catalogs.
+- `joltfx grade apply KIND IN OUT [name=value ...] [--lut FILE]` — kernel-backed
+  grading to PPM; `calibration apply` has the same syntax.
+- `joltfx edit IN.jfx OUT.jfx` — terminal editor with section-local `grade.*` and
+  `calibration.*` commands. See [examples and command reference](../../docs/editor.md).
+
 - `joltfx compile FILE [-o OUTPUT]` — validate a `.jolt` kernel (MVP
   `defkernel` form); with `-o`, write the compiled JBC1 bytecode.
 - `joltfx verify FILE` — validate only. Exit 0 when valid, 1 otherwise.
@@ -27,6 +49,13 @@ cmake --build build --target joltfx_cli
   `--start` defaults to 0 and `--end` to 47.
 - `joltfx capabilities` — report which shared frontend-contract operations this
   build provides, and which backend it resolved.
+- `joltfx export-video DOC.jfx -o OUT.mp4|OUT.mov|OUT.mkv [--start FRAME --frames COUNT]`
+  — shared encoded export with timeline audio, stderr progress and atomic output.
+  Aliases: `export DOC.jfx`, `nle export DOC.jfx`, `compose export DOC.jfx`.
+  Use `--codec`, `--audio-codec`, `--sample-rate`, `--width`, `--height` and
+  `--no-audio` for explicit settings; graph exports require a frame count.
+  The terminal editor supports `clip.audio.*` and `track.audio.gain` with history.
+  See [media building and commands](../../docs/media.md).
 - `joltfx version` / `joltfx help [COMMAND]` — version and help.
 - `joltfx run` — legacy entry point: init the engine and tick once.
 
@@ -53,9 +82,9 @@ the ones it does provide.
 
 ## Not implemented
 
-There is no `.joltpkg` container, packaging, or signature verification, and no
-video container output: `render` and `export` write binary PPM. The FFmpeg
-wiring described in `frontends/AGENTS.md` does not exist.
+There is no `.joltpkg` container, packaging, or signature verification. The
+legacy effect-only `render`/`export` routes write PPM; document-based video
+export uses FFmpeg and reports its availability through `capabilities`.
 
 ## Exit codes
 

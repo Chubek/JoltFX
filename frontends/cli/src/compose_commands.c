@@ -14,9 +14,12 @@
 #include <string.h>
 
 #include "jfx/jfx_compose.h"
+#include "jfx/jfx_color.h"
+#include "tilly/containers.h"
 #include "jfx/jfx_lut.h"
 #include "jfx/jfx_project.h"
 #include "jfx/jfx_timeline.h"
+#include "jfx/jfx_editor.h"
 
 #define MAX_PATH 1024
 
@@ -73,6 +76,53 @@ static int write_ppm(const char *path, const uint8_t *rgba, uint32_t width, uint
 }
 
 /* ---- nodes --------------------------------------------------------------- */
+
+int cmd_color(int argc,char **argv,int calibration) {
+    jfx_color_section_t section=calibration?JFX_COLOR_CALIBRATION:JFX_COLOR_GRADING;
+    if (argc==1 && !strcmp(argv[0],"list")) {
+        puts(calibration?"Color Calibration":"Color Grading");
+        for (size_t i=0;i<jfx_color_kind_count();++i) {
+            const jfx_node_kind_t *k=jfx_color_kind_at(i);
+            if (jfx_color_section(k)!=section) continue;
+            printf("%s: %s\n",k->name,k->label);
+            for (size_t p=0;p<k->param_count;++p) printf("  %s=%g [%g, %g]%s\n",k->params[p].name,
+                (double)k->params[p].default_value,(double)k->params[p].minimum,(double)k->params[p].maximum,k->params[p].integral?" integer":"");
+            if (k->string_count) puts("  --lut FILE (1D/3D LUT or OpenColorIO-supported transform)");
+        }
+        return 0;
+    }
+    if (argc<4 || strcmp(argv[0],"apply")) { print_command_help(calibration?"calibration":"grade"); return 1; }
+    const jfx_node_kind_t *k=jfx_node_kind_find(argv[1]);
+    if (!k || jfx_color_section(k)!=section) return fail("operator does not belong to this color section");
+    jfx_graph_t *g=jfx_graph_create(); uint32_t source=0, grade=0;
+    jfx_image_t image={.size=sizeof(image)}; uint8_t *pixels=NULL; int result=1;
+    if (!g || jfx_image_load(argv[2],NULL,&image)!=JFX_SUCCESS) { fail("cannot load input image"); goto done; }
+    if (jfx_graph_add_node(g,"image",NULL,&source)!=JFX_SUCCESS ||
+        jfx_graph_set_node_string(g,source,0,argv[2])!=JFX_SUCCESS ||
+        jfx_graph_add_node(g,k->name,NULL,&grade)!=JFX_SUCCESS ||
+        jfx_graph_connect(g,source,0,grade,0)!=JFX_SUCCESS) goto done;
+    for (int i=4;i<argc;++i) {
+        if (!strcmp(argv[i],"--lut")) {
+            if (++i>=argc || !k->string_count || jfx_graph_set_node_string(g,grade,0,argv[i])!=JFX_SUCCESS) { fail("invalid LUT option"); goto done; }
+            continue;
+        }
+        const char *equals=strchr(argv[i],'='); size_t p=0;
+        if (!equals) { fail("expected name=value"); goto done; }
+        for (;p<k->param_count;++p) if (strlen(k->params[p].name)==(size_t)(equals-argv[i]) && !strncmp(k->params[p].name,argv[i],(size_t)(equals-argv[i]))) break;
+        char *end=NULL; double value=strtod(equals+1,&end);
+        if (p==k->param_count || end==equals+1 || *end || !isfinite(value) || value<(double)k->params[p].minimum ||
+            value>(double)k->params[p].maximum || (k->params[p].integral && floor(value)!=value)) { fail("invalid parameter '%s'",argv[i]); goto done; }
+        jfx_graph_node_value_mut(g,grade)->scalars[p]=(float)value;
+    }
+    if (image.width>4096 || image.height>4096) { fail("color image dimensions exceed 4096"); goto done; }
+    pixels=tilly_container_alloc(image.width*image.height*4);
+    if (!pixels) goto done;
+    jfx_result_t r=jfx_graph_render(g,grade,(uint32_t)image.width,(uint32_t)image.height,0,pixels);
+    if (r!=JFX_SUCCESS) { fail("color render failed: %s",jfx_result_to_string(r)); goto done; }
+    result=write_ppm(argv[3],pixels,(uint32_t)image.width,(uint32_t)image.height);
+done:
+    tilly_container_free(pixels); jfx_image_release(&image); jfx_graph_destroy(g); return result;
+}
 
 int cmd_nodes(int argc, char **argv) {
     const char *only = NULL;
@@ -272,36 +322,24 @@ static int render_graph_document(const char *path, const char *output, uint32_t 
     if (!text) {
         return fail("cannot read '%s'", path);
     }
-    jfx_graph_t *graph = NULL;
-    uint32_t node = 0, declared_width = 0, declared_height = 0;
+    jfx_editor_t *editor=jfx_editor_create(320,180);
+    if (!editor) { free(text); return fail("out of memory"); }
     char error[256] = { 0 };
-    const jfx_result_t status = jfx_project_load_graph(text, length, &graph, &node, &declared_width,
-        &declared_height, error, sizeof(error));
+    const jfx_result_t status=jfx_editor_load(editor,text,length,error,sizeof(error));
     free(text);
-    if (status != JFX_SUCCESS) {
+    if (status != JFX_SUCCESS || jfx_editor_kind(editor)!=JFX_PROJECT_KIND_GRAPH) {
+        jfx_editor_destroy(editor);
         return fail("%s", error);
     }
     if (!width) {
-        width = declared_width;
+        width = jfx_editor_graph_width(editor);
     }
     if (!height) {
-        height = declared_height;
+        height = jfx_editor_graph_height(editor);
     }
-    uint8_t *pixels = malloc((size_t)width * height * 4u);
-    if (!pixels) {
-        jfx_graph_destroy(graph);
-        return fail("out of memory");
-    }
-    const jfx_result_t rendered =
-        jfx_graph_render(graph, node, width, height, time_seconds, pixels);
-    jfx_graph_destroy(graph);
-    if (rendered != JFX_SUCCESS) {
-        free(pixels);
-        return fail("cannot render that graph");
-    }
-    const int written = write_ppm(output, pixels, width, height);
-    free(pixels);
-    return written == 0 ? 0 : fail("cannot write '%s'", output);
+    jfx_result_t rendered=jfx_editor_write_graph(editor,UINT32_MAX,time_seconds,width,height,output);
+    jfx_editor_destroy(editor);
+    return rendered==JFX_SUCCESS?0:fail("cannot render/export that graph: %s",jfx_result_to_string(rendered));
 }
 
 int cmd_render_graph(int argc, char **argv) {
@@ -366,14 +404,17 @@ int cmd_render_sequence(int argc, char **argv) {
     if (!text) {
         return fail("cannot read '%s'", document);
     }
-    jfx_timeline_t *timeline = NULL;
+    jfx_editor_t *editor=jfx_editor_create(320,180);
+    if (!editor) { free(text); return fail("out of memory"); }
     char error[256] = { 0 };
     const jfx_result_t status =
-        jfx_project_load_sequence(text, length, &timeline, error, sizeof(error));
+        jfx_editor_load(editor,text,length,error,sizeof(error));
     free(text);
-    if (status != JFX_SUCCESS) {
+    if (status != JFX_SUCCESS || jfx_editor_kind(editor)!=JFX_PROJECT_KIND_SEQUENCE) {
+        jfx_editor_destroy(editor);
         return fail("%s", error);
     }
+    jfx_timeline_t *timeline=jfx_editor_timeline(editor);
     if (!width) {
         width = jfx_timeline_width(timeline);
     }
@@ -387,30 +428,32 @@ int cmd_render_sequence(int argc, char **argv) {
     if (end == 0) {
         end = 1; /* an empty sequence still writes one frame rather than none */
     }
-    uint8_t *pixels = malloc((size_t)width * height * 4u);
+    if (!width || !height || width>4096 || height>4096 || start<0 || end<start) {
+        jfx_editor_destroy(editor); return fail("invalid raster or frame range");
+    }
+    uint8_t *pixels = tilly_container_alloc((size_t)width * height * 4u);
     if (!pixels) {
-        jfx_timeline_destroy(timeline);
+        jfx_editor_destroy(editor);
         return fail("out of memory");
     }
     for (long frame = start; frame < end; ++frame) {
-        const float seconds = (float)frame / (float)jfx_timeline_fps(timeline);
-        if (jfx_timeline_render(timeline, (uint64_t)frame, seconds, pixels) != JFX_SUCCESS) {
-            free(pixels);
-            jfx_timeline_destroy(timeline);
+        if (jfx_editor_render_frame(editor,(uint64_t)frame,width,height,pixels,(size_t)width*height*4) != JFX_SUCCESS) {
+            tilly_container_free(pixels);
+            jfx_editor_destroy(editor);
             return fail("cannot render frame %ld", frame);
         }
         char path[MAX_PATH];
         snprintf(path, sizeof(path), "%s%04ld.ppm", prefix, frame);
         if (write_ppm(path, pixels, width, height) != 0) {
-            free(pixels);
-            jfx_timeline_destroy(timeline);
+            tilly_container_free(pixels);
+            jfx_editor_destroy(editor);
             return fail("cannot write '%s'", path);
         }
     }
-    free(pixels);
+    tilly_container_free(pixels);
     printf("wrote %ld frame%s from %s (%ux%u, %g fps)\n", end - start,
         (end - start) == 1 ? "" : "s", document, width, height, jfx_timeline_fps(timeline));
-    jfx_timeline_destroy(timeline);
+    jfx_editor_destroy(editor);
     return 0;
 }
 
@@ -453,7 +496,7 @@ int cmd_project(int argc, char **argv) {
                 return fail("%s", error);
             }
             printf("raster:  %ux%u\n", width, height);
-            printf("output:  %s\n", jfx_graph_node_label(graph, node));
+            printf("output:  %s\n", node==UINT32_MAX?"none":jfx_graph_node_label(graph, node));
             char summary[1024];
             size_t written = 0;
             if (jfx_graph_describe(graph, summary, sizeof(summary), &written) == JFX_SUCCESS) {

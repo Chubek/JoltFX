@@ -16,18 +16,32 @@ typedef struct {
 } scheduler_t;
 static scheduler_t *g_scheduler;
 
+/* A non-pthread Emscripten module cannot create workers. Keep the same bounded
+ * priority queue and drain it on the caller at tick/wait/shutdown instead. */
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#define JFX_SERIAL_SCHEDULER 1
+#else
+#define JFX_SERIAL_SCHEDULER 0
+#endif
+
+static task_t take_task(scheduler_t *s) {
+    unsigned best = 0;
+    for (unsigned i = 1; i < s->count; ++i)
+        if (s->tasks.a[i].priority > s->tasks.a[best].priority) best = i;
+    task_t task = s->tasks.a[best];
+    for (unsigned i = best + 1; i < s->count; ++i) s->tasks.a[i - 1] = s->tasks.a[i];
+    --s->count;
+    return task;
+}
+
+#if !JFX_SERIAL_SCHEDULER
 static void *worker(void *arg) {
     scheduler_t *s = arg;
     for (;;) {
         pthread_mutex_lock(&s->lock);
         while (!s->count && s->running) pthread_cond_wait(&s->ready, &s->lock);
         if (!s->count && !s->running) { pthread_mutex_unlock(&s->lock); return NULL; }
-        unsigned best = 0;
-        for (unsigned i = 1; i < s->count; ++i)
-            if (s->tasks.a[i].priority > s->tasks.a[best].priority) best = i;
-        task_t task = s->tasks.a[best];
-        for (unsigned i = best + 1; i < s->count; ++i) s->tasks.a[i - 1] = s->tasks.a[i];
-        --s->count;
+        task_t task = take_task(s);
         ++s->active;
         pthread_mutex_unlock(&s->lock);
         task.func(task.userdata);
@@ -37,6 +51,7 @@ static void *worker(void *arg) {
         pthread_mutex_unlock(&s->lock);
     }
 }
+#endif
 
 bool scheduler_init(uint32_t workers) {
     if (g_scheduler) return false;
@@ -52,6 +67,7 @@ bool scheduler_init(uint32_t workers) {
         pthread_mutex_destroy(&s->lock); tilly_container_free(s); return false;
     }
     s->running = true;
+#if !JFX_SERIAL_SCHEDULER
     for (; s->workers < workers; ++s->workers) {
         if (pthread_create(&s->threads[s->workers], NULL, worker, s)) {
             pthread_mutex_lock(&s->lock);
@@ -63,6 +79,7 @@ bool scheduler_init(uint32_t workers) {
             pthread_mutex_destroy(&s->lock); tilly_vec_destroy(s->tasks); tilly_container_free(s); return false;
         }
     }
+#endif
     g_scheduler = s;
     return true;
 }
@@ -72,9 +89,15 @@ void scheduler_shutdown(void) {
     if (!s) return;
     pthread_mutex_lock(&s->lock);
     s->running = false;
+#if !JFX_SERIAL_SCHEDULER
     pthread_cond_broadcast(&s->ready);
+#endif
     pthread_mutex_unlock(&s->lock);
+#if JFX_SERIAL_SCHEDULER
+    scheduler_wait_idle();
+#else
     for (unsigned i = 0; i < s->workers; ++i) pthread_join(s->threads[i], NULL);
+#endif
     g_scheduler = NULL;
     pthread_cond_destroy(&s->idle); pthread_cond_destroy(&s->ready);
     pthread_mutex_destroy(&s->lock); tilly_vec_destroy(s->tasks); tilly_container_free(s);
@@ -105,7 +128,16 @@ uint32_t scheduler_pending_tasks(void) {
 void scheduler_wait_idle(void) {
     scheduler_t *s = g_scheduler;
     if (!s) return;
+#if JFX_SERIAL_SCHEDULER
+    while (s->count) {
+        task_t task = take_task(s);
+        ++s->active;
+        task.func(task.userdata);
+        --s->active;
+    }
+#else
     pthread_mutex_lock(&s->lock);
     while (s->count || s->active) pthread_cond_wait(&s->idle, &s->lock);
     pthread_mutex_unlock(&s->lock);
+#endif
 }

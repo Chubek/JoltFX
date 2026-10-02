@@ -15,6 +15,30 @@
 (defn finish [value alpha clip] (* alpha (if clip (clamp01 value) value)))
 (defn decode [v] (if (<= v .04045) (/ v 12.92) (pow (/ (+ v .055) 1.055) 2.4)))
 (defn encode [v] (if (<= v .0031308) (* v 12.92) (- (* 1.055 (pow v (/ 1 2.4))) .055)))
+;; Domain-aware color tables imported by Glue, including baked OCIO transforms.
+;; Header: dimension (1/3), edge, RGB domain minima/maxima; then RGB triples.
+(defn table-at [r g b c n] (data (+ 8 (* 3 (+ r (* n (+ g (* n b))))) c)))
+(defn table-slice [r g b c n]
+  (let [i (floor r) j (floor g) ii (min (+ i 1) (- n 1)) jj (min (+ j 1) (- n 1))]
+    (mix (mix (table-at i j b c n) (table-at ii j b c n) (- r i))
+         (mix (table-at i jj b c n) (table-at ii jj b c n) (- r i)) (- g j))))
+(defn table-domain [v c n]
+  (* (clamp01 (/ (- v (data (+ 2 c))) (- (data (+ 5 c)) (data (+ 2 c))))) (- n 1)))
+(defn color-table [x y c amount interpolation]
+  (if (or (= c 3) (or (= amount 0) (= (data-count) 0))) (pixel x y c)
+    (let [n (data 1) dim (data 0)
+          valid (require (and (>= n 2) (= (data-count) (+ 8 (* 3 (if (= dim 1) n (* n n n)))))))
+          r (table-domain (straight x y 0) 0 n)
+          g (table-domain (straight x y 1) 1 n)
+          b (table-domain (straight x y 2) 2 n)
+          t (channel c r g b) i (floor t)
+          mapped (if (= dim 1)
+                   (if (= interpolation 0) (table-at (round t) 0 0 c n)
+                     (mix (table-at i 0 0 c n) (table-at (min (+ i 1) (- n 1)) 0 0 c n) (- t i)))
+                   (if (= interpolation 0) (table-at (round r) (round g) (round b) c n)
+                     (mix (table-slice r g (floor b) c n)
+                          (table-slice r g (min (+ (floor b) 1) (- n 1)) c n) (- b (floor b)))))]
+      (finish (mix (straight x y c) mapped amount) (pixel x y 3) 0))))
 (defn wrap [x n] (mod (+ (mod x n) n) n))
 ;; Inverse homography via adjugate. Parameters describe source -> destination.
 (defn warp-one [x y c a b d e f g h i j interpolation border]

@@ -1,0 +1,20 @@
+;; @kernel audio_mix
+;; @category audio_reactive
+;; @description Accumulate stereo samples with linear gain, balance, and a dual fade envelope.
+;; @complexity Low
+;; @gpu No
+;; @since 0.7.0
+;; JBC1 lanes 0/1 are stereo; lanes 2/3 are unused. Inputs are finite float.
+;; gain: default 1, range [0,256] (clip * track gain), unitless.
+;; pan: default 0, range [-1,1], center preserves unity in both channels.
+;; fade_in/fade_out: default 1, range [0,1], normalized sample-clock envelopes.
+(defkernel audio_mix [left right accumulated_left accumulated_right gain pan fade_in fade_out]
+  (rgba
+    (+ accumulated_left
+      (* (* left (* gain (- 1 (max 0 pan))))
+        (min (min 1 (max 0 fade_in)) (min 1 (max 0 fade_out)))))
+    (+ accumulated_right
+      (* (* right (* gain (+ 1 (min 0 pan))))
+        (min (min 1 (max 0 fade_in)) (min 1 (max 0 fade_out)))))
+    0
+    0))

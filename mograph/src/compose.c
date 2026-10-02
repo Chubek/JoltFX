@@ -6,6 +6,7 @@
  * the graph so that destroying it is sufficient. */
 
 #include "jfx/jfx_compose.h"
+#include "jfx/jfx_color.h"
 #include "joltscript/video_io.h"
 
 #include <math.h>
@@ -362,7 +363,7 @@ static const jfx_node_kind_t kKindChromaKey = { "chroma_key", "Chroma Key", "Key
 
 /* --- Compositing --- */
 
-static const jfx_param_desc_t kMergeParams[] = { P1("mode", "Mode", 0.0f, (float)(JFX_BLEND_COUNT - 1),
+static const jfx_param_desc_t kMergeParams[] = { PI("mode", "Mode", 0.0f, (float)(JFX_BLEND_COUNT - 1),
     0.0f),
     P1("opacity", "Opacity", 0.0f, 1.0f, 1.0f) };
 static const jfx_port_desc_t kBlendPorts[] = {
@@ -396,11 +397,12 @@ static const jfx_node_kind_t *const kKinds[] = {
 };
 
 size_t jfx_node_kind_count(void) {
-    return sizeof(kKinds) / sizeof(kKinds[0]);
+    return sizeof(kKinds) / sizeof(kKinds[0]) + jfx_color_kind_count();
 }
 
 const jfx_node_kind_t *jfx_node_kind_at(size_t index) {
-    return index < jfx_node_kind_count() ? kKinds[index] : NULL;
+    size_t builtins=sizeof(kKinds)/sizeof(kKinds[0]);
+    return index < builtins ? kKinds[index] : jfx_color_kind_at(index-builtins);
 }
 
 const jfx_node_kind_t *jfx_node_kind_find(const char *name) {
@@ -408,8 +410,9 @@ const jfx_node_kind_t *jfx_node_kind_find(const char *name) {
         return NULL;
     }
     for (size_t i = 0; i < jfx_node_kind_count(); ++i) {
-        if (strcmp(kKinds[i]->name, name) == 0) {
-            return kKinds[i];
+        const jfx_node_kind_t *kind=jfx_node_kind_at(i);
+        if (strcmp(kind->name, name) == 0) {
+            return kind;
         }
     }
     return NULL;
@@ -466,6 +469,7 @@ typedef struct {
     jfx_node_value_t value;
     int32_t input_source[JFX_GRAPH_MAX_INPUTS]; /* node index, or -1 */
     uint8_t input_port[JFX_GRAPH_MAX_INPUTS];
+    float x, y;
 } node_t;
 
 struct jfx_graph {
@@ -508,7 +512,7 @@ size_t jfx_graph_node_capacity(const jfx_graph_t *graph) {
 
 jfx_result_t jfx_graph_add_node(jfx_graph_t *graph, const char *kind_name, const char *label,
     uint32_t *out_node) {
-    if (!graph || !kind_name || !out_node) {
+    if (!graph || !kind_name || !out_node || (label && strlen(label)>=JFX_NODE_LABEL_MAX)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     /* `*out_node` is left untouched on failure. Zeroing it would alias a real
@@ -524,14 +528,31 @@ jfx_result_t jfx_graph_add_node(jfx_graph_t *graph, const char *kind_name, const
     node_t *node = &graph->nodes[graph->count];
     memset(node, 0, sizeof(*node));
     node->kind = kind;
+    node->x=(float)(graph->count%4)*240; node->y=(float)(graph->count/4)*160;
     jfx_node_value_init(&node->value, kind);
-    snprintf(node->label, sizeof(node->label), "%s", label && label[0] ? label : kind->label);
+    snprintf(node->label, sizeof(node->label), "%s", label ? label : kind->label);
     for (size_t p = 0; p < JFX_GRAPH_MAX_INPUTS; ++p) {
         node->input_source[p] = -1;
     }
     *out_node = (uint32_t)graph->count;
     graph->count++;
     return JFX_SUCCESS;
+}
+
+jfx_result_t jfx_graph_duplicate_node(jfx_graph_t *graph,uint32_t index,uint32_t *out_node) {
+    if (!graph || index>=graph->count || !out_node) return JFX_ERROR_INVALID_ARGUMENT;
+    if (graph->count==JFX_GRAPH_MAX_NODES) return JFX_ERROR_OUT_OF_MEMORY;
+    node_t copy=graph->nodes[index];
+    jfx_result_t r=jfx_node_value_copy(&graph->nodes[index].value,&copy.value);
+    if (r!=JFX_SUCCESS) return r;
+    size_t label_length=strlen(graph->nodes[index].label);
+    if (label_length>58) {
+        label_length=58;
+        while (label_length && ((unsigned char)graph->nodes[index].label[label_length]&0xc0u)==0x80u) --label_length;
+    }
+    snprintf(copy.label,sizeof(copy.label),"%.*s copy",(int)label_length,graph->nodes[index].label);
+    copy.x=fminf(1.e6f,copy.x+32); copy.y=fminf(1.e6f,copy.y+32);
+    graph->nodes[graph->count]=copy; *out_node=(uint32_t)graph->count++; return JFX_SUCCESS;
 }
 
 jfx_result_t jfx_graph_remove_node(jfx_graph_t *graph, uint32_t index) {
@@ -582,7 +603,7 @@ const char *jfx_graph_node_label(const jfx_graph_t *graph, uint32_t index) {
 }
 
 jfx_result_t jfx_graph_set_node_label(jfx_graph_t *graph, uint32_t index, const char *label) {
-    if (!graph || !label || index >= graph->count) {
+    if (!graph || !label || index >= graph->count || strlen(label)>=JFX_NODE_LABEL_MAX) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     snprintf(graph->nodes[index].label, sizeof(graph->nodes[index].label), "%s", label);
@@ -601,6 +622,21 @@ jfx_node_value_t *jfx_graph_node_value_mut(jfx_graph_t *graph, uint32_t index) {
         return NULL;
     }
     return &graph->nodes[index].value;
+}
+
+jfx_result_t jfx_graph_set_node_param(jfx_graph_t *g,uint32_t n,size_t p,float v) {
+    const jfx_node_kind_t *k=jfx_graph_node_kind(g,n);
+    if (!k || p>=k->param_count || !isfinite(v) || v<k->params[p].minimum || v>k->params[p].maximum ||
+        (k->params[p].integral && floorf(v)!=v)) return JFX_ERROR_INVALID_ARGUMENT;
+    g->nodes[n].value.scalars[p]=v; return jfx_graph_touch(g,n);
+}
+jfx_result_t jfx_graph_set_node_position(jfx_graph_t *g,uint32_t n,float x,float y) {
+    if (!g || n>=g->count || !isfinite(x) || !isfinite(y) || fabsf(x)>1.e6f || fabsf(y)>1.e6f) return JFX_ERROR_INVALID_ARGUMENT;
+    g->nodes[n].x=x; g->nodes[n].y=y; return JFX_SUCCESS;
+}
+jfx_result_t jfx_graph_node_position(const jfx_graph_t *g,uint32_t n,float *x,float *y) {
+    if (!g || n>=g->count || !x || !y) return JFX_ERROR_INVALID_ARGUMENT;
+    *x=g->nodes[n].x; *y=g->nodes[n].y; return JFX_SUCCESS;
 }
 
 jfx_result_t jfx_graph_touch(jfx_graph_t *graph, uint32_t index) {
@@ -659,7 +695,7 @@ jfx_result_t jfx_graph_connect(jfx_graph_t *graph, uint32_t from_node, size_t fr
 }
 
 jfx_result_t jfx_graph_disconnect(jfx_graph_t *graph, uint32_t to_node, size_t to_port) {
-    if (!graph || to_node >= graph->count || to_port >= JFX_GRAPH_MAX_INPUTS) {
+    if (!graph || to_node >= graph->count || to_port >= graph->nodes[to_node].kind->input_count || to_port >= JFX_GRAPH_MAX_INPUTS) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     graph->nodes[to_node].input_source[to_port] = -1;
@@ -793,11 +829,11 @@ typedef struct {
      * node feeding several consumers is therefore evaluated once. */
     frame_t *cache;
     uint8_t *cache_valid;
-    /* Decoded source images and parsed LUTs, keyed by node, so a graph that
-     * references the same file on several nodes decodes it once per render. */
+    /* Decoded sources and LUTs, keyed by node and reused within one render. */
     jfx_image_t *images;
     jfx_lut_t **luts;
     jfx_result_t error;
+    size_t scratch_bytes;
 } eval_ctx_t;
 
 static void ctx_release(eval_ctx_t *ctx);
@@ -873,7 +909,7 @@ static float input_float(const eval_ctx_t *ctx, const node_t *node, size_t port,
 }
 
 /* Decoded image for an `image` node, loaded once per render. */
-static const jfx_image_t *node_image(const eval_ctx_t *ctx, uint32_t index, const node_t *node) {
+static const jfx_image_t *node_image(eval_ctx_t *ctx, uint32_t index, const node_t *node) {
     if (ctx->images[index].pixels) {
         return &ctx->images[index];
     }
@@ -883,7 +919,9 @@ static const jfx_image_t *node_image(const eval_ctx_t *ctx, uint32_t index, cons
     }
     jfx_image_t *slot = &ctx->images[index];
     slot->size = sizeof(*slot);
-    if (jfx_image_load(path, NULL, slot) != JFX_SUCCESS) {
+    jfx_result_t result=jfx_image_load(path,NULL,slot);
+    if (result != JFX_SUCCESS) {
+        ctx->error=result;
         slot->pixels = NULL;
         return NULL;
     }
@@ -891,7 +929,7 @@ static const jfx_image_t *node_image(const eval_ctx_t *ctx, uint32_t index, cons
 }
 
 /* Parsed LUT for a `lut` node, loaded once per render. */
-static const jfx_lut_t *node_lut(const eval_ctx_t *ctx, uint32_t index, const node_t *node) {
+static const jfx_lut_t *node_lut(eval_ctx_t *ctx, uint32_t index, const node_t *node) {
     if (ctx->luts[index]) {
         return ctx->luts[index];
     }
@@ -900,7 +938,9 @@ static const jfx_lut_t *node_lut(const eval_ctx_t *ctx, uint32_t index, const no
         return NULL;
     }
     jfx_lut_t *lut = NULL;
-    if (jfx_lut_load_auto(path, &lut, NULL, 0) != JFX_SUCCESS) {
+    jfx_result_t result=jfx_lut_load_auto(path, &lut, NULL, 0);
+    if (result != JFX_SUCCESS) {
+        ctx->error=result;
         return NULL;
     }
     ctx->luts[index] = lut;
@@ -1013,6 +1053,7 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
         return;
     }
     if (strcmp(kind_name, "video") == 0) {
+        if (!node_string(node,0)) { memset(out->pixels,0,count*4u*sizeof(float)); return; }
         uint8_t *pixels=alloc_bytes(count*4);
         if (!pixels) { ctx->error=JFX_ERROR_OUT_OF_MEMORY; return; }
         int r=jolt_video_io_frame(node->value.strings[0],(double)ctx->time_seconds,ctx->width,ctx->height,pixels,count*4);
@@ -1028,15 +1069,11 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
         }
         for (uint32_t y = 0; y < ctx->height; ++y) {
             for (uint32_t x = 0; x < ctx->width; ++x) {
-                /* Nearest-neighbour fit: the image keeps its aspect ratio and is
-                 * centred. Sampled in normalised source space so an upscaled
-                 * frame does not repeat edge texels. */
-                const float sx = (float)x / (float)ctx->width;
-                const float sy = (float)y / (float)ctx->height;
-                const size_t last_x = image->width - 1u;
-                const size_t last_y = image->height - 1u;
-                const size_t ix = (size_t)(clamp01(sx) * (float)last_x);
-                const size_t iy = (size_t)(clamp01(sy) * (float)last_y);
+                /* Nearest-neighbour stretch over the full source extent. At
+                 * native resolution every texel, including the last row and
+                 * column, is preserved. Wide intermediates avoid overflow. */
+                const size_t ix = (size_t)((uint64_t)x * image->width / ctx->width);
+                const size_t iy = (size_t)((uint64_t)y * image->height / ctx->height);
                 const uint8_t *texel = image->pixels + (iy * image->width + ix) * 4u;
                 float *px = out->pixels + ((size_t)y * ctx->width + x) * 4u;
                 px[0] = (float)texel[0] / 255.0f;
@@ -1056,6 +1093,13 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
         return;
     }
     const float *src = in->pixels;
+
+    for (size_t i=0;i<jfx_color_kind_count();++i) if (node->kind==jfx_color_kind_at(i)) {
+        const jfx_lut_t *lut=node->kind->string_count?node_lut(ctx,index,node):NULL;
+        if (ctx->error==JFX_SUCCESS)
+            ctx->error=jfx_color_apply(node->kind,&node->value,lut,src,ctx->width,ctx->height,out->pixels);
+        return;
+    }
 
     /* --- Colour grading --------------------------------------------------- */
     if (strcmp(kind_name, "exposure") == 0) {
@@ -1436,17 +1480,24 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
 
 /* Evaluates `index` into its cache slot, recursing through inputs. */
 static void ensure_evaluated(eval_ctx_t *ctx, uint32_t index) {
+    if (ctx->error!=JFX_SUCCESS) return;
     if (ctx->cache_valid[index]) {
         return;
     }
     /* Mark first so a malformed graph cannot recurse forever even if a cycle
      * slipped past the connection check. */
     ctx->cache_valid[index] = 1;
+    size_t bytes=ctx->pixel_count*4u*sizeof(float);
+    if (bytes>512u*1024u*1024u-ctx->scratch_bytes) { ctx->error=JFX_ERROR_OUT_OF_MEMORY; return; }
+    ctx->cache[index].pixels=alloc_bytes(bytes);
+    if (!ctx->cache[index].pixels) { ctx->error=JFX_ERROR_OUT_OF_MEMORY; return; }
+    ctx->cache[index].pixel_count=ctx->pixel_count; ctx->scratch_bytes+=bytes;
     const node_t *node = &ctx->graph->nodes[index];
     for (size_t p = 0; p < node->kind->input_count && p < JFX_GRAPH_MAX_INPUTS; ++p) {
         const int32_t src = node->input_source[p];
         if (src >= 0) {
             ensure_evaluated(ctx, (uint32_t)src);
+            if (ctx->error!=JFX_SUCCESS) return;
         }
     }
     eval_node(ctx, index, node, &ctx->cache[index]);
@@ -1471,27 +1522,19 @@ static jfx_result_t ctx_init(eval_ctx_t *ctx, const jfx_graph_t *graph, uint32_t
     }
     ctx->slots = graph->count ? graph->count : 1u;
     const size_t slots = ctx->slots;
-    const size_t bytes = ctx->pixel_count * sizeof(float) * 4u;
     ctx->cache = alloc_bytes(slots * sizeof(frame_t));
     ctx->cache_valid = alloc_bytes(slots);
     ctx->images = alloc_bytes(slots * sizeof(jfx_image_t));
     ctx->luts = alloc_bytes(slots * sizeof(jfx_lut_t *));
+    /* Each successful allocation is initialized before any failure cleanup. */
+    if (ctx->cache) memset(ctx->cache,0,slots*sizeof(frame_t));
+    if (ctx->images) memset(ctx->images,0,slots*sizeof(jfx_image_t));
+    if (ctx->luts) memset(ctx->luts,0,slots*sizeof(jfx_lut_t *));
     if (!ctx->cache || !ctx->cache_valid || !ctx->images || !ctx->luts) {
         ctx_release(ctx);
         return JFX_ERROR_OUT_OF_MEMORY;
     }
-    memset(ctx->cache, 0, slots * sizeof(frame_t));
     memset(ctx->cache_valid, 0, slots);
-    memset(ctx->images, 0, slots * sizeof(jfx_image_t));
-    memset(ctx->luts, 0, slots * sizeof(jfx_lut_t *));
-    for (size_t i = 0; i < slots; ++i) {
-        ctx->cache[i].pixels = alloc_bytes(bytes);
-        ctx->cache[i].pixel_count = ctx->pixel_count;
-        if (!ctx->cache[i].pixels) {
-            ctx_release(ctx);
-            return JFX_ERROR_OUT_OF_MEMORY;
-        }
-    }
     return JFX_SUCCESS;
 }
 
@@ -1539,11 +1582,11 @@ jfx_result_t jfx_graph_render_node(const jfx_graph_t *graph, uint32_t node, uint
     if (!graph || node >= graph->count) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
-    uint8_t rgba8[4] = { 0, 0, 0, 0 };
-    const jfx_result_t status = jfx_graph_render(graph, node, 1u, 1u, time_seconds, rgba8);
-    /* A one-pixel render is only a validity probe; the real image comes from
-     * the full-size path below. */
-    (void)status;
+    uint32_t order[JFX_GRAPH_MAX_NODES]; size_t reachable=0;
+    jfx_result_t status=jfx_graph_topological_order(graph,node,order,JFX_GRAPH_MAX_NODES,&reachable);
+    if (status!=JFX_SUCCESS) return status;
+    if (width && height && width<=16384 && height<=16384 &&
+        (size_t)width*height>512u*1024u*1024u/(sizeof(float)*4u*reachable)) return JFX_ERROR_OUT_OF_MEMORY;
     eval_ctx_t ctx;
     jfx_result_t init = ctx_init(&ctx, graph, width, height, time_seconds);
     if (init != JFX_SUCCESS) {
@@ -1592,7 +1635,8 @@ jfx_result_t jfx_graph_render(const jfx_graph_t *graph, uint32_t output, uint32_
     if (status != JFX_SUCCESS) {
         return status;
     }
-    (void)order_count;
+    if (width<=16384 && height<=16384 &&
+        (size_t)width*height>512u*1024u*1024u/(sizeof(float)*4u*order_count)) return JFX_ERROR_OUT_OF_MEMORY;
 
     eval_ctx_t ctx;
     status = ctx_init(&ctx, graph, width, height, time_seconds);
@@ -1648,7 +1692,7 @@ jfx_result_t jfx_graph_describe(const jfx_graph_t *graph, char *out_text, size_t
 
 jfx_result_t jfx_graph_set_node_string(jfx_graph_t *graph, uint32_t node, size_t index,
     const char *text) {
-    if (!graph || node >= graph->count || index >= JFX_GRAPH_MAX_STRING_PARAMS) {
+    if (!graph || node >= graph->count || index >= JFX_GRAPH_MAX_STRING_PARAMS || (text && strlen(text)>=JFX_NODE_PATH_MAX)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     const jfx_node_kind_t *kind = graph->nodes[node].kind;

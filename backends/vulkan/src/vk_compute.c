@@ -512,7 +512,7 @@ static bool run_glslc(const char *comp, const char *spv) {
 }
 #endif
 
-static uint8_t *load_spv(const char *glsl, size_t *out_size) {
+static uint32_t *load_spv(const char *glsl, size_t *out_size) {
     *out_size = 0;
 #if !JVK_HAVE_POSIX_SPAWN
     (void)glsl;
@@ -552,7 +552,7 @@ static uint8_t *load_spv(const char *glsl, size_t *out_size) {
         fclose(hit);
         return NULL;
     }
-    uint8_t *words = vk_alloc((size_t)bytes);
+    uint32_t *words = vk_alloc((size_t)bytes);
     bool ok = words && fread(words, 1, (size_t)bytes, hit) == (size_t)bytes;
     fclose(hit);
     if (!ok) {
@@ -714,7 +714,7 @@ int jvk_compute_run(jvk_compute_device_t *dev, const uint8_t *code, size_t size,
         return -1;
     }
     size_t spv_size = 0;
-    uint8_t *spv = load_spv(b.data, &spv_size);
+    uint32_t *spv = load_spv(b.data, &spv_size);
     vk_free(b.data);
     if (!spv) {
         return -1;
@@ -830,7 +830,7 @@ int jvk_compute_run(jvk_compute_device_t *dev, const uint8_t *code, size_t size,
         .p_next = NULL,
         .flags = 0,
         .code_size = spv_size,
-        .p_code = (const uint32_t *)spv,
+        .p_code = spv,
     };
     if (f->create_shader_module(dev->device, &module_info, NULL, &module) !=
             JVK_SUCCESS ||

@@ -211,10 +211,19 @@ static void test_sequence_roundtrip(void) {
     assert(jfx_timeline_clip_source(reloaded, 1, 0) == JFX_CLIP_IMAGE);
     assert(strcmp(jfx_timeline_clip_path(reloaded, 1, 0), "/frames/plate.png") == 0);
 
-    /* And it renders identically. */
+    /* Missing assigned LUTs and images report errors. Clear the LUT and disable
+     * the placeholder image clip before comparing rendered pixel parity. */
     uint8_t *a = malloc(320u * 180u * 4u);
     uint8_t *b = malloc(320u * 180u * 4u);
     assert(a && b);
+    assert(jfx_timeline_render(timeline, 10, 0.0f, a) != JFX_SUCCESS);
+    assert(jfx_timeline_render(reloaded, 10, 0.0f, b) != JFX_SUCCESS);
+    assert(jfx_timeline_set_effect_string(timeline, lower, clip, lut, 0, "") == JFX_SUCCESS);
+    assert(jfx_timeline_set_effect_string(reloaded, lower, clip, lut, 0, "") == JFX_SUCCESS);
+    assert(jfx_timeline_render(timeline, 10, 0.0f, a) != JFX_SUCCESS);
+    assert(jfx_timeline_render(reloaded, 10, 0.0f, b) != JFX_SUCCESS);
+    assert(jfx_timeline_set_clip_enabled(timeline,1,0,false)==JFX_SUCCESS);
+    assert(jfx_timeline_set_clip_enabled(reloaded,1,0,false)==JFX_SUCCESS);
     assert(jfx_timeline_render(timeline, 10, 0.0f, a) == JFX_SUCCESS);
     assert(jfx_timeline_render(reloaded, 10, 0.0f, b) == JFX_SUCCESS);
     assert(memcmp(a, b, 320u * 180u * 4u) == 0);

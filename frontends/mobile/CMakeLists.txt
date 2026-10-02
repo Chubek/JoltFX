@@ -14,3 +14,7 @@ if(ANDROID)
     target_link_libraries(jfx_android_jni PRIVATE jfx_mobile_player)
     set_project_warnings(jfx_android_jni)
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_subdirectory(ios)
+endif()

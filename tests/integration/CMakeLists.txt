@@ -8,6 +8,16 @@ add_test(
 )
 set_tests_properties(cli_integration PROPERTIES LABELS "integration;cli" TIMEOUT 300)
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+find_program(JFX_TEST_FFMPEG ffmpeg)
+find_program(JFX_TEST_FFPROBE ffprobe)
+if(Python3_Interpreter_FOUND AND JFX_TEST_FFMPEG AND JFX_TEST_FFPROBE)
+    add_test(NAME media_cli_integration COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/media/test_media.py" "$<TARGET_FILE:joltfx_cli>"
+        "${JFX_TEST_FFMPEG}" "${JFX_TEST_FFPROBE}")
+    set_tests_properties(media_cli_integration PROPERTIES LABELS "integration;cli;media" TIMEOUT 180 SKIP_RETURN_CODE 77)
+endif()
+
 if(JOLTFX_BUILD_EXAMPLES)
     add_test(
         NAME example_hello_world

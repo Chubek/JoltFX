@@ -72,6 +72,57 @@ selected effect by rendering it through the engine's backend. The properties
 panel reports the resolved device and whether the last frame ran on a GPU.
 `--frames N` or `--duration SEC` bound the run.
 
+### Non-linear editing and color
+
+Open `.jfx` sequences in the desktop Timeline, or use the shared terminal editor:
+
+```sh
+build/frontends/cli/joltfx nle new sequence.jfx --size 320 180 --fps 30000 1001
+build/frontends/cli/joltfx nle edit sequence.jfx edited.jfx
+build/frontends/desktop/jfx_desktop --project edited.jfx
+```
+
+The shared NLE supports split, trim, move, duplicate, source slip, ripple edits,
+track controls and undo/redo. **Color Calibration** and **Color Grading** act on
+the selected clip through kernel-backed operators. Both subsystems are exposed
+in desktop, CLI/terminal, web, Android, embeddable iOS controllers and the
+AE/Premiere/Resolve bridge APIs. See [NLE usage](docs/nle.md) and
+[color usage](docs/editor.md) for frontend controls, persistence and export.
+
+### Node-based composition
+
+**Node Compositing** supplies typed visual graphs, drag-to-connect ports,
+metadata-driven inspectors, persistent layouts and shared undo/redo across all
+frontends. Sources, keys, transforms, blends and color operators can be combined
+and previewed or exported using the same evaluator.
+
+```sh
+build/frontends/cli/joltfx compose new composition.jfx --size 320 180
+build/frontends/cli/joltfx compose edit composition.jfx edited.jfx
+build/frontends/cli/joltfx compose render edited.jfx -o composition.ppm
+```
+
+See [the composition guide](docs/composition.md) for desktop/web/touch controls,
+the embeddable iOS controller, host APIs and the shared command reference.
+
+### Audio mixing and video export
+
+Timeline audio supports WAV/FLAC/MP3 and FFmpeg media containers, with clip/track
+gain, stereo balance, fades, mute/solo and frame-accurate source timing. Desktop,
+browser, Android and iOS playback use the shared mixer. Encoded export supports
+MP4/MOV/MKV, progress/cancellation and transactional output across all frontends.
+
+```sh
+cmake -S . -B build -DJFX_MEDIA_FFMPEG_BUNDLED=ON
+cmake --build build --parallel
+build/frontends/cli/joltfx export-video edited.jfx -o final.mp4
+build/frontends/cli/joltfx compose export composition.jfx -o animation.mkv --frames 300
+```
+
+FFmpeg and miniaudio are vendored submodules. Native builds can use system FFmpeg
+development packages; the bundled profile builds on native, WASM, Android and
+iOS toolchains. See [audio/export usage and dependency details](docs/media.md).
+
 ### Kernels
 
 ```lisp
@@ -104,6 +155,8 @@ scripts/check-bytecode-parity.sh build   # prove they agree
 | `JFX_FRONTEND_CLI` / `_DESKTOP` / `_WEB` / `_MOBILE` | ON | Frontends |
 | `JFX_DESKTOP_WINDOW` | ON | Desktop window (needs SDL2 and OpenGL) |
 | `JFX_PLUGIN_HOST_BRIDGES` | ON | After Effects / Premiere / DaVinci bridges |
+| `JFX_VIDEO_FFMPEG` | ON | FFmpeg media decoding and encoded export when available |
+| `JFX_MEDIA_FFMPEG_BUNDLED` | OFF | Build the vendored dependency-free FFmpeg profile |
 | `JFX_ASAN` / `JFX_UBSAN` | OFF | Sanitizers |
 | `JOLTFX_BUILD_TESTS` / `_EXAMPLES` | ON | Tests, examples |
 
@@ -117,6 +170,8 @@ Presets: `default`, `release`, `sanitizers`, `minimal`.
 
 - `AGENTS.md` — architecture and contribution rules
 - `docs/` — guides and references
+- `docs/nle.md`, `docs/editor.md`, `docs/composition.md` — NLE, color and composition workflows
+- `docs/media.md` — audio mixing, encoded export and media dependencies
 - `PROGRESS.md` — what is implemented, what is verified, and what is not
 - `CHANGELOG.md` — release history
 

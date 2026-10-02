@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "tilly/attributes.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,14 +44,14 @@ void tilly_log(
     uint32_t line,
     const char *fmt,
     ...
-);
+) TILLY_PRINTF_LIKE(5, 6);
 
 // Log a message (simple API for backward compatibility)
 void tilly_log_simple(
     tilly_log_level_t level,
     const char *fmt,
     ...
-);
+) TILLY_PRINTF_LIKE(2, 3);
 
 // Convenience macros
 #define tilly_log_trace(module, ...) \
