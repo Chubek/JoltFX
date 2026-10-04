@@ -126,3 +126,9 @@
 [submodule "third_party/miniaudio"]
 	path = third_party/miniaudio
 	url = https://github.com/mackron/miniaudio.git
+[submodule "third_party/openfx"]
+	path = third_party/openfx
+	url = https://github.com/AcademySoftwareFoundation/openfx.git
+[submodule "/mnt/warble/joltfx/third_party/openfx"]
+	path = /mnt/warble/joltfx/third_party/openfx
+	url = https://github.com/AcademySoftwareFoundation/openfx.git

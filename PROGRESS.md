@@ -136,3 +136,142 @@
 - Android bundled-FFmpeg `assembleDebug lintDebug` passed for both ABIs after final source changes. Debug APK signature, API-26/API-35 launch manifest, **29 JNI exports on both ABIs**, **16-KiB ELF load-segment alignment** and APK ZIP alignment pass. APK: `frontends/mobile/android/app/build/outputs/apk/debug/app-debug.apk` (22,254,684 bytes). Packaging log: `/tmp/opencode/joltfx-media-android-apk-verification.log`.
 - Added `docs/media.md`, refreshed frontend/API help and build guides, and installed media guides/dependency license texts. Both bundled and system-FFmpeg installs pass an out-of-tree CMake/C consumer that mixes audio and encodes a video. Bundled CPack TGZ creation succeeds.
 - iOS AVAudioEngine playback and incremental sequence/composition export controls are implemented; compilation/runtime verification requires macOS/Xcode/iOS SDKs. Android on-device playback/UI verification requires a device/emulator; none is connected. Installed AE/Premiere/Resolve verification requires proprietary SDK adapters; portable host audio/export APIs pass conformance.
+
+## Joltscript plan audit (`JOLTSCRIPT_PLAN.md`)
+
+Audited the five-phase plan against the shipped tree. Baseline first: in-tree `build/`
+rebuilds clean and the 34 Joltscript/kernel tests pass. Evidence gathered with a
+standalone probe linked against `libjoltscript_glue.a`, compiling sources exactly as
+`kernels/src/image_kernels.c` does (`common/image.jolt` prepended as the library).
+
+- The plan (2025-09-29) has diverged from the implementation. `joltscript/AGENTS.md`
+  and the Glue `AGENTS.md` describe `compiler/{frontend,middle,backend/{c,rust,python,go}}`,
+  `runtime/{arc,arena,intrinsics}` and `abi_registry/marshal_engine/capability_dispatch/
+  lifetime_bridge/error_adapter/extension_host`. None of those files exist. The real
+  language surface is a 377-line bounded AST interpreter (`image_program.c`) plus a
+  193-line JBC1 bytecode compiler (`compiler.c`).
+- **Phase 1 — partial.** Present: `let`, `if`, `defn`, `defkernel`, plus unplanned
+  `param`/`sum`/`passes`. Absent: 9 of the 12 listed special forms (`var`, `cond`,
+  `when`, `unless`, `for`, `while`, `loop`, `fn`, `do`). Types: **0 of 11** — the
+  profile is untyped `f64`/`f32` throughout. Comparison and logical ops exist; bitwise
+  ops exist in JBC1 (`compiler.c:86`) but **not** in the live image profile.
+  Source-located diagnostics are present on both paths.
+- **Phase 1.5 (Zoltan parity) — the gate is vacuous.** `scripts/check-bytecode-parity.sh`
+  exits 0 reporting `failed=0`, but only actually compares **14 of 312** `.jolt`
+  sources; the other **298 are silently `SKIP`ped** because the JBC1 compiler rejects
+  them. That is 4.5% coverage presented as a passing gate.
+- **Phase 2 (stdlib) — all six modules are dead code.** Each of `math/graphics/geometry/
+  time/collections/strings.jolt` fails to compile with `unknown top-level form` on its
+  `(module ...)` line. They are written against the aspirational `AGENTS.md` language
+  (`module`, `import`, `defconst`, variadic `&`, `for`, `set!`, `break`, `nth`,
+  `slice`, `concat`), none of which the interpreter implements. Nothing in the build,
+  tests or tools references `joltscript/stdlib/` at all.
+- **Phase 3 (tools) — `joltfmt` weak, `joltdoc`/`joltscript-lsp` drift-prone.**
+  `joltfmt` is semantically safe — 296/296 kernels round-trip and still compile — but
+  emits each file as one line with a space after every `(`, discarding all layout.
+  `joltdoc` and `joltscript-lsp` contain **zero** references to
+  `jolt_compile`/`jolt_image_compile`; both re-implement their own parse, so they can
+  silently disagree with the language.
+  **Correction:** this section originally also claimed `joltc` "fails
+  `expected defkernel` on all 297 shipping image kernels". That was wrong — I had
+  omitted the required flag. `joltc` already implemented the image profile via
+  `--image-library`, and `--check --image-library kernels/common/image.jolt` validates
+  **296/296** image kernels. The defect was discoverability, not capability; see
+  "joltc discoverability" below.
+- **Phase 4 (tests) — done.** All five plan test files exist, are registered from
+  `tests/unit/CMakeLists.txt`, and pass.
+- **Phase 5 (docs) — done and accurate.** `joltscript/docs/language.md` documents the
+  real bounded profile (`defkernel`, eager `let`, lazy `if`, `sum`, `sample`), not the
+  aspirational spec.
+
+### Correction: the stdlib is a different language, not a missing-builtins gap
+
+I first recommended making the six stdlib modules loadable, then measured what that
+requires. That recommendation was wrong and is withdrawn. The modules are not the
+bounded profile with some builtins absent; they are written in a **mutually
+incompatible dialect**, and the incompatibility is syntactic, not incremental.
+Verified with a probe against `libjoltscript_glue.a`:
+
+| construct | stdlib writes | profile accepts |
+|---|---|---|
+| `let` | `(let name value)` | `(let [name value ...] body)` |
+| body | several forms (implicit `do`) | exactly one form |
+| values | vectors `[h s v]`, 4-tuples | scalars only (`f64`) |
+| top level | `module`, `import`, `export`, `defconst` | `param`, `defn`, `defkernel`, `passes` |
+
+`graphics.jolt` is the cleanest module -- no collections, no FFI, no mutation -- and it
+still fails on line 10 on the `let` convention alone. Beyond that, every module needs
+collections (all six), `strings.jolt` needs a string value type, and `math.jolt` needs
+**23 `extern-c` calls**. Those FFI calls would contradict the profile's documented
+sandbox guarantee that programs have "no filesystem, FFI, imports, allocation, or system
+resources" (`image_program.h:19-20`). Loading the stdlib as written therefore means
+implementing a second, general-purpose language with values, mutation and FFI -- a
+multi-phase project, not an increment -- or weakening a security boundary the profile
+currently advertises.
+
+Treat the stdlib as a **specification artefact for the full `AGENTS.md` compiler**, not
+as broken code. The defect is that it is unlabelled: nothing states that it targets an
+unimplemented compiler rather than the bounded CPU profile.
+
+### Delivered
+
+- `scripts/check-bytecode-parity.sh` rewritten. It previously exited 0 while comparing
+  only 14 of 312 sources, skipping 298 and reporting `failed=0`. It now derives the
+  JBC1 corpus from `kernels/CMakeLists.txt` (`EFFECT_NAMES`, the audio kernel, shipped
+  examples), reports `n/a` for image-profile sources with an explicit reason, prints
+  coverage over the pinned corpus, and **fails** if any registered JBC1 source drops out.
+  Verified: green at 14/14 with 298 reported n/a; a deliberately corrupted
+  `kernels/color/invert.jolt` produced `FAIL`, `13/14`, and exit 1; file restored clean.
+
+Not attempted: implementing the Phase 1 type system or the nine missing special forms.
+Both would rewrite the language the 297 kernels are written against, and `MEMORY.md`
+records the small profile (`let`/`if`/`sum`, no fold, no tuples, eager `let`) as a
+deliberate per-pixel design constraint rather than an MVP gap.
+
+## Joltscript stdlib labelling and `joltc` discoverability
+
+Follow-on from the plan audit above. Two changes, both additive.
+
+### Stdlib labelled as specification artefacts
+
+- Added an identical `STATUS:` banner to all six `joltscript/stdlib/*.jolt` files
+  stating that they target the full `AGENTS.md` compiler, that the current
+  implementation is the bounded CPU image profile, that the incompatibility is
+  syntactic (`let` arity, implicit `do`, vectors/tuples, `module`/`import`/`export`/
+  `defconst`), and that `math.jolt` needs 23 `extern-c` calls the profile forbids.
+  Each banner also warns against "fixing" errors by editing call sites, since kernels
+  written against the bounded profile would stop compiling.
+- Added a "Status: not loadable by the current implementation" section to
+  `joltscript/docs/stdlib.md`, ahead of the module reference, because its Overview
+  previously implied the modules worked. It points at `language.md` for the dialect
+  that does compile and at `kernels/common/*.jolt` for the helpers actually in use.
+  `tools.md`, `examples.md` and `language.md` were checked and make no stdlib claims,
+  so no other caveat was needed.
+- Re-verified all six still fail exactly as documented (`unknown top-level form` on
+  `module`, now at line 24 after the banner) — the labels describe real behaviour
+  rather than papering over it.
+
+### `joltc` discoverability
+
+- The `--image-library` mode existed and worked; it was simply undocumented in the
+  file header and easy to miss, so the failure mode for anyone editing a shipping
+  kernel was a bare `expected defkernel` naming neither the real dialect nor the flag.
+- Documented both dialects in the `joltc` header comment and usage text, with the
+  image-profile invocation as a worked example.
+- Added an actionable hint on JBC1 compilation failure: when the diagnostic is
+  `expected defkernel` **and** the source leads with a `param`/`defn`/`passes` form
+  (a cheap syntactic check), it prints the exact `--check --image-library` command to
+  run. Gated on both conditions so a genuine JBC1 syntax error still reports only
+  itself.
+
+### Verification
+
+- In-tree `build/` rebuilds clean with no compiler diagnostics.
+- Full native CTest: **349/349 passed**. The 34 Joltscript/kernel tests pass.
+- `scripts/check-bytecode-parity.sh` green at 14/14 with 298 reported n/a.
+- `joltc --check --image-library kernels/common/image.jolt` validates **296/296**
+  image kernels; JBC1 emission, `--dump`, `--check` and the 14-kernel JBC1 corpus are
+  unchanged.
+- Hint verified to fire on `kernels/blur_sharpen/box_blur.jolt` and **not** to fire on
+  a genuine JBC1 syntax error or on the JBC1 kernels; the command the hint prints was
+  run and succeeds.

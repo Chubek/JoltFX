@@ -245,6 +245,11 @@ add_submodule "https://github.com/attractivechaos/klib.git" \
     "klib" \
     "master"
 
+# OpenFX support
+add_submodule "https://github.com/AcademySoftwareFoundation/openfx.git"  \
+    "openfx" \
+    "main"
+
 # =============================================================================
 # GPU Compute & Backend Support
 # =============================================================================

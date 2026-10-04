@@ -2,6 +2,12 @@
  *
  * Compiles .jolt source files to JBC1 bytecode.
  *
+ * JoltFX ships two dialects and this driver handles both:
+ *   - JBC1, the stack bytecode profile, which is the default.
+ *   - The bounded CPU image profile (image_program.c), which is interpreted
+ *     from an AST and emits no bytecode, so it is validated only. It is
+ *     selected with --image-library and requires --check.
+ *
  * Usage: joltc [options] <input.jolt> [-o <output.jbc>]
  *
  * Options:
@@ -10,6 +16,11 @@
  *   -v, --version        Show version information
  *       --check          Validate only, don't emit bytecode
  *       --dump           Dump disassembly to stdout
+ *       --image-library <path>
+ *                         Validate as a CPU image kernel, using <path> as the
+ *                         prepended Joltscript library (e.g. the
+ *                         kernels/common/image.jolt shared helpers).
+ *                         Requires --check; emits no bytecode.
  */
 
 #include "joltscript/compiler.h"
@@ -19,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #define JOLTC_VERSION "0.2.0"
 
@@ -37,11 +49,13 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  -h, --help           Show this help message\n");
     fprintf(stderr, "  -v, --version        Show version information\n");
     fprintf(stderr, "      --check          Validate only, don't emit bytecode\n");
-    fprintf(stderr, "      --image-library <path>  Check CPU image source with this Joltscript library\n");
+    fprintf(stderr, "      --image-library <path>  Validate a bounded CPU image kernel, using\n");
+    fprintf(stderr, "                             <path> as the prepended library. Requires --check.\n");
     fprintf(stderr, "      --dump           Dump disassembly to stdout\n");
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s kernel.jolt -o kernel.jbc\n", prog);
     fprintf(stderr, "  %s --check kernel.jolt\n", prog);
+    fprintf(stderr, "  %s --check --image-library kernels/common/image.jolt kernel.jolt\n", prog);
 }
 
 static void print_version(void) {
@@ -71,6 +85,26 @@ static int write_file(const char *path, const uint8_t *data, size_t size) {
     size_t written = fwrite(data, 1, size, f);
     fclose(f);
     return written == size ? 0 : -1;
+}
+
+/* The JBC1 grammar accepts a single `defkernel` form and nothing else, so every
+ * CPU image kernel -- which leads with `param`, `defn` or `passes` -- is rejected
+ * with "expected defkernel". That message names neither the real dialect nor the
+ * flag that switches to it, which is an easy dead end for someone who has just
+ * edited a shipping kernel. Detect that signature and point at the way out. */
+static bool looks_like_image_kernel(const char *source) {
+    static const char *const forms[] = {"(param", "(defn", "(passes"};
+    for (const char *p = source; *p; ++p) {
+        if (*p != '(') continue;
+        for (size_t i = 0; i < sizeof(forms)/sizeof(*forms); ++i) {
+            size_t n = strlen(forms[i]);
+            if (strncmp(p, forms[i], n) == 0) {
+                char next = p[n];
+                if (isspace((unsigned char)next) || next == 0) return true;
+            }
+        }
+    }
+    return false;
 }
 
 static const char *opcode_name(uint32_t op) {
@@ -220,6 +254,13 @@ int main(int argc, char **argv) {
         char msg[256];
         jolt_diagnostic_format(&diag, opts.input_path, msg, sizeof(msg));
         fprintf(stderr, "%s\n", msg);
+        if (strstr(diag.message, "expected defkernel") && looks_like_image_kernel(source)) {
+            fprintf(stderr,
+                "note: this looks like a bounded CPU image kernel, which joltc validates\n"
+                "      with a different dialect and no bytecode output:\n"
+                "        joltc --check --image-library kernels/common/image.jolt %s\n",
+                opts.input_path);
+        }
         tilly_container_free(source);
         return 1;
     }

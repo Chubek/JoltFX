@@ -1,5 +1,25 @@
 ;; jolt.strings — String manipulation for Joltscript
 ;; Manipulation, parsing, formatting, and regex.
+;;
+;; STATUS: specification artefact -- NOT loadable by the shipped compiler.
+;;
+;; These modules are written against the full language described in
+;; ../AGENTS.md (modules, imports, vectors and tuples as values, mutation,
+;; closures, collections, strings and `extern-c` FFI). The only Joltscript
+;; implementation in the tree is the bounded CPU image profile in
+;; ../../layers/glue/src/image_program.c, whose dialect is deliberately
+;; narrower, so every file here is rejected at compile time.
+;;
+;; The incompatibility is syntactic, not a missing-builtins gap. In particular
+;; this dialect writes `(let name value)` with an implicit `do` body, while the
+;; image profile requires `(let [name value ...] body)` with exactly one body
+;; form and scalars only -- no vectors or tuples. `math.jolt` additionally needs
+;; 23 `extern-c` calls, which the profile forbids outright: it guarantees
+;; programs have "no filesystem, FFI, imports, allocation, or system resources"
+;; (joltscript/layers/glue/include/joltscript/image_program.h).
+;;
+;; Do not "fix" a compile error here by editing the call sites: kernels written
+;; against the bounded profile would stop compiling. See joltscript/docs/stdlib.md.
 
 (module jolt.strings)
 

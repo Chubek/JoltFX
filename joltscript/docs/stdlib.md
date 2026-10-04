@@ -4,6 +4,41 @@
 
 The Joltscript standard library provides common operations for kernel authoring. All functions are implemented as Joltscript intrinsics or pure Joltscript.
 
+## Status: not loadable by the current implementation
+
+**The six modules in `joltscript/stdlib/` do not compile, and that is expected.** They
+are specification artefacts for the full language described in `joltscript/AGENTS.md`;
+the only Joltscript implementation in the tree is the bounded CPU image profile, whose
+dialect is deliberately narrower. Nothing in the build, the tests or the tools loads
+these files, so this does not affect any shipping kernel.
+
+The gap is **syntactic, not a set of missing builtins**, which matters because it cannot
+be closed by adding functions:
+
+| construct | these modules write | image profile accepts |
+|---|---|---|
+| `let` | `(let name value)` | `(let [name value ...] body)` |
+| function body | several forms (implicit `do`) | exactly one form |
+| values | vectors `[h s v]`, 4-tuples | scalars only (`f64`) |
+| top level | `module`, `import`, `export`, `defconst` | `param`, `defn`, `defkernel`, `passes` |
+
+`graphics.jolt` is the closest to loadable — no collections, no FFI, no mutation — and
+it still fails on its first `let`. All six modules need collections; `strings.jolt`
+additionally needs a string value type; and `math.jolt` needs **23 `extern-c` FFI
+calls**, which the profile forbids outright. It guarantees that programs have "no
+filesystem, FFI, imports, allocation, or system resources"
+(`joltscript/layers/glue/include/joltscript/image_program.h`). Supporting these modules
+therefore means implementing a second, general-purpose language with values, mutation
+and FFI, or weakening that sandbox guarantee.
+
+For the language that *does* compile today, see [language.md](language.md); the shared
+kernel helpers that are actually in use are `kernels/common/*.jolt`, which are prepended
+to each kernel as a library by `kernels/CMakeLists.txt`.
+
+Each module carries the same `STATUS:` banner in its header. Do not silence a compile
+error here by rewriting call sites — kernels written against the bounded profile would
+stop compiling.
+
 ## Modules
 
 ### jolt.math
