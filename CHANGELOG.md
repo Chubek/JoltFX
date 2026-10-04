@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Extension Script API 1.0: language-neutral typed FFI, sandboxed editor/resource
+  services, owned callbacks, cached runtime-local batch functions, allocator and
+  instruction budgets, GC controls and structured diagnostics. Expanded Lua/mruby
+  adapters preserve their numeric entry points; new vendored QuickJS/MicroPython
+  and optional Wasmtime adapters share the same contract.
+- Validated WASM/WAT execution with fuel, budgeted Tilly linear memory, scalar
+  exports and typed `joltwasm` ABI 1. CLI `scripts list/run/edit`, runnable grading
+  examples in five languages, installed extension headers/archives and a
+  dependency-resolving `JoltFX` CMake package. Cross-language/resource/lifetime,
+  sandbox/budget/CLI conformance and all-adapter sanitizer CI.
+- Correct auto-backend lifetime during probing, retaining the CPU fallback and
+  replacing it with a later GPU backend instead of destroying the selected handle.
+
+- Tabbed Dear ImGui desktop workspace with NLE, Layer Effects, Color Calibration,
+  Color Grading, Node Compositing, Plugins, Console and Statistics interfaces;
+  shared preview, transport, clip selection, undo/redo and export. Resolve-inspired
+  grading wheels/master dials, rotary scalar controls and one-step gesture history.
+- Plugin SDK 1.0: C/C++ host-service ABI, native image effects, compiled Joltscript
+  image kernels, transactional editor actions, owned events, allocation/logging,
+  static attachment and legacy module compatibility. Copied descriptors and
+  graph/timeline/history/export lifetime retention; busy unload and deferred teardown.
+- Installable `JoltFXPluginSDK` CMake package, `JoltFX::plugin_sdk` target,
+  `jfx_add_plugin` helper and standalone Warm Tint example. Desktop Plugins/
+  Extensions integration, repeatable startup loading, CLI inspect/render, terminal
+  plugin commands and plugin-aware encoded export. Plugin API 1.1, Editor API 1.5
+  and Desktop API 1.1; lifecycle, CLI and real ImGui regression coverage.
+
 - Shared timeline audio mixing: audio-only/video clips, clip/track gain, stereo
   balance, fades, source in-points, mute/solo, sample-rate conversion and
   split/trim-preserving rational clocks. Persistent controls, history and JSON;

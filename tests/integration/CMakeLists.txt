@@ -1,17 +1,33 @@
 # Integration tests: the CLI contract, the Hello World example, and the
 # desktop frontend's real frame loop.
 
+if(TARGET joltfx_cli)
 add_test(
     NAME cli_integration
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/cli/test_cli.sh"
             "$<TARGET_FILE:joltfx_cli>" "${CMAKE_SOURCE_DIR}"
 )
 set_tests_properties(cli_integration PROPERTIES LABELS "integration;cli" TIMEOUT 300)
+endif()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 find_program(JFX_TEST_FFMPEG ffmpeg)
 find_program(JFX_TEST_FFPROBE ffprobe)
-if(Python3_Interpreter_FOUND AND JFX_TEST_FFMPEG AND JFX_TEST_FFPROBE)
+if(Python3_Interpreter_FOUND AND TARGET joltfx_cli)
+    add_test(NAME ext_conformance_cli COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_scripts.py" "$<TARGET_FILE:joltfx_cli>" "${PROJECT_SOURCE_DIR}")
+    set_tests_properties(ext_conformance_cli PROPERTIES LABELS "integration;cli;conformance" TIMEOUT 180)
+endif()
+if(Python3_Interpreter_FOUND AND TARGET joltfx_cli AND TARGET jfx_example_plugin)
+    set(plugin_cli_args "$<TARGET_FILE:joltfx_cli>" "$<TARGET_FILE:jfx_example_plugin>")
+    if(JFX_TEST_FFPROBE)
+        list(APPEND plugin_cli_args "${JFX_TEST_FFPROBE}")
+    endif()
+    add_test(NAME plugin_cli_integration COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/test_plugin_cli.py" ${plugin_cli_args})
+    set_tests_properties(plugin_cli_integration PROPERTIES LABELS "integration;cli;conformance" TIMEOUT 120)
+endif()
+if(Python3_Interpreter_FOUND AND TARGET joltfx_cli AND JFX_TEST_FFMPEG AND JFX_TEST_FFPROBE)
     add_test(NAME media_cli_integration COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/media/test_media.py" "$<TARGET_FILE:joltfx_cli>"
         "${JFX_TEST_FFMPEG}" "${JFX_TEST_FFPROBE}")

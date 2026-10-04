@@ -10,6 +10,7 @@
 #include "jfx/jfx_compose.h"
 #include "jfx/jfx_lut.h"
 #include "jfx/jfx_export.h"
+#include "jfx/jfx_plugin_sdk.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,8 +28,34 @@ typedef enum {
     JFX_DESKTOP_PANEL_CONSOLE,
     JFX_DESKTOP_PANEL_STATISTICS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,
+    JFX_DESKTOP_PANEL_PLUGINS,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
+
+/* Each editor interface occupies one workspace tab; transport and preview are shared. */
+#define JFX_DESKTOP_API_MAJOR 1
+#define JFX_DESKTOP_API_MINOR 1
+#define JFX_DESKTOP_API_PATCH 0
+typedef enum {
+    JFX_DESKTOP_WORKSPACE_NLE = 0,
+    JFX_DESKTOP_WORKSPACE_EFFECTS,
+    JFX_DESKTOP_WORKSPACE_CALIBRATION,
+    JFX_DESKTOP_WORKSPACE_GRADING,
+    JFX_DESKTOP_WORKSPACE_COMPOSITING,
+    JFX_DESKTOP_WORKSPACE_PLUGINS,
+    JFX_DESKTOP_WORKSPACE_CONSOLE,
+    JFX_DESKTOP_WORKSPACE_STATISTICS,
+    JFX_DESKTOP_WORKSPACE_COUNT
+} jfx_desktop_workspace_t;
+
+jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *frontend,
+    jfx_desktop_workspace_t workspace);
+jfx_desktop_workspace_t jfx_desktop_frontend_workspace(const jfx_desktop_frontend_t *frontend);
+/* Borrowed host; destroyed after this frontend's documents/jobs. */
+jfx_plugin_host_t *jfx_desktop_frontend_plugins(jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_load_plugin(jfx_desktop_frontend_t *frontend,const char *path,uint32_t *out_plugin_id);
+jfx_result_t jfx_desktop_frontend_unload_plugin(jfx_desktop_frontend_t *frontend,uint32_t plugin_id);
+jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_t *frontend,const char *action);
 
 typedef struct {
     size_t size;                   /* set to sizeof(jfx_desktop_frontend_config_t) */

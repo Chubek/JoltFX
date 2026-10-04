@@ -1,0 +1,21 @@
+# Header-only service ABI. Modules deliberately do not link another engine.
+function(jfx_add_plugin target)
+    cmake_parse_arguments(PLUGIN "STATIC" "" "SOURCES" ${ARGN})
+    if(NOT PLUGIN_SOURCES)
+        message(FATAL_ERROR "jfx_add_plugin(${target}) requires SOURCES")
+    endif()
+    if(PLUGIN_STATIC)
+        add_library(${target} STATIC ${PLUGIN_SOURCES})
+    else()
+        add_library(${target} MODULE ${PLUGIN_SOURCES})
+        set_target_properties(${target} PROPERTIES PREFIX "")
+        if(UNIX AND NOT APPLE)
+            target_link_options(${target} PRIVATE "LINKER:-z,defs")
+        endif()
+    endif()
+    target_link_libraries(${target} PRIVATE JoltFX::plugin_sdk)
+    set_target_properties(${target} PROPERTIES C_VISIBILITY_PRESET hidden
+        CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(${target} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES
+        CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES)
+endfunction()

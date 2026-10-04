@@ -1,5 +1,37 @@
 # Progress
 
+## Extension language layer
+
+- Inspected the existing Lua/mruby numeric adapters, common placeholder, vendored QuickJS/MicroPython sources, engine editor/event/resource APIs and extension contribution rules.
+- Implemented Script API 1.0: a shared typed FFI bridge, capability-checked editor/resource services, scoped resource handles, owned callbacks, cached runtime-local batch functions, per-invocation budgets and GC/error controls. Expanded Lua/mruby and added optional QuickJS, MicroPython and Wasmtime adapters; Lua/mruby numeric entry points remain compatible.
+- Implemented validated WASM/WAT, fuel limits, Tilly linear memory and typed `joltwasm` ABI 1 alongside scalar exports. MicroPython uses isolated saved states and a fixed heap with host-boundary GC. Hardened mruby callable roots and nested MicroPython stack accounting; added callback self-removal, nil/function reference and recursion regressions.
+- Added CLI `scripts list/run/edit` with `scripts` help, grading examples and a shared sequence fixture in all five languages, a checked-in embedding example, a dependency-resolving `JoltFX` CMake package with `FindWasmtime`, `ext_perf` profiling, `docs/extensions.md`, per-adapter READMEs and an all-language sanitizer CI lane (including a no-extension configure matrix entry).
+- Fixed two host-ownership defects found by review: mruby rooted host callables through Ruby's script-mutable `$_gc_root_` (now a private native arena-rooted array, with `GC` removed), and nested MicroPython captures overwrote the outer stack limit (now restored, with ASan-safe native stack anchoring). Also fixed a Core auto-backend lifetime bug that destroyed the retained CPU fallback handle, which broke CPU-only configurations.
+
+### Verification
+
+- Full native CTest with all five runtimes enabled: **349/349 passed** (23.6 s). Full ASAN+UBSan CTest with all five runtimes: **349/349 passed** (90.6 s), leak detection, `detect_stack_use_after_return` and strict string checks on, no findings.
+- Extension conformance covers bridge/marshalling, budgets, sandbox, recursion and GC (`ext_conformance`), resources/lifetimes/batches/callbacks (`ext_conformance_resources`), Wasmtime scalar + typed ABI (`ext_conformance_wasm`) and CLI example execution with real grading pixels and preserved project output (`ext_conformance_cli`) — **5/5** each configuration. Lua/mruby legacy numeric entry points also pass `ext_conformance`.
+- Reduced CPU-only ASAN+UBSan builds pass end to end: default Lua/mruby **335/335**, and every runtime plus every frontend and backend disabled **329/329**. Both include the corrected auto-backend lifetime regression.
+- Installed and relocated package at `/tmp/opencode/joltfx-ext-relocated`: the exported extension targets resolve the consumer's own Wasmtime prefix, include `docs/extensions.md`, per-adapter READMEs and the embedding example, and the example host runs all five runtimes over the bridge table. The installed CLI runs the full example/pixel suite. A sanitizer-instrumented consumer links and runs against the ASAN+UBSan installation. The all-disabled install produces an importable package that reports no enabled languages.
+- `ext_perf` profile (Debug, x86-64): initial charged memory 23 KB (Lua), 101 KB (mruby), 168 KB (QuickJS), 3.1 MB (MicroPython reserved heap), 15 KB (Wasmtime); initialization 0.03–0.31 ms; 10,000 cached `gain(0.25)` invocations 0.35–1.09 µs each.
+- All four build logs contain no compiler diagnostics (mruby's vendored GCC heuristic warning is suppressed through its build config). 31 local documentation links and the workflow YAML validate; `git diff --check` is clean.
+- Not verified here: macOS/Windows and mobile consumers (Wasmtime, Ruby and MicroPython host requirements differ per platform), Wasmtime static builds, and AE/Premiere/Resolve host-adapter verification. Script kernels are runtime-local batch functions, not engine-catalog kernels; Wasmtime accepts one module per runtime; `joltvm.js` remains separate from this host-side Wasmtime adapter.
+
+## Tabbed desktop and plugin SDK
+
+- Inspected the Dear ImGui workspace, shared color descriptors/commands and existing metadata-only native plugin loader.
+- Implemented workspace tabs for NLE, Layer Effects, Color Calibration, Color Grading, Node Compositing, Plugins, Console and Statistics, with shared transport/clip selection/preview/history/export. Grading has opponent-space color wheels, master dials, descriptor-backed rotary controls and grouped live gesture history.
+- Implemented SDK 1.0 with versioned host services, native effects, compiled Joltscript image kernels, transactional editor actions, owned event subscriptions, module diagnostics, static attachment and legacy loader compatibility. Graphs, timeline copies and history retain plugin descriptors; unload reports BUSY while referenced and host teardown defers finalization.
+- Desktop plugin manager/Extensions menu and CLI inspect/edit/render paths are integrated. SDK CMake package/helper and a standalone Warm Tint example are present.
+- Targeted native checks pass: legacy/SDK lifecycle, editor transactions, composition UI and actual ImGui tab/dial/wheel interactions (including Ctrl-Z and switching tabs mid-gesture). Fixed example image-profile sampling syntax and a missing shared undo shortcut found by these checks.
+- Export snapshots, copied/split/duplicated clips, graph copies and undo/redo references now have exercised unload protection. Cancellation reserves the baseline model before live edits, so failed multi-command actions roll back without allocation.
+- Full native CTest: **345/345 passed**. Full ASAN+UBSan CTest: **345/345 passed**, including legacy/SDK lifecycle, real ImGui tab/dial/wheel input, native/Joltscript pixel checks, failure-atomic output, event ownership, deferred teardown and CLI/ffprobe plugin export checks. Build logs contain no compiler diagnostics.
+- Installed SDK at `/tmp/opencode/joltfx-plugin-sdk-prefix`: standalone C example builds and passes CLI actions/history/render/encoded export from installed tools. A C++17-only consumer builds MODULE/STATIC, renders expected graph pixels and verifies PIC, unmangled entry and rejection of accidental direct engine linkage. Neither module has undefined engine symbols.
+- Documented SDK ABI/lifetimes/commands and tabbed grading controls in `docs/plugins.md`, `sdk/README.md`, frontend guides, changelog and subsystem agent guides. SDK package/helper/example and guide are included in install rules.
+- CPack TGZ generation passed; archive contents include SDK headers, versioned CMake config/target/helper, standalone example and documentation. Final native build has no warnings and `git diff --check` is clean.
+- Current mobile/WASM builds have not been rerun; native static attachment and portable frontend rendering are covered by conformance tests. SDK image evaluation is synchronous CPU execution; native modules expose the implemented effects/kernels, editor-action and event registration capabilities described in `docs/plugins.md`.
+
 - Fixed `test_plugin_module`'s include path to use `mograph/include`, where `jfx/jfx_plugin.h` is defined.
 - Build and test results are recorded in the subsystem sections below.
 

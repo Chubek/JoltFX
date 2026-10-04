@@ -313,11 +313,16 @@ jfx_result_t jfx_engine_init(const jfx_engine_config_t *config, jfx_engine_t **o
             }
             if (caps.gpu_available) {
                 if (handle != engine->backend) {
-                    kBackendRegistry[i].ops()->destroy(handle);
+                    engine->ops->destroy(engine->backend);
+                    engine->backend = handle;
+                    engine->ops = kBackendRegistry[i].ops();
+                    snprintf(engine->backend_name, sizeof(engine->backend_name), "%s",
+                        kBackendRegistry[i].name);
                 }
                 break;
             }
-            kBackendRegistry[i].ops()->destroy(handle);
+            /* Keep the first CPU fallback alive while probing later entries. */
+            if (handle != engine->backend) kBackendRegistry[i].ops()->destroy(handle);
         }
         if (!engine->backend) {
             event_bus_shutdown();

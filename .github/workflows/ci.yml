@@ -88,6 +88,11 @@ jobs:
             args: -DJFX_EXT_LUA=OFF
           - name: no desktop frontend
             args: -DJFX_FRONTEND_DESKTOP=OFF
+          - name: no extension runtimes
+            args: >-
+              -DJFX_EXT_LUA=OFF -DJFX_EXT_MRUBY=OFF -DJFX_EXT_QUICKJS=OFF
+              -DJFX_EXT_PYTHON=OFF -DJFX_EXT_WASM=OFF
+              -DJFX_BACKEND_VULKAN=OFF
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,6 +106,63 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build-matrix --output-on-failure
+
+  extension-languages:
+    name: all extension languages (ASan+UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install host build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ruby
+
+      - name: Obtain pinned Wasmtime C API
+        run: |
+          curl -fL -o "$RUNNER_TEMP/wasmtime.tar.xz" https://github.com/bytecodealliance/wasmtime/releases/download/v38.0.4/wasmtime-v38.0.4-x86_64-linux-c-api.tar.xz
+          echo "aa12b1d4f6e58999017e2bd68bbece45b880ea1f350e4f108545ba89e00b28df  $RUNNER_TEMP/wasmtime.tar.xz" | sha256sum --check
+          tar xf "$RUNNER_TEMP/wasmtime.tar.xz" -C "$RUNNER_TEMP"
+          echo "JFX_WASMTIME_ROOT=$RUNNER_TEMP/wasmtime-v38.0.4-x86_64-linux-c-api" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/wasmtime-v38.0.4-x86_64-linux-c-api/lib" >> "$GITHUB_ENV"
+
+      - name: Configure all adapters
+        run: >-
+          cmake -S . -B build-ext -DCMAKE_BUILD_TYPE=Debug
+          -DJFX_EXT_LUA=ON -DJFX_EXT_MRUBY=ON -DJFX_EXT_QUICKJS=ON
+          -DJFX_EXT_PYTHON=ON -DJFX_EXT_WASM=ON -DJFX_WASMTIME_ROOT="$JFX_WASMTIME_ROOT"
+          -DJFX_ASAN=ON -DJFX_UBSAN=ON -DJFX_FRONTEND_DESKTOP=OFF
+          -DJFX_FRONTEND_MOBILE=OFF -DJFX_PLUGIN_HOST_BRIDGES=OFF
+          -DJFX_VIDEO_FFMPEG=OFF -DJFX_COLOR_OCIO=OFF
+
+      - name: Build
+        run: cmake --build build-ext --parallel 4
+
+      - name: Conformance and CLI examples
+        run: ctest --test-dir build-ext -R ext_conformance --output-on-failure
+
+      - name: Install and consume exported adapters
+        run: |
+          cmake --install build-ext --prefix "$RUNNER_TEMP/joltfx-ext"
+          cmake -S "$RUNNER_TEMP/joltfx-ext/share/joltfx/extensions/examples/embed" -B build-ext-consumer -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/joltfx-ext" -DJFX_WASMTIME_ROOT="$JFX_WASMTIME_ROOT" -DJFX_EXAMPLE_SANITIZERS=ON
+          cmake --build build-ext-consumer --parallel 4
+          build-ext-consumer/script_host
+          "$RUNNER_TEMP/joltfx-ext/bin/joltfx" scripts list
+
+      - name: Record runtime profile
+        run: build-ext/tests/perf/jfx_extif_benchmark
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extension-conformance
+          path: build-ext/Testing/**
+          if-no-files-found: ignore
 
   zoltan:
     name: zoltan (fmt+clippy+test)

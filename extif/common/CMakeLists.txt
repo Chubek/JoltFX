@@ -8,5 +8,6 @@ target_include_directories(jfx_extif_common PUBLIC
 )
 
 target_link_libraries(jfx_extif_common PUBLIC jfx_core)
+target_include_directories(jfx_extif_common PRIVATE src)
 
 set_project_warnings(jfx_extif_common)

@@ -43,7 +43,7 @@ target_include_directories(jfx_lua PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_include_directories(jfx_lua PRIVATE ${PROJECT_SOURCE_DIR}/third_party/lua)
+target_include_directories(jfx_lua PRIVATE ${PROJECT_SOURCE_DIR}/third_party/lua ../common/src)
 target_link_libraries(jfx_lua PUBLIC jfx_extif_common PRIVATE tilly)
 if(NOT MSVC)
     target_link_libraries(jfx_lua PRIVATE m ${CMAKE_DL_LIBS})

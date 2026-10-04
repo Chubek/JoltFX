@@ -49,12 +49,41 @@ void print_usage(void) {
     printf("  calibration list           List calibration kernels and parameter ranges\n");
     printf("  calibration apply KIND IN OUT [name=value ...] [--lut FILE]\n");
     printf("  edit IN.jfx OUT.jfx         Terminal editor: grade.* and calibration.* commands\n");
+    printf("  plugins inspect MODULE     Inspect SDK module and actions\n");
+    printf("  plugins render MODULE IN OUT.ppm [FRAME]  Render a plugin project\n");
+    printf("\nExtension scripts:\n");
+    printf("  scripts list              List enabled extension languages\n");
+    printf("  scripts run LANG FILE [FUNCTION [NUMBER]]  Load/call a sandboxed script\n");
+    printf("  scripts edit LANG FILE IN.jfx OUT.jfx [FUNCTION]  Script the shared editor\n");
     printf("\nRun 'joltfx help COMMAND' for command-specific options.\n");
 }
 
 void print_command_help(const char *command) {
+    if (command && !strcmp(command, "scripts")) {
+        printf("Usage: joltfx scripts list\n"
+            "       joltfx scripts run LANG FILE [FUNCTION [NUMBER]]\n"
+            "       joltfx scripts edit LANG FILE INPUT.jfx OUTPUT.jfx [FUNCTION]\n"
+            "LANG: lua, mruby, quickjs, python (MicroPython), wasm (Wasmtime).\n"
+            "Only languages enabled at build time are available. WASM accepts .wasm or WAT.\n"
+            "run prints the typed function result; NUMBER is one finite double argument.\n"
+            "edit loads the input project, runs the script and optional zero-argument function,\n"
+            "then saves on success. Errors leave existing project output untouched.\n"
+            "Defaults: 4 MiB runtime memory, 100,000 instruction-budget units per invocation.\n"
+            "Use jfx.command/state, JFX.command/state (mruby), or import jfx (MicroPython).\n"
+            "See docs/extensions.md and extif/examples for bindings and embedding.\n");
+        return;
+    }
+    if (command && !strcmp(command,"plugins")) {
+        printf("Usage: joltfx plugins inspect MODULE\n"
+            "       joltfx plugins render MODULE INPUT.jfx OUTPUT.ppm [FRAME]\n"
+            "       joltfx edit INPUT.jfx OUTPUT.jfx [--plugin MODULE ...]\n"
+            "       joltfx export-video INPUT.jfx -o OUTPUT.mkv [--plugin MODULE ...]\n"
+            "Terminal: plugin.load PATH, plugin.unload ID, plugin.action NAME TRACK CLIP NODE, plugins.\n");
+        return;
+    }
     if (command && !strcmp(command,"export-video")) {
         printf("Usage: joltfx export-video DOC.jfx -o OUT.mp4|OUT.mov|OUT.mkv\n"
+            "       [--plugin MODULE ...]\n"
             "       [--start FRAME --frames COUNT] [--width W --height H]\n"
             "       [--codec ENCODER --audio-codec ENCODER] [--sample-rate HZ] [--no-audio]\n"
             "Count 0 exports the remaining sequence; graph exports require a count (30/1 fps).\n"

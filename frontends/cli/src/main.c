@@ -79,6 +79,8 @@ int main(int argc, char **argv) {
     }
     if (strcmp(command,"export-video")==0) return cmd_media_export(rest_argc,rest_argv);
     if (strcmp(command, "edit") == 0) return cmd_edit(rest_argc, rest_argv);
+    if (strcmp(command,"plugins")==0) return cmd_plugins(rest_argc,rest_argv);
+    if (strcmp(command,"scripts")==0) return cmd_scripts(rest_argc,rest_argv);
     if (strcmp(command, "nle") == 0) return cmd_nle(rest_argc, rest_argv);
     if (strcmp(command, "compose") == 0) return cmd_compose(rest_argc, rest_argv);
     if (strcmp(command, "grade") == 0) return cmd_color(rest_argc, rest_argv, 0);

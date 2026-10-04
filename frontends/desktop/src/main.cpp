@@ -24,7 +24,8 @@ void print_usage(void) {
         "  --height N        Window height in pixels (default %u)\n"
         "  --effect NAME     Bundled effect to preview (default brightness)\n"
         "  --param VALUE     Effect parameter, clamped to its documented range\n"
-        "  --project FILE    .jolt kernel to open at startup\n"
+        "  --project FILE    .jfx project or .jolt kernel to open at startup\n"
+        "  --plugin FILE     Load an SDK module (repeatable; before opening project)\n"
         "  --frames N        Exit after N frames (0, the default, runs until quit)\n"
         "  --duration SEC    Exit after SEC seconds of wall clock\n"
         "  --headless-smoke  Compose N frames with no window, then exit\n"
@@ -58,6 +59,7 @@ int main(int argc, char **argv) {
     double max_seconds = 0.0;
     bool headless = false;
     uint32_t headless_frames = 2;
+    const char *plugins[32]; uint32_t plugin_count=0;
 
     for (int i = 1; i < argc; ++i) {
         const char *arg = argv[i];
@@ -85,6 +87,8 @@ int main(int argc, char **argv) {
             }
         } else if (std::strcmp(arg, "--project") == 0 && has_value) {
             config.project_path = argv[++i];
+        } else if (std::strcmp(arg,"--plugin")==0 && has_value && plugin_count<32) {
+            plugins[plugin_count++]=argv[++i];
         } else if (std::strcmp(arg, "--frames") == 0 && has_value) {
             uint32_t frames = 0;
             if (!parse_uint(argv[++i], &frames)) {
@@ -117,12 +121,24 @@ int main(int argc, char **argv) {
         max_frames = headless_frames;
     }
     config.backend_name = backend;
+    const char *project=config.project_path; config.project_path=nullptr;
 
     jfx_desktop_frontend_t *frontend = nullptr;
     const jfx_result_t created = jfx_desktop_frontend_create(&config, &frontend);
     if (created != JFX_SUCCESS || !frontend) {
         std::fprintf(stderr, "error: could not create the desktop frontend (%d)\n", (int)created);
         return 1;
+    }
+    for (uint32_t i=0;i<plugin_count;++i) {
+        uint32_t id;
+        if (jfx_desktop_frontend_load_plugin(frontend,plugins[i],&id)!=JFX_SUCCESS) {
+            std::fprintf(stderr,"error: %s\n",jfx_plugin_host_error(jfx_desktop_frontend_plugins(frontend)));
+            jfx_desktop_frontend_destroy(frontend); return 1;
+        }
+    }
+    if (project && jfx_desktop_frontend_open_project(frontend,project)!=JFX_SUCCESS) {
+        std::fprintf(stderr,"error: unable to open project '%s'\n",project);
+        jfx_desktop_frontend_destroy(frontend); return 1;
     }
 
     jfx_result_t status;

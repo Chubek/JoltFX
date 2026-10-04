@@ -2,6 +2,7 @@
 #include "jfx/jfx_editor.h"
 #include "jfx/jfx_color.h"
 #include "jfx/jfx_export.h"
+#include "jfx/jfx_plugin_sdk.h"
 #include "tilly/allocator.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,14 +11,23 @@
 /* A line-oriented terminal editor: the same command surface used by the
  * browser/mobile panels. Commands can also be piped for reproducible edits. */
 int cmd_edit(int argc, char **argv) {
-    if (argc!=2) { fprintf(stderr,"usage: joltfx edit INPUT.jfx OUTPUT.jfx\n"); return 1; }
+    if (argc<2 || (argc-2)%2) { fprintf(stderr,"usage: joltfx edit INPUT.jfx OUTPUT.jfx [--plugin MODULE ...]\n"); return 1; }
+    for (int i=2;i<argc;i+=2) if (strcmp(argv[i],"--plugin")) return 1;
     FILE *input=fopen(argv[0],"rb");
     if (!input) { perror(argv[0]); return 1; }
+    jfx_engine_t *engine=NULL; jfx_plugin_host_t *plugins=NULL; jfx_engine_config_t config={0};
+    if (jfx_engine_init(&config,&engine)!=JFX_SUCCESS || jfx_plugin_host_create(engine,&plugins)!=JFX_SUCCESS) {
+        fclose(input); jfx_engine_shutdown(engine); return 1;
+    }
     char *doc=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),JFX_PROJECT_MAX_BYTES+1,_Alignof(max_align_t));
     jfx_editor_t *e=jfx_editor_create(320,180);
-    if (!doc || !e) { fclose(input); jfx_editor_destroy(e); tilly_free((tilly_allocator_t *)tilly_default_allocator(),doc); return 1; }
+    if (!doc || !e) { fclose(input); jfx_editor_destroy(e); tilly_free((tilly_allocator_t *)tilly_default_allocator(),doc); jfx_plugin_host_destroy(plugins); jfx_engine_shutdown(engine); return 1; }
     size_t n=fread(doc,1,JFX_PROJECT_MAX_BYTES+1,input); int failed=ferror(input); fclose(input);
     char error[256]={0}; int exit_code=1;
+    for (int i=2;i<argc;i+=2) {
+        uint32_t id;
+        if (jfx_plugin_host_load(plugins,argv[i+1],&id)!=JFX_SUCCESS) { fprintf(stderr,"%s\n",jfx_plugin_host_error(plugins)); goto done; }
+    }
     if (failed || jfx_editor_load(e,doc,n,error,sizeof(error))!=JFX_SUCCESS) { fprintf(stderr,"%s\n",error); goto done; }
     fprintf(stderr,"JoltFX editor: NLE | Layer Effects | Color Calibration | Color Grading | Node Compositing\n"
         "Color Grading: grade.add/param/path/enabled/reset/remove/move; 'grade' lists operators.\n"
@@ -25,11 +35,36 @@ int cmd_edit(int argc, char **argv) {
         "NLE: clip.split/move/trim/duplicate/slip/ripple_delete, track.move/solo/insert_gap.\n"
         "Composition: node.add/connect/disconnect/param/path/label/position/duplicate/reset/remove/output.\n"
         "Audio: clip.audio.enabled/gain/pan/fade_in/fade_out; track.audio.gain.\n"
+        "Plugins: plugin.load PATH, plugin.unload ID, plugin.action NAME TRACK CLIP NODE, plugins.\n"
         "Commands: OP A B C VALUE TEXT (zero-based indices); undo, redo, timeline, composition, nodes, show, save, quit.\n");
     char line[2048];
     while (fgets(line,sizeof(line),stdin)) {
         line[strcspn(line,"\r\n")]=0;
         if (!*line || *line=='#') continue;
+        if (!strncmp(line,"plugin.load ",12)) {
+            uint32_t id;
+            if (jfx_plugin_host_load(plugins,line+12,&id)!=JFX_SUCCESS) { fprintf(stderr,"%s\n",jfx_plugin_host_error(plugins)); goto done; }
+            printf("Loaded plugin %u\n",id); continue;
+        }
+        if (!strcmp(line,"plugins")) {
+            for (uint32_t i=0;i<jfx_plugin_host_count(plugins);++i) {
+                uint32_t id; jfx_plugin_info_t info={.size=sizeof(info)};
+                if (jfx_plugin_host_info_at(plugins,i,&id,&info)==JFX_SUCCESS) printf("%u %s (%s)\n",id,info.display_name,info.identifier);
+            }
+            continue;
+        }
+        if (!strncmp(line,"plugin.unload ",14)) {
+            unsigned id; char tail;
+            if (sscanf(line+14,"%u %c",&id,&tail)!=1 || jfx_plugin_host_unload(plugins,id)!=JFX_SUCCESS) { fprintf(stderr,"%s\n",jfx_plugin_host_error(plugins)); goto done; }
+            continue;
+        }
+        if (!strncmp(line,"plugin.action ",14)) {
+            char action[96],tail; unsigned track,clip,node;
+            if (sscanf(line+14,"%95s %u %u %u %c",action,&track,&clip,&node,&tail)!=4) goto done;
+            jfx_plugin_action_context_t context={sizeof(context),e,track,clip,node};
+            if (jfx_plugin_host_invoke(plugins,action,&context)!=JFX_SUCCESS) { fprintf(stderr,"%s\n",jfx_plugin_host_error(plugins)); goto done; }
+            continue;
+        }
         if (!strcmp(line,"undo") || !strcmp(line,"redo") || !strcmp(line,"graph") || !strcmp(line,"sequence")) {
             if (jfx_editor_command(e,line,0,0,0,0,"")!=JFX_SUCCESS) { fprintf(stderr,"No edit to %s.\n",line); goto done; }
             continue;
@@ -65,7 +100,8 @@ int cmd_edit(int argc, char **argv) {
     if (fclose(output)) failed=1;
     exit_code=failed?1:0;
 done:
-    jfx_editor_destroy(e); tilly_free((tilly_allocator_t *)tilly_default_allocator(),doc); return exit_code;
+    jfx_editor_destroy(e); tilly_free((tilly_allocator_t *)tilly_default_allocator(),doc);
+    jfx_plugin_host_destroy(plugins); jfx_engine_shutdown(engine); return exit_code;
 }
 
 static int positive(const char *text,uint32_t *out) {
@@ -165,6 +201,7 @@ static bool export_progress(void *user,uint64_t completed,uint64_t total) {
 int cmd_media_export(int argc,char **argv) {
     if (argc<3) { print_command_help("export-video"); return 1; }
     jfx_export_options_t o={.size=sizeof(o),.audio=true};
+    const char *modules[32]; size_t module_count=0;
     for (int i=1;i<argc;++i) {
         const char *key=argv[i];
         if (!strcmp(key,"--no-audio")) { o.audio=false; continue; }
@@ -174,6 +211,7 @@ int cmd_media_export(int argc,char **argv) {
         else if (!strcmp(key,"--codec")) o.video_codec=v;
         else if (!strcmp(key,"--audio-codec")) o.audio_codec=v;
         else if (!strcmp(key,"--container")) o.container=v;
+        else if (!strcmp(key,"--plugin") && module_count<32) modules[module_count++]=v;
         else {
             char *end; unsigned long long n=strtoull(v,&end,10);
             if (!*v || *v=='-' || *end || n>10000000) return 1;
@@ -191,9 +229,20 @@ int cmd_media_export(int argc,char **argv) {
     if (!text) { fclose(file); return 1; }
     size_t n=fread(text,1,JFX_PROJECT_MAX_BYTES+1,file); int failed=ferror(file); fclose(file);
     jfx_editor_t *e=jfx_editor_create(16,16); char error[256]={0};
-    jfx_result_t r=failed?JFX_ERROR_BACKEND_FAILURE:jfx_editor_load(e,text,n,error,sizeof(error));
+    jfx_engine_t *engine=NULL; jfx_plugin_host_t *plugins=NULL; jfx_engine_config_t config={0};
+    jfx_result_t r=failed?JFX_ERROR_BACKEND_FAILURE:!e?JFX_ERROR_OUT_OF_MEMORY:JFX_SUCCESS;
+    if (r==JFX_SUCCESS && module_count) {
+        r=jfx_engine_init(&config,&engine);
+        if (r==JFX_SUCCESS) r=jfx_plugin_host_create(engine,&plugins);
+        for (size_t i=0;r==JFX_SUCCESS && i<module_count;++i) {
+            uint32_t id; r=jfx_plugin_host_load(plugins,modules[i],&id);
+            if (r!=JFX_SUCCESS) snprintf(error,sizeof(error),"%s",jfx_plugin_host_error(plugins));
+        }
+    }
+    if (r==JFX_SUCCESS) r=jfx_editor_load(e,text,n,error,sizeof(error));
     if (r==JFX_SUCCESS) r=jfx_editor_export_video(e,&o,export_progress,NULL);
     if (r!=JFX_SUCCESS) fprintf(stderr,"\nExport failed: %s %s\n",jfx_result_to_string(r),error);
     else fprintf(stderr,"\nWritten %s\n",o.path);
-    jfx_editor_destroy(e); tilly_free((tilly_allocator_t *)tilly_default_allocator(),text); return r==JFX_SUCCESS?0:1;
+    jfx_editor_destroy(e); tilly_free((tilly_allocator_t *)tilly_default_allocator(),text);
+    jfx_plugin_host_destroy(plugins); jfx_engine_shutdown(engine); return r==JFX_SUCCESS?0:1;
 }

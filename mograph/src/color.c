@@ -1,4 +1,5 @@
 #include "jfx/jfx_color.h"
+#include "plugin_internal.h"
 #include "joltscript/image_kernels.h"
 #include "joltscript/image_task.h"
 #include "tilly/containers.h"
@@ -77,6 +78,10 @@ static jfx_result_t pack_lut(const jfx_lut_t *lut,color_task_t *task) {
 jfx_result_t jfx_color_apply(const jfx_node_kind_t *kind,const jfx_node_value_t *v,
     const jfx_lut_t *lut,const float *src,size_t w,size_t h,float *out) {
     if (!kind || !v || !src || !out || !w || !h || w>4096 || h>4096) return JFX_ERROR_INVALID_ARGUMENT;
+    if (jfx_plugin_kind_is_custom(kind)) {
+        if (lut) return JFX_ERROR_INVALID_ARGUMENT;
+        return jfx_plugin_kind_process(kind,v->scalars,src,(uint32_t)w,(uint32_t)h,0,512u*1024u*1024u,out);
+    }
     const jfx_node_kind_t *k=NULL;
     for (size_t i=0;i<jfx_color_kind_count();++i) if (kind==color_kinds+i) k=kind;
     if (!k) return JFX_ERROR_INVALID_ARGUMENT;
@@ -116,12 +121,25 @@ jfx_result_t jfx_color_catalog(char *out,size_t cap) {
     for (size_t i=0;i<jfx_node_kind_count();++i) {
         const jfx_node_kind_t *k=jfx_node_kind_at(i);
         if (jfx_color_section(k)==JFX_COLOR_NONE) continue;
-        APP("%s{\"name\":\"%s\",\"label\":\"%s\",\"section\":\"%s\",\"path\":%s,\"params\":[",emitted++?",":"",k->name,k->label,
+        APP("%s{\"name\":\"%s\",\"label\":",emitted++?",":"",k->name);
+        APP("\"");
+        for (const unsigned char *s=(const unsigned char *)k->label;*s;++s) {
+            if (*s=='"' || *s=='\\') APP("\\%c",*s);
+            else if (*s<32) APP("\\u%04x",(unsigned)*s);
+            else APP("%c",*s);
+        }
+        APP("\",\"section\":\"%s\",\"path\":%s,\"params\":[",
             jfx_color_section(k)==JFX_COLOR_CALIBRATION?"calibration":"grade",k->string_count?"true":"false");
         for (size_t p=0;p<k->param_count;++p) {
             const jfx_param_desc_t *d=k->params+p;
-            APP("%s{\"name\":\"%s\",\"label\":\"%s\",\"min\":%.9g,\"max\":%.9g,\"default\":%.9g,\"integer\":%s}",
-                p?",":"",d->name,d->label,(double)d->minimum,(double)d->maximum,(double)d->default_value,d->integral?"true":"false");
+            APP("%s{\"name\":\"%s\",\"label\":\"",p?",":"",d->name);
+            for (const unsigned char *s=(const unsigned char *)d->label;*s;++s) {
+                if (*s=='"' || *s=='\\') APP("\\%c",*s);
+                else if (*s<32) APP("\\u%04x",(unsigned)*s);
+                else APP("%c",*s);
+            }
+            APP("\",\"min\":%.9g,\"max\":%.9g,\"default\":%.9g,\"integer\":%s}",
+                (double)d->minimum,(double)d->maximum,(double)d->default_value,d->integral?"true":"false");
         }
         APP("]}");
     }

@@ -2,9 +2,35 @@
 
 ## Overview
 
-JoltFX supports scripting extensions through embedded language runtimes. This guide covers contributing bindings for Lua, mruby, JavaScript (QuickJS), and Python (optionally), as well as the FFI bridge layer that exposes the engine's C API to each runtime.
+JoltFX supports Lua, mruby, JavaScript (QuickJS), MicroPython and Wasmtime through a shared typed FFI bridge to the Core engine.
 
 Extensions are **sandboxed** by default: they have access only to Core engine functionality through their respective JoltFX library. They have no direct access to system resources.
+
+## Implemented contract (Script API 1.0)
+
+`common/include/jfx/script_runtime.h` and `ffi_bridge.h` are the public embedding
+surface. The runtime is opaque; the `jfx_ffi_bridge_t` table and matching functions
+dispatch to language-specific ops without exposing interpreter APIs to engine code.
+`common/src/ffi_runtime.c` owns Tilly budgets, capability-checked editor/resource
+services, scope epochs, registrations, event relays and diagnostics; `factory.c`
+provides build-time availability. Adapters use `src/*_runtime.c` and private
+`runtime_internal.h`. The conceptual layouts/examples below describe the design;
+see `docs/extensions.md` and `extif/README.md` for the working API and source layout.
+
+Lua/mruby retain their numeric APIs. QuickJS maps INT to BigInt. MicroPython uses
+MPZ/double, isolated saved states, a fixed heap, explicit roots and collection at
+host boundaries; it is not CPython/PyPy. Wasmtime supports validated WASM/WAT,
+fuel and Tilly linear memory, scalar exports and typed `joltwasm` ABI 1 without WASI.
+Its internal compiler/code/metadata allocator is outside the reported byte counter.
+
+Local `register_kernel` captures a runtime-owned batch callable and never adds an
+engine-catalog kernel. Event callbacks receive event-name strings, not native
+payload pointers. Resources are borrowed for one invocation; output strings are
+borrowed until subsequent execution/translation. References are runtime-local and
+owned. Failed loads remove new registrations but may leave globals/editor edits.
+Creation, execution, GC, lifecycle and event publication use one serialized owner
+thread. Defer lifecycle/cross-runtime mutation from callbacks; busy relays skip
+reentrant callbacks. See `ext_conformance*`, CLI examples and `ext_perf`.
 
 ---
 
@@ -137,21 +163,25 @@ typedef struct jfx_script_runtime_t {
 Extension builds are optional; each is gated by a CMake flag:
 
 ```bash
-# Lua (default ON, ~250 KB runtime)
+# Lua (default ON)
 cmake -DJFX_EXT_LUA=ON ..
 cmake --build . --target jfx_lua
 
-# mruby (default ON, ~400 KB runtime)
+# mruby (default ON; needs Ruby for the build)
 cmake -DJFX_EXT_MRUBY=ON ..
 cmake --build . --target jfx_mruby
 
-# QuickJS (default ON, ~600 KB runtime)
+# QuickJS (default OFF)
 cmake -DJFX_EXT_QUICKJS=ON ..
 cmake --build . --target jfx_quickjs
 
-# Python (default OFF, ~15 MB runtime; desktop only)
+# MicroPython (default OFF; needs host Python 3 and Make)
 cmake -DJFX_EXT_PYTHON=ON ..
 cmake --build . --target jfx_python
+
+# Wasmtime (default OFF; external version 38+ C API)
+cmake -DJFX_EXT_WASM=ON -DJFX_WASMTIME_ROOT=/path/to/wasmtime ..
+cmake --build . --target jfx_wasm
 ```
 
 **Run conformance tests before submitting any extension change:**
@@ -471,7 +501,10 @@ Lua, mruby, and QuickJS use automatic garbage collection. The engine controls wh
 
 **Never trigger a full GC collection during a frame render.** Allow incremental GC to run between frames if the runtime supports it (Lua 5.4+ incremental GC, mruby incremental GC).
 
-For Python, reference counting is immediate; call `Py_DECREF` as soon as a reference is no longer needed. Do not rely on the cyclic GC; structure Python bindings to avoid cycles.
+MicroPython uses a fixed GC heap with explicit host-reference roots, not CPython
+reference counting. Collect only at host boundaries after temporary native stack
+objects are gone. Preserve interpreter state and stack limits across nested host
+capture operations; see `python/src/python_runtime.c`.
 
 ---
 
@@ -481,7 +514,7 @@ For Python, reference counting is immediate; call `Py_DECREF` as soon as a refer
 - **Minimize boundary crossings.** If a kernel runs once per pixel, it will be slow; batch operations where possible or compile the kernel to native code.
 - **Provide a JIT compilation path** for hot kernels. LuaJIT, mruby JIT (optional), and QuickJS bytecode caching can significantly reduce overhead.
 - **Profile script overhead separately** from native code. Use `ctest -R ext_perf` and post results in the PR for any hot-path change.
-- For Python, use `PyPy` instead of CPython if available; the JIT makes a 10× difference for compute-heavy kernels.
+- MicroPython collection is included in invocation overhead; measure with `ext_perf` before changing the boundary/root model.
 
 ---
 

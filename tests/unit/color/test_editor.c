@@ -31,6 +31,28 @@ int main(void) {
     assert(jfx_editor_render(e, 0, 4, 2, after, sizeof(after)) == JFX_SUCCESS);
     assert(after[0] == 255 && after[1] == 0 && after[2] == 0);
     assert(jfx_editor_set_output(e, 999) == JFX_ERROR_INVALID_ARGUMENT);
+    /* A continuous gesture is one history step; cancellation restores the model. */
+    jfx_editor_clear_history(e);
+    assert(jfx_editor_begin_edit(NULL, JFX_PROJECT_KIND_GRAPH) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_editor_begin_edit(e, (jfx_project_kind_t)99) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_editor_commit_edit(e) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_editor_cancel_edit(e) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_editor_begin_edit(e, JFX_PROJECT_KIND_GRAPH) == JFX_SUCCESS);
+    assert(jfx_editor_begin_edit(e, JFX_PROJECT_KIND_GRAPH) == JFX_ERROR_BUSY);
+    for (int i=1;i<=10;++i)
+        assert(jfx_editor_command(e,"node.param",0,0,0,i/10.0,"g") == JFX_SUCCESS);
+    assert(jfx_editor_command(e,"clip.opacity",0,0,0,.5,"") == JFX_ERROR_BUSY);
+    assert(jfx_editor_command(e,"undo",0,0,0,0,"") == JFX_ERROR_BUSY);
+    assert(jfx_editor_commit_edit(e) == JFX_SUCCESS);
+    assert(jfx_editor_command(e,"undo",0,0,0,0,"") == JFX_SUCCESS);
+    assert(jfx_graph_node_value(jfx_editor_graph(e),0)->scalars[1] == 0);
+    assert(!jfx_editor_can_undo(e));
+    assert(jfx_editor_command(e,"redo",0,0,0,0,"") == JFX_SUCCESS);
+    assert(jfx_editor_begin_edit(e, JFX_PROJECT_KIND_GRAPH) == JFX_SUCCESS);
+    assert(jfx_editor_command(e,"node.remove",0,0,0,0,"") == JFX_SUCCESS);
+    assert(jfx_editor_cancel_edit(e) == JFX_SUCCESS);
+    assert(jfx_graph_node_count(jfx_editor_graph(e)) == 2);
+    assert(jfx_graph_node_value(jfx_editor_graph(e),0)->scalars[1] == 1);
     jfx_editor_destroy(e);
     jfx_editor_destroy(NULL);
     assert(!jfx_editor_create(0, 2));

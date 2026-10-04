@@ -6,16 +6,22 @@ endif()
 if(JFX_EXT_MRUBY)
     add_subdirectory(mruby)
 endif()
-# QuickJS and MicroPython are vendored (third_party/quickjs,
-# third_party/micropython) but have no adapter yet; enabling these options is
-# therefore a configure error rather than a silent no-op.
 if(JFX_EXT_QUICKJS)
-    message(FATAL_ERROR
-        "JFX_EXT_QUICKJS is not implemented: there is no extif/quickjs adapter. "
-        "See PROGRESS.md for the remaining extension work.")
+    add_subdirectory(quickjs)
 endif()
 if(JFX_EXT_PYTHON)
-    message(FATAL_ERROR
-        "JFX_EXT_PYTHON is not implemented: there is no extif/python adapter. "
-        "See PROGRESS.md for the remaining extension work.")
+    add_subdirectory(python)
 endif()
+if(JFX_EXT_WASM)
+    add_subdirectory(wasm)
+endif()
+add_library(jfx_extif STATIC common/src/factory.c)
+target_link_libraries(jfx_extif PUBLIC jfx_extif_common)
+foreach(language IN ITEMS lua mruby quickjs python wasm)
+    string(TOUPPER "${language}" option_name)
+    target_compile_definitions(jfx_extif PRIVATE JFX_EXT_${option_name}=$<BOOL:${JFX_EXT_${option_name}}>)
+    if(JFX_EXT_${option_name})
+        target_link_libraries(jfx_extif PUBLIC jfx_${language})
+    endif()
+endforeach()
+set_project_warnings(jfx_extif)

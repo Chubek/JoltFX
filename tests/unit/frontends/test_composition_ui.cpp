@@ -27,7 +27,7 @@ int main() {
     assert(jfx_desktop_frontend_node_compositing_new_graph(f)==JFX_SUCCESS);
     uint32_t n; assert(jfx_desktop_frontend_node_compositing_add_node(f,"invert",nullptr,&n)==JFX_SUCCESS && n==1);
     edit(f,"node.output",1); frame(f);
-    ImGui::SetWindowPos("Node Compositing",ImVec2(50,50)); ImGui::SetWindowSize("Node Compositing",ImVec2(900,850)); frame(f);
+    assert(jfx_desktop_frontend_workspace(f)==JFX_DESKTOP_WORKSPACE_COMPOSITING); frame(f);
     ImVec2 origin=canvas_origin();
     auto point=[&](float x,float y) { return ImVec2(origin.x+20+x*.8f,origin.y+20+y*.8f); };
     auto drag=[&](ImVec2 from,ImVec2 to) { move(f,from); button(f,0,true); move(f,to); button(f,0,false); };

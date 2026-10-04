@@ -25,7 +25,8 @@ typedef enum {
     /* The operation exists in the contract but this implementation does not
      * provide it. Distinct from NOT_FOUND, which means "not present in the
      * data" rather than "not implemented here". */
-    JFX_ERROR_NOT_IMPLEMENTED = -9
+    JFX_ERROR_NOT_IMPLEMENTED = -9,
+    JFX_ERROR_BUSY = -10 /* Live users or an active edit prevent this operation. */
 } jfx_result_t;
 
 const char *jfx_result_to_string(jfx_result_t result);

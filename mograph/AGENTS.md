@@ -120,6 +120,11 @@ on the caller during `scheduler_wait_idle`, engine ticks and shutdown. Native
 and pthread-enabled Emscripten builds use worker threads. The scheduler unit
 test covers priority/FIFO order, queue capacity and draining in serial builds.
 
+Auto-backend probing retains the first CPU fallback until a usable GPU backend
+replaces it. Destroy unused probes only; the selected handle must remain live
+through execution and engine shutdown. `test_core` exercises auto execution and
+the no-Vulkan CI matrix covers CPU-only lifetime.
+
 ```c
 // Crossing the CPU/GPU boundary
 jfx_fence_t fence = jfx_gpu_submit(ctx, cmd_list);
@@ -255,23 +260,34 @@ jfx_event_subscribe(ctx, JFX_EVENT_FRAME_BEGIN, my_handler, userdata);
 
 ## Plugin Interface
 
-Plugins are loaded through `core/plugin/`. A plugin exposes a single entry point:
+The implemented loader is `src/plugin_host.c` and the SDK header is
+`include/jfx/jfx_plugin_sdk.h` (SDK ABI 1.0; additive Plugin API 1.1). Modules
+export a size-guarded definition and use the host-service table, without linking
+the engine:
 
 ```c
-jfx_result_t jfx_plugin_init(jfx_plugin_host_t* host, uint32_t api_version);
+JFX_PLUGIN_EXPORT jfx_result_t jfx_plugin_entry(uint32_t sdk_major,
+    uint32_t sdk_minor, jfx_plugin_definition_t *out_definition);
 ```
 
-The host handle provides the subset of the API available to plugins (declared in `public/joltfx_ext.h`). Plugins must not access engine-internal headers.
+Register native straight-RGBA effects or bounded Joltscript image kernels with
+`JFX_PLUGIN_CAP_KERNELS`, editor actions with `JFX_PLUGIN_CAP_EDITOR`, and owned
+event subscriptions with `JFX_PLUGIN_CAP_EVENTS`. Other registration capabilities
+return NOT_IMPLEMENTED. Static attachment uses the same definition/services;
+legacy `jfx_plugin_init(host, api_version)` modules retain version 1 compatibility.
 
-**Version compatibility:** Plugins declare their minimum required `api_version`; the host refuses to load plugins built against a newer API than the running engine.
+Descriptors are copied. Effect/parameter IDs must fit the 63-byte project token
+limit. Graphs, timeline copies, transaction baselines, history and export snapshots
+retain custom kinds; unloading returns BUSY while referenced. Host destruction
+removes subscriptions and defers finalization until all references release.
+Lifecycle, events and documents use one serialized owner thread; no lifecycle
+mutation inside callbacks. Use exact-userdata event cleanup for shared relays.
 
-**Plugin capabilities** (bitmask in `jfx_plugin_desc_t`):
-- `JFX_PLUGIN_CAP_KERNELS` — Register new kernels
-- `JFX_PLUGIN_CAP_TYPES` — Register new data types
-- `JFX_PLUGIN_CAP_EVENTS` — Subscribe/emit events
-- `JFX_PLUGIN_CAP_ASSETS` — Extend asset pipeline
-- `JFX_PLUGIN_CAP_BACKEND` — Provide backend implementation
-- `JFX_PLUGIN_CAP_IO` — Add file format support
+Editor 1.5 transactions group gestures/plugin actions into one history step and
+reserve restoration models before edits so cancel needs no allocation. Undo,
+cancel, load and reset invalidate borrowed document handles; reacquire them.
+See `docs/plugins.md`, `sdk/examples/tint`, `plugin_sdk` and
+`plugin_cli_integration` for the service and lifetime contracts.
 
 ---
 

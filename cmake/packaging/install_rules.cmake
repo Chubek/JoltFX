@@ -27,15 +27,19 @@ list(APPEND JFX_INSTALL_TARGETS
 foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
     list(APPEND JFX_INSTALL_TARGETS jfx_backend_${backend})
 endforeach()
-if(JFX_EXT_LUA OR JFX_EXT_MRUBY)
-    list(APPEND JFX_INSTALL_TARGETS jfx_extif_common)
-endif()
+list(APPEND JFX_INSTALL_TARGETS jfx_extif_common jfx_extif)
 if(JFX_EXT_LUA)
     list(APPEND JFX_INSTALL_TARGETS jfx_lua)
 endif()
 if(JFX_EXT_MRUBY)
-    list(APPEND JFX_INSTALL_TARGETS jfx_mruby)
+    list(APPEND JFX_INSTALL_TARGETS jfx_mruby jfx_mruby_runtime)
 endif()
+foreach(extension IN ITEMS quickjs python wasm)
+    string(TOUPPER "${extension}" extension_option)
+    if(JFX_EXT_${extension_option})
+        list(APPEND JFX_INSTALL_TARGETS jfx_${extension})
+    endif()
+endforeach()
 if(JFX_FRONTEND_CLI)
     list(APPEND JFX_INSTALL_TARGETS jfx_frontend_common joltfx_cli)
 endif()
@@ -76,6 +80,15 @@ install(TARGETS ${JFX_INSTALL_TARGETS_PRESENT}
 install(DIRECTORY mograph/include/jfx
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+install(DIRECTORY extif/common/include/jfx DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+foreach(extension IN ITEMS lua mruby quickjs python wasm)
+    string(TOUPPER "${extension}" extension_option)
+    if(JFX_EXT_${extension_option})
+        install(DIRECTORY extif/${extension}/include/jfx DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    endif()
+endforeach()
+install(DIRECTORY tilly/include/tilly tilly/tillyz/include/tillyz DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY backends/common/include/jfx
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING
@@ -125,8 +138,14 @@ if(JFX_INSTALL_DOCS_PRESENT)
     install(FILES ${JFX_INSTALL_DOCS_PRESENT}
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
 endif()
-install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md
+install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/plugins.md docs/extensions.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(DIRECTORY extif/examples DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/extensions)
+foreach(extension IN ITEMS lua mruby quickjs python wasm)
+    install(FILES extif/${extension}/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/extif/${extension})
+endforeach()
+install(FILES extif/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/extif)
+install(FILES kernels/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/kernels)
 install(FILES third_party/miniaudio/LICENSE
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/miniaudio)
 if(JFX_VIDEO_FFMPEG AND JFX_MEDIA_FFMPEG_BUNDLED)
@@ -139,6 +158,34 @@ install(EXPORT JoltFXTargets
     NAMESPACE JoltFX::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JoltFX
 )
+
+# Resolve only dependencies actually referenced by this configuration's export.
+set(package_links "")
+foreach(target IN LISTS JFX_INSTALL_TARGETS_PRESENT)
+    get_target_property(links ${target} INTERFACE_LINK_LIBRARIES)
+    string(APPEND package_links ";${links}")
+endforeach()
+foreach(dependency IN ITEMS VULKAN SDL2 OPENGL OCIO FFMPEG WASMTIME)
+    set(JFX_PACKAGE_${dependency} OFF)
+endforeach()
+foreach(pair IN ITEMS "VULKAN|Vulkan::" "SDL2|SDL2::" "OPENGL|OpenGL::"
+        "OCIO|OpenColorIO::" "FFMPEG|PkgConfig::JFX_FFMPEG" "WASMTIME|Wasmtime::")
+    string(REPLACE "|" ";" parts "${pair}")
+    list(GET parts 0 dependency)
+    list(GET parts 1 symbol)
+    if(package_links MATCHES "${symbol}")
+        set(JFX_PACKAGE_${dependency} ON)
+    endif()
+endforeach()
+include(CMakePackageConfigHelpers)
+configure_package_config_file("${CMAKE_SOURCE_DIR}/cmake/packaging/JoltFXConfig.cmake.in"
+    "${CMAKE_BINARY_DIR}/JoltFXConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/JoltFX")
+write_basic_package_version_file("${CMAKE_BINARY_DIR}/JoltFXConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES "${CMAKE_BINARY_DIR}/JoltFXConfig.cmake" "${CMAKE_BINARY_DIR}/JoltFXConfigVersion.cmake"
+    "${CMAKE_SOURCE_DIR}/cmake/modules/FindWasmtime.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/JoltFX")
 
 set(CPACK_PACKAGE_NAME "JoltFX")
 set(CPACK_PACKAGE_VENDOR "JoltFX")

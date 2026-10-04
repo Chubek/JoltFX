@@ -12,6 +12,9 @@ extern "C" {
 
 /* Increment only when a source/binary incompatible plugin API is introduced. */
 #define JFX_PLUGIN_API_VERSION 1u
+#define JFX_PLUGIN_API_MAJOR 1
+#define JFX_PLUGIN_API_MINOR 1
+#define JFX_PLUGIN_API_PATCH 0
 #define JFX_PLUGIN_MAX_ID_LENGTH 63u
 #define JFX_PLUGIN_MAX_NAME_LENGTH 95u
 
@@ -23,7 +26,8 @@ typedef enum {
     JFX_PLUGIN_CAP_EVENTS = 1u << 2,
     JFX_PLUGIN_CAP_ASSETS = 1u << 3,
     JFX_PLUGIN_CAP_BACKEND = 1u << 4,
-    JFX_PLUGIN_CAP_IO = 1u << 5
+    JFX_PLUGIN_CAP_IO = 1u << 5,
+    JFX_PLUGIN_CAP_EDITOR = 1u << 6
 } jfx_plugin_capability_t;
 
 typedef struct {
@@ -56,8 +60,13 @@ jfx_result_t jfx_plugin_init(jfx_plugin_host_t *host, uint32_t api_version);
 jfx_result_t jfx_plugin_host_create(jfx_engine_t *engine,
     jfx_plugin_host_t **out_host);
 void jfx_plugin_host_destroy(jfx_plugin_host_t *host);
+/* Destroy after documents/history/export jobs and before engine shutdown.
+ * If documents are still live, finalization is deferred until their last
+ * plugin reference is released. Explicit unload returns BUSY in that case. */
 
-/* Load a native module, invoke jfx_plugin_init, and return a host-local ID. */
+/* Load an SDK module (jfx_plugin_entry), or a legacy jfx_plugin_init module.
+ * Returns a host-local ID; the output is zero on failure. Native loading is
+ * unavailable on WASM; statically linked SDK modules use host_attach. */
 jfx_result_t jfx_plugin_host_load(jfx_plugin_host_t *host, const char *path,
     uint32_t *out_plugin_id);
 jfx_result_t jfx_plugin_host_unload(jfx_plugin_host_t *host,

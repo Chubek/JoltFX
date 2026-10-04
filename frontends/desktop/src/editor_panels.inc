@@ -3,10 +3,32 @@ void editor_result(jfx_desktop_frontend_t *f, jfx_result_t r) {
     if (r == JFX_SUCCESS) { reset_audio(f); f->editing = true; f->preview_dirty = true; f->status[0]=0; }
     else std::snprintf(f->status, sizeof(f->status), "%s", jfx_result_to_string(r));
 }
+void encoded_export(jfx_desktop_frontend_t *f) {
+    ImGui::InputText("Video output (.mp4/.mov/.mkv)",f->video_export_path,sizeof(f->video_export_path));
+    ImGui::InputText("Encoder (empty: default)",f->video_codec,sizeof(f->video_codec));
+    ImGui::InputScalar("Export start frame",ImGuiDataType_U64,&f->video_start);
+    ImGui::InputScalar("Export frames (0: sequence)",ImGuiDataType_U64,&f->video_frames);
+    ImGui::Checkbox("Include mixed audio",&f->video_audio);
+    bool running=f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING;
+    ImGui::BeginDisabled(running);
+    if (ImGui::Button("Export encoded video")) {
+        jfx_export_destroy(f->export_job); f->export_job=nullptr;
+        jfx_export_options_t options{}; options.size=sizeof(options); options.path=f->video_export_path;
+        options.video_codec=*f->video_codec?f->video_codec:nullptr; options.start_frame=f->video_start;
+        options.frame_count=f->video_frames?f->video_frames:jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?300:0;
+        options.audio=f->video_audio;
+        editor_result(f,jfx_export_begin(f->editor,&options,&f->export_job));
+    }
+    ImGui::EndDisabled();
+    if (running) {
+        ImGui::ProgressBar((float)((double)jfx_export_completed_frames(f->export_job)/(double)jfx_export_total_frames(f->export_job)));
+        if (ImGui::Button("Cancel video export")) jfx_export_cancel(f->export_job);
+    }
+}
 void timeline_tracks(jfx_desktop_frontend_t *f) {
     auto *t = jfx_editor_timeline(f->editor);
     auto command=[&](const char *op,uint32_t a=0,uint32_t b=0,uint32_t c=0,double v=0,const char *text="") {
-        auto r=jfx_editor_command(f->editor,op,a,b,c,v,text); editor_result(f,r);
+        auto r=jfx_desktop_frontend_edit(f,op,a,b,c,v,text); editor_result(f,r);
         t=jfx_editor_timeline(f->editor); return r;
     };
     if (f->selected_track>=jfx_timeline_track_count(t)) f->selected_track=0;
@@ -202,35 +224,16 @@ void timeline_tracks(jfx_desktop_frontend_t *f) {
             jfx_timeline_width(t),jfx_timeline_height(t),f->nle_export_path));
     }
     if (ImGui::CollapsingHeader("Encoded video export")) {
-        ImGui::InputText("Video output (.mp4/.mov/.mkv)",f->video_export_path,sizeof(f->video_export_path));
-        ImGui::InputText("Encoder (empty: default)",f->video_codec,sizeof(f->video_codec));
-        ImGui::InputScalar("Export start frame",ImGuiDataType_U64,&f->video_start);
-        ImGui::InputScalar("Export frames (0: sequence)",ImGuiDataType_U64,&f->video_frames);
-        ImGui::Checkbox("Include mixed audio",&f->video_audio);
-        bool running=f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING;
-        ImGui::BeginDisabled(running);
-        if (ImGui::Button("Export encoded video")) {
-            jfx_export_destroy(f->export_job); f->export_job=nullptr;
-            jfx_export_options_t options={}; options.size=sizeof(options); options.path=f->video_export_path;
-            options.video_codec=*f->video_codec?f->video_codec:nullptr; options.start_frame=f->video_start;
-            options.frame_count=f->video_frames?f->video_frames:jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?300:0;
-            options.audio=f->video_audio;
-            editor_result(f,jfx_export_begin(f->editor,&options,&f->export_job));
-        }
-        ImGui::EndDisabled();
-        if (running) {
-            ImGui::ProgressBar((float)((double)jfx_export_completed_frames(f->export_job)/(double)jfx_export_total_frames(f->export_job)));
-            if (ImGui::Button("Cancel video export")) jfx_export_cancel(f->export_job);
-        }
+        encoded_export(f);
     }
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
         bool modifier=ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper;
-        if (modifier && ImGui::IsKeyPressed(ImGuiKey_Z)) { command(ImGui::GetIO().KeyShift?"redo":"undo"); f->nle_drag=0; }
         if (ImGui::IsKeyPressed(ImGuiKey_Space)) f->playing=!f->playing;
         if (ImGui::IsKeyPressed(ImGuiKey_S) && !modifier) command("clip.split",f->selected_track,f->selected_clip,0,(double)frame);
         if (ImGui::IsKeyPressed(ImGuiKey_Delete)) command(ImGui::GetIO().KeyShift?"clip.ripple_delete":"clip.remove",f->selected_track,f->selected_clip);
     }
 }
+#include "color_controls.inc"
 void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_COLOR_NONE) {
     auto *t=jfx_editor_timeline(f->editor); uint32_t track=f->selected_track, clip=f->selected_clip;
     if (clip>=jfx_timeline_clip_count(t,track)) { ImGui::TextUnformatted("Select a clip in the timeline."); return; }
@@ -258,14 +261,41 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
                 editor_result(f,jfx_desktop_frontend_layer_effects_set_blend(f,track,clip,e,(jfx_blend_mode_t)b));
             ImGui::EndCombo();
         }
+        size_t wheel_params=0;
+        if (section==JFX_COLOR_GRADING && (!std::strcmp(k->name,"grade_color_wheels") || !std::strcmp(k->name,"lift_gamma_gain"))) {
+            const char *tonal[]={"Shadows","Midtones","Highlights"}, *primary[]={"Lift","Gamma","Gain"};
+            auto labels=!std::strcmp(k->name,"grade_color_wheels")?tonal:primary;
+            if (ImGui::BeginTable("Color wheels",3,ImGuiTableFlags_SizingStretchSame)) {
+                for (size_t w=0;w<3;++w) {
+                    ImGui::TableNextColumn(); ImGui::PushID((int)w);
+                    float rgb[3]; for (size_t c=0;c<3;++c) rgb[c]=jfx_timeline_effect_param(t,track,clip,e,w*3+c);
+                    if (grading_wheel(labels[w],k->params+w*3,rgb,ImGui::GetContentRegionAvail().x))
+                        for (size_t c=0;c<3;++c) if (rgb[c]!=jfx_timeline_effect_param(t,track,clip,e,w*3+c) && begin_grading(f))
+                            editor_result(f,jfx_desktop_frontend_layer_effects_set_param(f,track,clip,e,w*3+c,rgb[c]));
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            wheel_params=9;
+        }
+        bool dials=section==JFX_COLOR_GRADING;
+        int columns=(int)(ImGui::GetContentRegionAvail().x/150);
+        if (columns<1) columns=1;
+        if (columns>4) columns=4;
+        bool table=dials && ImGui::BeginTable("Grading dials",columns,ImGuiTableFlags_SizingStretchSame);
         for (size_t p=0;p<k->param_count;++p) {
+            if (table) ImGui::TableNextColumn();
             ImGui::PushID((int)p);
             float v=jfx_timeline_effect_param(t,track,clip,e,p);
+            bool changed_value=false;
             if (k->params[p].integral) {
                 int integer=(int)v;
-                if (ImGui::SliderInt(k->params[p].label,&integer,(int)k->params[p].minimum,(int)k->params[p].maximum))
-                    editor_result(f,jfx_desktop_frontend_layer_effects_set_param(f,track,clip,e,p,(float)integer));
-            } else if (ImGui::SliderFloat(k->params[p].label,&v,k->params[p].minimum,k->params[p].maximum))
+                changed_value=ImGui::SliderInt(k->params[p].label,&integer,(int)k->params[p].minimum,(int)k->params[p].maximum);
+                v=(float)integer;
+            } else if (dials && p>=wheel_params) {
+                changed_value=grading_dial(k->params[p],&v,ImGui::GetContentRegionAvail().x);
+            } else changed_value=ImGui::SliderFloat(k->params[p].label,&v,k->params[p].minimum,k->params[p].maximum);
+            if (changed_value && v!=jfx_timeline_effect_param(t,track,clip,e,p) && (!dials || begin_grading(f)))
                 editor_result(f,jfx_desktop_frontend_layer_effects_set_param(f,track,clip,e,p,v));
             if (ImGui::SmallButton("Set key")) editor_result(f,jfx_desktop_frontend_layer_effects_add_key(f,track,clip,e,p,jfx_desktop_frontend_timeline_current_frame(f),v));
             ImGui::SameLine();
@@ -273,6 +303,7 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
             ImGui::SameLine(); ImGui::Text("%zu keys",jfx_timeline_key_count(t,track,clip,e,p));
             ImGui::PopID();
         }
+        if (table) ImGui::EndTable();
         for (size_t i=0;i<k->string_count;++i) {
             char text[512]; const char *value=jfx_timeline_effect_string(t,track,clip,e,i);
             std::snprintf(text,sizeof(text),"%s",value?value:"");
@@ -287,8 +318,10 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
         }
         bool changed=false;
         if (section!=JFX_COLOR_NONE && ImGui::SmallButton("Reset parameters")) {
-            for (size_t p=0;p<k->param_count;++p)
+            finish_grading(f);
+            if (begin_grading(f)) for (size_t p=0;p<k->param_count;++p)
                 editor_result(f,jfx_desktop_frontend_layer_effects_set_param(f,track,clip,e,p,k->params[p].default_value));
+            finish_grading(f);
         }
         uint32_t previous=UINT32_MAX, next=UINT32_MAX;
         for (uint32_t i=0;i<jfx_timeline_effect_count(t,track,clip);++i) {
@@ -303,6 +336,7 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
         if (ImGui::SmallButton("Remove")) { editor_result(f,jfx_desktop_frontend_layer_effects_remove(f,track,clip,e)); changed=true; }
         ImGui::Separator(); ImGui::PopID(); if (changed) break;
     }
+    if (f->grading_edit && !ImGui::IsAnyItemActive()) finish_grading(f);
 }
 void node_panel(jfx_desktop_frontend_t *f) {
     auto *g=jfx_editor_graph(f->editor);
@@ -467,37 +501,8 @@ void node_panel(jfx_desktop_frontend_t *f) {
     if (ImGui::Button("Delete node")) { editor_result(f,jfx_desktop_frontend_node_compositing_remove_node(f,n)); f->selected_node=0; }
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
         bool modifier=ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper;
-        if (modifier && ImGui::IsKeyPressed(ImGuiKey_Z)) { command(ImGui::GetIO().KeyShift?"redo":"undo"); f->node_drag=0; f->node_wiring=false; }
         if (modifier && ImGui::IsKeyPressed(ImGuiKey_D) && command("node.duplicate",n)==JFX_SUCCESS) f->selected_node=(uint32_t)jfx_graph_node_count(g)-1;
         if (ImGui::IsKeyPressed(ImGuiKey_Delete)) command("node.remove",n);
     }
     ImGui::TextWrapped("%s",f->status);
-}
-void editor_panels(jfx_desktop_frontend_t *f) {
-    if (f->show_properties) {
-        if (open_panel(f,"Layer Effects",PanelLayout::properties)) effect_stack(f);
-        ImGui::End();
-    }
-    if (f->show_grade) {
-        ImGui::SetNextWindowSize(ImVec2(350,420),ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Color Grading",&f->show_grade)) {
-            ImGui::TextUnformatted("Selected clip: primary controls, wheels, looks and LUTs");
-            effect_stack(f,JFX_COLOR_GRADING);
-            ImGui::TextWrapped("%s",f->status);
-        }
-        ImGui::End();
-    }
-    if (f->show_calibration) {
-        ImGui::SetNextWindowSize(ImVec2(350,420),ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Color Calibration",&f->show_calibration)) {
-            effect_stack(f,JFX_COLOR_CALIBRATION);
-            ImGui::TextWrapped("%s",f->status);
-        }
-        ImGui::End();
-    }
-    if (f->show_nodes) {
-        ImGui::SetNextWindowSize(ImVec2(500,460),ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Node Compositing",&f->show_nodes)) node_panel(f);
-        ImGui::End();
-    }
 }

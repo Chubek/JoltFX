@@ -1,12 +1,17 @@
 #include "jfx/jfx_editor.h"
 #include "jfx/jfx_color.h"
 #include "jfx/jfx_audio.h"
+#include "jfx/jfx_plugin_sdk.h"
+#include "plugin_internal.h"
 #include "tilly/allocator.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-typedef struct { char *text; size_t length; jfx_project_kind_t document, active; } snapshot_t;
+typedef struct {
+    char *text; size_t length; jfx_project_kind_t document,active;
+    const jfx_node_kind_t *plugins[JFX_PLUGIN_MAX_EFFECTS]; size_t plugin_count;
+} snapshot_t;
 struct jfx_editor {
     jfx_timeline_t *timeline;
     jfx_graph_t *graph;
@@ -14,6 +19,11 @@ struct jfx_editor {
     jfx_project_kind_t kind;
     snapshot_t undo[32], redo[32];
     size_t undo_count, redo_count, history_bytes;
+    snapshot_t edit;
+    bool edit_active, edit_changed;
+    jfx_timeline_t *edit_timeline;
+    jfx_graph_t *edit_graph;
+    uint32_t edit_output,edit_width,edit_height;
 };
 static void *allocate(size_t n) {
     return tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), n, _Alignof(max_align_t));
@@ -60,6 +70,7 @@ jfx_result_t jfx_editor_set_output(jfx_editor_t *e, uint32_t node) {
     e->output = node; return JFX_SUCCESS;
 }
 jfx_result_t jfx_editor_load(jfx_editor_t *e, const char *text, size_t n, char *err, size_t cap) {
+    if (e && e->edit_active) return JFX_ERROR_BUSY;
     if (!e || !text || !n || n > JFX_PROJECT_MAX_BYTES) return JFX_ERROR_INVALID_ARGUMENT;
     jfx_project_kind_t kind;
     jfx_result_t r = jfx_project_kind_of(text, n, &kind, err, cap);
@@ -321,11 +332,25 @@ static jfx_result_t command_apply(jfx_editor_t *e, const char *op, uint32_t a,
 
 bool jfx_editor_can_undo(const jfx_editor_t *e) { return e && e->undo_count!=0; }
 bool jfx_editor_can_redo(const jfx_editor_t *e) { return e && e->redo_count!=0; }
+static void snapshot_release(snapshot_t *s) {
+    for (size_t i=0;i<s->plugin_count;++i) jfx_plugin_kind_release(s->plugins[i]);
+    release(s->text);
+}
+static void snapshot_pin(snapshot_t *s,const jfx_node_kind_t *kind) {
+    if (!jfx_plugin_kind_is_custom(kind)) return;
+    for (size_t i=0;i<s->plugin_count;++i) if (s->plugins[i]==kind) return;
+    if (s->plugin_count<JFX_PLUGIN_MAX_EFFECTS && jfx_plugin_kind_retain(kind)) s->plugins[s->plugin_count++]=kind;
+}
 static void clear_stack(jfx_editor_t *e,snapshot_t *stack,size_t *count) {
-    while (*count) { snapshot_t s=stack[--*count]; e->history_bytes-=s.length+1; release(s.text); }
+    while (*count) { snapshot_t s=stack[--*count]; e->history_bytes-=s.length+1; snapshot_release(&s); }
+}
+static void release_edit_baseline(jfx_editor_t *e) {
+    jfx_timeline_destroy(e->edit_timeline); e->edit_timeline=NULL;
+    jfx_graph_destroy(e->edit_graph); e->edit_graph=NULL;
 }
 void jfx_editor_clear_history(jfx_editor_t *e) {
     if (!e) return;
+    if (e->edit_active) { snapshot_release(&e->edit); release_edit_baseline(e); e->edit_active=false; e->edit_changed=false; }
     clear_stack(e,e->undo,&e->undo_count); clear_stack(e,e->redo,&e->redo_count);
 }
 static jfx_result_t snapshot(jfx_editor_t *e,jfx_project_kind_t document,snapshot_t *out) {
@@ -337,7 +362,14 @@ static jfx_result_t snapshot(jfx_editor_t *e,jfx_project_kind_t document,snapsho
         if (r==JFX_SUCCESS) {
             char *compact=allocate(n+1);
             if (!compact) { release(text); return JFX_ERROR_OUT_OF_MEMORY; }
-            memcpy(compact,text,n+1); release(text); *out=(snapshot_t){compact,n,document,e->kind}; return JFX_SUCCESS;
+            memcpy(compact,text,n+1); release(text);
+            memset(out,0,sizeof(*out)); out->text=compact; out->length=n; out->document=document; out->active=e->kind;
+            if (document==JFX_PROJECT_KIND_GRAPH) {
+                for (uint32_t node=0;node<jfx_graph_node_count(e->graph);++node) snapshot_pin(out,jfx_graph_node_kind(e->graph,node));
+            } else for (uint32_t t=0;t<jfx_timeline_track_count(e->timeline);++t)
+                for (uint32_t c=0;c<jfx_timeline_clip_count(e->timeline,t);++c)
+                    for (uint32_t fx=0;fx<jfx_timeline_effect_count(e->timeline,t,c);++fx) snapshot_pin(out,jfx_timeline_effect_kind_desc(e->timeline,t,c,fx));
+            return JFX_SUCCESS;
         }
         release(text);
         if (r!=JFX_ERROR_BACKEND_FAILURE) return r;
@@ -345,7 +377,7 @@ static jfx_result_t snapshot(jfx_editor_t *e,jfx_project_kind_t document,snapsho
     return JFX_ERROR_OUT_OF_MEMORY;
 }
 static void discard_first(jfx_editor_t *e,snapshot_t *stack,size_t *count) {
-    e->history_bytes-=stack[0].length+1; release(stack[0].text);
+    e->history_bytes-=stack[0].length+1; snapshot_release(&stack[0]);
     memmove(stack,stack+1,(--*count)*sizeof(*stack));
 }
 static void push_snapshot(jfx_editor_t *e,snapshot_t *stack,size_t *count,snapshot_t s) {
@@ -358,9 +390,44 @@ static void push_snapshot(jfx_editor_t *e,snapshot_t *stack,size_t *count,snapsh
     }
     stack[(*count)++]=s; e->history_bytes+=s.length+1;
 }
+jfx_result_t jfx_editor_begin_edit(jfx_editor_t *e,jfx_project_kind_t document) {
+    if (!e || (document!=JFX_PROJECT_KIND_GRAPH && document!=JFX_PROJECT_KIND_SEQUENCE)) return JFX_ERROR_INVALID_ARGUMENT;
+    if (e->edit_active) return JFX_ERROR_BUSY;
+    jfx_result_t r=snapshot(e,document,&e->edit);
+    if (r!=JFX_SUCCESS) return r;
+    /* Reserve the restoration model before any live edit. Cancel/failed plugin
+     * actions can then restore atomically without allocating during rollback. */
+    r=document==JFX_PROJECT_KIND_GRAPH?
+        jfx_project_load_graph(e->edit.text,e->edit.length,&e->edit_graph,&e->edit_output,&e->edit_width,&e->edit_height,NULL,0):
+        jfx_project_load_sequence(e->edit.text,e->edit.length,&e->edit_timeline,NULL,0);
+    if (r==JFX_SUCCESS) { e->edit_active=true; e->edit_changed=false; }
+    else { snapshot_release(&e->edit); release_edit_baseline(e); }
+    return r;
+}
+jfx_result_t jfx_editor_commit_edit(jfx_editor_t *e) {
+    if (!e || !e->edit_active) return JFX_ERROR_INVALID_ARGUMENT;
+    if (e->edit_changed) {
+        clear_stack(e,e->redo,&e->redo_count);
+        push_snapshot(e,e->undo,&e->undo_count,e->edit);
+    } else snapshot_release(&e->edit);
+    release_edit_baseline(e);
+    e->edit_active=false; e->edit_changed=false;
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_editor_cancel_edit(jfx_editor_t *e) {
+    if (!e || !e->edit_active) return JFX_ERROR_INVALID_ARGUMENT;
+    if (e->edit_graph) {
+        jfx_graph_destroy(e->graph); e->graph=e->edit_graph; e->edit_graph=NULL;
+        e->output=e->edit_output; e->width=e->edit_width; e->height=e->edit_height;
+    } else { jfx_timeline_destroy(e->timeline); e->timeline=e->edit_timeline; e->edit_timeline=NULL; }
+    e->kind=e->edit.active; snapshot_release(&e->edit);
+    e->edit_active=false; e->edit_changed=false;
+    return JFX_SUCCESS;
+}
 jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32_t b,uint32_t c,double value,const char *text) {
     if (!e || !op || !isfinite(value) || value<-1.e9 || value>1.e9) return JFX_ERROR_INVALID_ARGUMENT;
     if (!strcmp(op,"undo") || !strcmp(op,"redo")) {
+        if (e->edit_active) return JFX_ERROR_BUSY;
         bool undo=!strcmp(op,"undo");
         snapshot_t *from=undo?e->undo:e->redo,*to=undo?e->redo:e->undo;
         size_t *from_count=undo?&e->undo_count:&e->redo_count,*to_count=undo?&e->redo_count:&e->undo_count;
@@ -371,8 +438,8 @@ jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32
         jfx_timeline_t *restored=NULL; jfx_graph_t *graph=NULL; uint32_t output=0,w=0,h=0;
         r=previous.document==JFX_PROJECT_KIND_GRAPH?jfx_project_load_graph(previous.text,previous.length,&graph,&output,&w,&h,NULL,0)
             :jfx_project_load_sequence(previous.text,previous.length,&restored,NULL,0);
-        if (r!=JFX_SUCCESS) { release(current.text); return r; }
-        --*from_count; e->history_bytes-=previous.length+1; release(previous.text);
+        if (r!=JFX_SUCCESS) { snapshot_release(&current); return r; }
+        --*from_count; e->history_bytes-=previous.length+1; snapshot_release(&previous);
         if (graph) { jfx_graph_destroy(e->graph); e->graph=graph; e->output=output; e->width=w; e->height=h; }
         else { jfx_timeline_destroy(e->timeline); e->timeline=restored; }
         e->kind=previous.active;
@@ -382,12 +449,18 @@ jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32
     bool record=graph || !strncmp(op,"track.",6) || !strncmp(op,"clip.",5) || !strncmp(op,"effect.",7) ||
         !strncmp(op,"grade.",6) || !strncmp(op,"calibration.",12) || !strcmp(op,"sequence.new");
     if (!record) return command_apply(e,op,a,b,c,value,text);
+    if (e->edit_active) {
+        if (e->edit.document!=(graph?JFX_PROJECT_KIND_GRAPH:JFX_PROJECT_KIND_SEQUENCE)) return JFX_ERROR_BUSY;
+        jfx_result_t r=command_apply(e,op,a,b,c,value,text);
+        if (r==JFX_SUCCESS) e->edit_changed=true;
+        return r;
+    }
     snapshot_t before; jfx_result_t r=snapshot(e,graph?JFX_PROJECT_KIND_GRAPH:JFX_PROJECT_KIND_SEQUENCE,&before);
     if (r!=JFX_SUCCESS) return r;
     r=command_apply(e,op,a,b,c,value,text);
     if (r==JFX_SUCCESS) {
         clear_stack(e,e->redo,&e->redo_count);
         push_snapshot(e,e->undo,&e->undo_count,before);
-    } else release(before.text);
+    } else snapshot_release(&before);
     return r;
 }

@@ -7,6 +7,7 @@
  * stack, or the timeline. See jfx_timeline.h for the model. */
 
 #include "jfx/jfx_timeline.h"
+#include "plugin_internal.h"
 #include "jfx/jfx_audio.h"
 
 #include <math.h>
@@ -104,6 +105,7 @@ struct jfx_timeline {
 };
 
 static void effect_release(effect_t *effect) {
+    jfx_plugin_kind_release(effect->kind); effect->kind=NULL;
     for (size_t i = 0; i < JFX_GRAPH_MAX_STRING_PARAMS; ++i) {
         free_bytes(effect->strings[i]);
         effect->strings[i] = NULL;
@@ -629,6 +631,7 @@ jfx_result_t jfx_timeline_trim_clip(jfx_timeline_t *timeline, uint32_t track, ui
 static jfx_result_t clip_copy(const clip_t *src, clip_t *out) {
     *out=*src; out->image_path=NULL;
     for (size_t e=0;e<out->effect_count;++e) {
+        jfx_plugin_kind_retain(out->effects[e].kind);
         memset(out->effects[e].strings,0,sizeof(out->effects[e].strings));
         memset(out->effects[e].keys,0,sizeof(out->effects[e].keys));
     }
@@ -826,6 +829,7 @@ uint32_t jfx_timeline_add_effect(jfx_timeline_t *timeline, uint32_t track, uint3
     effect_t *effect = &c->effects[c->effect_count];
     memset(effect, 0, sizeof(*effect));
     effect->kind = kind;
+    jfx_plugin_kind_retain(kind);
     effect->enabled = true;
     effect->opacity = 1.0f;
     effect->blend = JFX_BLEND_NORMAL;

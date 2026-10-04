@@ -26,6 +26,7 @@
 #include "tilly/allocator.h"
 #include "tilly/logger.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -167,8 +168,13 @@ const char *imgui_ini_path(void) {
 struct jfx_desktop_frontend {
     jfx_engine_t *engine;
     jfx_editor_t *editor;
+    jfx_plugin_host_t *plugins;
+    char plugin_path[512];
     bool editing, looping, show_grade, show_nodes;
     bool show_calibration;
+    bool show_plugins, workspace_requested;
+    jfx_desktop_workspace_t workspace;
+    bool grading_edit;
     uint32_t selected_track, selected_clip, selected_node;
     float nle_zoom, nle_drag_x;
     uint64_t nle_first, nle_drag_start, nle_drag_length;
@@ -233,6 +239,7 @@ static void reset_audio(jfx_desktop_frontend_t *f) {
     jfx_audio_mixer_destroy(f->audio_mixer); f->audio_mixer=nullptr;
     jfx_desktop_window_clear_audio(f->window);
 }
+namespace { void finish_grading(jfx_desktop_frontend_t *f); }
 
 /* Mirrors engine events into the console so the panel shows what the engine is
  * actually doing rather than a fixed string. */
@@ -297,6 +304,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_properties = true;
     frontend->show_grade = true; frontend->show_nodes = true; frontend->looping = true;
     frontend->show_calibration = true;
+    frontend->show_plugins = true;
     frontend->nle_width=320; frontend->nle_height=180; frontend->nle_fps_num=30; frontend->nle_fps_den=1;
     frontend->nle_gap_length=30;
     std::snprintf(frontend->nle_export_path,sizeof(frontend->nle_export_path),"frame.ppm");
@@ -369,6 +377,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     ImGui::GetIO().IniFilename = imgui_ini_path();
     frontend->editor = jfx_editor_create(kPreviewWidth, kPreviewHeight);
     if (!frontend->editor) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    result=jfx_plugin_host_create(frontend->engine,&frontend->plugins);
+    if (result!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(frontend); return result; }
 
     {
         std::lock_guard<std::mutex> guard(g_console_owner_mutex);
@@ -422,6 +432,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_float);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_rgba);
     jfx_editor_destroy(frontend->editor);
+    jfx_plugin_host_destroy(frontend->plugins);
     jfx_lut_destroy(frontend->grade_lut);
     jolt_effects_destroy(frontend->effects);
     jfx_engine_shutdown(frontend->engine);
@@ -433,6 +444,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     if (!frontend || !path || !path[0] || std::strlen(path) >= sizeof(frontend->project_path)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    finish_grading(frontend);
     if (const char *ext = std::strrchr(path, '.'); ext && std::strcmp(ext, ".jfx") == 0) {
         FILE *file = std::fopen(path, "rb");
         if (!file) return JFX_ERROR_NOT_FOUND;
@@ -448,6 +460,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
         frontend->editing = true; frontend->selected_track = frontend->selected_clip = frontend->selected_node = 0;
         frontend->node_preview_selected=false; frontend->node_drag=0; frontend->node_wiring=false;
         frontend->time_seconds = 0; frontend->preview_dirty = true;
+        jfx_desktop_frontend_set_workspace(frontend,jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_GRAPH?
+            JFX_DESKTOP_WORKSPACE_COMPOSITING:JFX_DESKTOP_WORKSPACE_NLE);
     }
     std::strcpy(frontend->project_path, path);
     std::snprintf(frontend->project_input, sizeof(frontend->project_input), "%s", path);
@@ -565,55 +579,86 @@ extern "C" jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t
 
 namespace {
 
-/* Panel geometry for the first frame. After that ImGui's own persistence takes
- * over, so a user-arranged layout survives restarts and this never fights the
- * user. */
-struct PanelLayout {
-    static constexpr float kMenuBar = 22.0f;
-    static constexpr float kTimeline = 340.0f;
-    static constexpr float kProperties = 320.0f;
+#include "editor_panels.inc"
 
-    static void viewport() {
-        const ImVec2 display = ImGui::GetIO().DisplaySize;
-        ImGui::SetNextWindowPos(ImVec2(0.0f, kMenuBar));
-        ImGui::SetNextWindowSize(
-            ImVec2(display.x - kProperties, display.y - kMenuBar - kTimeline));
-        ImGui::Begin("Viewport");
-    }
-    static void properties() {
-        const ImVec2 display = ImGui::GetIO().DisplaySize;
-        ImGui::SetNextWindowPos(ImVec2(display.x - kProperties, kMenuBar));
-        ImGui::SetNextWindowSize(ImVec2(kProperties, display.y - kMenuBar - kTimeline));
-        ImGui::Begin("Layer Effects");
-    }
-    static void timeline() {
-        const ImVec2 display = ImGui::GetIO().DisplaySize;
-        ImGui::SetNextWindowPos(ImVec2(0.0f, display.y - kTimeline));
-        ImGui::SetNextWindowSize(ImVec2(display.x - kProperties, kTimeline));
-        ImGui::Begin("Timeline");
-    }
-    static void console() {
-        const ImVec2 display = ImGui::GetIO().DisplaySize;
-        const float area = display.y - kMenuBar - kTimeline;
-        /* Lower half of the viewport column, so it does not cover the
-         * Viewport's own title bar or status line. */
-        ImGui::SetNextWindowPos(ImVec2(0.0f, kMenuBar + area * 0.5f));
-        ImGui::SetNextWindowSize(ImVec2(420.0f, area * 0.5f));
-        ImGui::Begin("Console");
-    }
-};
+constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
+    "Node Compositing","Plugins","Console","Statistics"};
+constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
+    JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
+    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS};
 
-/* Opens `name`, applying the default geometry on the first frame only. */
-template <typename LayoutFn>
-bool open_panel(jfx_desktop_frontend_t *frontend, const char *name, LayoutFn layout) {
-    if (frontend->layout_initialized) {
-        return ImGui::Begin(name);
+void preview_panel(jfx_desktop_frontend_t *frontend) {
+    ImGui::TextUnformatted("Preview");
+    ImGui::Text("Backend: %s",jfx_engine_backend_name(frontend->engine));
+    if (frontend->preview_dirty || frontend->playing) {
+        if (jfx_desktop_frontend_render_rgba8(frontend,kPreviewWidth,kPreviewHeight,
+            frontend->preview_rgba,(size_t)kPreviewWidth*kPreviewHeight*4u)==JFX_SUCCESS) frontend->preview_dirty=false;
     }
-    layout();
-    return true;
+    if (frontend->window) {
+        void *texture=jfx_desktop_window_upload_rgba8(frontend->window,kPreviewWidth,kPreviewHeight,frontend->preview_rgba);
+        if (texture) {
+            frontend->preview_texture=texture;
+            float width=std::fmin((float)kPreviewWidth,ImGui::GetContentRegionAvail().x);
+            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texture)),ImVec2(width,width*9/16));
+        } else ImGui::TextDisabled("Preview texture upload failed.");
+    } else ImGui::TextWrapped("Headless: %ux%u preview rendered through %s.",kPreviewWidth,kPreviewHeight,jfx_engine_backend_name(frontend->engine));
+    ImGui::TextWrapped("Project: %s",frontend->project_path[0]?frontend->project_path:"Untitled");
+    ImGui::TextWrapped("%s",frontend->status);
 }
 
-#include "editor_panels.inc"
+void console_panel() {
+    std::lock_guard<std::mutex> guard(g_console.mutex);
+    if (ImGui::Button("Clear")) { g_console.next=0; g_console.total=0; }
+    ImGui::SameLine(); ImGui::TextDisabled("%u lines",g_console.total); ImGui::Separator();
+    uint32_t count=std::min(g_console.total,(uint32_t)kConsoleLines);
+    uint32_t first=(g_console.next+(uint32_t)kConsoleLines-count)%(uint32_t)kConsoleLines;
+    for (uint32_t i=0;i<count;++i) {
+        uint32_t slot=(first+i)%(uint32_t)kConsoleLines;
+        auto level=(tilly_log_level_t)g_console.level[slot];
+        ImVec4 color(.85f,.85f,.85f,1);
+        if (level>=TILLY_LOG_ERROR) color=ImVec4(1,.45f,.45f,1);
+        else if (level==TILLY_LOG_WARN) color=ImVec4(1,.8f,.4f,1);
+        else if (level<=TILLY_LOG_DEBUG) color=ImVec4(.6f,.65f,.75f,1);
+        ImGui::TextColored(color,"%s",g_console.lines[slot]);
+    }
+}
+
+void statistics_panel(jfx_desktop_frontend_t *frontend) {
+    jfx_engine_metrics_t metrics{}; metrics.size=sizeof(metrics);
+    jfx_engine_get_metrics(frontend->engine,&metrics);
+    ImGui::Text("Engine frames: %llu",(unsigned long long)metrics.frame_count);
+    ImGui::Text("Last frame: %.3f ms",(double)metrics.last_frame_ns/1.e6);
+    ImGui::Text("Worst frame: %.3f ms",(double)metrics.max_frame_ns/1.e6);
+    ImGui::Text("UI frames: %llu",(unsigned long long)frontend->frame_count);
+    ImGui::Text("Live buffers/textures/kernels: %u/%u/%u",jfx_engine_live_buffers(frontend->engine),
+        jfx_engine_live_textures(frontend->engine),jfx_engine_live_kernels(frontend->engine));
+}
+void plugin_panel(jfx_desktop_frontend_t *f) {
+    ImGui::TextUnformatted("Native plugin SDK 1.0 / effects / Joltscript kernels / editor actions / events");
+    ImGui::SetNextItemWidth(-1); ImGui::InputText("##Module path",f->plugin_path,sizeof(f->plugin_path));
+    if (ImGui::Button("Load plugin")) { uint32_t id=0; jfx_desktop_frontend_load_plugin(f,f->plugin_path,&id); }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear editor history")) { finish_grading(f); jfx_editor_clear_history(f->editor); }
+    ImGui::Separator();
+    for (uint32_t i=0;i<jfx_plugin_host_count(f->plugins);++i) {
+        jfx_plugin_info_t info{}; info.size=sizeof(info); uint32_t id;
+        if (jfx_plugin_host_info_at(f->plugins,i,&id,&info)!=JFX_SUCCESS) continue;
+        ImGui::PushID((int)id);
+        ImGui::Text("%s  %u.%u.%u",info.display_name,info.version>>24,(info.version>>12)&4095u,info.version&4095u);
+        ImGui::TextDisabled("%s / %s",info.identifier,info.vendor);
+        bool removed=ImGui::Button("Unload") && jfx_desktop_frontend_unload_plugin(f,id)==JFX_SUCCESS;
+        ImGui::PopID(); if (removed) break;
+    }
+    ImGui::Separator(); ImGui::TextUnformatted("Editor actions (selected clip/node)");
+    for (uint32_t i=0;i<jfx_plugin_host_action_count(f->plugins);++i) {
+        jfx_plugin_action_info_t action{}; action.size=sizeof(action);
+        if (jfx_plugin_host_action_info(f->plugins,i,&action)!=JFX_SUCCESS) continue;
+        ImGui::PushID(action.name);
+        if (ImGui::Button(action.label)) jfx_desktop_frontend_invoke_plugin(f,action.name);
+        ImGui::PopID();
+    }
+    ImGui::TextWrapped("%s",f->status);
+}
 
 /* Composes the menu bar and every panel. Called between NewFrame and Render. */
 void compose_ui(jfx_desktop_frontend_t *frontend) {
@@ -623,8 +668,8 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             if (ImGui::MenuItem("Open Project...")) {
                 open_requested=true;
             }
-            if (ImGui::MenuItem("New sequence")) jfx_desktop_frontend_close_project(frontend);
-            if (ImGui::MenuItem("New composition")) { jfx_desktop_frontend_node_compositing_new_graph(frontend); frontend->show_nodes=true; }
+            if (ImGui::MenuItem("New sequence")) { finish_grading(frontend); jfx_desktop_frontend_close_project(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_NLE); }
+            if (ImGui::MenuItem("New composition")) { finish_grading(frontend); jfx_desktop_frontend_node_compositing_new_graph(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_COMPOSITING); }
             if (ImGui::MenuItem("Save project...")) open_requested=true;
             if (ImGui::MenuItem("Export Frame...")) {
                 auto *t=jfx_editor_timeline(frontend->editor);
@@ -641,12 +686,10 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         }
         if (ImGui::BeginMenu("Playback")) {
             if (ImGui::MenuItem("Play", "Space", frontend->playing)) {
-                frontend->playing = !frontend->playing;
+                if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
             }
             if (ImGui::MenuItem("Stop", "S")) {
-                frontend->playing = false;
-                frontend->time_seconds = 0.0;
-                frontend->preview_dirty = true;
+                jfx_desktop_frontend_pause(frontend); jfx_desktop_frontend_seek(frontend,0);
             }
             ImGui::EndMenu();
         }
@@ -659,6 +702,18 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("Node Compositing", nullptr, &frontend->show_nodes);
             ImGui::MenuItem("Console", nullptr, &frontend->show_console);
             ImGui::MenuItem("Statistics", nullptr, &frontend->show_stats);
+            ImGui::MenuItem("Plugins", nullptr, &frontend->show_plugins);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Extensions")) {
+            if (ImGui::MenuItem("Plugin manager")) jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_PLUGINS);
+            for (uint32_t i=0;i<jfx_plugin_host_action_count(frontend->plugins);++i) {
+                jfx_plugin_action_info_t action{}; action.size=sizeof(action);
+                if (jfx_plugin_host_action_info(frontend->plugins,i,&action)!=JFX_SUCCESS) continue;
+                ImGui::PushID(action.name);
+                if (ImGui::MenuItem(action.label)) jfx_desktop_frontend_invoke_plugin(frontend,action.name);
+                ImGui::PopID();
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -693,112 +748,105 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         ImGui::EndPopup();
     }
 
-    if (frontend->show_viewport && open_panel(frontend, "Viewport", PanelLayout::viewport)) {
-        ImGui::Text("Backend: %s", jfx_engine_backend_name(frontend->engine));
-        ImGui::Text("Project: %s", frontend->project_path[0] ? frontend->project_path : "None");
-        ImGui::Text("Surface: %ux%u", frontend->width, frontend->height);
-        ImGui::Text("Status: %s", frontend->status);
-
-        if (frontend->preview_dirty || frontend->playing) {
-            if (jfx_desktop_frontend_render_rgba8(frontend, kPreviewWidth, kPreviewHeight,
-                    frontend->preview_rgba,
-                    (size_t)kPreviewWidth * kPreviewHeight * 4u) == JFX_SUCCESS) {
-                frontend->preview_dirty = false;
-            }
-        }
-        if (frontend->window) {
-            void *texture = jfx_desktop_window_upload_rgba8(frontend->window, kPreviewWidth,
-                kPreviewHeight, frontend->preview_rgba);
-            if (texture) {
-                frontend->preview_texture = texture;
-                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texture)),
-                    ImVec2((float)kPreviewWidth, (float)kPreviewHeight));
-            } else {
-                ImGui::TextDisabled("Preview texture upload failed.");
-            }
-        } else {
-            /* Headless: pixels are rendered through the backend, but there is no
-             * window to present them in. Say so instead of faking a viewport. */
-            ImGui::TextWrapped("Headless mode: %ux%u preview rendered through the %s backend, "
-                               "but no window is attached to present it.",
-                kPreviewWidth, kPreviewHeight, jfx_engine_backend_name(frontend->engine));
-        }
-        ImGui::End();
+    auto *viewport=ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos); ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::Begin("JoltFX workspace",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|
+        ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
+    if (ImGui::Button(frontend->playing?"Pause":"Play")) {
+        if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
-
-    if (frontend->show_timeline && open_panel(frontend, "Timeline", PanelLayout::timeline)) {
-        float time = (float)frontend->time_seconds;
-        if (ImGui::SliderFloat("Time", &time, 0.0f, (float)frontend->duration_seconds, "%.3f s")) {
-            frontend->time_seconds = time < 0.0f ? 0.0 : (double)time;
-            frontend->preview_dirty = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(frontend->playing ? "Pause" : "Play", ImVec2(80, 0))) {
-            frontend->playing = !frontend->playing;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Stop", ImVec2(80, 0))) {
-            frontend->playing = false;
-            frontend->time_seconds = 0.0;
-            frontend->preview_dirty = true;
-        }
-        timeline_tracks(frontend);
-        ImGui::Text("Frame %llu  Playing: %s", (unsigned long long)frontend->frame_count,
-            frontend->playing ? "yes" : "no");
-        ImGui::End();
+    ImGui::SameLine();
+    if (ImGui::Button("Stop")) { jfx_desktop_frontend_pause(frontend); jfx_desktop_frontend_seek(frontend,0); }
+    ImGui::SameLine(); ImGui::SetNextItemWidth(210);
+    float time=(float)frontend->time_seconds;
+    if (ImGui::SliderFloat("Time",&time,0,(float)frontend->duration_seconds,"%.3f s")) jfx_desktop_frontend_seek(frontend,time);
+    ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_undo(frontend->editor));
+    if (ImGui::Button("Undo")) { finish_grading(frontend); editor_result(frontend,jfx_desktop_frontend_edit(frontend,"undo",0,0,0,0,"")); }
+    ImGui::EndDisabled(); ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_redo(frontend->editor));
+    if (ImGui::Button("Redo")) { finish_grading(frontend); editor_result(frontend,jfx_desktop_frontend_edit(frontend,"redo",0,0,0,0,"")); }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Export...")) { finish_grading(frontend); ImGui::OpenPopup("Encoded export"); }
+    if (ImGui::BeginPopupModal("Encoded export",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
+        encoded_export(frontend);
+        ImGui::TextWrapped("%s",frontend->status);
+        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
-
-    editor_panels(frontend);
-
-    if (frontend->show_console && open_panel(frontend, "Console", PanelLayout::console)) {
-        std::lock_guard<std::mutex> guard(g_console.mutex);
-        if (ImGui::Button("Clear")) {
-            g_console.next = 0;
-            g_console.total = 0;
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("%u lines", g_console.total);
-        ImGui::Separator();
-        if (ImGui::BeginChild("log", ImVec2(0, -1), ImGuiChildFlags_None,
-                ImGuiWindowFlags_HorizontalScrollbar)) {
-            const uint32_t count = g_console.total < (uint32_t)kConsoleLines ? g_console.total
-                                                                            : (uint32_t)kConsoleLines;
-            const uint32_t first =
-                (g_console.next + (uint32_t)kConsoleLines - count) % (uint32_t)kConsoleLines;
-            for (uint32_t i = 0; i < count; ++i) {
-                const uint32_t slot = (first + i) % (uint32_t)kConsoleLines;
-                const tilly_log_level_t level = (tilly_log_level_t)g_console.level[slot];
-                ImVec4 color(0.85f, 0.85f, 0.85f, 1.0f);
-                if (level == TILLY_LOG_ERROR || level == TILLY_LOG_FATAL) {
-                    color = ImVec4(1.0f, 0.45f, 0.45f, 1.0f);
-                } else if (level == TILLY_LOG_WARN) {
-                    color = ImVec4(1.0f, 0.8f, 0.4f, 1.0f);
-                } else if (level <= TILLY_LOG_DEBUG) {
-                    color = ImVec4(0.6f, 0.65f, 0.75f, 1.0f);
+    auto *t=jfx_editor_timeline(frontend->editor);
+    const char *selected=jfx_timeline_clip_name(t,frontend->selected_track,frontend->selected_clip);
+    ImGui::SetNextItemWidth(300);
+    if (ImGui::BeginCombo("Selected clip",selected?selected:"No clip")) {
+        for (uint32_t track=0;track<jfx_timeline_track_count(t);++track)
+            for (uint32_t clip=0;clip<jfx_timeline_clip_count(t,track);++clip) {
+                char label[256]; std::snprintf(label,sizeof(label),"%s / %s##%u.%u",jfx_timeline_track_name(t,track),jfx_timeline_clip_name(t,track,clip),track,clip);
+                if (ImGui::Selectable(label,track==frontend->selected_track && clip==frontend->selected_clip)) {
+                    finish_grading(frontend); frontend->selected_track=track; frontend->selected_clip=clip;
                 }
-                ImGui::TextColored(color, "%s", g_console.lines[slot]);
+            }
+        ImGui::EndCombo();
+    }
+    if (frontend->export_job && jfx_export_state(frontend->export_job)==JFX_EXPORT_RUNNING) {
+        ImGui::SetNextItemWidth(260);
+        ImGui::ProgressBar((float)((double)jfx_export_completed_frames(frontend->export_job)/(double)jfx_export_total_frames(frontend->export_job)));
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel export")) jfx_export_cancel(frontend->export_job);
+    } else ImGui::TextDisabled("%s",frontend->status);
+    ImGui::Separator();
+    if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
+        for (int i=0;i<JFX_DESKTOP_WORKSPACE_COUNT;++i) {
+            if (!jfx_desktop_frontend_panel_visible(frontend,workspace_panels[i])) continue;
+            ImGuiTabItemFlags flags=frontend->workspace_requested && (int)frontend->workspace==i?ImGuiTabItemFlags_SetSelected:0;
+            if (ImGui::BeginTabItem(workspace_names[i],nullptr,flags)) {
+                if ((int)frontend->workspace==i) frontend->workspace_requested=false;
+                else if (!frontend->workspace_requested) {
+                    jfx_desktop_frontend_set_workspace(frontend,(jfx_desktop_workspace_t)i);
+                    frontend->workspace_requested=false;
+                }
+                bool wide=ImGui::GetContentRegionAvail().x>=760;
+                bool columns=frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
+                if (columns) {
+                    ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Preview",ImGuiTableColumnFlags_WidthFixed,330);
+                    ImGui::TableNextColumn();
+                }
+                if (frontend->show_viewport && !wide && ImGui::CollapsingHeader("Shared preview")) preview_panel(frontend);
+                if (ImGui::BeginChild("Editor interface",ImVec2(0,0))) {
+                    switch ((jfx_desktop_workspace_t)i) {
+                    case JFX_DESKTOP_WORKSPACE_NLE: timeline_tracks(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_EFFECTS: effect_stack(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_CALIBRATION: effect_stack(frontend,JFX_COLOR_CALIBRATION); break;
+                    case JFX_DESKTOP_WORKSPACE_GRADING:
+                        ImGui::TextUnformatted("Primaries / color wheels / looks / LUTs");
+                        effect_stack(frontend,JFX_COLOR_GRADING); break;
+                    case JFX_DESKTOP_WORKSPACE_COMPOSITING: node_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_CONSOLE: console_panel(); break;
+                    case JFX_DESKTOP_WORKSPACE_STATISTICS: statistics_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_PLUGINS: plugin_panel(frontend); break;
+                    default: break;
+                    }
+                }
+                ImGui::EndChild();
+                if (columns) {
+                    ImGui::TableNextColumn();
+                    if (ImGui::BeginChild("Shared preview",ImVec2(0,0))) preview_panel(frontend);
+                    ImGui::EndChild(); ImGui::EndTable();
+                }
+                ImGui::EndTabItem();
             }
         }
-        ImGui::EndChild();
-        ImGui::End();
+        ImGui::EndTabBar();
     }
-
-    if (frontend->show_stats) {
-        jfx_engine_metrics_t metrics;
-        std::memset(&metrics, 0, sizeof(metrics));
-        metrics.size = sizeof(metrics);
-        jfx_engine_get_metrics(frontend->engine, &metrics);
-        ImGui::Begin("Statistics");
-        ImGui::Text("Engine frames: %llu", (unsigned long long)metrics.frame_count);
-        ImGui::Text("Last frame: %.3f ms", (double)metrics.last_frame_ns / 1.0e6);
-        ImGui::Text("Worst frame: %.3f ms", (double)metrics.max_frame_ns / 1.0e6);
-        ImGui::Text("UI frames: %llu", (unsigned long long)frontend->frame_count);
-        ImGui::Text("Live buffers/textures/kernels: %u/%u/%u",
-            jfx_engine_live_buffers(frontend->engine),
-            jfx_engine_live_textures(frontend->engine),
-            jfx_engine_live_kernels(frontend->engine));
-        ImGui::End();
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
+        const auto &io=ImGui::GetIO();
+        if ((io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_Z)) {
+            finish_grading(frontend);
+            editor_result(frontend,jfx_desktop_frontend_edit(frontend,io.KeyShift?"redo":"undo",0,0,0,0,""));
+            frontend->nle_drag=0;
+        }
     }
+    if (frontend->grading_edit && !ImGui::IsAnyItemActive()) finish_grading(frontend);
+    ImGui::End();
 }
 
 } // namespace
@@ -846,6 +894,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             auto r=jfx_export_step(frontend->export_job,1);
             std::snprintf(frontend->status,sizeof(frontend->status),r==JFX_SUCCESS?"Video export: %llu / %llu frames":"Video export failed: %llu / %llu frames",
                 (unsigned long long)jfx_export_completed_frames(frontend->export_job),(unsigned long long)jfx_export_total_frames(frontend->export_job));
+        }
+        if (frontend->export_job && jfx_export_state(frontend->export_job)!=JFX_EXPORT_RUNNING) {
+            auto state=jfx_export_state(frontend->export_job);
+            std::snprintf(frontend->status,sizeof(frontend->status),"Video export %s: %llu / %llu frames",
+                state==JFX_EXPORT_COMPLETE?"complete":state==JFX_EXPORT_CANCELLED?"cancelled":"failed",
+                (unsigned long long)jfx_export_completed_frames(frontend->export_job),(unsigned long long)jfx_export_total_frames(frontend->export_job));
+            jfx_export_destroy(frontend->export_job); frontend->export_job=nullptr;
         }
         if (!frontend->playing || !frontend->editing || jfx_editor_kind(frontend->editor)!=JFX_PROJECT_KIND_SEQUENCE) reset_audio(frontend);
         else if (frontend->window) {
@@ -981,7 +1036,8 @@ static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
     return r;
 }
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
-    if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!f || !op) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->grading_edit && std::strcmp(op,"effect.param")) finish_grading(f);
     auto r=edited(f,jfx_editor_command(f->editor,op,a,b,c,v,text));
     if (r==JFX_SUCCESS && (!std::strcmp(op,"graph.new") || !std::strcmp(op,"sequence.new"))) {
         f->time_seconds=0; f->playing=false; f->selected_node=0; f->node_preview_selected=false; f->node_drag=0; f->node_wiring=false;
@@ -990,6 +1046,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,cons
         f->node_preview_selected=false; f->node_drag=0; f->node_wiring=false;
         if (f->selected_node>=jfx_graph_node_count(jfx_editor_graph(f->editor))) f->selected_node=0;
     }
+    if (r==JFX_SUCCESS && (!std::strcmp(op,"undo") || !std::strcmp(op,"redo")) && f->workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING &&
+        (f->workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING)!=(jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH))
+        jfx_desktop_frontend_set_workspace(f,jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?JFX_DESKTOP_WORKSPACE_COMPOSITING:JFX_DESKTOP_WORKSPACE_NLE);
     return r;
 }
 extern "C" jfx_result_t jfx_desktop_frontend_sequence_state(jfx_desktop_frontend_t *f,char *out,size_t cap) {
@@ -1008,17 +1067,55 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins };
     return panels[p];
+}
+extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
+    if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
+    finish_grading(f);
+    f->workspace=workspace; f->workspace_requested=true;
+    jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
+    f->nle_drag=f->node_drag=0; f->node_wiring=false;
+    if (workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING) {
+        jfx_editor_set_kind(f->editor,workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING?JFX_PROJECT_KIND_GRAPH:JFX_PROJECT_KIND_SEQUENCE);
+        f->editing=true; f->preview_dirty=true; reset_audio(f);
+        if (workspace!=JFX_DESKTOP_WORKSPACE_COMPOSITING) f->node_preview_selected=false;
+    }
+    return JFX_SUCCESS;
+}
+extern "C" jfx_desktop_workspace_t jfx_desktop_frontend_workspace(const jfx_desktop_frontend_t *f) {
+    return f?f->workspace:JFX_DESKTOP_WORKSPACE_NLE;
+}
+extern "C" jfx_plugin_host_t *jfx_desktop_frontend_plugins(jfx_desktop_frontend_t *f) { return f?f->plugins:nullptr; }
+extern "C" jfx_result_t jfx_desktop_frontend_load_plugin(jfx_desktop_frontend_t *f,const char *path,uint32_t *out_id) {
+    if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    auto r=jfx_plugin_host_load(f->plugins,path,out_id);
+    std::snprintf(f->status,sizeof(f->status),"%s",r==JFX_SUCCESS?"Plugin loaded.":jfx_plugin_host_error(f->plugins));
+    return r;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_unload_plugin(jfx_desktop_frontend_t *f,uint32_t id) {
+    if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    auto r=jfx_plugin_host_unload(f->plugins,id);
+    std::snprintf(f->status,sizeof(f->status),"%s",r==JFX_SUCCESS?"Plugin unloaded.":jfx_plugin_host_error(f->plugins));
+    return r;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_t *f,const char *action) {
+    if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    finish_grading(f);
+    jfx_plugin_action_context_t context{sizeof(context),f->editor,f->selected_track,f->selected_clip,f->selected_node};
+    auto r=jfx_plugin_host_invoke(f->plugins,action,&context);
+    if (r==JFX_SUCCESS) { std::snprintf(f->status,sizeof(f->status),"Plugin action completed."); return edited(f,r); }
+    std::snprintf(f->status,sizeof(f->status),"%s",jfx_plugin_host_error(f->plugins)); return r;
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    finish_grading(f);
     char *text = static_cast<char *>(imgui_alloc(JFX_PROJECT_MAX_BYTES, nullptr));
     if (!text) return JFX_ERROR_OUT_OF_MEMORY;
     size_t n=0; jfx_result_t r=jfx_editor_save(f->editor,text,JFX_PROJECT_MAX_BYTES,&n);
@@ -1031,6 +1128,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t
 }
 extern "C" jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *f) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    finish_grading(f);
     jfx_editor_t *e=jfx_editor_create(kPreviewWidth,kPreviewHeight);
     if (!e) return JFX_ERROR_OUT_OF_MEMORY;
     auto r=jfx_editor_command(e,"sequence.new",kPreviewWidth,kPreviewHeight,30,1,"");
@@ -1182,5 +1280,16 @@ extern "C" jfx_result_t jfx_desktop_frontend_color_grading_set_lift_gamma_gain(j
 }
 extern "C" jfx_result_t jfx_desktop_frontend_color_grading_get_lift_gamma_gain(const jfx_desktop_frontend_t *f,float l[3],float g[3],float a[3]) {
     if (!f || !l || !g || !a) return JFX_ERROR_INVALID_ARGUMENT;
-    for (int i=0;i<3;++i) { l[i]=f->lift[i]; g[i]=f->gamma[i]; a[i]=f->gain[i]; } return JFX_SUCCESS;
+    const auto *t=jfx_editor_timeline(f->editor);
+    for (uint32_t e=0;e<jfx_timeline_effect_count(t,f->selected_track,f->selected_clip);++e)
+        if (!std::strcmp(jfx_timeline_effect_kind(t,f->selected_track,f->selected_clip,e),"lift_gamma_gain")) {
+            for (size_t c=0;c<3;++c) {
+                l[c]=jfx_timeline_effect_param(t,f->selected_track,f->selected_clip,e,c);
+                g[c]=jfx_timeline_effect_param(t,f->selected_track,f->selected_clip,e,c+3);
+                a[c]=jfx_timeline_effect_param(t,f->selected_track,f->selected_clip,e,c+6);
+            }
+            return JFX_SUCCESS;
+        }
+    for (int c=0;c<3;++c) { l[c]=0; g[c]=a[c]=1; }
+    return JFX_SUCCESS;
 }

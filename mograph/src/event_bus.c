@@ -47,6 +47,17 @@ bool event_unsubscribe(jfx_event_type_t type, jfx_event_handler_t handler) {
     pthread_mutex_unlock(&lock);
     return found;
 }
+bool event_unsubscribe_user(jfx_event_type_t type,jfx_event_handler_t handler,void *userdata) {
+    if (!valid(type) || !handler) return false;
+    pthread_mutex_lock(&lock);
+    event_type_t *e=&events[type]; bool found=false;
+    if (initialized) for (size_t i=0;i<e->n;++i) {
+        if (e->a[i].handler==handler && e->a[i].userdata==userdata) {
+            memmove(e->a+i,e->a+i+1,(e->n-i-1)*sizeof(*e->a)); --e->n; found=true; break;
+        }
+    }
+    pthread_mutex_unlock(&lock); return found;
+}
 void event_publish(jfx_event_type_t type, void *data) {
     if (!valid(type)) return;
     subscriber_t snapshot[MAX_SUBSCRIBERS];

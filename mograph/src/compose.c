@@ -7,6 +7,7 @@
 
 #include "jfx/jfx_compose.h"
 #include "jfx/jfx_color.h"
+#include "plugin_internal.h"
 #include "joltscript/video_io.h"
 
 #include <math.h>
@@ -397,12 +398,14 @@ static const jfx_node_kind_t *const kKinds[] = {
 };
 
 size_t jfx_node_kind_count(void) {
-    return sizeof(kKinds) / sizeof(kKinds[0]) + jfx_color_kind_count();
+    return sizeof(kKinds) / sizeof(kKinds[0]) + jfx_color_kind_count() + jfx_plugin_kind_count();
 }
 
 const jfx_node_kind_t *jfx_node_kind_at(size_t index) {
     size_t builtins=sizeof(kKinds)/sizeof(kKinds[0]);
-    return index < builtins ? kKinds[index] : jfx_color_kind_at(index-builtins);
+    if (index<builtins) return kKinds[index];
+    index-=builtins;
+    return index<jfx_color_kind_count()?jfx_color_kind_at(index):jfx_plugin_kind_at(index-jfx_color_kind_count());
 }
 
 const jfx_node_kind_t *jfx_node_kind_find(const char *name) {
@@ -497,6 +500,7 @@ void jfx_graph_destroy(jfx_graph_t *graph) {
     }
     for (size_t i = 0; i < graph->count; ++i) {
         jfx_node_value_release(&graph->nodes[i].value);
+        jfx_plugin_kind_release(graph->nodes[i].kind);
     }
     free_bytes(graph);
 }
@@ -528,6 +532,7 @@ jfx_result_t jfx_graph_add_node(jfx_graph_t *graph, const char *kind_name, const
     node_t *node = &graph->nodes[graph->count];
     memset(node, 0, sizeof(*node));
     node->kind = kind;
+    jfx_plugin_kind_retain(kind);
     node->x=(float)(graph->count%4)*240; node->y=(float)(graph->count/4)*160;
     jfx_node_value_init(&node->value, kind);
     snprintf(node->label, sizeof(node->label), "%s", label ? label : kind->label);
@@ -552,6 +557,7 @@ jfx_result_t jfx_graph_duplicate_node(jfx_graph_t *graph,uint32_t index,uint32_t
     }
     snprintf(copy.label,sizeof(copy.label),"%.*s copy",(int)label_length,graph->nodes[index].label);
     copy.x=fminf(1.e6f,copy.x+32); copy.y=fminf(1.e6f,copy.y+32);
+    jfx_plugin_kind_retain(copy.kind);
     graph->nodes[graph->count]=copy; *out_node=(uint32_t)graph->count++; return JFX_SUCCESS;
 }
 
@@ -560,6 +566,7 @@ jfx_result_t jfx_graph_remove_node(jfx_graph_t *graph, uint32_t index) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     jfx_node_value_release(&graph->nodes[index].value);
+    jfx_plugin_kind_release(graph->nodes[index].kind);
     /* Shift the survivors down so the array stays in creation order, which is
      * the order a node list shows. A swap-with-last would be O(1) but would
      * scramble that order, and the reference rewriting below assumes a
@@ -1093,6 +1100,11 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
         return;
     }
     const float *src = in->pixels;
+    if (jfx_plugin_kind_is_custom(node->kind)) {
+        ctx->error=jfx_plugin_kind_process(node->kind,node->value.scalars,src,ctx->width,ctx->height,
+            ctx->time_seconds,512u*1024u*1024u-ctx->scratch_bytes,out->pixels);
+        return;
+    }
 
     for (size_t i=0;i<jfx_color_kind_count();++i) if (node->kind==jfx_color_kind_at(i)) {
         const jfx_lut_t *lut=node->kind->string_count?node_lut(ctx,index,node):NULL;

@@ -30,7 +30,7 @@ cmake --build build --target joltfx_cli
 - `joltfx grade list`, `joltfx calibration list` — separate color operator catalogs.
 - `joltfx grade apply KIND IN OUT [name=value ...] [--lut FILE]` — kernel-backed
   grading to PPM; `calibration apply` has the same syntax.
-- `joltfx edit IN.jfx OUT.jfx` — terminal editor with section-local `grade.*` and
+- `joltfx edit IN.jfx OUT.jfx [--plugin MODULE ...]` — terminal editor with section-local `grade.*` and
   `calibration.*` commands. See [examples and command reference](../../docs/editor.md).
 
 - `joltfx compile FILE [-o OUTPUT]` — validate a `.jolt` kernel (MVP
@@ -79,6 +79,43 @@ rendered 64x64 brightness -> frame.ppm (backend vulkan, AMD Radeon RX 580 Series
 
 A backend this build does not contain is rejected by name, and the error lists
 the ones it does provide.
+
+## Plugin SDK
+
+- `joltfx plugins inspect MODULE` — load a module and list metadata/actions.
+- `joltfx plugins render MODULE IN.jfx OUT.ppm [FRAME]` — load before parsing,
+  render an exact sequence frame (graph time is `FRAME/30`) and write PPM.
+- `joltfx edit IN.jfx OUT.jfx --plugin MODULE` — load before editing; repeatable.
+- `joltfx export-video IN.jfx -o OUT.mkv --plugin MODULE` — encode a plugin
+  document using the same snapshot renderer; repeatable.
+
+In the terminal editor, `plugins` lists loaded IDs, `plugin.load PATH` loads,
+`plugin.unload ID` unloads and `plugin.action NAME TRACK CLIP NODE` invokes an
+action with zero-based selection. Actions are transactional and produce one undo
+step; referenced modules report busy on unload. See [the SDK guide](../../docs/plugins.md).
+
+## Extension scripts
+
+- `joltfx scripts list` — report enabled Lua, mruby, QuickJS, MicroPython and Wasmtime adapters.
+- `joltfx scripts run LANG FILE [FUNCTION [NUMBER]]` — load source and optionally
+  call a function; prints its typed result. Wasmtime accepts `.wasm` or WAT.
+- `joltfx scripts edit LANG FILE IN.jfx OUT.jfx [FUNCTION]` — load the project,
+  execute the script and optional zero-argument function, then save on success.
+  Script failures preserve existing output.
+
+```sh
+build/frontends/cli/joltfx scripts run lua extif/examples/grade.lua gain 0.75
+build/frontends/cli/joltfx scripts edit python extif/examples/grade.py \
+  extif/examples/sequence.jfx edited.jfx edit
+```
+
+Languages are selected at build time. Scripts receive shared editor/event
+capabilities and defaults of 4 MiB runtime memory and 100,000 execution units per
+invocation; direct system modules/dynamic loading are excluded. Scripts use
+`jfx.command/state`, `JFX.command/state` in mruby or `import jfx` in MicroPython.
+See [the binding/ownership/budget guide](../../docs/extensions.md) and matching
+examples in `extif/examples`. `ext_conformance_cli` runs all enabled examples and
+checks grading pixels, sandbox/budget errors and project-output preservation.
 
 ## Not implemented
 

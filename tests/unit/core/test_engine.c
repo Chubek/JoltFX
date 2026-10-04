@@ -80,6 +80,12 @@ int main(void) {
         strcmp(jfx_engine_backend_name(engine), "metal") == 0 ||
         strcmp(jfx_engine_backend_name(engine), "d3d12") == 0 ||
         strcmp(jfx_engine_backend_name(engine), "webgpu") == 0);
+    /* Exercise the retained auto handle even on CPU-only configurations. */
+    const float input[] = {0.125f, 0.25f, 0.5f, 1};
+    float output[4] = {0};
+    assert(jfx_engine_execute_source(engine, "(defkernel identity [r g b a] (rgba r g b a))",
+        input, 1, NULL, 0, output, NULL, NULL) == JFX_SUCCESS);
+    assert(!memcmp(input, output, sizeof(input)));
     jfx_engine_shutdown(engine);
     /* A named backend is only offered when it was actually built, so selection
      * is checked against the backends this configuration contains. */

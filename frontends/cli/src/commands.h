@@ -21,6 +21,8 @@ int cmd_compose(int argc, char **argv);
 int cmd_media_export(int argc, char **argv);
 int cmd_color(int argc, char **argv, int calibration);
 int cmd_project(int argc, char **argv);
+int cmd_plugins(int argc,char **argv);
+int cmd_scripts(int argc,char **argv);
 
 /* Help output shared with main.c. */
 void print_usage(void);

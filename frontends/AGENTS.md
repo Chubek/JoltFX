@@ -244,6 +244,7 @@ cmake --build . --target jfx_cli
   inspect or render either document kind
 - `joltfx nle new/edit/info/render` — create, edit, inspect and export sequences
 - `joltfx compose new/edit/info/render` — typed node graphs, terminal editing and PPM export
+- `joltfx scripts list/run/edit` — sandboxed Lua/mruby/QuickJS/MicroPython/Wasmtime over the shared Core editor
 - `joltfx version`, `joltfx help [COMMAND]`
 
 `DOC.jfx` is the plain-text project format in `core/include/jfx/jfx_project.h`:
@@ -258,6 +259,26 @@ composition sessions plus color descriptors/processing for SDK adapters. See `do
 history, state and export; see `docs/editor.md` for color commands and the
 CPU execution limits. Generate color controls from `jfx_color_catalog` or the
 node descriptors; `grade.*` and `calibration.*` indices are section-local.
+
+Desktop API 1.1 presents each interface in a workspace tab, with shared
+transport/clip selection/preview/history/export. Color Grading uses descriptor
+dials and RGB wheels with editor 1.5 gesture transactions. Finish gestures before
+tab/selection/reset/history/load changes; reacquire documents after cancel.
+`workspace_ui_tests` sends real ImGui input and verifies pixels/one-step undo.
+
+The desktop Plugins tab/Extensions menu and CLI expose the native/static
+JoltFXPluginSDK 1.0. SDK modules register image effects/kernels, transactional
+editor actions and owned events through a header-only host-service table.
+Repeatable `--plugin` loads before opening a project. The plugin host owns module
+lifetime; graphs, clips, history and export snapshots keep referenced modules
+busy. See `docs/plugins.md`, `sdk/` and `plugin_cli_integration`. AE/Premiere/Resolve
+host bridges retain their separate host-SDK adapters.
+
+The CLI script host uses the language-neutral `jfx_extif` API. Build-time language
+availability comes from the common factory; scripts share editor/event capabilities,
+budgeted values and scoped resources. Load/call failures must return before project
+output is opened. See `docs/extensions.md`, `extif/examples` and
+`ext_conformance_cli`; keep interpreter APIs inside `extif` adapters.
 
 NLE widgets commit through `jfx_editor_command` and refresh the shared sequence
 state after edits/undo/redo/load. Reacquire borrowed model handles after resets.
@@ -365,7 +386,9 @@ Similar steps for Premiere and DaVinci. Consult each plugin's `README.md` for SD
 
 ## Desktop Frontend Architecture
 
-The desktop frontend is a Qt6-based application with a multi-window docking interface.
+The implemented desktop is Dear ImGui/SDL2/OpenGL with interface tabs and a
+shared preview/toolbar. The Qt6 docking descriptions below are the design target;
+see `desktop/README.md` for the shipped controls and tests.
 
 ### Main Window
 

@@ -26,8 +26,8 @@ JoltFX is built in layers, each of which can be used on its own:
   C compiler's.
 - **Frontends** — a desktop editor, a CLI, a web player, a mobile player, and
   host-application plugin bridges.
-- **Extension runtimes** — sandboxed Lua and mruby hosts with enforced memory
-  and instruction budgets.
+- **Extension runtimes** — sandboxed Lua, mruby, QuickJS, MicroPython and
+  Wasmtime hosts over a shared typed bridge, editor/resources/events and budgets.
 
 ## Quick start
 
@@ -123,6 +123,43 @@ FFmpeg and miniaudio are vendored submodules. Native builds can use system FFmpe
 development packages; the bundled profile builds on native, WASM, Android and
 iOS toolchains. See [audio/export usage and dependency details](docs/media.md).
 
+### Tabbed desktop and plugin SDK
+
+The desktop has NLE, Layer Effects, Color Calibration, Color Grading, Node
+Compositing, Plugins, Console and Statistics tabs, with shared preview/transport,
+selection, history and export. Grading uses Resolve-inspired color wheels and
+rotary dials with live preview and one-step gesture undo.
+
+The installable **JoltFXPluginSDK 1.0** supplies a header-only host-service ABI
+for native image effects, Joltscript image kernels, editor actions and events.
+C/C++ modules use `JoltFX::plugin_sdk` and `jfx_add_plugin` without engine linkage.
+
+```sh
+cmake --build build --target jfx_example_plugin
+build/frontends/desktop/jfx_desktop --plugin "$PWD/build/sdk/jfx_example_plugin.so"
+build/frontends/cli/joltfx plugins inspect "$PWD/build/sdk/jfx_example_plugin.so"
+```
+
+See [desktop controls](frontends/desktop/README.md) and
+[the SDK guide](docs/plugins.md) for standalone builds and CLI/embedding usage.
+
+### Extension languages
+
+Script the same Core editor in Lua, mruby, JavaScript (QuickJS), MicroPython or
+WebAssembly (Wasmtime). The typed embedding API includes local batch functions,
+scoped buffer/texture access, owned events, diagnostics and runtime budgets.
+
+```sh
+build/frontends/cli/joltfx scripts list
+build/frontends/cli/joltfx scripts run lua extif/examples/grade.lua gain 0.75
+build/frontends/cli/joltfx scripts edit lua extif/examples/grade.lua \
+  extif/examples/sequence.jfx edited.jfx edit
+```
+
+Lua/mruby are enabled by default; the other runtimes are opt-in. See
+[extension building, bindings and embedding](docs/extensions.md), including
+the installed `JoltFX::jfx_extif` target and matching examples in every language.
+
 ### Kernels
 
 ```lisp
@@ -151,7 +188,8 @@ scripts/check-bytecode-parity.sh build   # prove they agree
 | `JFX_BACKEND_D3D12` | ON | D3D12 backend (CPU path off-platform) |
 | `JFX_BACKEND_WEBGPU` | ON | WebGPU backend (CPU path off-platform) |
 | `JFX_EXT_LUA` / `JFX_EXT_MRUBY` | ON | Extension runtimes |
-| `JFX_EXT_QUICKJS` / `JFX_EXT_PYTHON` | OFF | Not implemented; a configure error if enabled |
+| `JFX_EXT_QUICKJS` / `JFX_EXT_PYTHON` | OFF | Vendored QuickJS / MicroPython adapters |
+| `JFX_EXT_WASM` | OFF | Wasmtime adapter; requires version 38+ C API prefix |
 | `JFX_FRONTEND_CLI` / `_DESKTOP` / `_WEB` / `_MOBILE` | ON | Frontends |
 | `JFX_DESKTOP_WINDOW` | ON | Desktop window (needs SDL2 and OpenGL) |
 | `JFX_PLUGIN_HOST_BRIDGES` | ON | After Effects / Premiere / DaVinci bridges |
@@ -172,6 +210,8 @@ Presets: `default`, `release`, `sanitizers`, `minimal`.
 - `docs/` — guides and references
 - `docs/nle.md`, `docs/editor.md`, `docs/composition.md` — NLE, color and composition workflows
 - `docs/media.md` — audio mixing, encoded export and media dependencies
+- `docs/plugins.md`, `sdk/` — native/static plugin API, installed CMake SDK and example
+- `docs/extensions.md`, `extif/` — five extension languages, typed host API and CLI scripts
 - `PROGRESS.md` — what is implemented, what is verified, and what is not
 - `CHANGELOG.md` — release history
 

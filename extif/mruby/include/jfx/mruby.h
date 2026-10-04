@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 typedef struct jfx_mruby_runtime jfx_mruby_runtime_t;
+jfx_script_runtime_t *jfx_mruby_runtime_interface(jfx_mruby_runtime_t *runtime);
 
 jfx_script_status_t jfx_mruby_runtime_create(const jfx_script_config_t *config,
     jfx_mruby_runtime_t **out_runtime);

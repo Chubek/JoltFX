@@ -40,6 +40,8 @@ bool event_subscribe(jfx_event_type_t type, jfx_event_handler_t handler, void *u
 
 // Unsubscribe from an event type
 bool event_unsubscribe(jfx_event_type_t type, jfx_event_handler_t handler);
+/* Remove one exact subscription, for owners sharing a relay callback. */
+bool event_unsubscribe_user(jfx_event_type_t type,jfx_event_handler_t handler,void *userdata);
 
 // Invoke a snapshot of subscribers synchronously, without holding the registry lock
 void event_publish(jfx_event_type_t type, void *data);

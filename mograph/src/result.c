@@ -12,6 +12,7 @@ const char *jfx_result_to_string(jfx_result_t result) {
     case JFX_ERROR_VERSION_MISMATCH: return "JFX_ERROR_VERSION_MISMATCH";
     case JFX_ERROR_PLUGIN_FAILURE: return "JFX_ERROR_PLUGIN_FAILURE";
     case JFX_ERROR_NOT_IMPLEMENTED: return "JFX_ERROR_NOT_IMPLEMENTED";
+    case JFX_ERROR_BUSY: return "JFX_ERROR_BUSY";
     default: return "UNKNOWN_ERROR";
     }
 }

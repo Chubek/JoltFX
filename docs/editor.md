@@ -10,10 +10,17 @@ nodes, alongside sources, keys, transforms and blends.
 
 ## Frontends
 
-- **Desktop:** select a clip in the timeline, then open **Color Calibration** or
-  **Color Grading** from View. Add an operator, adjust its generated sliders, set
-  keys, bypass, reset base parameters, reorder or remove it. Enter a LUT path and
-  press Enter to validate and load it. Clear the path for identity LUT processing.
+- **Desktop:** select a clip in NLE or the shared selector, then choose **Color
+  Calibration** or **Color Grading** in the tab bar. Add an operator, set keys,
+  bypass, reset base parameters, reorder or remove it. Grading uses rotary scalar
+  dials and Resolve-inspired Lift/Gamma/Gain or Shadows/Midtones/Highlights wheels
+  for the corresponding operators. Drag a wheel puck for color balance or its
+  master dial for a common RGB adjustment. Dial drags use right/up to increase,
+  Shift for precision, double-click to reset and arrows/numeric entry. Live
+  gestures and resets undo in one step; transport, selection, preview and Export
+  stay shared across tabs. Enter a LUT path and press Enter to validate and load
+  it. Clear the path for identity LUT processing. SDK effects can join either
+  section by category; see [plugins](plugins.md).
 - **CLI:** `joltfx calibration list` and `joltfx grade list` print available
   operators and parameter defaults/ranges. Apply an operator to a still image:
 

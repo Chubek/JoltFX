@@ -1,0 +1,4 @@
+@PACKAGE_INIT@
+include("${CMAKE_CURRENT_LIST_DIR}/JoltFXPluginSDKTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/JoltFXPlugin.cmake")
+check_required_components(JoltFXPluginSDK)
