@@ -1,5 +1,15 @@
 # The extension adapter uses the Wasmtime 38+ C API. Consumers resolve their
 # own installation instead of inheriting a path from the producer's machine.
+# find_path/find_library trust cached values even after an SDK is removed.
+# Discard stale paths so a replacement installation can be discovered.
+if(Wasmtime_INCLUDE_DIR AND NOT EXISTS "${Wasmtime_INCLUDE_DIR}/wasmtime.h")
+    unset(Wasmtime_INCLUDE_DIR CACHE)
+    unset(Wasmtime_INCLUDE_DIR)
+endif()
+if(Wasmtime_LIBRARY AND NOT EXISTS "${Wasmtime_LIBRARY}")
+    unset(Wasmtime_LIBRARY CACHE)
+    unset(Wasmtime_LIBRARY)
+endif()
 find_path(Wasmtime_INCLUDE_DIR wasmtime.h HINTS "${JFX_WASMTIME_ROOT}/include")
 find_library(Wasmtime_LIBRARY NAMES wasmtime HINTS "${JFX_WASMTIME_ROOT}/lib")
 if(Wasmtime_INCLUDE_DIR)
@@ -12,7 +22,8 @@ if(Wasmtime_INCLUDE_DIR)
 endif()
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Wasmtime REQUIRED_VARS Wasmtime_INCLUDE_DIR Wasmtime_LIBRARY
-    VERSION_VAR Wasmtime_VERSION)
+    VERSION_VAR Wasmtime_VERSION
+    REASON_FAILURE_MESSAGE "Install the Wasmtime 38+ C API SDK and set JFX_WASMTIME_ROOT to its prefix (containing include/wasmtime.h and lib/). The Wasmtime CLI alone is insufficient.")
 if(Wasmtime_FOUND AND NOT TARGET Wasmtime::wasmtime)
     add_library(Wasmtime::wasmtime UNKNOWN IMPORTED)
     set_target_properties(Wasmtime::wasmtime PROPERTIES

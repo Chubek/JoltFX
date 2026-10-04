@@ -338,3 +338,21 @@ Follow-on from the plan audit above. Two changes, both additive.
   CLI surface exposes it yet, so there is no UI path to exercise. Additional input
   clips a `General`-context plugin declares (a `Mask`, for example) are declared
   but never populated, so reading one fails rather than returning stale pixels.
+
+## Wasmtime missing-header build fix (2026-10-04)
+
+- Diagnosed `jfx_wasm` using stale cached SDK paths under `/tmp/opencode`;
+  the SDK no longer existed, so `wasmtime.h` was absent at compilation.
+- Added stale header/library cache invalidation to `FindWasmtime.cmake` and
+  actionable C API SDK setup guidance on configuration failure.
+- Added a dependency-discovery regression covering recovery from stale cache
+  paths and failure after SDK removal; confirmed it failed before the fix and
+  passed after it. Updated the extension build documentation.
+- Restored Wasmtime 38.0.4 C API to the ignored persistent directory
+  `third_party/wasmtime-v38.0.4-x86_64-linux-c-api` and reconfigured `build/`.
+- Verified `jfx_wasm`, extension test executables and `joltfx_cli` build;
+  extension conformance plus the new CMake regression pass **6/6**.
+- Reconfigured `build-san/` to the restored SDK and built `jfx_wasm` with
+  ASAN+UBSan enabled, with no compiler warnings or errors. Sanitizer runtime
+  tests and the full repository suite were not rerun for this CMake-only fix.
+- `git diff --check` passes.

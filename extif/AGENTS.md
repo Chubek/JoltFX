@@ -180,6 +180,8 @@ cmake -DJFX_EXT_PYTHON=ON ..
 cmake --build . --target jfx_python
 
 # Wasmtime (default OFF; external version 38+ C API)
+# Keep the C API SDK in a persistent directory; its headers/library are needed
+# for rebuilds. Missing cached SDK paths are discarded during configuration.
 cmake -DJFX_EXT_WASM=ON -DJFX_WASMTIME_ROOT=/path/to/wasmtime ..
 cmake --build . --target jfx_wasm
 ```

@@ -11,6 +11,12 @@ set_tests_properties(cli_integration PROPERTIES LABELS "integration;cli" TIMEOUT
 endif()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
+add_test(NAME cmake_find_wasmtime COMMAND "${CMAKE_COMMAND}"
+    "-DMODULE_DIR=${PROJECT_SOURCE_DIR}/cmake/modules"
+    "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/find-wasmtime-test"
+    "-DLIBRARY_NAME=${CMAKE_STATIC_LIBRARY_PREFIX}wasmtime${CMAKE_STATIC_LIBRARY_SUFFIX}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_find_wasmtime.cmake")
+set_tests_properties(cmake_find_wasmtime PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
 find_program(JFX_TEST_FFMPEG ffmpeg)
 find_program(JFX_TEST_FFPROBE ffprobe)
 if(Python3_Interpreter_FOUND AND TARGET joltfx_cli)

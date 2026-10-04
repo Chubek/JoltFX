@@ -17,6 +17,13 @@ cmake --build build --target jfx_wasm joltfx_cli
 build/frontends/cli/joltfx scripts run wasm extif/examples/grade.wat gain 0.75
 ```
 
+Keep the extracted C API SDK in a persistent directory, such as
+`third_party/wasmtime-v38.0.4-x86_64-linux-c-api`, rather than under `/tmp`.
+If the SDK has moved or was deleted, extract it again and rerun the configure
+command with the new `JFX_WASMTIME_ROOT` before building. CMake discards missing
+cached SDK paths and searches for the replacement. The Wasmtime CLI alone does
+not provide the headers and library required by this extension.
+
 The installed CMake package resolves the consumer's own Wasmtime installation.
 The shared Wasmtime library must remain available to the loader when running
 installed executables. It is an external dependency, not bundled into JoltFX's
