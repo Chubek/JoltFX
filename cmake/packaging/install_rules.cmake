@@ -60,6 +60,9 @@ if(JFX_PLUGIN_HOST_BRIDGES)
         jfx_davinci_plugin
     )
 endif()
+if(JFX_PLUGIN_OPENFX)
+    list(APPEND JFX_INSTALL_TARGETS jfx_ofx_host)
+endif()
 
 # Drop anything this configuration did not build, so the install rules never
 # reference a target that does not exist.
@@ -121,6 +124,17 @@ foreach(frontend_dir IN ITEMS web mobile plugins desktop)
         )
     endif()
 endforeach()
+
+# The OFX adapter's public header sits one level deeper than the other plugin
+# bridges, so the loop above does not reach it.
+if(JFX_PLUGIN_OPENFX AND EXISTS "${CMAKE_SOURCE_DIR}/frontends/plugins/ofx/include/jfx")
+    install(DIRECTORY frontends/plugins/ofx/include/jfx
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    install(FILES frontends/plugins/ofx/README.md
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}
+    )
+endif()
 
 set(JFX_INSTALL_DOCS README.md CHANGELOG.md PROGRESS.md)
 foreach(doc IN LISTS JFX_INSTALL_DOCS)

@@ -266,6 +266,18 @@ dials and RGB wheels with editor 1.5 gesture transactions. Finish gestures befor
 tab/selection/reset/history/load changes; reacquire documents after cancel.
 `workspace_ui_tests` sends real ImGui input and verifies pixels/one-step undo.
 
+### Plugins (OpenFX)
+
+`frontends/plugins/ofx/` implements the **host** side of the OpenFX 1.5
+image-effect API and needs no proprietary host SDK: it discovers OFX bundles,
+drives the plugin action lifecycle, provides the property, parameter and
+image-effect suites, and returns frames as tightly packed float RGBA. Gated by
+`JFX_PLUGIN_OPENFX` (default ON); the `third_party/openfx` submodule must be
+present. It is a CPU, single-image, non-animated, non-tiled host and advertises
+exactly that, so plugins stay inside what it can service. Public header
+`jfx/jfx_ofx.h`; see `frontends/plugins/ofx/README.md` for the suite table,
+handle-tagging rules and limits. Tested by `ofx_host` against a real bundle.
+
 The desktop Plugins tab/Extensions menu and CLI expose the native/static
 JoltFXPluginSDK 1.0. SDK modules register image effects/kernels, transactional
 editor actions and owned events through a header-only host-service table.

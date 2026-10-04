@@ -148,6 +148,20 @@ if(NOT EMSCRIPTEN)
     set_property(TEST plugin_sdk APPEND PROPERTY LABELS conformance)
 endif()
 jfx_register_test(test_containers test_containers)
+
+# The OFX host adapter is tested against a real plugin binary staged into a real
+# bundle layout, so the dynamic-loading path is exercised rather than stubbed.
+# The test assembles the bundle itself, so it needs a scratch directory.
+if(JFX_PLUGIN_OPENFX AND NOT EMSCRIPTEN)
+    jfx_test_target(test_ofx_host SOURCES frontends/test_ofx_host.c
+        LIBRARIES jfx_ofx_host)
+    add_dependencies(test_ofx_host jfx_ofx_test_plugin)
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ofx-bundles")
+    jfx_register_test(ofx_host test_ofx_host
+        "${CMAKE_CURRENT_BINARY_DIR}/ofx-bundles"
+        "$<TARGET_FILE:jfx_ofx_test_plugin>")
+    set_property(TEST ofx_host APPEND PROPERTY LABELS conformance)
+endif()
 jfx_register_test(test_joltscript test_joltscript)
 jfx_register_test(test_pipeline test_pipeline)
 jfx_register_test(test_compiler test_compiler)

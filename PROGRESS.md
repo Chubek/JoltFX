@@ -275,3 +275,66 @@ Follow-on from the plan audit above. Two changes, both additive.
 - Hint verified to fire on `kernels/blur_sharpen/box_blur.jolt` and **not** to fire on
   a genuine JBC1 syntax error or on the JBC1 kernels; the command the hint prints was
   run and succeeds.
+
+## OpenFX (OFX) host adapter
+
+- Implemented the host side of the OpenFX 1.5 image-effect API at
+  `frontends/plugins/ofx/`, gated by `JFX_PLUGIN_OPENFX` (default ON). Unlike the
+  AE/Premiere/Resolve bridges, this needs no proprietary host SDK: the property,
+  parameter and image-effect suites are implemented here, and only the engine's
+  C API is linked. OFX 1.5.1 comes from the `third_party/openfx` submodule and is
+  included privately so it never leaks into a consumer's include path; configuring
+  with the option ON and no submodule fails with an explicit message.
+- Public API `jfx/jfx_ofx.h`, `jfx_` prefix with size-guarded structs, `out_*`
+  outputs last, per `mograph/AGENTS.md`. Discovery is explicit
+  (`jfx_ofx_host_scan`), the standard per-platform bundle layout is honoured, and
+  pixels cross the boundary as tightly packed float RGBA.
+- Action lifecycle: load, describe, describe-in-context, create-instance, render,
+  destroy. Two OFX subtleties were load-bearing and are documented in the README:
+  `describe` must receive a real handle (plugins call `getPropertySet` on it to
+  publish supported contexts, pixel depths and label, so `NULL` breaks every real
+  plugin), and one opaque handle denotes both the plugin descriptor and an
+  instance. Every handle therefore begins with a `jfx_ofx_owner_t` tag, and an
+  untagged handle is rejected rather than cast.
+- The host advertises only what it can service: float RGBA, no tiles, no
+  multi-resolution, no temporal clip access, no overlays and no parameter
+  animation, with `fetchSuite` returning NULL for every unimplemented suite. This
+  keeps plugins inside the supported path instead of failing at render time.
+  Parameter values are seeded from `kOfxParamPropDefault` read as either int or
+  double, since plugins write it both ways, and setters clamp to the declared
+  range. Rendering is transactional: output goes to a scratch frame and reaches
+  the caller only on success, matching the engine's CPU image rule.
+- All limits are fixed and small because a property bag is embedded in every clip
+  and parameter, so a plugin cannot drive host allocation by asking for large
+  values. Non-OFX modules, wrong `pluginApi`, and plugins declaring no context
+  are skipped rather than half-loaded.
+- `ofx_host` builds a real `.ofx.bundle` from a real shared object
+  (`frontends/plugins/tests/gain_plugin.c`) and drives it through `dlopen`;
+  nothing is stubbed, because symbol resolution, `setHost`, suite vtables and
+  pixel output only exist when the plugin is a separate binary. It covers invalid
+  arguments on every entry point, discovery, description, parameter metadata,
+  pixel output, clamping, transactional failure, the General context, instance
+  independence, and rejection of a non-OFX module. Assertions are on real pixels,
+  so a plugin that is never invoked fails the test.
+- Installed at `/tmp/opencode/ofxinstall`: `jfx_ofx.h`, `libjfx_ofx_host.a` and
+  the README. An out-of-tree consumer compiles and links against the installed
+  header alone, confirming the OFX headers are not required downstream.
+
+### Verification
+
+- In-tree `build/` rebuilds with no compiler diagnostics. Full native CTest:
+  **350/350 passed** (349 before, +1 for `ofx_host`).
+- Debug **ASAN + UBSan** build with leak detection: full CTest **350/350 passed**,
+  no sanitizer findings.
+- Pixels verified to come from the loaded plugin: a 1x1 frame with `gain=2.0` and
+  a white tint over `src = (0.5, 0.25, 0.75, 0.4)` yields `(1.0, 0.5, 1.5, 0.4)`,
+  confirming the render path executed and alpha passed through untouched. A
+  directory containing a non-OFX `.so` in bundle layout is rejected with zero
+  plugins and no crash.
+- Not verified here: Windows and macOS discovery (`Windows/x86-64`,
+  `Windows/arm64`, `MacOS/x86-64`, `MacOS/arm64` are implemented but only
+  `Linux-x86-64` was run), and interaction with a real third-party OFX bundle such
+  as the ASWF example plugins. The adapter is a library plus tests; no frontend or
+  CLI surface exposes it yet, so there is no UI path to exercise. Additional input
+  clips a `General`-context plugin declares (a `Mask`, for example) are declared
+  but never populated, so reading one fails rather than returning stale pixels.
