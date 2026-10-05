@@ -186,6 +186,14 @@ cmake -DJFX_EXT_WASM=ON -DJFX_WASMTIME_ROOT=/path/to/wasmtime ..
 cmake --build . --target jfx_wasm
 ```
 
+The mruby adapter includes both upstream headers and the generated headers from
+`<runtime-build>/jfx/include` in its build directory. Presymbol IDs must come from the
+`jfx` cross build that produces `libmruby.a`, rather than the host mrbc build.
+`JFX_MRUBY_ROOT` may select an external checkout; require `mrb_open_allocf` for
+the budget allocator and reject incompatible runtimes during configuration.
+Rake configuration and its generated lockfile belong in the CMake build tree.
+Changing the source root must invalidate the runtime archive.
+
 **Run conformance tests before submitting any extension change:**
 
 ```bash

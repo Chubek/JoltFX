@@ -30,7 +30,7 @@ void tilly_shutdown(tilly_context_t *ctx);
 // Get the default heap allocator
 tilly_allocator_t *tilly_get_heap_allocator(tilly_context_t *ctx);
 
-// Get the context from a module (for module init)
+// Get the owning context of a live module handle, or NULL for a null handle.
 tilly_context_t *tilly_module_get_context(tilly_module_t *mod);
 
 #ifdef __cplusplus

@@ -1,5 +1,91 @@
 # Progress
 
+## Audio mixing workspace (2026-10-05)
+
+- Adding a desktop Audio Mixing tab over the existing Core audio mixer and
+  editor commands: track gain/mute/solo, clip gain/pan/fades, audio import and
+  playback output metering. No additional third-party library is required.
+- Extending real ImGui workspace tests before implementation; preserving enum
+  values and configuration layout with appended identifiers and a minor bump.
+
+## Runtime ownership audit (2026-10-05)
+
+- Continuing with module reference counting, context ownership and lifecycle
+  callbacks, plus allocator edge cases. Adding regressions before fixes.
+- Confirmed duplicate initialization for repeated module loads and a deadlock
+  when initialization queries the registry. Added private per-module ownership
+  and path metadata, native-handle alias reuse, reference-count overflow guards,
+  registry membership validation on unload, and separate recursive lifecycle
+  serialization so dependency callbacks can query/load without registry locks.
+- Expanded native fixtures to cover two contexts, logging survival, aliases,
+  cyclic and nested dependency loads, failed initialization, removed/foreign
+  unloads and teardown with outstanding references. The dependency fixture
+  exposed premature dependency destruction; completed entries now preserve
+  initialization order and shutdown visits dependents first.
+- Confirmed loss of log sinks after shutting down a second context and a stale
+  calling-thread allocator pointer after destruction. Runtime logging now lasts
+  through the last context; allocator destruction clears the local binding.
+  Custom general allocator storage is no longer passed to libc realloc.
+- Focused ASAN/UBSan + leak-detection regressions pass **3/3**. The full native
+  Debug rebuild is warning-free. Updated runtime contracts and comments.
+- The first full sanitizer run passed 353/354 tests, with one ASan
+  `unknown-crash` in `kernel_image_batch` while accessing a live, unpoisoned
+  evaluator stack field. The isolated rerun passed with identical leak,
+  stack-use-after-return and strict-string settings (59.43 seconds). No
+  source-level cause is established. The full-suite rerun passed **354/354**
+  tests with identical settings in 62.82 seconds. Keep the initial report as an
+  unresolved intermittent observation; no evaluator code was changed. Logs
+  are retained in ignored `build-audit/runtime-first-tests.log`,
+  `build-audit/runtime-final-tests.log` and `build-audit/image-retest.log`.
+- `git diff --check` passes. Verification covers this native Linux build with
+  Lua/mruby enabled; optional QuickJS, MicroPython, Wasmtime and other platforms
+  were not exercised.
+- Earlier `/tmp` dependency checkouts disappeared; moved test dependencies to
+  ignored persistent `build-audit-deps/miniaudio` and `build-audit-deps/mruby`
+  and reconfigured `build-audit` to those absolute roots. User third-party
+  deletions and prior changes remain intact.
+
+## Bug audit (2026-10-05)
+
+- Started a fresh ASAN/UBSan build because existing build caches refer to a
+  different checkout. Configuration exposed a missing mandatory miniaudio
+  checkout; obtained a separate test dependency in `/tmp`.
+- Inspecting allocator accounting, synchronization and pool reuse; adding
+  regression tests before implementation changes.
+- Confirmed three independent failures against the original allocator: heap
+  realloc accounting, duplicate pool frees, and arena/stack peak reporting.
+  Fixed live-byte tracking with aligned heap headers, locked heap operations
+  and usage snapshots, pool slot bookkeeping, and persistent peak counters.
+- Added configurable `JFX_MINIAUDIO_ROOT` and early source/header validation
+  with actionable setup guidance. Verified successful external-root configuration
+  and the failure message for a missing root. Updated media setup instructions
+  to use standalone clones after the existing submodule removals.
+- Standalone allocator regressions pass normally and with ASAN/UBSan; the
+  sanitizer run required execution outside the sandbox for LeakSanitizer.
+- Full sanitizer build resumed after working around a host library mapping
+  stall with a private library copy in `/tmp`; mruby fetched its missing Prism
+  dependency. No tracked third-party deletions were restored.
+- Found and fixed mruby's missing generated-header include path. The current
+  vendor checkout is mruby 4.0, which removes the adapter's required custom
+  allocator API; added an early compatibility diagnostic and `JFX_MRUBY_ROOT`
+  for supported external checkouts, and tested with mruby 3.3.0 in `/tmp`.
+  Version 4.0 remains unsupported so memory budgets are preserved.
+- Kept mruby's Rake configuration/lockfile in its build directory and isolated
+  runtime artifacts by source root, preventing source lockfile edits and stale
+  archive reuse when changing checkouts. Added a CMake regression covering
+  missing/incompatible roots, paths with spaces, generated includes, checkout
+  switching and lockfile isolation.
+- Final validation: warning-free native Debug build with ASAN+UBSan; **352/352
+  CTest tests passed** in 61.77 seconds, with leak detection, stack-use-after-return
+  detection and strict string checks enabled. Desktop window, media/CLI/plugin
+  integration and enabled Lua/mruby conformance all passed. Optional QuickJS,
+  MicroPython and Wasmtime runtimes and other platforms were not exercised.
+- `git diff --check` passes. Existing user changes in `CHANGELOG.md`, prior
+  `PROGRESS.md` entries and third-party deletions remain intact. Test build:
+  `build-audit`, configured with `JFX_MINIAUDIO_ROOT=/tmp/joltfx-audit-miniaudio`
+  and `JFX_MRUBY_ROOT=/tmp/joltfx-audit-mruby-3.3-supported`; keep real dependency
+  checkouts in persistent directories for future builds.
+
 ## Extension language layer
 
 - Inspected the existing Lua/mruby numeric adapters, common placeholder, vendored QuickJS/MicroPython sources, engine editor/event/resource APIs and extension contribution rules.
@@ -356,3 +442,51 @@ Follow-on from the plan audit above. Two changes, both additive.
   ASAN+UBSan enabled, with no compiler warnings or errors. Sanitizer runtime
   tests and the full repository suite were not rerun for this CMake-only fix.
 - `git diff --check` passes.
+
+## Submodule initialization cache reuse (2026-10-05)
+
+- Added `--force` to both `git submodule add` paths in
+  `scripts/submodules-init.sh` so repositories retained in `.git/modules` can
+  be reactivated after their checkouts are removed.
+- Local Git checks exposed absolute `.gitmodules` paths breaking the final
+  update; switched additions to repository-relative paths with compatibility
+  for caches stored under the script's older absolute submodule names, and
+  normalized existing absolute registrations before reusing those names.
+- Staged the pinned gitlink after checkout so the final recursive update does
+  not reset a selected tag to the revision initially added by Git.
+- Verification passed: Bash syntax and whitespace checks; eight local Git
+  scenarios covering legacy caches with missing/existing registrations,
+  standard caches and fresh clones, each with a pinned tag or `docking` branch.
+  Cached reuse succeeds with the upstream unavailable; recursive updates retain
+  pins, and reruns preserve local edits. Fixture paths include spaces.
+
+## Standalone third-party repository cloning (2026-10-05)
+
+- Converted `scripts/submodules-init.sh` to clone the listed repositories as
+  standalone Git checkouts, with an optional destination directory and
+  `--help`. The default destination is resolved from the script location.
+- Preserved revision/branch selection, initialized nested dependencies after
+  checkout, and allowed cloning into empty directories while skipping existing
+  Git checkouts.
+- Verification passed: shell syntax, help/argument handling and whitespace
+  checks; full-script local Git fixtures cover all 54 entries with default and
+  custom destinations, branch/tag selection and revision-specific nested
+  dependencies. Also verified absolute/relative paths with spaces, empty
+  destination directories, existing Git-file checkouts, offline reruns retaining
+  local edits and preservation of nonempty non-Git directories. The parent
+  repository's `.gitmodules`, index and configuration stay byte-identical.
+
+## Clone-only third-party initialization (2026-10-05)
+
+- `scripts/submodules-init.sh` now only clones. `clone_repository` takes just a
+  url and a path; the revision and branch parameters, the `git clone --branch`
+  form and the post-clone `git checkout` are gone, so every repository lands on
+  its upstream default revision. All 54 call sites lost their pin argument and
+  the header comment describes the new behavior.
+- Nested dependencies are still initialized with
+  `git submodule update --init --recursive` after each clone; the
+  destination-directory argument, `--help`, the skip-if-already-checked-out
+  guard and `set -euo pipefail` are unchanged.
+- Verification: `bash -n` passes. No other file references the removed
+  arguments, and the run was not executed against the network, so the clone
+  list is verified by inspection only.

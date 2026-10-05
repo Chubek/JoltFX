@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 // Thread-local storage for stack allocator
 static __thread tilly_allocator_t *tls_stack_allocator = NULL;
@@ -35,6 +36,7 @@ static void *arena_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
     state->offset += padding + size;
     if (state->offset > state->peak) state->peak = state->offset;
     alloc->used = state->offset;
+    alloc->peak = state->peak;
     alloc->alloc_count++;
     
     void *ptr = (void *)aligned;
@@ -59,7 +61,11 @@ static void arena_reset(tilly_allocator_t *alloc) {
 
 static size_t arena_usage(const tilly_allocator_t *alloc) {
     arena_state_t *state = (arena_state_t *)alloc->state;
-    return state ? state->offset : 0;
+    if (!state) return 0;
+    pthread_mutex_lock(&state->lock);
+    size_t used = state->offset;
+    pthread_mutex_unlock(&state->lock);
+    return used;
 }
 
 // ==================== Pool Allocator ====================
@@ -73,6 +79,7 @@ typedef struct {
     size_t block_size;
     size_t block_count;
     uint8_t *blocks;
+    bool *allocated;
     pthread_mutex_t lock;
 } pool_state_t;
 
@@ -89,6 +96,7 @@ static void *pool_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
     
     pool_block_t *block = state->free_list;
     state->free_list = block->next;
+    state->allocated[((uintptr_t)block - (uintptr_t)state->blocks) / state->block_size] = true;
     alloc->used += state->block_size;
     alloc->alloc_count++;
     if (alloc->used > alloc->peak) alloc->peak = alloc->used;
@@ -106,6 +114,9 @@ static void pool_free(tilly_allocator_t *alloc, void *ptr) {
     uintptr_t position = (uintptr_t)ptr, base = (uintptr_t)state->blocks;
     if (position < base || position - base >= state->block_count * state->block_size ||
         (position - base) % state->block_size) { pthread_mutex_unlock(&state->lock); return; }
+    size_t index = (position - base) / state->block_size;
+    if (!state->allocated[index]) { pthread_mutex_unlock(&state->lock); return; }
+    state->allocated[index] = false;
     pool_block_t *block = (pool_block_t *)ptr;
     block->next = state->free_list;
     state->free_list = block;
@@ -120,6 +131,7 @@ static void pool_reset(tilly_allocator_t *alloc) {
     if (!state) return;
     
     pthread_mutex_lock(&state->lock);
+    memset(state->allocated, 0, state->block_count * sizeof(*state->allocated));
     state->free_list = NULL;
     for (size_t i = 0; i < state->block_count; i++) {
         // The allocation and fixed 64-byte stride preserve block alignment.
@@ -134,27 +146,50 @@ static void pool_reset(tilly_allocator_t *alloc) {
 static size_t pool_usage(const tilly_allocator_t *alloc) {
     pool_state_t *state = (pool_state_t *)alloc->state;
     if (!state) return 0;
-    return alloc->used;
+    pthread_mutex_lock(&state->lock);
+    size_t used = alloc->used;
+    pthread_mutex_unlock(&state->lock);
+    return used;
 }
 
 // ==================== General Allocator (malloc/free) ====================
 
+typedef struct {
+    pthread_mutex_t lock;
+} general_state_t;
+
+/* Keep returned storage aligned for every fundamental type while recording
+ * the payload size for free/realloc accounting. The default allocator below
+ * remains untracked and uses ordinary malloc-compatible pointers. */
+typedef union {
+    max_align_t alignment;
+    size_t size;
+} general_header_t;
+
 static void *general_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
-    if (align > _Alignof(max_align_t)) return NULL;
-    void *ptr = malloc(size);
+    if (align > _Alignof(max_align_t) || size > SIZE_MAX - sizeof(general_header_t)) return NULL;
+    general_state_t *state = alloc->state;
+    general_header_t *ptr = malloc(sizeof(*ptr) + size);
     if (ptr) {
+        ptr->size = size;
+        pthread_mutex_lock(&state->lock);
         alloc->used += size;
         alloc->alloc_count++;
         if (alloc->used > alloc->peak) alloc->peak = alloc->used;
+        pthread_mutex_unlock(&state->lock);
     }
-    return ptr;
+    return ptr ? ptr + 1 : NULL;
 }
 
 static void general_free(tilly_allocator_t *alloc, void *ptr) {
     if (!ptr) return;
-    // Note: we can't track exact size freed with plain malloc
+    general_state_t *state = alloc->state;
+    general_header_t *header = (general_header_t *)ptr - 1;
+    pthread_mutex_lock(&state->lock);
+    alloc->used -= header->size;
     alloc->free_count++;
-    free(ptr);
+    pthread_mutex_unlock(&state->lock);
+    free(header);
 }
 
 static void general_reset(tilly_allocator_t *alloc) {
@@ -163,7 +198,11 @@ static void general_reset(tilly_allocator_t *alloc) {
 }
 
 static size_t general_usage(const tilly_allocator_t *alloc) {
-    return alloc->used;
+    general_state_t *state = alloc->state;
+    pthread_mutex_lock(&state->lock);
+    size_t used = alloc->used;
+    pthread_mutex_unlock(&state->lock);
+    return used;
 }
 
 // ==================== Stack Allocator (thread-local) ====================
@@ -193,6 +232,7 @@ static void *stack_alloc(tilly_allocator_t *alloc, size_t size, size_t align) {
     state->offset += padding + size;
     if (state->offset > state->peak) state->peak = state->offset;
     alloc->used = state->offset;
+    alloc->peak = state->peak;
     alloc->alloc_count++;
     
     return (void *)aligned;
@@ -262,7 +302,9 @@ tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_
             state->base = malloc(capacity);
             if (!state->base) { free(state); free(alloc); return NULL; }
             state->size = capacity;
-            pthread_mutex_init(&state->lock, NULL);
+            if (pthread_mutex_init(&state->lock, NULL) != 0) {
+                free(state->base); free(state); free(alloc); return NULL;
+            }
             alloc->state = state;
             alloc->alloc = arena_alloc;
             alloc->free = arena_free;
@@ -282,6 +324,8 @@ tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_
             state->block_count = block_count;
             state->blocks = malloc(block_count * block_size);
             if (!state->blocks) { free(state); free(alloc); return NULL; }
+            state->allocated = calloc(block_count, sizeof(*state->allocated));
+            if (!state->allocated) { free(state->blocks); free(state); free(alloc); return NULL; }
             
             // Initialize free list
             state->free_list = NULL;
@@ -290,7 +334,9 @@ tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_
                 block->next = state->free_list;
                 state->free_list = block;
             }
-            pthread_mutex_init(&state->lock, NULL);
+            if (pthread_mutex_init(&state->lock, NULL) != 0) {
+                free(state->allocated); free(state->blocks); free(state); free(alloc); return NULL;
+            }
             alloc->state = state;
             alloc->alloc = pool_alloc;
             alloc->free = pool_free;
@@ -299,7 +345,12 @@ tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_
             break;
         }
         case TILLY_ALLOC_GENERAL: {
-            alloc->state = NULL;
+            general_state_t *state = calloc(1, sizeof(*state));
+            if (!state) { free(alloc); return NULL; }
+            if (pthread_mutex_init(&state->lock, NULL) != 0) {
+                free(state); free(alloc); return NULL;
+            }
+            alloc->state = state;
             alloc->alloc = general_alloc;
             alloc->free = general_free;
             alloc->reset = general_reset;
@@ -329,6 +380,7 @@ tilly_allocator_t *tilly_allocator_create(tilly_alloc_strategy_t strategy, size_
 
 void tilly_allocator_destroy(tilly_allocator_t *alloc) {
     if (!alloc) return;
+    if (tls_stack_allocator == alloc) tls_stack_allocator = NULL;
     
     switch (alloc->strategy) {
         case TILLY_ALLOC_ARENA: {
@@ -344,6 +396,7 @@ void tilly_allocator_destroy(tilly_allocator_t *alloc) {
             pool_state_t *state = (pool_state_t *)alloc->state;
             if (state) {
                 free(state->blocks);
+                free(state->allocated);
                 pthread_mutex_destroy(&state->lock);
                 free(state);
             }
@@ -358,8 +411,11 @@ void tilly_allocator_destroy(tilly_allocator_t *alloc) {
             }
             break;
         }
-        case TILLY_ALLOC_GENERAL:
+        case TILLY_ALLOC_GENERAL: {
+            general_state_t *state = alloc->state;
+            if (state) { pthread_mutex_destroy(&state->lock); free(state); }
             break;
+        }
     }
     
     free(alloc);
@@ -390,6 +446,23 @@ void *tilly_realloc(tilly_allocator_t *alloc, void *ptr, size_t new_size) {
             "allocate a new block and copy instead", (int)alloc->strategy);
         return NULL;
     }
+    if (alloc->alloc == general_alloc) {
+        if (new_size > SIZE_MAX - sizeof(general_header_t)) return NULL;
+        general_state_t *state = alloc->state;
+        general_header_t *header = (general_header_t *)ptr - 1;
+        size_t old_size = header->size;
+        general_header_t *resized = realloc(header, sizeof(*header) + new_size);
+        if (!resized) return NULL;
+        resized->size = new_size;
+        pthread_mutex_lock(&state->lock);
+        alloc->used = alloc->used - old_size + new_size;
+        if (alloc->used > alloc->peak) alloc->peak = alloc->used;
+        pthread_mutex_unlock(&state->lock);
+        return resized + 1;
+    }
+    /* The strategy enum does not prove that a custom callback returns malloc
+     * storage. There is no custom realloc callback in this ABI. */
+    if (alloc->alloc != default_alloc_wrapper || alloc->free != default_free_wrapper) return NULL;
     void *new_ptr = realloc(ptr, new_size);
     if (!new_ptr) {
         tilly_log_simple(TILLY_LOG_ERROR, "tilly_realloc: failed to grow to %zu bytes", new_size);

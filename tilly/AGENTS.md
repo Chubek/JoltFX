@@ -602,6 +602,21 @@ TILLY_MODULE_EXPORT TillyModuleAPI* tilly_module_register(void) {
 
 #### Module Dependencies
 
+The implemented loader retains native library identity and a per-module owner
+in private metadata; the public handle layout stays unchanged. Repeated loads
+of a library (including path aliases) retain one handle in that context.
+`tilly_module_get_context` returns that handle's owner. Unload validates registry
+membership before dereferencing the handle and ignores foreign/removed entries.
+
+Lifecycle operations use a recursive context mutex; callbacks run without the
+registry mutex held so they may query/load dependencies. Initializing entries
+are hidden from `find` and cyclic loads fail. Completed entries retain their
+order so shutdown releases dependents before their dependencies. Context
+destruction requires callers to finish callbacks and other context operations.
+Logger sinks remain registered until the last live Tilly context shuts down.
+`tests/unit/tilly/test_module.c` exercises ownership, aliases, references,
+dependency callbacks, failed initialization and shutdown.
+
 Modules can declare dependencies in their `init` function:
 
 ```c
@@ -919,7 +934,19 @@ TillyStatus load_config(const char* path) {
   - Logging sinks
 
 - **Allocators**: Each `TillyAllocator` has its own lock. Prefer per-thread allocators for performance.
-- **Logging**: Lock-free sink array; sinks must be thread-safe.
+  Arena, pool and general heap operations and usage snapshots are locked; stack
+  allocators are confined to one thread. General heaps track live payload bytes
+  through allocation headers, including realloc growth/shrink and free. The
+  default allocator retains plain malloc-compatible storage. Pool bookkeeping
+  rejects an already-free slot so duplicate frees cannot corrupt the free list.
+  Peak usage survives reset. `tests/unit/tilly/test_allocator.c` covers these
+  contracts; do not read the public counters concurrently with mutations.
+  Destroying an allocator clears its calling-thread binding. Custom general
+  allocators without realloc support reject resizing existing blocks instead
+  of passing arbitrary storage to libc; null allocation and zero-size free
+  still dispatch through the custom callbacks.
+- **Logging**: Snapshot the sink registry under its mutex, then invoke sinks
+  after releasing it. Sinks must be thread-safe and may query/update the registry.
 - **Reflection**: Read-heavy; RCU-style for type/function lookups.
 
 ---

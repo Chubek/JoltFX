@@ -2,7 +2,7 @@
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Audio Mixing**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 
@@ -95,6 +95,19 @@ explicitly.
 
 ## Audio and encoded export
 
+Open **Audio Mixing** to adjust all track faders, mute and solo side by side.
+Add an audio track, enter an audio file path and duration in frames, then add it
+at the playhead. Select an audio or video clip in the shared clip menu to adjust
+its gain, stereo balance, enable switch and fade lengths. Gain ranges from zero
+to 16 times unity; faders show linear gain and decibels. A fader drag creates one
+undo step, and mix settings persist in `.jfx` projects. Mute/solo apply to both
+audio and video, as in the NLE.
+
+Stereo output meters show peaks of the mixed playback blocks in dBFS. **OVER**
+indicates samples above full scale; lower track or clip gain to retain headroom.
+Meters clear on pause, seek or edits. The mixer is shared with playback and
+encoded export; no separate audio library or mixer document is needed.
+
 The timeline exposes Audio sources, clip audio enable, linear clip/track gain,
 stereo pan and frame-length fades. Playback sends the shared immutable mix to
 SDL2's queued float-stereo output. Pausing, seeking and successful edits reset
@@ -140,7 +153,8 @@ the shared shortcuts.
 - `composition_ui_tests` simulates Dear ImGui canvas wiring, layout dragging,
   disconnect/undo and invalid-wire gestures against the real shared document.
 - `workspace_ui_tests` drives the actual tabs, grading dials/wheels, live pixels,
-  one-step undo, tab switches mid-gesture, plugin actions and narrow/high-DPI layouts.
+  one-step undo, audio fader gestures/mute and saved stereo mixes, tab switches
+  mid-gesture, plugin actions and narrow/high-DPI layouts.
 - `desktop_window` runs 30 real frames. It is registered only when this build
   has a windowing backend, and it exits 77 (CTest's "skipped") where no display
   server is available rather than reporting a false failure.

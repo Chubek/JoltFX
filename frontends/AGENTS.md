@@ -260,11 +260,17 @@ history, state and export; see `docs/editor.md` for color commands and the
 CPU execution limits. Generate color controls from `jfx_color_catalog` or the
 node descriptors; `grade.*` and `calibration.*` indices are section-local.
 
-Desktop API 1.1 presents each interface in a workspace tab, with shared
+Desktop API 1.2 presents each interface in a workspace tab, with shared
 transport/clip selection/preview/history/export. Color Grading uses descriptor
 dials and RGB wheels with editor 1.5 gesture transactions. Finish gestures before
 tab/selection/reset/history/load changes; reacquire documents after cancel.
 `workspace_ui_tests` sends real ImGui input and verifies pixels/one-step undo.
+Audio Mixing appends workspace/panel identifiers without changing prior values
+or the config layout. Its track faders and clip gain/balance/fades use shared
+editor commands and bounded gesture transactions. Finish audio gestures before
+history, selection, tab, load/save or reset changes. Playback block peaks feed
+the stereo output meter; clear them together with queues and mixer snapshots.
+Keep mute/solo semantics aligned with NLE: they affect both audio and video.
 
 ### Plugins (OpenFX)
 

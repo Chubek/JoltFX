@@ -11,14 +11,19 @@ retain audio settings alongside frame-accurate NLE and composition edits.
   threading layers; frontends send the shared mix to their platform audio API.
 - **FFmpeg release/8.0** (`third_party/ffmpeg`) provides container demuxing,
   additional audio/video decoders, `swresample` audio conversion, `swscale` pixel
-  conversion, video/audio encoding and muxing. The Git submodule records the
-  exact revision. Third-party types stay inside Glue.
+  conversion, video/audio encoding and muxing. Third-party types stay inside Glue.
 
 ```sh
-git submodule update --init third_party/miniaudio third_party/ffmpeg
+git clone https://github.com/mackron/miniaudio.git third_party/miniaudio
+git clone --branch release/8.0 https://github.com/FFmpeg/FFmpeg.git third_party/ffmpeg
 cmake -S . -B build-media -DJFX_VIDEO_FFMPEG=ON -DJFX_MEDIA_FFMPEG_BUNDLED=ON
 cmake --build build-media --parallel
 ```
+
+miniaudio is required even when FFmpeg is disabled. An existing checkout outside
+the repository can be supplied with `-DJFX_MINIAUDIO_ROOT=/path/to/miniaudio`;
+it must contain both `miniaudio.c` and `miniaudio.h`. Missing sources produce a
+configuration error with setup instructions.
 
 Native builds default to `JFX_VIDEO_FFMPEG=ON`, discovering `libavformat`,
 `libavcodec`, `libavutil`, `libswscale` and `libswresample` development packages
@@ -151,7 +156,9 @@ their own task. An individual large CPU frame can take longer than a UI tick.
 
 ## Frontends and verification
 
-- **Desktop:** timeline audio controls; SDL2 queued stereo playback; encoded
+- **Desktop:** Audio Mixing tab with track faders/mute/solo, audio import,
+  selected-clip gain/balance/fades, one-step gesture undo and stereo playback
+  peak meters; timeline audio controls; SDL2 queued stereo playback; encoded
   export path, range, encoder, audio toggle, progress and cancellation.
 - **CLI/terminal:** audio commands/history, `export-video` and `export`,
   `nle export`, `compose export` aliases with stderr progress.

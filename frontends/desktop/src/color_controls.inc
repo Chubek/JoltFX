@@ -1,6 +1,7 @@
 /* Resolve-inspired controls over the descriptor-backed effect parameters.
  * Widgets only produce values; the shared editor owns validation and history. */
 void finish_grading(jfx_desktop_frontend_t *f) {
+    finish_audio(f);
     if (f->grading_edit) {
         editor_result(f,jfx_editor_commit_edit(f->editor));
         f->grading_edit=false;

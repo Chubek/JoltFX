@@ -29,12 +29,13 @@ typedef enum {
     JFX_DESKTOP_PANEL_STATISTICS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,
     JFX_DESKTOP_PANEL_PLUGINS,
+    JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 1
+#define JFX_DESKTOP_API_MINOR 2
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -45,6 +46,7 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_PLUGINS,
     JFX_DESKTOP_WORKSPACE_CONSOLE,
     JFX_DESKTOP_WORKSPACE_STATISTICS,
+    JFX_DESKTOP_WORKSPACE_AUDIO,
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
 

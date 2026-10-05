@@ -27,13 +27,16 @@ struct tilly_module {
     uint32_t ref_count;
 };
 
-// Load a module (dynamic or static)
+/* Load a dynamic module. Repeated loads of the same native library in one
+ * context return the same handle and acquire another reference. Initialization
+ * callbacks may query the registry or load dependencies; cyclic loads fail. */
 tilly_module_t *tilly_module_load(tilly_context_t *ctx, const char *path);
 
-// Unload a module
+/* Release a loaded reference. Handles outside this context's registry are
+ * ignored. Callbacks run without the registry mutex held. */
 void tilly_module_unload(tilly_context_t *ctx, tilly_module_t *mod);
 
-// Find a loaded module by name
+// Find a fully initialized module by name; the returned handle is borrowed.
 tilly_module_t *tilly_module_find(tilly_context_t *ctx, const char *name);
 
 // Get a symbol from a module

@@ -172,9 +172,10 @@ struct jfx_desktop_frontend {
     char plugin_path[512];
     bool editing, looping, show_grade, show_nodes;
     bool show_calibration;
-    bool show_plugins, workspace_requested;
+    bool show_plugins, show_audio, workspace_requested;
     jfx_desktop_workspace_t workspace;
     bool grading_edit;
+    bool audio_edit;
     uint32_t selected_track, selected_clip, selected_node;
     float nle_zoom, nle_drag_x;
     uint64_t nle_first, nle_drag_start, nle_drag_length;
@@ -190,6 +191,8 @@ struct jfx_desktop_frontend {
     jfx_export_job_t *export_job;
     jfx_audio_mixer_t *audio_mixer;
     uint64_t audio_sample;
+    float audio_peak[2];
+    int audio_import_frames;
     float node_zoom, node_pan_x, node_pan_y, node_drag_x, node_drag_y, node_start_x, node_start_y;
     int node_drag;
     uint32_t node_wire_source, node_wire_port;
@@ -238,8 +241,9 @@ struct jfx_desktop_frontend {
 static void reset_audio(jfx_desktop_frontend_t *f) {
     jfx_audio_mixer_destroy(f->audio_mixer); f->audio_mixer=nullptr;
     jfx_desktop_window_clear_audio(f->window);
+    f->audio_peak[0]=f->audio_peak[1]=0;
 }
-namespace { void finish_grading(jfx_desktop_frontend_t *f); }
+namespace { void finish_grading(jfx_desktop_frontend_t *f); void finish_audio(jfx_desktop_frontend_t *f); }
 
 /* Mirrors engine events into the console so the panel shows what the engine is
  * actually doing rather than a fixed string. */
@@ -305,6 +309,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_grade = true; frontend->show_nodes = true; frontend->looping = true;
     frontend->show_calibration = true;
     frontend->show_plugins = true;
+    frontend->show_audio = true;
+    frontend->audio_import_frames = 90;
     frontend->nle_width=320; frontend->nle_height=180; frontend->nle_fps_num=30; frontend->nle_fps_den=1;
     frontend->nle_gap_length=30;
     std::snprintf(frontend->nle_export_path,sizeof(frontend->nle_export_path),"frame.ppm");
@@ -580,12 +586,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t
 namespace {
 
 #include "editor_panels.inc"
+#include "audio_panel.inc"
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
-    "Node Compositing","Plugins","Console","Statistics"};
+    "Node Compositing","Plugins","Console","Statistics","Audio Mixing"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
-    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS};
+    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO};
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::TextUnformatted("Preview");
@@ -703,6 +710,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("Console", nullptr, &frontend->show_console);
             ImGui::MenuItem("Statistics", nullptr, &frontend->show_stats);
             ImGui::MenuItem("Plugins", nullptr, &frontend->show_plugins);
+            ImGui::MenuItem("Audio Mixing", nullptr, &frontend->show_audio);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -823,6 +831,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_CONSOLE: console_panel(); break;
                     case JFX_DESKTOP_WORKSPACE_STATISTICS: statistics_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_PLUGINS: plugin_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_AUDIO: audio_panel(frontend); break;
                     default: break;
                     }
                 }
@@ -845,7 +854,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             frontend->nle_drag=0;
         }
     }
-    if (frontend->grading_edit && !ImGui::IsAnyItemActive()) finish_grading(frontend);
+    if ((frontend->grading_edit || frontend->audio_edit) && !ImGui::IsAnyItemActive()) finish_grading(frontend);
     ImGui::End();
 }
 
@@ -914,7 +923,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
                 float pcm[4096*2];
                 auto r=jfx_audio_mixer_render(frontend->audio_mixer,frontend->audio_sample,4096,pcm,8192);
                 if (r!=JFX_SUCCESS) { frontend->playing=false; reset_audio(frontend); editor_result(frontend,r); }
-                else if (jfx_desktop_window_queue_audio(frontend->window,pcm,4096)) frontend->audio_sample+=4096;
+                else if (jfx_desktop_window_queue_audio(frontend->window,pcm,4096)) {
+                    frontend->audio_peak[0]=frontend->audio_peak[1]=0;
+                    for (size_t sample=0;sample<4096;++sample)
+                        for (size_t channel=0;channel<2;++channel)
+                            frontend->audio_peak[channel]=std::fmax(frontend->audio_peak[channel],std::fabs(pcm[sample*2+channel]));
+                    frontend->audio_sample+=4096;
+                }
                 else { frontend->playing=false; reset_audio(frontend); std::snprintf(frontend->status,sizeof(frontend->status),"Unable to open or queue the audio output device."); }
             }
         }
@@ -1037,6 +1052,7 @@ static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
 }
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
     if (!f || !op) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->audio_edit) finish_audio(f);
     if (f->grading_edit && std::strcmp(op,"effect.param")) finish_grading(f);
     auto r=edited(f,jfx_editor_command(f->editor,op,a,b,c,v,text));
     if (r==JFX_SUCCESS && (!std::strcmp(op,"graph.new") || !std::strcmp(op,"sequence.new"))) {
@@ -1046,7 +1062,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,cons
         f->node_preview_selected=false; f->node_drag=0; f->node_wiring=false;
         if (f->selected_node>=jfx_graph_node_count(jfx_editor_graph(f->editor))) f->selected_node=0;
     }
-    if (r==JFX_SUCCESS && (!std::strcmp(op,"undo") || !std::strcmp(op,"redo")) && f->workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING &&
+    if (r==JFX_SUCCESS && (!std::strcmp(op,"undo") || !std::strcmp(op,"redo")) &&
+        (f->workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || f->workspace==JFX_DESKTOP_WORKSPACE_AUDIO) &&
         (f->workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING)!=(jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH))
         jfx_desktop_frontend_set_workspace(f,jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?JFX_DESKTOP_WORKSPACE_COMPOSITING:JFX_DESKTOP_WORKSPACE_NLE);
     return r;
@@ -1067,22 +1084,23 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
     if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     finish_grading(f);
+    finish_audio(f);
     f->workspace=workspace; f->workspace_requested=true;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
     f->nle_drag=f->node_drag=0; f->node_wiring=false;
-    if (workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING) {
+    if (workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || workspace==JFX_DESKTOP_WORKSPACE_AUDIO) {
         jfx_editor_set_kind(f->editor,workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING?JFX_PROJECT_KIND_GRAPH:JFX_PROJECT_KIND_SEQUENCE);
         f->editing=true; f->preview_dirty=true; reset_audio(f);
         if (workspace!=JFX_DESKTOP_WORKSPACE_COMPOSITING) f->node_preview_selected=false;

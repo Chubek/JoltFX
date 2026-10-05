@@ -47,8 +47,16 @@ if(JFX_COLOR_OCIO)
     endif()
 endif()
 
-add_library(jfx_miniaudio OBJECT "${PROJECT_SOURCE_DIR}/third_party/miniaudio/miniaudio.c")
-target_include_directories(jfx_miniaudio SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/miniaudio")
+set(JFX_MINIAUDIO_ROOT "${PROJECT_SOURCE_DIR}/third_party/miniaudio" CACHE PATH
+    "Path to a miniaudio source checkout")
+if(NOT EXISTS "${JFX_MINIAUDIO_ROOT}/miniaudio.c" OR
+   NOT EXISTS "${JFX_MINIAUDIO_ROOT}/miniaudio.h")
+    message(FATAL_ERROR "miniaudio sources not found at '${JFX_MINIAUDIO_ROOT}'. "
+        "Clone https://github.com/mackron/miniaudio.git and set "
+        "-DJFX_MINIAUDIO_ROOT=<checkout>.")
+endif()
+add_library(jfx_miniaudio OBJECT "${JFX_MINIAUDIO_ROOT}/miniaudio.c")
+target_include_directories(jfx_miniaudio SYSTEM PUBLIC "${JFX_MINIAUDIO_ROOT}")
 target_compile_definitions(jfx_miniaudio PUBLIC MA_NO_DEVICE_IO MA_NO_ENGINE MA_NO_RESOURCE_MANAGER MA_NO_THREADING MA_NO_ENCODING)
 set_target_properties(jfx_miniaudio PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(joltscript_glue PRIVATE $<BUILD_INTERFACE:jfx_miniaudio>)

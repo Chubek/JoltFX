@@ -17,6 +17,13 @@ add_test(NAME cmake_find_wasmtime COMMAND "${CMAKE_COMMAND}"
     "-DLIBRARY_NAME=${CMAKE_STATIC_LIBRARY_PREFIX}wasmtime${CMAKE_STATIC_LIBRARY_SUFFIX}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_find_wasmtime.cmake")
 set_tests_properties(cmake_find_wasmtime PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
+if(JFX_EXT_MRUBY)
+    add_test(NAME cmake_mruby_config COMMAND "${CMAKE_COMMAND}"
+        "-DADAPTER_DIR=${PROJECT_SOURCE_DIR}/extif/mruby"
+        "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/mruby-config-test"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_mruby_config.cmake")
+    set_tests_properties(cmake_mruby_config PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
+endif()
 find_program(JFX_TEST_FFMPEG ffmpeg)
 find_program(JFX_TEST_FFPROBE ffprobe)
 if(Python3_Interpreter_FOUND AND TARGET joltfx_cli)

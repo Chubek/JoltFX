@@ -660,3 +660,6 @@ only at this boundary, and flatten alpha only for opaque pixel formats. Codec
 threads/network are disabled in the bundled profile. `cmake/FFmpeg.cmake` builds
 the vendored profile for native/WASM/Android/single-architecture iOS toolchains;
 native builds can use pkg-config packages. See `docs/media.md`.
+The mandatory miniaudio checkout defaults to `third_party/miniaudio`; set
+`JFX_MINIAUDIO_ROOT` to use an external source checkout. Validate both its
+implementation and header during configuration, before creating the target.

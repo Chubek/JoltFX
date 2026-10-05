@@ -20,7 +20,12 @@ build/frontends/cli/joltfx scripts run mruby extif/examples/grade.rb gain 0.75
 ```
 
 Builds need Ruby and the vendored `minirake`; each CMake build directory owns its
-generated runtime archive. Installation exports that archive as
+generated runtime archive and Rake configuration/lockfile. The adapter uses
+the matching `<runtime-build>/jfx/include` generated symbol headers. Set
+`-DJFX_MRUBY_ROOT=/path/to/mruby-3.3.0` to use an external checkout. Configuration
+rejects runtimes lacking `mrb_open_allocf`, which is required for the sandbox's
+memory budget; mruby 4.0's allocator interface is incompatible.
+Installation exports that archive as
 `jfx_mruby_runtime` beside the adapter. Native Linux is verified; cross builds
 need a compatible Ruby host compiler and target C toolchain. `ext_perf` reports
 the actual memory and initialization/call costs for the current build.

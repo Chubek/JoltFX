@@ -1,6 +1,22 @@
 include("${CMAKE_CURRENT_SOURCE_DIR}/TestHelpers.cmake")
 
 jfx_test_target(test_tillyz SOURCES tilly/test_tillyz.c LIBRARIES tillyz)
+jfx_test_target(test_allocator SOURCES tilly/test_allocator.c LIBRARIES tilly)
+if(UNIX AND NOT EMSCRIPTEN)
+    add_library(tilly_test_module MODULE tilly/module_fixture.c)
+    add_library(tilly_test_dependency MODULE tilly/module_fixture.c)
+    target_include_directories(tilly_test_module PRIVATE ${PROJECT_SOURCE_DIR}/tilly/include)
+    target_include_directories(tilly_test_dependency PRIVATE ${PROJECT_SOURCE_DIR}/tilly/include)
+    if(APPLE)
+        target_link_options(tilly_test_module PRIVATE -undefined dynamic_lookup)
+        target_link_options(tilly_test_dependency PRIVATE -undefined dynamic_lookup)
+    endif()
+    set_project_warnings(tilly_test_module)
+    set_project_warnings(tilly_test_dependency)
+    jfx_test_target(test_tilly_module SOURCES tilly/test_module.c LIBRARIES tilly)
+    set_target_properties(test_tilly_module PROPERTIES ENABLE_EXPORTS ON)
+    add_dependencies(test_tilly_module tilly_test_module tilly_test_dependency)
+endif()
 
 # The engine, its memory/scheduler/event subsystems and the resource objects.
 jfx_test_target(test_core SOURCES core/test_engine.c LIBRARIES jfx_core)
@@ -148,6 +164,11 @@ if(NOT EMSCRIPTEN)
     set_property(TEST plugin_sdk APPEND PROPERTY LABELS conformance)
 endif()
 jfx_register_test(test_containers test_containers)
+jfx_register_test(allocator test_allocator)
+if(TARGET test_tilly_module)
+    jfx_register_test(tilly_module test_tilly_module $<TARGET_FILE:tilly_test_module> $<TARGET_FILE:tilly_test_dependency>)
+    jfx_register_test(tilly_module_callbacks test_tilly_module $<TARGET_FILE:tilly_test_module> $<TARGET_FILE:tilly_test_dependency> callbacks)
+endif()
 
 # The OFX host adapter is tested against a real plugin binary staged into a real
 # bundle layout, so the dynamic-loading path is exercised rather than stubbed.

@@ -309,6 +309,13 @@ had shipped or would have shipped as wrong pixels, lost edits or crashes:
   `jfx_desktop` binary. The previous rules installed the frontend and bridge
   libraries but omitted the runtime the engine dispatches through, so a package
   could not run a kernel.
+- `scripts/submodules-init.sh` only clones. It no longer takes a revision or a
+  branch: every repository is cloned at whatever revision its upstream default
+  branch points at, and no `git checkout` follows. Pinned versions (tags such as
+  `v1.5.6`, branches such as `docking` and `Catch1.x`) were being requested but
+  not honoured consistently, and pinning every dependency by name in a script is
+  not a substitute for recording the revision where it is used. Nested
+  dependencies are still initialized after each clone.
 - `JOLTFX_BUILD_DOCS` builds a `docs` target instead of being a dead option.
 - CI has job timeouts, a concurrency group, a build matrix that actually
   exercises the option combinations, cargo and ccache-style caching, and leaks

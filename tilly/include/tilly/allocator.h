@@ -38,7 +38,7 @@ tilly_allocator_t *tilly_allocator_create(
     size_t capacity
 );
 
-// Destroy an allocator
+// Destroy an allocator, clearing its binding on the calling thread if present.
 void tilly_allocator_destroy(tilly_allocator_t *alloc);
 
 // Allocate memory
@@ -52,13 +52,16 @@ void tilly_free(tilly_allocator_t *alloc, void *ptr);
  * Only TILLY_ALLOC_GENERAL can grow a block in place; arena, pool and stack
  * blocks carry no size header, so growing one returns NULL and logs an error
  * (it is not an out-of-memory condition). Allocate a new block and copy when
- * the allocator is not general. `ptr` is left untouched on failure. */
+ * the allocator is not general. Custom general allocators cannot resize
+ * non-null blocks either; they may return storage that
+ * is incompatible with libc. `ptr` is left untouched on failure. */
 void *tilly_realloc(tilly_allocator_t *alloc, void *ptr, size_t new_size);
 
 // Reset allocator (for arena/stack)
 void tilly_allocator_reset(tilly_allocator_t *alloc);
 
-// Get allocator usage
+/* Get live payload usage (pool allocations count the entire slot). The peak
+ * counter retains the high-water mark across arena, pool and stack resets. */
 size_t tilly_allocator_usage(const tilly_allocator_t *alloc);
 
 // Thread-local stack allocator
