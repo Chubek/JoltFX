@@ -1,54 +1,70 @@
 #!/usr/bin/env bash
 #
-# JoltFX Third-Party Library Submodule Initialization
+# JoltFX Third-Party Repository Cloning
 #
-# This script adds all vendored third-party libraries as git submodules.
-# Run from the repository root: ./scripts/submodules-init.sh
+# Clone all listed repositories into third_party or an optional directory:
+#   ./scripts/submodules-init.sh [DIRECTORY]
 #
 # Libraries are organized by category and sourced from their official
-# upstream repositories. Pinned commits/tags are used for reproducibility.
+# upstream repositories. Repositories are cloned at whatever revision their
+# upstream default branch points at; no branches, tags or commits are
+# requested or checked out. Each repository's nested dependencies are
+# initialized afterwards.
 
 set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-THIRD_PARTY_DIR="${REPO_ROOT}/third_party"
+usage() {
+    echo "Usage: ${0##*/} [DIRECTORY]"
+    echo ""
+    echo "Clone JoltFX's third-party repositories into DIRECTORY."
+    echo "Default: <repository-root>/third_party (relative to this script)."
+    echo "Existing Git checkouts are skipped."
+}
 
-mkdir -p "${THIRD_PARTY_DIR}"
+if [[ $# -gt 1 ]]; then
+    usage >&2
+    exit 1
+fi
 
-# Helper function to add a submodule with a specific commit/tag
-add_submodule() {
-    local url="$1"
-    local path="$2"
-    local commit="${3:-}"
-    local branch="${4:-}"
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    -*)
+        echo "error: unknown option: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+esac
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+THIRD_PARTY_DIR="${1:-${REPO_ROOT}/third_party}"
+
+mkdir -p -- "${THIRD_PARTY_DIR}"
+THIRD_PARTY_DIR="$(cd -- "${THIRD_PARTY_DIR}" && pwd)"
+
+# Clone a repository at its upstream default revision.
+clone_repository() {
+    local url="${1:-}"
+    local path="${2:-}"
 
     if [[ -z "${url}" || -z "${path}" ]]; then
-        echo "error: add_submodule needs a url and a path" >&2
+        echo "error: clone_repository needs a url and a path" >&2
         return 1
     fi
 
     local full_path="${THIRD_PARTY_DIR}/${path}"
 
-    if [[ -d "${full_path}" ]]; then
-        echo "Submodule ${path} already exists, skipping..."
+    if [[ -d "${full_path}/.git" || -f "${full_path}/.git" ]]; then
+        echo "Repository ${path} already exists, skipping..."
         return 0
     fi
 
-    echo "Adding submodule: ${path} from ${url}"
+    echo "Cloning repository: ${path} from ${url}"
 
-    if [[ -n "${branch}" ]]; then
-        git submodule add -b "${branch}" "${url}" "${full_path}"
-    else
-        git submodule add "${url}" "${full_path}"
-    fi
-
-    if [[ -n "${commit}" ]]; then
-        echo "  Pinning to commit: ${commit}"
-        (
-            cd "${full_path}"
-            git checkout "${commit}"
-        )
-    fi
+    git clone -- "${url}" "${full_path}"
 }
 
 # =============================================================================
@@ -56,274 +72,278 @@ add_submodule() {
 # =============================================================================
 
 # Dear ImGui - Immediate mode GUI (GUI frontend)
-add_submodule "https://github.com/ocornut/imgui.git" \
-    "imgui" \
-    "docking" \
-    "docking"
+clone_repository "https://github.com/ocornut/imgui.git" \
+    "imgui"
 
 # Cairo - 2D vector graphics (Cairo backend) - typically system, but can vendor
-# add_submodule "https://gitlab.freedesktop.org/cairo/cairo.git" \
-#     "cairo" \
-#     "1.18.0"
+# clone_repository "https://gitlab.freedesktop.org/cairo/cairo.git" \
+#     "cairo"
 
 # =============================================================================
 # Media & Asset Processing
 # =============================================================================
 
 # stb - Single-file public domain libraries (image I/O, etc.)
-add_submodule "https://github.com/nothings/stb.git" \
-    "stb" \
-    "master"
+clone_repository "https://github.com/nothings/stb.git" \
+    "stb"
 
 # NanoSVG - SVG parsing and rasterization
-add_submodule "https://github.com/memononen/nanosvg.git" \
-    "nanosvg" \
-    "master"
+clone_repository "https://github.com/memononen/nanosvg.git" \
+    "nanosvg"
 
 # =============================================================================
 # Extension Language Runtimes
 # =============================================================================
 
 # Lua 5.4 - Lua extension runtime
-add_submodule "https://github.com/lua/lua.git" \
-    "lua" \
-    "lua-5.4.7"
+clone_repository "https://github.com/lua/lua.git" \
+    "lua"
 
 # MRuby - Ruby extension runtime
-add_submodule "https://github.com/mruby/mruby.git" \
-    "mruby" \
-    "3.3.0"
+clone_repository "https://github.com/mruby/mruby.git" \
+    "mruby"
 
 # MicroPython - Python extension runtime
-add_submodule "https://github.com/micropython/micropython.git" \
-    "micropython" \
-    "v1.24.0"
+clone_repository "https://github.com/micropython/micropython.git" \
+    "micropython"
 
 # QuickJS - JavaScript extension runtime
-add_submodule "https://github.com/bellard/quickjs.git" \
-    "quickjs" \
-    "master"
+clone_repository "https://github.com/bellard/quickjs.git" \
+    "quickjs"
 
-# Wasmtime - WASM extension runtime (system-side)
-# Note: Wasmtime is typically a Cargo dependency, but can be vendored
-# add_submodule "https://github.com/bytecodealliance/wasmtime.git" \
-#     "wasmtime" \
-#     "main"
+# WASM runtime
+clone_repository "https://github.com/wasm-micro-runtime/wasm-micro-runtime" \
+     "wasm-micro-runtime"
 
 # =============================================================================
 # Compilation & Code Generation
 # =============================================================================
 
 # QBE - Lightweight compiler backend (Tilly QBE target)
-add_submodule "git://c9x.me/qbe.git" \
-    "qbe" \
-    "master"
+clone_repository "git://c9x.me/qbe.git" \
+    "qbe"
 
 # SLJIT - JIT compilation backend (Tilly JIT engine)
-add_submodule "https://github.com/zherczeg/sljit.git" \
-    "sljit" \
-    "master"
+clone_repository "https://github.com/zherczeg/sljit.git" \
+    "sljit"
 
 # spirv-cross - SPIR-V cross-compilation (Metal/D3D12/WebGPU backends)
-add_submodule "https://github.com/KhronosGroup/SPIRV-Cross.git" \
-    "spirv-cross" \
-    "master"
+clone_repository "https://github.com/KhronosGroup/SPIRV-Cross.git" \
+    "spirv-cross"
 
 # DXC - DirectX Shader Compiler (D3D12 backend)
-add_submodule "https://github.com/microsoft/DirectXShaderCompiler.git" \
-    "dxc" \
-    "main"
+clone_repository "https://github.com/microsoft/DirectXShaderCompiler.git" \
+    "dxc"
 
 # tree-sitter - Incremental parsing for LSP/IDE tooling
-add_submodule "https://github.com/tree-sitter/tree-sitter.git" \
-    "tree-sitter" \
-    "master"
+clone_repository "https://github.com/tree-sitter/tree-sitter.git" \
+    "tree-sitter"
 
 # tree-sitter grammars for supported languages
-add_submodule "https://github.com/tree-sitter/tree-sitter-c.git" \
-    "tree-sitter-c" \
-    "master"
+clone_repository "https://github.com/tree-sitter/tree-sitter-c.git" \
+    "tree-sitter-c"
 
-add_submodule "https://github.com/tree-sitter/tree-sitter-cpp.git" \
-    "tree-sitter-cpp" \
-    "master"
+clone_repository "https://github.com/tree-sitter/tree-sitter-cpp.git" \
+    "tree-sitter-cpp"
 
-add_submodule "https://github.com/tree-sitter/tree-sitter-rust.git" \
-    "tree-sitter-rust" \
-    "master"
+clone_repository "https://github.com/tree-sitter/tree-sitter-rust.git" \
+    "tree-sitter-rust"
 
-add_submodule "https://github.com/tree-sitter/tree-sitter-python.git" \
-    "tree-sitter-python" \
-    "master"
+clone_repository "https://github.com/tree-sitter/tree-sitter-python.git" \
+    "tree-sitter-python"
 
-add_submodule "https://github.com/tree-sitter/tree-sitter-go.git" \
-    "tree-sitter-go" \
-    "master"
+clone_repository "https://github.com/tree-sitter/tree-sitter-go.git" \
+    "tree-sitter-go"
 
-add_submodule "https://github.com/tjdevries/tree-sitter-lua" \
-    "tree-sitter-lua" \
-    "master"
+clone_repository "https://github.com/tjdevries/tree-sitter-lua" \
+    "tree-sitter-lua"
 
 # =============================================================================
 # Serialization & Data
 # =============================================================================
 
 # yyjson - Fast JSON parsing and serialization
-add_submodule "https://github.com/ibireme/yyjson.git" \
-    "yyjson" \
-    "master"
+clone_repository "https://github.com/ibireme/yyjson.git" \
+    "yyjson"
 
 # MessagePack (cmp) - Binary serialization
-add_submodule "https://github.com/camgunz/cmp.git" \
-    "cmp" \
-    "master"
+clone_repository "https://github.com/camgunz/cmp.git" \
+    "cmp"
 
 # zstd - General-purpose compression
-add_submodule "https://github.com/facebook/zstd.git" \
-    "zstd" \
-    "v1.5.6"
+clone_repository "https://github.com/facebook/zstd.git" \
+    "zstd"
 
 # lz4 - Low-latency compression for streaming assets
-add_submodule "https://github.com/lz4/lz4.git" \
-    "lz4" \
-    "v1.10.0"
+clone_repository "https://github.com/lz4/lz4.git" \
+    "lz4"
 
 # =============================================================================
 # Networking & IPC
 # =============================================================================
 
 # libuv - Cross-platform async I/O (CLI and daemon mode)
-add_submodule "https://github.com/libuv/libuv.git" \
-    "libuv" \
-    "v1.48.0"
+clone_repository "https://github.com/libuv/libuv.git" \
+    "libuv"
 
 # nng - Lightweight messaging for inter-process communication
-add_submodule "https://github.com/nanomsg/nng.git" \
-    "nng" \
-    "v1.8.0"
+clone_repository "https://github.com/nanomsg/nng.git" \
+    "nng"
 
 # =============================================================================
 # Diagnostics & Profiling
 # =============================================================================
 
 # Tracy - Frame profiler attachment point (Diagnostics API)
-add_submodule "https://github.com/wolfpld/tracy.git" \
-    "tracy" \
-    "master"
+clone_repository "https://github.com/wolfpld/tracy.git" \
+    "tracy"
 
 # Perfetto - System-level tracing sink (typically system, but can vendor)
-# add_submodule "https://android.googlesource.com/platform/external/perfetto" \
-#     "perfetto" \
-#     "master"
+# clone_repository "https://android.googlesource.com/platform/external/perfetto" \
+#     "perfetto"
 
 # =============================================================================
 # Utilities
 # =============================================================================
 
+# libglr parser
+clone_repository "https://github.com/Chubek/libglr.git" \
+    "libglr"
+
 # mimalloc - High-performance memory allocator
-add_submodule "https://github.com/microsoft/mimalloc.git" \
-    "mimalloc" \
-    "v2.1.7"
+clone_repository "https://github.com/microsoft/mimalloc.git" \
+    "mimalloc"
 
 # xxHash - Fast non-cryptographic hashing
-add_submodule "https://github.com/Cyan4973/xxHash.git" \
-    "xxhash" \
-    "v0.8.3"
+clone_repository "https://github.com/Cyan4973/xxHash.git" \
+    "xxhash"
 
 # utf8.h - UTF-8 string utilities (single header)
-add_submodule "https://github.com/sheredom/utf8.h.git" \
-    "utf8.h" \
-    "master"
+clone_repository "https://github.com/sheredom/utf8.h.git" \
+    "utf8.h"
 
 # PCRE2 - Regular expression engine
-add_submodule "https://github.com/PCRE2Project/PCRE2.git" \
-    "PCRE2" \
-    "pcre2-10.44"
+clone_repository "https://github.com/PCRE2Project/PCRE2.git" \
+    "PCRE2"
 
 # Klib - Multi-purpose simple lightweight libraries
-add_submodule "https://github.com/attractivechaos/klib.git" \
-    "klib" \
-    "master"
+clone_repository "https://github.com/attractivechaos/klib.git" \
+    "klib"
+
+# Unittesting
+clone_repository "https://github.com/catchorg/Catch2.git" \
+    "catch2"
 
 # OpenFX support
-add_submodule "https://github.com/AcademySoftwareFoundation/openfx.git"  \
-    "openfx" \
-    "main"
+clone_repository "https://github.com/AcademySoftwareFoundation/openfx.git"  \
+    "openfx"
+
+# Spdlog
+clone_repository "https://github.com/gabime/spdlog" \
+    "spdlog"
+
+# Formatting
+clone_repository "https://github.com/fmtlib/fmt" \
+    "fmt"
+
+# Perfect Hashing
+clone_repository "https://github.com/Chubek/nuperf.git" \
+    "nuperf"
 
 # =============================================================================
 # GPU Compute & Backend Support
 # =============================================================================
 
 # wgpu-native - WebGPU native implementation (WebGPU backend)
-add_submodule "https://github.com/gfx-rs/webgpu-native" \
-    "wgpu-native" \
-    "master"
+clone_repository "https://github.com/gfx-rs/wgpu-native" \
+    "wgpu-native"
 
 # VMA - Vulkan Memory Allocator (Vulkan backend)
-add_submodule "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git" \
-    "vma" \
-    "master"
+clone_repository "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git" \
+    "vma"
 
 # ===============================================================================
 # Color Grading Libraries
 # ===============================================================================
 
 # OpenColorIO
-add_submodule "https://github.com/AcademySoftwareFoundation/OpenColorIO" \
-	"opencolorio" \
-	"main"
+clone_repository "https://github.com/AcademySoftwareFoundation/OpenColorIO" \
+    "opencolorio"
 
 # Color Transformation Language
-add_submodule "https://github.com/aces-aswf/CTL" \
-	"ctl" \
-	"master"
+clone_repository "https://github.com/aces-aswf/CTL" \
+    "ctl"
 
 # libraw
-add_submodule "https://github.com/LibRaw/LibRaw" \
-	"libraw" \
-	"master"
+clone_repository "https://github.com/LibRaw/LibRaw" \
+    "libraw"
 
 # OpenEXR
-add_submodule "https://github.com/AcademySoftwareFoundation/openexr" \
-	"openexr" \
-	"main"
+clone_repository "https://github.com/AcademySoftwareFoundation/openexr" \
+    "openexr"
 
 # =============================================================================
 # Numerical Libraries
 # =============================================================================
 
 # xsimd
-add_submodule "https://github.com/xtensor-stack/xsimd" \
-	"xsimd" \
-	"master"
+clone_repository "https://github.com/xtensor-stack/xsimd" \
+    "xsimd"
 
 # EIGEN
-add_submodule "https://github.com/PX4/eigen" \
-	"eigen" \
-	"master"
+clone_repository "https://github.com/PX4/eigen" \
+    "eigen"
 
 # Simdette
-add_submodule "https://github.com/Chubek/simdette" \
-	"simdette" \
-	"master"
+clone_repository "https://github.com/Chubek/simdette" \
+    "simdette"
+
+# GLM
+clone_repository "https://github.com/icaven/glm" \
+    "glm"
+
+# ===============================================================================
+# Animation Libraries
+# ===============================================================================
+
+# SDL
+clone_repository "https://github.com/libsdl-org/SDL" \
+    "sdl"
+
+# bgfx
+clone_repository "https://github.com/bkaradzic/bgfx.git" \
+    "bgfx"
+
+# FreeType
+clone_repository "https://github.com/freetype/freetype" \
+    "freetype"
+
+# HarfBuzz
+clone_repository "https://github.com/harfbuzz/harfbuzz" \
+    "harfbuzz"
+
+# Blend2D
+clone_repository "https://github.com/blend2d/blend2d" \
+    "blend2d"
+
+# LIEF
+clone_repository "https://github.com/lief-project/LIEF" \
+    "lief"
+
+# FlatBuffers
+clone_repository "https://github.com/google/flatbuffers" \
+    "flatbuffers"
 
 
 # =============================================================================
-# Initialize and update all submodules
+# Completion
 # =============================================================================
-
-echo ""
-echo "Initializing all submodules..."
-git submodule update --init --recursive
 
 echo ""
 echo "=========================================="
-echo "Submodule initialization complete!"
+echo "Third-party repository cloning complete!"
 echo "=========================================="
 echo ""
 echo "Third-party libraries are now available in: ${THIRD_PARTY_DIR}"
 echo ""
-echo "To update all submodules to their pinned commits later, run:"
-echo "  git submodule update --remote --recursive"
-echo ""
-echo "To add a new submodule, use the add_submodule function pattern above."
+echo "To add a new repository, use the clone_repository function pattern above."
