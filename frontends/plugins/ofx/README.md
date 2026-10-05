@@ -10,7 +10,7 @@ Unlike the After Effects / Premiere / DaVinci bridges elsewhere in
 OFX suites itself and links only the engine's C API.
 
 - Public header: `include/jfx/jfx_ofx.h` (`jfx_` prefix, size-guarded structs,
-  `out_*` outputs last, per `mograph/AGENTS.md`).
+  `out_*` outputs last, per `src/AGENTS.md`).
 - Target: `jfx_ofx_host`, gated by `JFX_PLUGIN_OPENFX` (default `ON`).
 - OFX headers: `third_party/openfx` (submodule, OFX 1.5.1), included **private**
   so they never leak into a consumer's include path.

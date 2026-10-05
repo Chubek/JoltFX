@@ -105,7 +105,7 @@ delivery resolution. A *global* search is also biased if probes leave the frame
   `data_analysis/motion_detect`). `utility/remap_range` is the worst: 5 unused params.
   A separate cleanup pass.
 - A **fresh out-of-tree configure** fails in `tests/unit/core/test_plugin_module.c`
-  (`jfx/jfx_plugin.h` not found; the header lives in `mograph/include/jfx/`). This is
+  (`jfx/jfx_plugin.h` not found; the header lives in `src/include/jfx/`). This is
   pre-existing and unrelated to kernels, and the in-tree `build/` does not hit it —
   but it means "verify from scratch" currently only works via the in-tree dir.
 - `obj_render` is a working ray-caster but a real triangle rasteriser is still worth

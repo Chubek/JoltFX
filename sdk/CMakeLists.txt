@@ -3,7 +3,7 @@ add_library(jfx_plugin_sdk INTERFACE)
 add_library(JoltFX::plugin_sdk ALIAS jfx_plugin_sdk)
 set_target_properties(jfx_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
 target_include_directories(jfx_plugin_sdk INTERFACE
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/mograph/include>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/JoltFXPlugin.cmake")
 

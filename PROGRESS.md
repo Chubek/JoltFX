@@ -1,5 +1,31 @@
 # Progress
 
+## Core engine directory renamed to `src` (2026-10-05)
+
+- Renamed the top-level `mograph/` directory to `src/` with `git mv`, so history is
+  preserved for all 44 tracked files (20 translation units, 2 internal headers,
+  21 public headers, `CMakeLists.txt` and `AGENTS.md`). The engine now lives at
+  `src/src/` and `src/include/jfx/`.
+- Updated every tracked reference: `add_subdirectory(src)` and the `jfx_api`
+  include path in the root `CMakeLists.txt`, the `jfx_plugin_sdk` interface path
+  in `sdk/CMakeLists.txt`, the `test_plugin_module` include path in
+  `tests/unit/CMakeLists.txt`, the `jfx` header install rule in
+  `cmake/packaging/install_rules.cmake`, and the prose references in `MEMORY.md`,
+  `PROGRESS.md` and `frontends/plugins/ofx/README.md`.
+- Relative source paths inside `src/CMakeLists.txt` and the private
+  `CMAKE_CURRENT_BINARY_DIR` include still resolve, so no build-file logic changed.
+- `kernels/common/image.jolt` matched only inside the word "homography" and was
+  deliberately left untouched.
+- Verified with a fresh out-of-tree configure and generate; the generated
+  `jfx_core` and `test_plugin_module` flags resolve to `src/include`, and the
+  install rule to `src/include/jfx`. All 20 engine translation units and
+  `test_plugin_module` compile with zero diagnostics under the project warning
+  set. A full link/test run is still blocked in this checkout by two pre-existing
+  missing third-party dependencies (`third_party/miniaudio`, an mruby 3.3.0
+  checkout), unrelated to this rename; pre-existing `build*/` and
+  `frontends/mobile/android/app/.cxx/` trees still carry stale `mograph/` paths
+  and must be reconfigured or removed.
+
 ## Audio mixing workspace (2026-10-05)
 
 - Adding a desktop Audio Mixing tab over the existing Core audio mixer and
@@ -118,7 +144,7 @@
 - CPack TGZ generation passed; archive contents include SDK headers, versioned CMake config/target/helper, standalone example and documentation. Final native build has no warnings and `git diff --check` is clean.
 - Current mobile/WASM builds have not been rerun; native static attachment and portable frontend rendering are covered by conformance tests. SDK image evaluation is synchronous CPU execution; native modules expose the implemented effects/kernels, editor-action and event registration capabilities described in `docs/plugins.md`.
 
-- Fixed `test_plugin_module`'s include path to use `mograph/include`, where `jfx/jfx_plugin.h` is defined.
+- Fixed `test_plugin_module`'s include path to use `src/include`, where `jfx/jfx_plugin.h` is defined.
 - Build and test results are recorded in the subsystem sections below.
 
 ## Color grading subsystem
@@ -372,7 +398,7 @@ Follow-on from the plan audit above. Two changes, both additive.
   included privately so it never leaks into a consumer's include path; configuring
   with the option ON and no submodule fails with an explicit message.
 - Public API `jfx/jfx_ofx.h`, `jfx_` prefix with size-guarded structs, `out_*`
-  outputs last, per `mograph/AGENTS.md`. Discovery is explicit
+  outputs last, per `src/AGENTS.md`. Discovery is explicit
   (`jfx_ofx_host_scan`), the standard per-platform bundle layout is honoured, and
   pixels cross the boundary as tightly packed float RGBA.
 - Action lifecycle: load, describe, describe-in-context, create-instance, render,

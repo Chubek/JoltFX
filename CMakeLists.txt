@@ -57,14 +57,14 @@ include(cmake/modules/CompilerWarnings.cmake)
 # without linking the engine that owns the backend selection.
 add_library(jfx_api INTERFACE)
 target_include_directories(jfx_api INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/mograph/include>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/include>
     $<INSTALL_INTERFACE:include>
 )
 
 add_subdirectory(tilly)
 add_subdirectory(joltscript)
 add_subdirectory(backends)
-add_subdirectory(mograph)
+add_subdirectory(src)
 add_subdirectory(sdk)
 add_subdirectory(extif)
 add_subdirectory(kernels)
