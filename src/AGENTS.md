@@ -165,7 +165,7 @@ in `.jfx`. Empty graphs use `graph` and `output 0`. The CPU evaluator allocates
 reachable frames only, under a 512-MiB scratch bound. See `docs/composition.md`,
 `tests/unit/color/test_composition_editor.c` and composition frontend conformance.
 
-Audio/export APIs 1.0 are `jfx_audio.h` and `jfx_export.h`. Preserve positional
+Audio/export APIs 1.1 are `jfx_audio.h` and `jfx_export.h`. Preserve positional
 `track_audio`/`clip_audio` state, original fade reference length and signed sample
 clock offsets when editing split/trim timing. The mixer compiles the bundled
 audio kernel through Glue and executes stereo JBC1 in Execution. Media readers
@@ -173,6 +173,28 @@ are lazy/bounded; missing/unsupported assigned media fails, while video with no
 audio stream is silent. Snapshot mixers/jobs own model settings, not file bytes.
 Jobs run on one owner thread, never create workers, and replace output only after
 codec/trailer/stream success. See `docs/media.md` and audio/media conformance tests.
+
+`jfx_vst3.h` defines persistent per-track audio inserts, master gain and tempo.
+Editor 1.6 `audio.*` commands share sequence history. Preserve `audio_master`,
+`audio_tempo`, `audio_insert` and double-precision `audio_insert_param` records
+without loading modules during project parsing. The mixer sums clips per track,
+processes ordered stereo VST3 inserts before faders, compensates rack delay and
+owns instances independently of the model. Recreate plugins on discontinuities.
+Native modules are reference-counted by canonical path and terminated before
+unloading. `JFX_AUDIO_VST3=OFF` retains the model with native hosting stubs.
+WAV jobs use the same snapshot/cancel/atomic-output rules as video export and
+work without FFmpeg. See `docs/daw.md` and the real VST3/UI fixtures.
+
+Timeline 1.3/editor 1.7/audio 1.2 add source-frame MIDI notes, gain/parameter
+automation and opaque per-insert JVS1 state. Deep-copy note arrays when splitting
+or duplicating clips; move state/automation with their insert and free them with
+their track. Project `state_hex`/`automation_key` blocks are bounded and parsed
+without loading code. Restore state before overrides; mixer snapshots own all
+bytes/keys/notes and chase held notes on seek. Native views/handlers/run-loop
+callbacks use one serialized owner thread. Remove views before destroying native
+parents or components. Capture writes incremental atomic float WAV independent
+of devices/FFmpeg. See the DAW guide and `daw_notes_state_recording`,
+`vst3_audio_host`, `daw_native_window_capture` and real ImGui tests.
 
 All public symbols use the `jfx_` prefix. Types end in `_t`. Opaque handles end in `_handle_t`. Return codes are `jfx_result_t`; success is `JFX_OK`.
 

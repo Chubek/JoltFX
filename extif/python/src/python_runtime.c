@@ -134,7 +134,13 @@ static jfx_script_status_t to_value(jfx_script_runtime_t *rt, mp_obj_t value, bo
         if (mp_obj_is_small_int(value)) out->i = (int64_t)MP_OBJ_SMALL_INT_VALUE(value);
         else {
             byte bytes[8];
+#if JFX_MICROPYTHON_HAS_INT_TO_BYTES
+            /* Truncate without raising OverflowError, then check exact equality
+             * below so out-of-int64 values retain the bridge's TYPE_ERROR. */
+            mp_obj_int_to_bytes(value, sizeof(bytes), bytes, false, true, false);
+#else
             if (!mp_obj_int_to_bytes_impl(value, false, sizeof(bytes), bytes)) return JFX_SCRIPT_TYPE_ERROR;
+#endif
             uint64_t integer = 0;
             for (size_t i = 0; i < 8; ++i) integer |= (uint64_t)bytes[i] << (i * 8);
             memcpy(&out->i, &integer, sizeof(integer));

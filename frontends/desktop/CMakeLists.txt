@@ -44,6 +44,12 @@ add_library(jfx_desktop_frontend STATIC
     src/host_window.cpp
     ${JFX_IMGUI_SOURCES}
 )
+if(JFX_AUDIO_VST3)
+    target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${JFX_VST3_INCLUDE_DIR}")
+    if(APPLE)
+        target_link_libraries(jfx_desktop_frontend PRIVATE "-framework Cocoa")
+    endif()
+endif()
 target_include_directories(jfx_desktop_frontend PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>

@@ -61,7 +61,10 @@ static ImVec2 locate(jfx_desktop_frontend_t *f,ImGuiWindow *window,const char *l
     /* Locate draws a widget outline and a line from the mouse. Only outline
      * vertices inside this channel matter; the pointer starts outside it. */
     ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
-    for (const auto &v:draw->VtxBuffer) if (window->InnerRect.Contains(v.pos)) {
+    /* ImGui expands its debug outline three pixels past the item. Include that
+     * border when the widget starts flush with a child window's left edge. */
+    ImRect bounds=window->InnerRect; bounds.Expand(4);
+    for (const auto &v:draw->VtxBuffer) if (bounds.Contains(v.pos)) {
         lo.x=std::fmin(lo.x,v.pos.x); lo.y=std::fmin(lo.y,v.pos.y);
         hi.x=std::fmax(hi.x,v.pos.x); hi.y=std::fmax(hi.y,v.pos.y);
     }
@@ -93,7 +96,7 @@ int main(int argc,char **argv) {
     assert(jfx_desktop_frontend_edit(f,"clip.add",0,0,0,30,"")==JFX_SUCCESS);
     assert(jfx_desktop_frontend_set_workspace(nullptr,JFX_DESKTOP_WORKSPACE_NLE)==JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_COUNT)==JFX_ERROR_INVALID_ARGUMENT);
-    const char *names[]={"NLE","Layer Effects","Color Calibration","Color Grading","Node Compositing","Plugins","Console","Statistics","Audio Mixing"};
+    const char *names[]={"NLE","Layer Effects","Color Calibration","Color Grading","Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW"};
     /* Exercise both later and earlier requested tabs while all tabs are visible. */
     for (int i=JFX_DESKTOP_WORKSPACE_COUNT-1;i>=0;--i) {
         assert(jfx_desktop_frontend_set_workspace(f,(jfx_desktop_workspace_t)i)==JFX_SUCCESS);

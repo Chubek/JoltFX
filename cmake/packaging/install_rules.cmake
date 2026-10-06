@@ -28,6 +28,15 @@ foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
     list(APPEND JFX_INSTALL_TARGETS jfx_backend_${backend})
 endforeach()
 list(APPEND JFX_INSTALL_TARGETS jfx_extif_common jfx_extif)
+if(JFX_EXT_WASM)
+    list(APPEND JFX_INSTALL_TARGETS jfx_wamr_runtime)
+    install(FILES "${JFX_WAMR_ROOT}/LICENSE"
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/wasm-micro-runtime)
+endif()
+if(JFX_AUDIO_VST3)
+    install(FILES "${JFX_VST3_INCLUDE_DIR}/pluginterfaces/LICENSE.txt"
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/vst3)
+endif()
 if(JFX_EXT_LUA)
     list(APPEND JFX_INSTALL_TARGETS jfx_lua)
 endif()
@@ -152,7 +161,7 @@ if(JFX_INSTALL_DOCS_PRESENT)
     install(FILES ${JFX_INSTALL_DOCS_PRESENT}
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
 endif()
-install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/plugins.md docs/extensions.md
+install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/daw.md docs/plugins.md docs/extensions.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(DIRECTORY extif/examples DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/extensions)
 foreach(extension IN ITEMS lua mruby quickjs python wasm)
@@ -179,11 +188,11 @@ foreach(target IN LISTS JFX_INSTALL_TARGETS_PRESENT)
     get_target_property(links ${target} INTERFACE_LINK_LIBRARIES)
     string(APPEND package_links ";${links}")
 endforeach()
-foreach(dependency IN ITEMS VULKAN SDL2 OPENGL OCIO FFMPEG WASMTIME)
+foreach(dependency IN ITEMS VULKAN SDL2 OPENGL OCIO FFMPEG)
     set(JFX_PACKAGE_${dependency} OFF)
 endforeach()
 foreach(pair IN ITEMS "VULKAN|Vulkan::" "SDL2|SDL2::" "OPENGL|OpenGL::"
-        "OCIO|OpenColorIO::" "FFMPEG|PkgConfig::JFX_FFMPEG" "WASMTIME|Wasmtime::")
+        "OCIO|OpenColorIO::" "FFMPEG|PkgConfig::JFX_FFMPEG")
     string(REPLACE "|" ";" parts "${pair}")
     list(GET parts 0 dependency)
     list(GET parts 1 symbol)
@@ -198,7 +207,6 @@ configure_package_config_file("${CMAKE_SOURCE_DIR}/cmake/packaging/JoltFXConfig.
 write_basic_package_version_file("${CMAKE_BINARY_DIR}/JoltFXConfigVersion.cmake"
     VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
 install(FILES "${CMAKE_BINARY_DIR}/JoltFXConfig.cmake" "${CMAKE_BINARY_DIR}/JoltFXConfigVersion.cmake"
-    "${CMAKE_SOURCE_DIR}/cmake/modules/FindWasmtime.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/JoltFX")
 
 set(CPACK_PACKAGE_NAME "JoltFX")

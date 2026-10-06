@@ -1,6 +1,9 @@
 #include "jfx/jfx_editor.h"
 #include "jfx/jfx_color.h"
 #include "jfx/jfx_audio.h"
+#include "jfx/jfx_vst3.h"
+#include "jfx/jfx_midi.h"
+#include "jfx/jfx_automation.h"
 #include "jfx/jfx_plugin_sdk.h"
 #include "plugin_internal.h"
 #include "tilly/allocator.h"
@@ -241,6 +244,63 @@ static jfx_result_t command_apply(jfx_editor_t *e, const char *op, uint32_t a,
     }
     if (strcmp(op,"clip.opacity")==0) return jfx_timeline_set_clip_opacity(t,a,b,(float)value);
     if (!strcmp(op,"track.audio.gain")) return jfx_timeline_set_track_audio_gain(t,a,(float)value);
+    if (!strcmp(op,"audio.master.gain")) return jfx_timeline_set_master_audio_gain(t,(float)value);
+    if (!strcmp(op,"audio.tempo")) return jfx_timeline_set_audio_tempo(t,value);
+    if (!strcmp(op,"audio.insert.add")) {
+        if (!text || strlen(text)<34 || text[32]!=' ' || strlen(text+33)>=JFX_NODE_PATH_MAX) return JFX_ERROR_INVALID_ARGUMENT;
+        jfx_audio_insert_t in={.size=sizeof(in),.enabled=true};
+        memcpy(in.cid,text,32); strcpy(in.path,text+33);
+        return jfx_timeline_add_audio_insert(t,a,&in);
+    }
+    if (!strcmp(op,"audio.insert.remove")) return jfx_timeline_remove_audio_insert(t,a,b);
+    if (!strcmp(op,"audio.insert.move")) return jfx_timeline_move_audio_insert(t,a,b,c);
+    if (!strcmp(op,"audio.insert.enabled")) return jfx_timeline_enable_audio_insert(t,a,b,value!=0);
+    if (!strcmp(op,"audio.insert.param")) return jfx_timeline_audio_insert_parameter(t,a,b,c,value);
+    if (!strcmp(op,"audio.automation.key") || !strcmp(op,"audio.automation.remove")) {
+        char target[16],extra; unsigned long long frame; unsigned interpolation=0;
+        bool remove=!strcmp(op,"audio.automation.remove");
+        if (!text || (remove?sscanf(text,"%15s %llu %c",target,&frame,&extra)!=2:sscanf(text,"%15s %llu %u %c",target,&frame,&interpolation,&extra)!=3) || frame>INT64_MAX || interpolation>JFX_INTERP_SMOOTH) return JFX_ERROR_INVALID_ARGUMENT;
+        jfx_audio_automation_lane_t lane={.size=sizeof(lane)};
+        if (!strcmp(target,"gain")) lane.target=JFX_AUTOMATION_TRACK_GAIN;
+        else if (!strcmp(target,"plugin")) { lane.target=JFX_AUTOMATION_PLUGIN_PARAMETER; lane.insert=b; lane.parameter=c; }
+        else return JFX_ERROR_INVALID_ARGUMENT;
+        for (uint32_t i=0;i<jfx_timeline_audio_automation_count(t,a);++i) {
+            jfx_audio_automation_lane_t existing={.size=sizeof(existing)}; jfx_timeline_get_audio_automation(t,a,i,&existing);
+            if (existing.target==lane.target && existing.insert==lane.insert && existing.parameter==lane.parameter) { lane=existing; break; }
+        }
+        uint32_t k=0; while (k<lane.key_count && lane.keys[k].frame<frame) ++k;
+        if (remove) {
+            if (k>=lane.key_count || lane.keys[k].frame!=frame) return JFX_ERROR_NOT_FOUND;
+            memmove(lane.keys+k,lane.keys+k+1,(lane.key_count-k-1)*sizeof(*lane.keys)); --lane.key_count;
+        } else {
+            if (k==lane.key_count || lane.keys[k].frame!=frame) {
+                if (lane.key_count>=JFX_AUDIO_MAX_AUTOMATION_KEYS) return JFX_ERROR_OUT_OF_MEMORY;
+                memmove(lane.keys+k+1,lane.keys+k,(lane.key_count-k)*sizeof(*lane.keys)); ++lane.key_count;
+            }
+            lane.keys[k]=(jfx_audio_automation_key_t){frame,value}; lane.interpolation=(jfx_interp_t)interpolation;
+        }
+        return jfx_timeline_set_audio_automation(t,a,&lane);
+    }
+    if (!strcmp(op,"audio.insert.clear_params")) return jfx_timeline_clear_audio_insert_parameters(t,a,b);
+    if (!strcmp(op,"audio.insert.state")) {
+        size_t len=text?strlen(text):0;
+        if (len%2 || len/2>JFX_VST3_MAX_STATE_BYTES) return JFX_ERROR_INVALID_ARGUMENT;
+        unsigned char *data=len?allocate(len/2):NULL;
+        if (len && !data) return JFX_ERROR_OUT_OF_MEMORY;
+        for (size_t i=0;i<len;++i) {
+            char ch=text[i]; int v=ch>='0' && ch<='9'?ch-'0':ch>='a' && ch<='f'?ch-'a'+10:ch>='A' && ch<='F'?ch-'A'+10:-1;
+            if (v<0) { release(data); return JFX_ERROR_INVALID_ARGUMENT; }
+            if (i%2) data[i/2]|=(unsigned char)v; else data[i/2]=(unsigned char)(v<<4);
+        }
+        jfx_result_t r=jfx_timeline_audio_insert_state(t,a,b,data,len/2); release(data); return r;
+    }
+    if (!strcmp(op,"midi.note.remove")) return jfx_timeline_remove_midi_note(t,a,b,c);
+    if (!strcmp(op,"midi.note.add") || !strcmp(op,"midi.note.set")) {
+        unsigned pitch,channel; unsigned long long frame,length; char extra;
+        if (!text || sscanf(text,"%u %llu %llu %u %c",&pitch,&frame,&length,&channel,&extra)!=4 || pitch>127 || channel>15) return JFX_ERROR_INVALID_ARGUMENT;
+        jfx_midi_note_t n={sizeof(n),frame,length,(uint8_t)channel,(uint8_t)pitch,(float)value};
+        return !strcmp(op,"midi.note.add")?jfx_timeline_add_midi_note(t,a,b,&n):jfx_timeline_set_midi_note(t,a,b,c,&n);
+    }
     if (!strncmp(op,"clip.audio.",11)) {
         jfx_clip_audio_t audio={.size=sizeof(audio)};
         jfx_result_t r=jfx_timeline_get_clip_audio(t,a,b,&audio);
@@ -446,7 +506,7 @@ jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32
         push_snapshot(e,to,to_count,current); return JFX_SUCCESS;
     }
     bool graph=!strncmp(op,"node.",5) || !strncmp(op,"graph.",6);
-    bool record=graph || !strncmp(op,"track.",6) || !strncmp(op,"clip.",5) || !strncmp(op,"effect.",7) ||
+    bool record=graph || !strncmp(op,"midi.",5) || !strncmp(op,"audio.",6) || !strncmp(op,"track.",6) || !strncmp(op,"clip.",5) || !strncmp(op,"effect.",7) ||
         !strncmp(op,"grade.",6) || !strncmp(op,"calibration.",12) || !strcmp(op,"sequence.new");
     if (!record) return command_apply(e,op,a,b,c,value,text);
     if (e->edit_active) {

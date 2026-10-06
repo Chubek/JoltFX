@@ -27,7 +27,7 @@ JoltFX is built in layers, each of which can be used on its own:
 - **Frontends** — a desktop editor, a CLI, a web player, a mobile player, and
   host-application plugin bridges.
 - **Extension runtimes** — sandboxed Lua, mruby, QuickJS, MicroPython and
-  Wasmtime hosts over a shared typed bridge, editor/resources/events and budgets.
+  WAMR hosts over a shared typed bridge, editor/resources/events and budgets.
 
 ## Quick start
 
@@ -146,7 +146,7 @@ See [desktop controls](frontends/desktop/README.md) and
 ### Extension languages
 
 Script the same Core editor in Lua, mruby, JavaScript (QuickJS), MicroPython or
-WebAssembly (Wasmtime). The typed embedding API includes local batch functions,
+WebAssembly (WAMR). The typed embedding API includes local batch functions,
 scoped buffer/texture access, owned events, diagnostics and runtime budgets.
 
 ```sh
@@ -189,7 +189,7 @@ scripts/check-bytecode-parity.sh build   # prove they agree
 | `JFX_BACKEND_WEBGPU` | ON | WebGPU backend (CPU path off-platform) |
 | `JFX_EXT_LUA` / `JFX_EXT_MRUBY` | ON | Extension runtimes |
 | `JFX_EXT_QUICKJS` / `JFX_EXT_PYTHON` | OFF | Vendored QuickJS / MicroPython adapters |
-| `JFX_EXT_WASM` | OFF | Wasmtime adapter; requires version 38+ C API prefix |
+| `JFX_EXT_WASM` | OFF | WAMR adapter; builds `third_party/wasm-micro-runtime` |
 | `JFX_FRONTEND_CLI` / `_DESKTOP` / `_WEB` / `_MOBILE` | ON | Frontends |
 | `JFX_DESKTOP_WINDOW` | ON | Desktop window (needs SDL2 and OpenGL) |
 | `JFX_PLUGIN_HOST_BRIDGES` | ON | After Effects / Premiere / DaVinci bridges |

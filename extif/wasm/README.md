@@ -1,35 +1,41 @@
-# Wasmtime / joltwasm
+# WAMR / joltwasm
 
-`JFX_EXT_WASM=ON` builds `jfx_wasm` against the **Wasmtime 38+ C API**. The
-adapter accepts validated WebAssembly binary modules and WAT, uses fuel for
-execution budgets and Tilly for bounded linear memory. No WASI, filesystem,
-network, process or native-library imports are supplied. Module compilation
-uses Wasmtime's compiler; deserialization of precompiled native artifacts is
-not exposed. Parallel compilation is disabled.
+`JFX_EXT_WASM=ON` builds `jfx_wasm` and `jfx_wamr_runtime` from
+**WebAssembly Micro Runtime** in `third_party/wasm-micro-runtime`. The adapter
+accepts validated binary `.wasm` modules, uses the classic interpreter with
+instruction metering, and routes module, instance, stack and linear-memory
+allocations through Tilly's runtime budget. WASI, builtin libc, guest threads,
+JIT and AOT are disabled. Only `joltfx.call` and `joltfx.clamp` imports are allowed.
 
 ```sh
-# Obtain the C API for the target platform, e.g. Wasmtime 38.0.4:
-curl -L -o wasmtime.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/v38.0.4/wasmtime-v38.0.4-x86_64-linux-c-api.tar.xz
-tar xf wasmtime.tar.xz
-cmake -S . -B build -DJFX_EXT_WASM=ON \
-  -DJFX_WASMTIME_ROOT="$PWD/wasmtime-v38.0.4-x86_64-linux-c-api"
+git clone https://github.com/wasm-micro-runtime/wasm-micro-runtime third_party/wasm-micro-runtime
+cmake -S . -B build -DJFX_EXT_WASM=ON
 cmake --build build --target jfx_wasm joltfx_cli
-build/frontends/cli/joltfx scripts run wasm extif/examples/grade.wat gain 0.75
+build/frontends/cli/joltfx scripts run wasm extif/examples/grade.wasm gain 0.75
 ```
 
-Keep the extracted C API SDK in a persistent directory, such as
-`third_party/wasmtime-v38.0.4-x86_64-linux-c-api`, rather than under `/tmp`.
-If the SDK has moved or was deleted, extract it again and rerun the configure
-command with the new `JFX_WASMTIME_ROOT` before building. CMake discards missing
-cached SDK paths and searches for the replacement. The Wasmtime CLI alone does
-not provide the headers and library required by this extension.
+An existing checkout can also be initialized through `scripts/submodules-init.sh`.
+`JFX_WAMR_ROOT` selects an external WAMR source checkout; it must provide
+`wasm_runtime_set_instruction_count_limit`. CMake compiles the sources offline.
+The installed CMake package includes the interpreter archive, so consumers need
+no separate WASM SDK or shared runtime library. Linux x86-64 is verified; native
+platform selection also covers Windows, macOS/iOS and Android. This host-side
+runtime is separate from the browser's `joltvm.js` engine build.
 
-The installed CMake package resolves the consumer's own Wasmtime installation.
-The shared Wasmtime library must remain available to the loader when running
-installed executables. It is an external dependency, not bundled into JoltFX's
-package. Linux x86-64 is verified; other targets need a matching Wasmtime C API
-and executable-memory support. This host-side runtime is separate from the
-browser's `joltvm.js` engine build.
+WAT remains an authoring format. Compile it with WABT before loading:
+
+```sh
+wat2wasm extif/examples/grade.wat -o extif/examples/grade.wasm
+```
+
+The checked-in `grade.wasm` and binary conformance fixtures allow builds and
+tests without WABT. Start sections and automatic `__post_instantiate` /
+`__wasm_call_ctors` exports are rejected because WAMR executes them before a
+metered execution environment exists. Use an explicit initialization export.
+
+Sanitizer builds use WAMR's upstream UBSan profile, which excludes alignment
+checks on its four-byte VM stack. The JoltFX adapter retains full ASAN/UBSan
+instrumentation.
 
 ## Scalar modules
 
@@ -84,11 +90,13 @@ back. The destination must fit linear memory and the complete string. Result
 records and destination storage should be disjoint.
 
 `extif/examples/grade.wat` implements typed numeric gain and real editor grading
-commands. Fuel resets per invocation. Linear-memory growth is bounded and may
+commands; `grade.wasm` is its compiled counterpart. Instructions reset per invocation
+(limits above `INT_MAX` are conservatively capped). Linear-memory growth is bounded and may
 return -1 without a trap; other allocation/execution failures reach the common
 diagnostics. Only one module can load successfully into a runtime; create a new
-runtime to replace it. Runtime destruction owns all instance/store/module state.
-Wasmtime's compiler, code and metadata allocate internally, outside the reported
-Tilly/linear-memory budget. `ext_perf` measures creation, compilation and cached
-dispatch separately; Wasmtime itself is supplied as an external shared/static
-library, so its size depends on that distribution.
+runtime to replace it. Runtime destruction owns all execution/instance/module state.
+Shared WAMR bootstrap allocations use Tilly outside the per-runtime byte counter;
+they live until the last WASM runtime is destroyed. All runtime lifecycle and
+execution operations use the serialized extension-owner thread. GC controls are
+no-ops for the non-GC interpreter. `ext_perf` measures creation, loading and cached
+dispatch separately.

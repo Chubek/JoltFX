@@ -19,7 +19,7 @@ JoltFX exposes four interaction surfaces: a programmatic API set, a CLI, a TUI, 
 │  Interfaces: GUI (Dear ImGui), TUI, CLI, Web (joltvm.js)  │
 ├────────────────────────────────────────────────────────────┤
 │  Extension Languages (sandboxed)                           │
-│  Lua 5.4 · MRuby · MicroPython · QuickJS · WASM (Wasmtime) │
+│  Lua 5.4 · MRuby · MicroPython · QuickJS · WASM (WAMR)     │
 ├────────────────────────────────────────────────────────────┤
 │  Zoltan (Creative Programming Frontend)                    │
 ├────────────────────────────────────────────────────────────┤
@@ -196,11 +196,14 @@ JoltFX embeds five sandboxed extension runtimes. Extensions have access only to 
 | MRuby      | `joltfx-rb`     | C ABI interop via MRuby's C extension API   |
 | MicroPython| `pyjoltfx`      | C ABI interop via MicroPython's C API       |
 | QuickJS    | `joltfx.js`     | C ABI interop via QuickJS C API             |
-| WASM       | `joltwasm`      | Hosted by Wasmtime; interop via WASI and component model bindings |
+| WASM       | `joltwasm`      | Hosted by WAMR; typed bridge imports, without WASI |
 
 All five libraries share a fixed ABI defined in C. C interoperability is the mechanism by which each extension language library is implemented.
 
-JoltFX uses **Wasmtime** as its WASM runtime.
+JoltFX uses **WebAssembly Micro Runtime (WAMR)** from
+`third_party/wasm-micro-runtime` as its host-side WASM runtime. Enable it with
+`JFX_EXT_WASM=ON`; CMake builds and installs the interpreter archive. Guests
+must be binary `.wasm` modules; compile WAT with `wat2wasm` before loading.
 
 ### Extension Language Limitations vs. APIs
 
@@ -221,7 +224,7 @@ JoltVM is JoltFX's included runtime and the default backend. It operates on Jolt
 
 ### Browser Target
 
-JoltVM can run in the browser via the **`joltvm.js`** library, which implements the JoltVM backend as a mix of JavaScript, WASM, and WebGPU. This is distinct from the system-side QuickJS and Wasmtime runtimes, which run on the host process. `joltvm.js` is a browser-side runtime implementation.
+JoltVM can run in the browser via the **`joltvm.js`** library, which implements the JoltVM backend as a mix of JavaScript, WASM, and WebGPU. This is distinct from the system-side QuickJS and WAMR runtimes, which run on the host process. `joltvm.js` is a browser-side runtime implementation.
 
 ---
 
@@ -274,7 +277,7 @@ The following vendored or linked libraries are used across JoltFX's subsystems. 
 | MRuby                | Ruby extension runtime                                |
 | MicroPython          | Python extension runtime                              |
 | QuickJS              | JavaScript extension runtime                          |
-| Wasmtime             | WASM extension runtime (system-side)                  |
+| WAMR                 | WASM extension runtime (system-side)                  |
 
 ### Compilation and Code Generation
 

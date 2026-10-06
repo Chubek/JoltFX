@@ -1,6 +1,6 @@
 # Extension language layer
 
-Lua, mruby, QuickJS, MicroPython and Wasmtime share **Script API 1.0** in
+Lua, mruby, QuickJS, MicroPython and WAMR share **Script API 1.0** in
 `common/include/jfx/script_runtime.h` and `ffi_bridge.h`. Engine clients use
 opaque runtimes and typed values; interpreter APIs stay inside each adapter.
 
@@ -10,7 +10,7 @@ opaque runtimes and typed values; interpreter APIs stay inside each adapter.
 | [mruby](mruby/README.md) | `JFX_EXT_MRUBY` | ON | `JFX` module |
 | [QuickJS](quickjs/README.md) | `JFX_EXT_QUICKJS` | OFF | `jfx`, alias `joltfx` |
 | [MicroPython](python/README.md) | `JFX_EXT_PYTHON` | OFF | `import jfx` / `pyjoltfx` |
-| [Wasmtime](wasm/README.md) | `JFX_EXT_WASM` | OFF | `joltwasm` ABI; imports from `joltfx` |
+| [WAMR](wasm/README.md) | `JFX_EXT_WASM` | OFF | Vendored interpreter; `joltwasm` ABI; imports from `joltfx` |
 
 ```sh
 cmake -S . -B build -DJFX_EXT_QUICKJS=ON -DJFX_EXT_PYTHON=ON

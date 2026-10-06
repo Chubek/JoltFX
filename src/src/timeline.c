@@ -9,6 +9,9 @@
 #include "jfx/jfx_timeline.h"
 #include "plugin_internal.h"
 #include "jfx/jfx_audio.h"
+#include "jfx/jfx_vst3.h"
+#include "jfx/jfx_midi.h"
+#include "jfx/jfx_automation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -82,6 +85,8 @@ typedef struct {
     effect_t effects[JFX_TIMELINE_MAX_EFFECTS];
     jfx_clip_audio_t audio;
     size_t effect_count;
+    jfx_midi_note_t *notes;
+    size_t note_count;
 } clip_t;
 
 typedef struct {
@@ -91,8 +96,14 @@ typedef struct {
     float opacity;
     jfx_blend_mode_t blend;
     float audio_gain;
+    jfx_audio_insert_t inserts[JFX_AUDIO_MAX_INSERTS];
+    void *states[JFX_AUDIO_MAX_INSERTS];
+    size_t state_bytes[JFX_AUDIO_MAX_INSERTS];
+    size_t insert_count;
     clip_t clips[JFX_TIMELINE_MAX_CLIPS_PER_TRACK];
     size_t clip_count;
+    jfx_audio_automation_lane_t *automation;
+    size_t automation_count;
 } track_t;
 
 struct jfx_timeline {
@@ -102,6 +113,8 @@ struct jfx_timeline {
     uint32_t fps_den;
     track_t tracks[JFX_TIMELINE_MAX_TRACKS];
     size_t track_count;
+    float master_audio_gain;
+    double audio_tempo;
 };
 
 static void effect_release(effect_t *effect) {
@@ -118,6 +131,7 @@ static void effect_release(effect_t *effect) {
 }
 
 static void clip_release(clip_t *clip) {
+    free_bytes(clip->notes); clip->notes=NULL; clip->note_count=0;
     free_bytes(clip->image_path);
     clip->image_path = NULL;
     for (size_t i = 0; i < clip->effect_count; ++i) {
@@ -129,7 +143,7 @@ static void clip_release(clip_t *clip) {
 /* ---- Source names -------------------------------------------------------- */
 
 static const char *const kSourceNames[JFX_CLIP_SOURCE_COUNT] = { "solid", "gradient", "checker",
-    "sweep", "image", "video", "audio" };
+    "sweep", "image", "video", "audio", "midi" };
 
 const char *jfx_clip_source_name(jfx_clip_source_t source) {
     if (source < 0 || source >= JFX_CLIP_SOURCE_COUNT) {
@@ -182,6 +196,8 @@ jfx_timeline_t *jfx_timeline_create(uint32_t width, uint32_t height, uint32_t fp
     timeline->height = height;
     timeline->fps_num = fps_num;
     timeline->fps_den = fps_den;
+    timeline->master_audio_gain = 1;
+    timeline->audio_tempo = 120;
     return timeline;
 }
 
@@ -190,6 +206,8 @@ void jfx_timeline_destroy(jfx_timeline_t *timeline) {
         return;
     }
     for (size_t t = 0; t < timeline->track_count; ++t) {
+        free_bytes(timeline->tracks[t].automation);
+        for (size_t i=0;i<timeline->tracks[t].insert_count;++i) free_bytes(timeline->tracks[t].states[i]);
         for (size_t c = 0; c < timeline->tracks[t].clip_count; ++c) {
             clip_release(&timeline->tracks[t].clips[c]);
         }
@@ -298,6 +316,8 @@ jfx_result_t jfx_timeline_remove_track(jfx_timeline_t *timeline, uint32_t track)
     if (!track_ok(timeline, track)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    for (size_t i=0;i<timeline->tracks[track].insert_count;++i) free_bytes(timeline->tracks[track].states[i]);
+    free_bytes(timeline->tracks[track].automation);
     for (size_t c = 0; c < timeline->tracks[track].clip_count; ++c) {
         clip_release(&timeline->tracks[track].clips[c]);
     }
@@ -438,7 +458,7 @@ uint32_t jfx_timeline_add_clip(jfx_timeline_t *timeline, uint32_t track,
     clip->blend_mode = desc->blend_mode;
     clip->enabled = desc->enabled;
     clip->audio=(jfx_clip_audio_t){sizeof(jfx_clip_audio_t),
-        desc->source==JFX_CLIP_VIDEO || desc->source==JFX_CLIP_AUDIO,1,0,0,0,desc->length_frames};
+        desc->source==JFX_CLIP_VIDEO || desc->source==JFX_CLIP_AUDIO || desc->source==JFX_CLIP_MIDI,1,0,0,0,desc->length_frames};
     t->clip_count++;
     return (uint32_t)(t->clip_count - 1u);
 }
@@ -629,13 +649,18 @@ jfx_result_t jfx_timeline_trim_clip(jfx_timeline_t *timeline, uint32_t track, ui
 
 /* Copy owned strings and key arrays before publishing a new clip. */
 static jfx_result_t clip_copy(const clip_t *src, clip_t *out) {
-    *out=*src; out->image_path=NULL;
+    *out=*src; out->image_path=NULL; out->notes=NULL;
     for (size_t e=0;e<out->effect_count;++e) {
         jfx_plugin_kind_retain(out->effects[e].kind);
         memset(out->effects[e].strings,0,sizeof(out->effects[e].strings));
         memset(out->effects[e].keys,0,sizeof(out->effects[e].keys));
     }
     if (src->image_path && !(out->image_path=dup_string(src->image_path))) goto oom;
+    if (src->note_count) {
+        out->notes=alloc_bytes(src->note_count*sizeof(*src->notes));
+        if (!out->notes) goto oom;
+        memcpy(out->notes,src->notes,src->note_count*sizeof(*src->notes));
+    }
     for (size_t e=0;e<src->effect_count;++e) {
         for (size_t s=0;s<JFX_GRAPH_MAX_STRING_PARAMS;++s)
             if (src->effects[e].strings[s] && !(out->effects[e].strings[s]=dup_string(src->effects[e].strings[s]))) goto oom;
@@ -1372,7 +1397,7 @@ jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame,
         uint8_t *layer = NULL;
         for (size_t c = 0; c < track->clip_count; ++c) {
             const clip_t *clip = &track->clips[c];
-            if (clip->source==JFX_CLIP_AUDIO || !clip->enabled || !jfx_timeline_clip_covers(timeline, (uint32_t)t, (uint32_t)c,
+            if (clip->source==JFX_CLIP_AUDIO || clip->source==JFX_CLIP_MIDI || !clip->enabled || !jfx_timeline_clip_covers(timeline, (uint32_t)t, (uint32_t)c,
                     frame)) {
                 continue;
             }
@@ -1428,7 +1453,8 @@ jfx_result_t jfx_timeline_set_clip_audio(jfx_timeline_t *t,uint32_t track,uint32
     if (!c || !audio || audio->size<sizeof(*audio) || !isfinite(audio->gain) || audio->gain<0 || audio->gain>16 ||
         !isfinite(audio->pan) || audio->pan<-1 || audio->pan>1 || !audio->reference_frames || audio->reference_frames>INT64_MAX ||
         audio->fade_in_frames>INT64_MAX || audio->fade_out_frames>INT64_MAX ||
-        (audio->enabled && c->source!=JFX_CLIP_AUDIO && c->source!=JFX_CLIP_VIDEO)) return JFX_ERROR_INVALID_ARGUMENT;
+        (audio->enabled && c->source!=JFX_CLIP_AUDIO && c->source!=JFX_CLIP_VIDEO && c->source!=JFX_CLIP_MIDI)) return JFX_ERROR_INVALID_ARGUMENT;
+    if (c->source==JFX_CLIP_MIDI && (audio->pan!=0 || audio->fade_in_frames || audio->fade_out_frames)) return JFX_ERROR_NOT_IMPLEMENTED;
     c->audio=*audio; c->audio.size=sizeof(c->audio); return JFX_SUCCESS;
 }
 jfx_result_t jfx_timeline_set_track_audio_gain(jfx_timeline_t *t,uint32_t track,float gain) {
@@ -1437,6 +1463,175 @@ jfx_result_t jfx_timeline_set_track_audio_gain(jfx_timeline_t *t,uint32_t track,
 }
 float jfx_timeline_track_audio_gain(const jfx_timeline_t *t,uint32_t track) {
     return track_ok(t,track)?t->tracks[track].audio_gain:0;
+}
+
+size_t jfx_timeline_audio_insert_count(const jfx_timeline_t *t,uint32_t track) {
+    return track_ok(t,track)?t->tracks[track].insert_count:0;
+}
+jfx_result_t jfx_timeline_get_audio_insert(const jfx_timeline_t *t,uint32_t track,uint32_t index,jfx_audio_insert_t *out) {
+    if (!out || out->size<sizeof(*out) || index>=jfx_timeline_audio_insert_count(t,track)) return JFX_ERROR_INVALID_ARGUMENT;
+    *out=t->tracks[track].inserts[index]; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_add_audio_insert(jfx_timeline_t *t,uint32_t track,const jfx_audio_insert_t *in) {
+    if (!track_ok(t,track) || !in || in->size<sizeof(*in) || t->tracks[track].insert_count>=JFX_AUDIO_MAX_INSERTS ||
+        !memchr(in->path,0,sizeof(in->path)) || !in->path[0] || !memchr(in->cid,0,sizeof(in->cid)) ||
+        strlen(in->cid)!=32 || in->parameter_count>JFX_AUDIO_MAX_PLUGIN_PARAMS) return JFX_ERROR_INVALID_ARGUMENT;
+    for (size_t i=0;i<32;++i) if (!((in->cid[i]>='0' && in->cid[i]<='9') ||
+        (in->cid[i]>='A' && in->cid[i]<='F') || (in->cid[i]>='a' && in->cid[i]<='f'))) return JFX_ERROR_INVALID_ARGUMENT;
+    for (uint32_t i=0;i<in->parameter_count;++i) {
+        if (!isfinite(in->parameters[i].value) || in->parameters[i].value<0 || in->parameters[i].value>1) return JFX_ERROR_INVALID_ARGUMENT;
+        for (uint32_t j=0;j<i;++j) if (in->parameters[i].id==in->parameters[j].id) return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    size_t slot=t->tracks[track].insert_count++;
+    t->tracks[track].inserts[slot]=*in; t->tracks[track].states[slot]=NULL; t->tracks[track].state_bytes[slot]=0;
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_remove_audio_insert(jfx_timeline_t *t,uint32_t track,uint32_t index) {
+    size_t count=jfx_timeline_audio_insert_count(t,track);
+    if (index>=count) return JFX_ERROR_INVALID_ARGUMENT;
+    track_t *lane=&t->tracks[track];
+    for (size_t a=0;a<lane->automation_count;) {
+        jfx_audio_automation_lane_t *curve=lane->automation+a;
+        if (curve->target==JFX_AUTOMATION_PLUGIN_PARAMETER && curve->insert==index) {
+            memmove(curve,curve+1,(lane->automation_count-a-1)*sizeof(*curve)); --lane->automation_count; continue;
+        }
+        if (curve->target==JFX_AUTOMATION_PLUGIN_PARAMETER && curve->insert>index) --curve->insert;
+        ++a;
+    }
+    free_bytes(t->tracks[track].states[index]);
+    memmove(t->tracks[track].states+index,t->tracks[track].states+index+1,(count-index-1)*sizeof(void *));
+    memmove(t->tracks[track].state_bytes+index,t->tracks[track].state_bytes+index+1,(count-index-1)*sizeof(size_t));
+    memmove(t->tracks[track].inserts+index,t->tracks[track].inserts+index+1,(count-index-1)*sizeof(jfx_audio_insert_t));
+    t->tracks[track].insert_count--; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_move_audio_insert(jfx_timeline_t *t,uint32_t track,uint32_t index,uint32_t to) {
+    size_t count=jfx_timeline_audio_insert_count(t,track);
+    if (index>=count || to>=count) return JFX_ERROR_INVALID_ARGUMENT;
+    for (size_t a=0;a<t->tracks[track].automation_count;++a) {
+        jfx_audio_automation_lane_t *curve=t->tracks[track].automation+a;
+        if (curve->target!=JFX_AUTOMATION_PLUGIN_PARAMETER) continue;
+        if (curve->insert==index) curve->insert=to;
+        else if (index<to && curve->insert>index && curve->insert<=to) --curve->insert;
+        else if (index>to && curve->insert>=to && curve->insert<index) ++curve->insert;
+    }
+    jfx_audio_insert_t moving=t->tracks[track].inserts[index];
+    void *state=t->tracks[track].states[index]; size_t bytes=t->tracks[track].state_bytes[index];
+    if (index<to) {
+        memmove(t->tracks[track].states+index,t->tracks[track].states+index+1,(to-index)*sizeof(void *));
+        memmove(t->tracks[track].state_bytes+index,t->tracks[track].state_bytes+index+1,(to-index)*sizeof(size_t));
+    } else if (index>to) {
+        memmove(t->tracks[track].states+to+1,t->tracks[track].states+to,(index-to)*sizeof(void *));
+        memmove(t->tracks[track].state_bytes+to+1,t->tracks[track].state_bytes+to,(index-to)*sizeof(size_t));
+    }
+    t->tracks[track].states[to]=state; t->tracks[track].state_bytes[to]=bytes;
+    if (index<to) memmove(t->tracks[track].inserts+index,t->tracks[track].inserts+index+1,(to-index)*sizeof(moving));
+    else if (index>to) memmove(t->tracks[track].inserts+to+1,t->tracks[track].inserts+to,(index-to)*sizeof(moving));
+    t->tracks[track].inserts[to]=moving; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_enable_audio_insert(jfx_timeline_t *t,uint32_t track,uint32_t index,bool enabled) {
+    if (index>=jfx_timeline_audio_insert_count(t,track)) return JFX_ERROR_INVALID_ARGUMENT;
+    t->tracks[track].inserts[index].enabled=enabled; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_audio_insert_parameter(jfx_timeline_t *t,uint32_t track,uint32_t index,uint32_t id,double value) {
+    if (index>=jfx_timeline_audio_insert_count(t,track) || !isfinite(value) || value<0 || value>1) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_audio_insert_t *in=&t->tracks[track].inserts[index];
+    for (uint32_t i=0;i<in->parameter_count;++i) if (in->parameters[i].id==id) { in->parameters[i].value=value; return JFX_SUCCESS; }
+    if (in->parameter_count>=JFX_AUDIO_MAX_PLUGIN_PARAMS) return JFX_ERROR_OUT_OF_MEMORY;
+    in->parameters[in->parameter_count++]=(jfx_audio_plugin_value_t){id,value}; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_clear_audio_insert_parameters(jfx_timeline_t *t,uint32_t track,uint32_t index) {
+    if (index>=jfx_timeline_audio_insert_count(t,track)) return JFX_ERROR_INVALID_ARGUMENT;
+    t->tracks[track].inserts[index].parameter_count=0; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_set_master_audio_gain(jfx_timeline_t *t,float gain) {
+    if (!t || !isfinite(gain) || gain<0 || gain>16) return JFX_ERROR_INVALID_ARGUMENT;
+    t->master_audio_gain=gain; return JFX_SUCCESS;
+}
+float jfx_timeline_master_audio_gain(const jfx_timeline_t *t) { return t?t->master_audio_gain:0; }
+jfx_result_t jfx_timeline_set_audio_tempo(jfx_timeline_t *t,double bpm) {
+    if (!t || !isfinite(bpm) || bpm<20 || bpm>400) return JFX_ERROR_INVALID_ARGUMENT;
+    t->audio_tempo=bpm; return JFX_SUCCESS;
+}
+double jfx_timeline_audio_tempo(const jfx_timeline_t *t) { return t?t->audio_tempo:120; }
+
+static uint32_t state_u32(const unsigned char *p) {
+    return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
+}
+size_t jfx_timeline_audio_automation_count(const jfx_timeline_t *t,uint32_t track) { return track_ok(t,track)?t->tracks[track].automation_count:0; }
+jfx_result_t jfx_timeline_get_audio_automation(const jfx_timeline_t *t,uint32_t track,uint32_t index,jfx_audio_automation_lane_t *out) {
+    if (!out || out->size<sizeof(*out) || index>=jfx_timeline_audio_automation_count(t,track)) return JFX_ERROR_INVALID_ARGUMENT;
+    *out=t->tracks[track].automation[index]; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_set_audio_automation(jfx_timeline_t *t,uint32_t track,const jfx_audio_automation_lane_t *in) {
+    if (!track_ok(t,track) || !in || in->size<sizeof(*in) || in->key_count>JFX_AUDIO_MAX_AUTOMATION_KEYS ||
+        in->interpolation<JFX_INTERP_LINEAR || in->interpolation>JFX_INTERP_SMOOTH ||
+        (in->target!=JFX_AUTOMATION_TRACK_GAIN && in->target!=JFX_AUTOMATION_PLUGIN_PARAMETER) ||
+        (in->target==JFX_AUTOMATION_PLUGIN_PARAMETER && in->insert>=t->tracks[track].insert_count) ||
+        (in->target==JFX_AUTOMATION_TRACK_GAIN && (in->insert || in->parameter))) return JFX_ERROR_INVALID_ARGUMENT;
+    for (uint32_t k=0;k<in->key_count;++k) if (in->keys[k].frame>INT64_MAX || !isfinite(in->keys[k].value) || in->keys[k].value<0 ||
+        in->keys[k].value>(in->target==JFX_AUTOMATION_TRACK_GAIN?16:1) || (k && in->keys[k-1].frame>=in->keys[k].frame)) return JFX_ERROR_INVALID_ARGUMENT;
+    track_t *lane=&t->tracks[track]; size_t index=0;
+    while (index<lane->automation_count && (lane->automation[index].target!=in->target || lane->automation[index].insert!=in->insert || lane->automation[index].parameter!=in->parameter)) ++index;
+    if (!in->key_count) {
+        if (index<lane->automation_count) { memmove(lane->automation+index,lane->automation+index+1,(lane->automation_count-index-1)*sizeof(*in)); --lane->automation_count; }
+        return JFX_SUCCESS;
+    }
+    if (index==lane->automation_count) {
+        if (index>=JFX_AUDIO_MAX_AUTOMATION_LANES) return JFX_ERROR_OUT_OF_MEMORY;
+        if (!lane->automation) { lane->automation=alloc_bytes(JFX_AUDIO_MAX_AUTOMATION_LANES*sizeof(*in)); if (!lane->automation) return JFX_ERROR_OUT_OF_MEMORY; }
+        ++lane->automation_count;
+    }
+    lane->automation[index]=*in; lane->automation[index].size=sizeof(*in); return JFX_SUCCESS;
+}
+jfx_result_t jfx_vst3_validate_state(const void *data,size_t bytes) {
+    if (!bytes) return JFX_SUCCESS;
+    if (!data || bytes<12 || bytes>JFX_VST3_MAX_STATE_BYTES || memcmp(data,"JVS1",4)) return JFX_ERROR_INVALID_ARGUMENT;
+    const unsigned char *p=data; uint32_t a=state_u32(p+4),b=state_u32(p+8);
+    return a<=1024u*1024u && b<=1024u*1024u && (size_t)a+b+12==bytes?JFX_SUCCESS:JFX_ERROR_INVALID_ARGUMENT;
+}
+jfx_result_t jfx_timeline_audio_insert_state(jfx_timeline_t *t,uint32_t track,uint32_t index,const void *data,size_t bytes) {
+    if (index>=jfx_timeline_audio_insert_count(t,track) || jfx_vst3_validate_state(data,bytes)!=JFX_SUCCESS) return JFX_ERROR_INVALID_ARGUMENT;
+    void *copy=bytes?alloc_bytes(bytes):NULL;
+    if (bytes && !copy) return JFX_ERROR_OUT_OF_MEMORY;
+    if (bytes) memcpy(copy,data,bytes);
+    free_bytes(t->tracks[track].states[index]); t->tracks[track].states[index]=copy; t->tracks[track].state_bytes[index]=bytes;
+    return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_get_audio_insert_state(const jfx_timeline_t *t,uint32_t track,uint32_t index,const void **out,size_t *bytes) {
+    if (!out || !bytes || index>=jfx_timeline_audio_insert_count(t,track)) return JFX_ERROR_INVALID_ARGUMENT;
+    *out=t->tracks[track].states[index]; *bytes=t->tracks[track].state_bytes[index]; return JFX_SUCCESS;
+}
+static bool note_valid(const jfx_midi_note_t *n) {
+    return n && n->size>=sizeof(*n) && n->channel<16 && n->pitch<128 && n->length && n->length<=INT64_MAX &&
+        n->frame<=(uint64_t)INT64_MAX-n->length && isfinite(n->velocity) && n->velocity>0 && n->velocity<=1;
+}
+size_t jfx_timeline_midi_note_count(const jfx_timeline_t *t,uint32_t track,uint32_t clip) {
+    const clip_t *c=clip_at_const(t,track,clip); return c?c->note_count:0;
+}
+jfx_result_t jfx_timeline_get_midi_note(const jfx_timeline_t *t,uint32_t track,uint32_t clip,uint32_t note,jfx_midi_note_t *out) {
+    const clip_t *c=clip_at_const(t,track,clip);
+    if (!c || !out || out->size<sizeof(*out) || note>=c->note_count) return JFX_ERROR_INVALID_ARGUMENT;
+    *out=c->notes[note]; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_add_midi_note(jfx_timeline_t *t,uint32_t track,uint32_t clip,const jfx_midi_note_t *n) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || c->source!=JFX_CLIP_MIDI || !note_valid(n)) return JFX_ERROR_INVALID_ARGUMENT;
+    if (c->note_count>=JFX_MIDI_MAX_NOTES) return JFX_ERROR_OUT_OF_MEMORY;
+    jfx_midi_note_t *copy=alloc_bytes((c->note_count+1)*sizeof(*copy));
+    if (!copy) return JFX_ERROR_OUT_OF_MEMORY;
+    if (c->note_count) memcpy(copy,c->notes,c->note_count*sizeof(*copy));
+    copy[c->note_count]=*n; copy[c->note_count].size=sizeof(*n);
+    free_bytes(c->notes); c->notes=copy; ++c->note_count; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_set_midi_note(jfx_timeline_t *t,uint32_t track,uint32_t clip,uint32_t note,const jfx_midi_note_t *n) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || note>=c->note_count || !note_valid(n)) return JFX_ERROR_INVALID_ARGUMENT;
+    c->notes[note]=*n; c->notes[note].size=sizeof(*n); return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_remove_midi_note(jfx_timeline_t *t,uint32_t track,uint32_t clip,uint32_t note) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || note>=c->note_count) return JFX_ERROR_INVALID_ARGUMENT;
+    memmove(c->notes+note,c->notes+note+1,(c->note_count-note-1)*sizeof(*c->notes)); --c->note_count; return JFX_SUCCESS;
 }
 
 jfx_result_t jfx_timeline_render_image(const jfx_timeline_t *timeline, uint64_t frame,

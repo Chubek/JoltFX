@@ -8,7 +8,7 @@ extern "C" {
  * valid until a successful load/reset/undo/redo/cancel or destruction. Edits use the timeline and
  * graph APIs, so every interface uses the same validators and evaluator. */
 #define JFX_EDITOR_API_MAJOR 1
-#define JFX_EDITOR_API_MINOR 5
+#define JFX_EDITOR_API_MINOR 7
 typedef struct jfx_editor jfx_editor_t;
 jfx_editor_t *jfx_editor_create(uint32_t width, uint32_t height);
 void jfx_editor_destroy(jfx_editor_t *editor);

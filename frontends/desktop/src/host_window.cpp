@@ -16,6 +16,14 @@
 
 #include <SDL.h>
 #include <SDL_opengl.h>
+#include <SDL_syswm.h>
+#if defined(JFX_AUDIO_VST3)
+#include "pluginterfaces/base/keycodes.h"
+#endif
+#if defined(__APPLE__)
+#include <objc/message.h>
+#include <objc/runtime.h>
+#endif
 
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl2.h"
@@ -34,6 +42,9 @@ void copy_error(char *out_error, size_t out_error_size, const char *reason) {
 
 struct jfx_desktop_window {
     SDL_AudioDeviceID audio;
+    SDL_AudioDeviceID capture;
+    SDL_Window *plugin_window;
+    jfx_vst3_instance_t *plugin;
     SDL_Window *sdl_window;
     SDL_GLContext gl_context;
     uint32_t width;
@@ -48,6 +59,56 @@ struct jfx_desktop_window {
 };
 
 bool jfx_desktop_window_available(void) { return true; }
+int jfx_desktop_window_input_count(void) { if (SDL_InitSubSystem(SDL_INIT_AUDIO)) return 0; return SDL_GetNumAudioDevices(1); }
+const char *jfx_desktop_window_input_name(int i) { return SDL_GetAudioDeviceName(i,1); }
+bool jfx_desktop_window_capture_begin(jfx_desktop_window_t *w,int device) {
+    if (!w || w->capture || SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
+    const char *name=device<0?nullptr:SDL_GetAudioDeviceName(device,1);
+    if (device>=0 && !name) return false;
+    SDL_AudioSpec spec{}; spec.freq=48000; spec.format=AUDIO_F32SYS; spec.channels=2; spec.samples=1024;
+    w->capture=SDL_OpenAudioDevice(name,1,&spec,nullptr,0);
+    if (!w->capture) return false;
+    SDL_PauseAudioDevice(w->capture,0); return true;
+}
+bool jfx_desktop_window_capture_read(jfx_desktop_window_t *w,float *pcm,uint32_t cap,uint32_t *out) {
+    if (!w || !w->capture || !pcm || !out || !cap || cap>JFX_AUDIO_MAX_BLOCK_FRAMES) return false;
+    if (SDL_GetQueuedAudioSize(w->capture)>48000u*8u*5u || SDL_GetAudioDeviceStatus(w->capture)!=SDL_AUDIO_PLAYING) return false;
+    *out=SDL_DequeueAudio(w->capture,pcm,cap*8)/8; return true;
+}
+void jfx_desktop_window_capture_end(jfx_desktop_window_t *w) { if (w && w->capture) { SDL_CloseAudioDevice(w->capture); w->capture=0; } }
+static jfx_result_t plugin_resize(void *user,uint32_t width,uint32_t height) {
+    auto *w=static_cast<jfx_desktop_window_t *>(user);
+    if (!w || !w->plugin_window) return JFX_ERROR_INVALID_ARGUMENT;
+    SDL_SetWindowSize(w->plugin_window,(int)width,(int)height); return JFX_SUCCESS;
+}
+void jfx_desktop_window_plugin_close(jfx_desktop_window_t *w) {
+    if (!w) return;
+    if (w->plugin) jfx_vst3_editor_close(w->plugin);
+    w->plugin=nullptr;
+    if (w->plugin_window) SDL_DestroyWindow(w->plugin_window);
+    w->plugin_window=nullptr;
+}
+bool jfx_desktop_window_plugin_visible(jfx_desktop_window_t *w) { return w && w->plugin_window; }
+jfx_result_t jfx_desktop_window_plugin_open(jfx_desktop_window_t *w,jfx_vst3_instance_t *plugin,const char *title) {
+    if (!w || !plugin) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_desktop_window_plugin_close(w);
+    uint32_t width,height; auto r=jfx_vst3_editor_size(plugin,&width,&height); if (r!=JFX_SUCCESS) return r;
+    w->plugin_window=SDL_CreateWindow(title?title:"VST3",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,(int)width,(int)height,SDL_WINDOW_RESIZABLE);
+    if (!w->plugin_window) return JFX_ERROR_BACKEND_FAILURE;
+    SDL_SysWMinfo info{}; SDL_VERSION(&info.version); void *parent=nullptr; const char *platform=nullptr;
+    if (SDL_GetWindowWMInfo(w->plugin_window,&info)) {
+#if defined(_WIN32)
+        if (info.subsystem==SDL_SYSWM_WINDOWS) { parent=info.info.win.window; platform="HWND"; }
+#elif defined(__APPLE__)
+        if (info.subsystem==SDL_SYSWM_COCOA) { parent=((void *(*)(void *,SEL))objc_msgSend)(info.info.cocoa.window,sel_registerName("contentView")); platform="NSView"; }
+#elif defined(SDL_VIDEO_DRIVER_X11)
+        if (info.subsystem==SDL_SYSWM_X11) { parent=reinterpret_cast<void *>((uintptr_t)info.info.x11.window); platform="X11EmbedWindowID"; }
+#endif
+    }
+    r=parent?jfx_vst3_editor_open(plugin,parent,platform,plugin_resize,w):JFX_ERROR_NOT_IMPLEMENTED;
+    if (r!=JFX_SUCCESS) { jfx_desktop_window_plugin_close(w); return r; }
+    w->plugin=plugin; return JFX_SUCCESS;
+}
 bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *w,const float *pcm,uint32_t frames) {
     if (!w || !pcm || !frames || frames>65536) return false;
     if (!w->audio) {
@@ -153,6 +214,8 @@ jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_
 }
 
 void jfx_desktop_window_destroy(jfx_desktop_window_t *window) {
+    jfx_desktop_window_plugin_close(window);
+    jfx_desktop_window_capture_end(window);
     if (window && window->audio) SDL_CloseAudioDevice(window->audio);
     if (!window) {
         return;
@@ -190,8 +253,54 @@ bool jfx_desktop_window_begin_frame(jfx_desktop_window_t *window) {
         if (event.type == SDL_QUIT) {
             return false;
         }
+        uint32_t id=event.type==SDL_WINDOWEVENT?event.window.windowID:event.type==SDL_KEYDOWN || event.type==SDL_KEYUP?event.key.windowID:event.type==SDL_MOUSEWHEEL?event.wheel.windowID:0;
+        if (window->plugin_window && id==SDL_GetWindowID(window->plugin_window)) {
+            if (event.type==SDL_WINDOWEVENT) {
+                if (event.window.event==SDL_WINDOWEVENT_CLOSE) jfx_desktop_window_plugin_close(window);
+                else if (event.window.event==SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    if (jfx_vst3_editor_resize(window->plugin,(uint32_t)event.window.data1,(uint32_t)event.window.data2)!=JFX_SUCCESS) {
+                        uint32_t width,height;
+                        if (jfx_vst3_editor_size(window->plugin,&width,&height)==JFX_SUCCESS) plugin_resize(window,width,height);
+                    }
+                }
+                else if (event.window.event==SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event==SDL_WINDOWEVENT_FOCUS_LOST) jfx_vst3_editor_focus(window->plugin,event.window.event==SDL_WINDOWEVENT_FOCUS_GAINED);
+            } else if (event.type==SDL_MOUSEWHEEL) jfx_vst3_editor_wheel(window->plugin,(float)event.wheel.y);
+            else if (event.type==SDL_KEYDOWN || event.type==SDL_KEYUP) {
+                SDL_Keycode key=event.key.keysym.sym; int16_t mods=0;
+                if (event.key.keysym.mod&KMOD_SHIFT) mods|=1;
+                if (event.key.keysym.mod&KMOD_ALT) mods|=2;
+#if defined(__APPLE__)
+                if (event.key.keysym.mod&KMOD_CTRL) mods|=8;
+                if (event.key.keysym.mod&KMOD_GUI) mods|=4;
+#else
+                if (event.key.keysym.mod&KMOD_CTRL) mods|=4;
+                if (event.key.keysym.mod&KMOD_GUI) mods|=8;
+#endif
+                int16_t virtual_key=0;
+#if defined(JFX_AUDIO_VST3)
+                switch (key) {
+                    case SDLK_BACKSPACE: virtual_key=Steinberg::KEY_BACK; break;
+                    case SDLK_TAB: virtual_key=Steinberg::KEY_TAB; break;
+                    case SDLK_RETURN: virtual_key=Steinberg::KEY_RETURN; break;
+                    case SDLK_ESCAPE: virtual_key=Steinberg::KEY_ESCAPE; break;
+                    case SDLK_DELETE: virtual_key=Steinberg::KEY_DELETE; break;
+                    case SDLK_LEFT: virtual_key=Steinberg::KEY_LEFT; break;
+                    case SDLK_RIGHT: virtual_key=Steinberg::KEY_RIGHT; break;
+                    case SDLK_UP: virtual_key=Steinberg::KEY_UP; break;
+                    case SDLK_DOWN: virtual_key=Steinberg::KEY_DOWN; break;
+                    case SDLK_HOME: virtual_key=Steinberg::KEY_HOME; break;
+                    case SDLK_END: virtual_key=Steinberg::KEY_END; break;
+                    case SDLK_PAGEUP: virtual_key=Steinberg::KEY_PAGEUP; break;
+                    case SDLK_PAGEDOWN: virtual_key=Steinberg::KEY_PAGEDOWN; break;
+                    default: break;
+                }
+#endif
+                jfx_vst3_editor_key(window->plugin,event.type==SDL_KEYDOWN,key>=32 && key<127?(uint16_t)key:0,virtual_key,mods);
+            }
+            continue;
+        }
         ImGui_ImplSDL2_ProcessEvent(&event);
-        if (event.type == SDL_WINDOWEVENT &&
+        if (event.type == SDL_WINDOWEVENT && event.window.windowID==SDL_GetWindowID(window->sdl_window) &&
             event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
             int drawable_width = 0;
             int drawable_height = 0;
@@ -298,6 +407,14 @@ jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_
 
 void jfx_desktop_window_destroy(jfx_desktop_window_t *) {}
 bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *,const float *,uint32_t) { return false; }
+int jfx_desktop_window_input_count(void) { return 0; }
+const char *jfx_desktop_window_input_name(int) { return nullptr; }
+bool jfx_desktop_window_capture_begin(jfx_desktop_window_t *,int) { return false; }
+bool jfx_desktop_window_capture_read(jfx_desktop_window_t *,float *,uint32_t,uint32_t *) { return false; }
+void jfx_desktop_window_capture_end(jfx_desktop_window_t *) {}
+jfx_result_t jfx_desktop_window_plugin_open(jfx_desktop_window_t *,jfx_vst3_instance_t *,const char *) { return JFX_ERROR_NOT_IMPLEMENTED; }
+void jfx_desktop_window_plugin_close(jfx_desktop_window_t *) {}
+bool jfx_desktop_window_plugin_visible(jfx_desktop_window_t *) { return false; }
 uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *) { return 0; }
 void jfx_desktop_window_clear_audio(jfx_desktop_window_t *) {}
 

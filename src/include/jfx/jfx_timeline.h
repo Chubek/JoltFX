@@ -37,7 +37,7 @@ extern "C" {
 #define JFX_TIMELINE_MAX_KEYS 64
 #define JFX_TIMELINE_NAME_MAX 64
 #define JFX_TIMELINE_API_MAJOR 1
-#define JFX_TIMELINE_API_MINOR 2
+#define JFX_TIMELINE_API_MINOR 3
 
 /* How a value between two keyframes is chosen. */
 typedef enum {
@@ -55,6 +55,7 @@ typedef enum {
     JFX_CLIP_IMAGE,       /* a still image on disk */
     JFX_CLIP_VIDEO,       /* local video file; requires FFmpeg */
     JFX_CLIP_AUDIO,       /* local audio; no visual contribution */
+    JFX_CLIP_MIDI,        /* note clip feeding the track's VST3 instrument */
     JFX_CLIP_SOURCE_COUNT
 } jfx_clip_source_t;
 

@@ -1,5 +1,113 @@
 # Progress
 
+## DAW instruments, native editors, capture and plugin state (2026-10-06)
+
+- Added MIDI note clips/piano-roll display and VST3 instruments, sample-offset
+  note events, seek note chasing and latency-aligned audio/instrument summing.
+- Native editor containers support HWND/NSView/X11 parents, lifecycle, resize,
+  focus/key/wheel events and Linux timers/FDs. Deferred native gestures/dirty
+  notifications persist bounded JVS1 component/controller state in shared history.
+- Added SDL input selection/capture, sample-clocked take recording, incremental
+  atomic float WAV completion/cancel and one-step clip insertion. Added gain/
+  plugin automation lanes with persistent keys/interpolation and offset queues.
+- Model snapshots own notes/state/curves; project parsing never loads native code.
+  APIs/docs updated and regression coverage includes instrument/automated WAV
+  export/decoding, chunked binary state, rack ownership, native SDL view/input and
+  real ImGui note/state/automation interactions.
+- Final native build and **360/360** tests pass. Focused ASAN+UBSan checks pass
+  **6/6** with leak/strict-string/stack-use checks enabled, including the native
+  SDL/X11 view and dummy-input capture. VST3/FFmpeg/window-disabled build and
+  model/mixer/recording/workspace/headless checks pass **5/5**. All three builds
+  have no diagnostics; package install and `git diff --check` pass. Logs:
+  `/tmp/opencode/joltfx-daw-features-*`. Verified Linux/X11; macOS/Windows native
+  parent paths are implemented but were not built here. Recording is stereo take
+  capture with sequence playback stopped; MIDI input devices/CC, sidechains and
+  multichannel routing remain outside this feature set. Completed 2026-10-07.
+
+## DAW workspace and VST3 audio inserts (2026-10-06)
+
+- Added a DAW workspace with Arrangement, Mixer, VST3 Inserts and Mixdown views,
+  frame/beat-snapped audio editing, tempo/4/4 transport, track/clip/master gain,
+  mute/solo, balance/fades and stereo meters. Existing Audio Mixing includes the
+  same track insert controls. Appended panel/workspace IDs; desktop API 1.3.
+- Added SHA-256-pinned MIT Steinberg VST3 interfaces and native bundle/module
+  discovery. Stereo float32 hosting supports combined/separate controllers,
+  state synchronization, messages/attributes, parameter queues, reference-counted
+  module lifetime and generic parameter editing. All host buffers/instances use
+  Tilly allocation; the VST3 process call creates no host threads or allocations.
+- Racks persist eight ordered inserts and 64 double-precision overrides each.
+  Editor 1.6 commands group parameter gestures in history; project parsing keeps
+  descriptors without loading native code. Mixer snapshots run inserts before
+  track/master faders for playback and export and compensate up to two seconds
+  of rack latency. Discontinuities reset plugin instances/tails; unsupported
+  layouts, unavailable enabled plugins and dynamic latency fail explicitly.
+- Export 1.1 adds incremental/cancellable stereo float WAV mixdown, independent
+  of FFmpeg, with snapshot isolation and atomic completion. Updated build/host
+  contracts and `docs/daw.md`; installed public headers, guide and SDK license.
+- Full native build and **358/358** tests pass. Real VST3 module regressions cover
+  controllers/messages/lifetime/parameters, delay alignment, snapshots, project
+  precision/history and WAV completion/cancel/failure. Real ImGui tests cover
+  DAW selection, browsing/insertion, parameter gestures and bypass. Focused
+  ASAN+UBSan checks pass **4/4** with leak/strict-string/stack-use checks enabled;
+  VST3/FFmpeg-disabled model/mixer/WAV round-trip checks pass **2/2**. Package
+  installation succeeds; final native and sanitizer builds have no diagnostics.
+  Linux x86-64 verified; native plugin editors, MIDI/instruments, recording,
+   automation lanes and opaque preset/sample-state persistence were outside this
+   initial delivery; they are covered by the follow-up section above.
+  Logs are `/tmp/opencode/joltfx-daw-*`.
+
+## Full-build MicroPython compatibility fix (2026-10-06)
+
+- Reproduced `cmake --build build`: the enabled MicroPython adapter calls the
+  removed `mp_obj_int_to_bytes_impl` API. The vendored checkout now provides
+  `mp_obj_int_to_bytes` with explicit signedness and overflow behavior.
+- CMake now selects the conversion API declared in `py/objint.h` and reconfigures
+  when that header changes. The current API writes signed little-endian bytes
+  without throwing on overflow; exact round-trip comparison rejects values
+  outside int64 as TYPE_ERROR. The older API remains supported.
+- Added INT64_MAX/large-negative round trips and Python overflow regressions on
+  both boundaries and values beyond 64 bits, including output preservation and
+  recovery. Updated the MicroPython build guide and extension contract.
+- The exact `cmake --build build` command succeeds with no compiler diagnostics.
+  All six focused native extension/CMake checks pass with all five runtimes
+  enabled. ASAN+UBSan bridge/resource/CLI checks pass **3/3** with leak detection,
+  strict strings and stack-use-after-return enabled. `git diff --check` passes.
+  Logs: `/tmp/opencode/joltfx-build-failure.log`, `joltfx-build-fix.log` and
+  `joltfx-micropython-sanitizer-build.log` in the same directory.
+
+## WAMR extension runtime replacement (2026-10-06)
+
+- Replaced the external Wasmtime SDK with the vendored
+  `third_party/wasm-micro-runtime` interpreter. `JFX_EXT_WASM=ON` builds
+  `jfx_wamr_runtime`; optional `JFX_WAMR_ROOT` selects another source checkout.
+  Upstream build settings are scoped to a dedicated subdirectory. The runtime
+  archive and license ship with the installed CMake package.
+- Ported scalar exports and typed `joltwasm` ABI 1, instruction metering and
+  Tilly allocation callbacks (including linear-memory allocation usage). Shared
+  bootstrap state is reference-counted; failed loads free all module state.
+  Imports are explicitly restricted to `joltfx.call` and `joltfx.clamp`.
+- WAMR loads binary `.wasm`; added the compiled grading example and binary
+  fixtures/embedding example. WAT authoring uses external `wat2wasm`. Reject
+  start sections and automatic constructors to keep guest execution metered.
+  Updated CI, build guides, CLI help and subsystem contracts; removed the
+  Wasmtime find module, package dependency and SDK-discovery regression.
+- Warning-free full Debug build with ASAN+UBSan. Focused checks pass **5/5**:
+  extension bridge/resources/WASM/CLI conformance and WAMR CMake validation,
+  with leak detection, strict strings and stack-use-after-return enabled.
+  WAMR uses its upstream UBSan alignment exception for four-byte VM stack
+  records; the adapter retains full sanitizer instrumentation.
+- WASM regressions cover forbidden imports, invalid/text modules, start/constructor
+  rejection, failed-load memory recovery, large initial memory, growth limits,
+  int64/typed precision, budgets/recovery and overlapping runtime lifetimes.
+- Installed and relocated `/tmp/opencode/joltfx-wamr-relocated`; the standalone
+  embedding consumer links and runs Lua/WAMR without an external WASM SDK.
+  Installed CLI example/pixel/budget checks pass. Sanitized WAMR profile:
+  0.052 ms initialization, 13,480 initial charged bytes, 0.838 µs cached calls.
+  Linux x86-64 verified; other host platforms were not built here.
+- Reconfigured the existing `build/` and built `jfx_wasm` successfully against
+  WAMR. A separate all-extensions-disabled configuration also succeeds.
+  `git diff --check` passes.
+
 ## Default mruby dependency selection (2026-10-06)
 
 - Reproduced the configure failure with the vendored mruby checkout: its removed

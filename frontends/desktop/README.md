@@ -2,7 +2,7 @@
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Audio Mixing**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Audio Mixing**, **DAW**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 
@@ -94,6 +94,18 @@ falls back to `pkg-config sdl2`; `-DJFX_DESKTOP_WINDOW=OFF` disables the window
 explicitly.
 
 ## Audio and encoded export
+
+The **DAW** workspace adds Arrangement, Mixer, MIDI / Instruments, Recording,
+Automation, VST3 Inserts and Mixdown views.
+Native builds enable VST3 hosting with `JFX_AUDIO_VST3=ON` (default), using pinned
+MIT-licensed Steinberg interfaces. Scan installed plugins or a custom path, add
+stereo effects/instruments to a track, open native editors or generic controls,
+edit MIDI notes and gain/parameter automation, record an input take and bounce
+stereo float WAV. Inserts and latency compensation also apply to video exports.
+Tempo, racks, opaque plugin state, notes and lanes persist in `.jfx` and share
+undo/redo. Native Linux views require SDL's X11 backend; recording uses SDL input.
+See [DAW and VST3 guide](../../docs/daw.md) for setup, processing and supported
+plugin features.
 
 Open **Audio Mixing** to adjust all track faders, mute and solo side by side.
 Add an audio track, enter an audio file path and duration in frames, then add it

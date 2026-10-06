@@ -6,6 +6,10 @@
 
 #include "jfx/jfx_project.h"
 #include "jfx/jfx_audio.h"
+#include "jfx/jfx_vst3.h"
+#include "jfx/jfx_midi.h"
+#include "jfx/jfx_automation.h"
+#include "tilly/allocator.h"
 #include "tilly/attributes.h"
 
 #include <stdarg.h>
@@ -633,6 +637,66 @@ jfx_result_t jfx_project_load_sequence(const char *text, size_t length, jfx_time
             jfx_timeline_set_clip_enabled(timeline,track,clip,enabled!=0);
             jfx_timeline_set_clip_opacity(timeline,track,clip,opacity);
             jfx_timeline_set_clip_blend(timeline,track,clip,(jfx_blend_mode_t)blend);
+        } else if (!strcmp(key,"audio_tempo")) {
+            char word[64],*tail=NULL;
+            if (!read_word(&cursor,end,word,sizeof(word))) goto bad_line;
+            double bpm=strtod(word,&tail);
+            if (tail==word || *tail || jfx_timeline_set_audio_tempo(timeline,bpm)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"audio_master")) {
+            float gain;
+            if (!read_float(&cursor,end,&gain) || jfx_timeline_set_master_audio_gain(timeline,gain)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"audio_insert")) {
+            jfx_audio_insert_t in={.size=sizeof(in)}; uint32_t enabled;
+            if (!read_uint(&cursor,end,&enabled) || enabled>1 || !read_word(&cursor,end,in.cid,sizeof(in.cid)) ||
+                (cursor<end && *cursor!=' ' && *cursor!='\t') ||
+                !graph_text(&cursor,end,in.path,sizeof(in.path))) goto bad_line;
+            in.enabled=enabled!=0;
+            if (jfx_timeline_add_audio_insert(timeline,track,&in)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"audio_insert_state")) {
+            uint32_t bytes; size_t count=jfx_timeline_audio_insert_count(timeline,track);
+            if (!count || !read_uint(&cursor,end,&bytes) || bytes<12 || bytes>JFX_VST3_MAX_STATE_BYTES) goto bad_line;
+            unsigned char *data=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),bytes,_Alignof(max_align_t));
+            if (!data) { jfx_timeline_destroy(timeline); return JFX_ERROR_OUT_OF_MEMORY; }
+            size_t used=0; bool valid=true;
+            while (used<bytes && valid) {
+                if (!next_line(&reader,line,sizeof(line)) || strncmp(line,"state_hex ",10)) { valid=false; break; }
+                size_t n=strlen(line+10);
+                if (!n || n%2 || n/2>bytes-used) { valid=false; break; }
+                for (size_t i=0;i<n;++i) {
+                    char ch=line[10+i]; int v=ch>='0' && ch<='9'?ch-'0':ch>='a' && ch<='f'?ch-'a'+10:-1;
+                    if (v<0) { valid=false; break; }
+                    if (i%2) data[used+i/2]|=(unsigned char)v; else data[used+i/2]=(unsigned char)(v<<4);
+                }
+                used+=n/2;
+            }
+            jfx_result_t r=valid?jfx_timeline_audio_insert_state(timeline,track,(uint32_t)count-1,data,bytes):JFX_ERROR_INVALID_ARGUMENT;
+            tilly_free((tilly_allocator_t *)tilly_default_allocator(),data);
+            if (r!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"midi_note")) {
+            jfx_midi_note_t n={.size=sizeof(n)}; uint32_t pitch,channel;
+            if (!read_uint(&cursor,end,&pitch) || pitch>127 || !read_frame(&cursor,end,&n.frame) ||
+                !read_frame(&cursor,end,&n.length) || !read_uint(&cursor,end,&channel) || channel>15 ||
+                !read_float(&cursor,end,&n.velocity)) goto bad_line;
+            n.pitch=(uint8_t)pitch; n.channel=(uint8_t)channel;
+            if (jfx_timeline_add_midi_note(timeline,track,clip,&n)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"audio_automation")) {
+            jfx_audio_automation_lane_t lane={.size=sizeof(lane)}; uint32_t target,interp;
+            if (!read_uint(&cursor,end,&target) || !read_uint(&cursor,end,&lane.insert) || !read_uint(&cursor,end,&lane.parameter) || !read_uint(&cursor,end,&interp) || !read_uint(&cursor,end,&lane.key_count) || !lane.key_count || lane.key_count>JFX_AUDIO_MAX_AUTOMATION_KEYS) goto bad_line;
+            lane.target=(jfx_audio_automation_target_t)target; lane.interpolation=(jfx_interp_t)interp;
+            for (uint32_t k=0;k<lane.key_count;++k) {
+                char word[64],*tail=NULL;
+                if (!next_line(&reader,line,sizeof(line)) || strncmp(line,"automation_key ",15)) goto bad_line;
+                cursor=line+15; const char *key_end=line+strlen(line);
+                if (!read_frame(&cursor,key_end,&lane.keys[k].frame) || !read_word(&cursor,key_end,word,sizeof(word))) goto bad_line;
+                lane.keys[k].value=strtod(word,&tail); if (tail==word || *tail) goto bad_line;
+            }
+            if (jfx_timeline_set_audio_automation(timeline,track,&lane)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"audio_insert_param")) {
+            uint32_t id; char word[64],*tail=NULL;
+            size_t count=jfx_timeline_audio_insert_count(timeline,track);
+            if (!count || !read_uint(&cursor,end,&id) || !read_word(&cursor,end,word,sizeof(word))) goto bad_line;
+            double value=strtod(word,&tail);
+            if (tail==word || *tail || jfx_timeline_audio_insert_parameter(timeline,track,(uint32_t)count-1,id,value)!=JFX_SUCCESS) goto bad_line;
         } else if (!strcmp(key,"track_audio")) {
             float gain;
             if (!read_float(&cursor,end,&gain) || jfx_timeline_set_track_audio_gain(timeline,track,gain)!=JFX_SUCCESS) goto bad_line;
@@ -763,6 +827,8 @@ jfx_result_t jfx_project_save_sequence(const jfx_timeline_t *timeline, char *out
         return JFX_ERROR_BACKEND_FAILURE;
     }
     size_t used = (size_t)written;
+    if (!append(out_text,out_size,&used,"audio_master %.9g\n",(double)jfx_timeline_master_audio_gain(timeline))) return JFX_ERROR_BACKEND_FAILURE;
+    if (!append(out_text,out_size,&used,"audio_tempo %.17g\n",jfx_timeline_audio_tempo(timeline))) return JFX_ERROR_BACKEND_FAILURE;
     for (size_t t = 0; t < jfx_timeline_track_count(timeline); ++t) {
         const uint32_t track = (uint32_t)t;
         if (!append(out_text,out_size,&used,"track ") ||
@@ -771,7 +837,34 @@ jfx_result_t jfx_project_save_sequence(const jfx_timeline_t *timeline, char *out
                 jfx_timeline_track_muted(timeline,track),jfx_timeline_track_solo(timeline,track),
                 (double)jfx_timeline_track_opacity(timeline,track),(unsigned)jfx_timeline_track_blend(timeline,track))) return JFX_ERROR_BACKEND_FAILURE;
         if (!append(out_text,out_size,&used,"track_audio %.9g\n",(double)jfx_timeline_track_audio_gain(timeline,track))) return JFX_ERROR_BACKEND_FAILURE;
+        for (uint32_t i=0;i<jfx_timeline_audio_insert_count(timeline,track);++i) {
+            jfx_audio_insert_t in={.size=sizeof(in)};
+            if (jfx_timeline_get_audio_insert(timeline,track,i,&in)!=JFX_SUCCESS ||
+                !append(out_text,out_size,&used,"audio_insert %u %s ",in.enabled,in.cid) ||
+                !append_token(out_text,out_size,&used,in.path) || !append(out_text,out_size,&used,"\n")) return JFX_ERROR_BACKEND_FAILURE;
+            for (uint32_t p=0;p<in.parameter_count;++p)
+                if (!append(out_text,out_size,&used,"audio_insert_param %u %.17g\n",in.parameters[p].id,in.parameters[p].value)) return JFX_ERROR_BACKEND_FAILURE;
+            const void *state=NULL; size_t bytes=0;
+            if (jfx_timeline_get_audio_insert_state(timeline,track,i,&state,&bytes)!=JFX_SUCCESS) return JFX_ERROR_BACKEND_FAILURE;
+            if (bytes) {
+                if (!append(out_text,out_size,&used,"audio_insert_state %zu\n",bytes)) return JFX_ERROR_BACKEND_FAILURE;
+                const unsigned char *data=state;
+                for (size_t pos=0;pos<bytes;) {
+                    char hex[2049]; size_t n=bytes-pos; if (n>1024) n=1024;
+                    for (size_t b=0;b<n;++b) { hex[b*2]="0123456789abcdef"[data[pos+b]>>4]; hex[b*2+1]="0123456789abcdef"[data[pos+b]&15]; }
+                    hex[n*2]=0;
+                    if (!append(out_text,out_size,&used,"state_hex %s\n",hex)) return JFX_ERROR_BACKEND_FAILURE;
+                    pos+=n;
+                }
+            }
+        }
 
+        for (uint32_t a=0;a<jfx_timeline_audio_automation_count(timeline,track);++a) {
+            jfx_audio_automation_lane_t lane={.size=sizeof(lane)};
+            if (jfx_timeline_get_audio_automation(timeline,track,a,&lane)!=JFX_SUCCESS ||
+                !append(out_text,out_size,&used,"audio_automation %u %u %u %u %u\n",(unsigned)lane.target,lane.insert,lane.parameter,(unsigned)lane.interpolation,lane.key_count)) return JFX_ERROR_BACKEND_FAILURE;
+            for (uint32_t k=0;k<lane.key_count;++k) if (!append(out_text,out_size,&used,"automation_key %llu %.17g\n",(unsigned long long)lane.keys[k].frame,lane.keys[k].value)) return JFX_ERROR_BACKEND_FAILURE;
+        }
         for (size_t c = 0; c < jfx_timeline_clip_count(timeline, track); ++c) {
             const uint32_t clip = (uint32_t)c;
             const jfx_clip_source_t source = jfx_timeline_clip_source(timeline, track, clip);
@@ -800,6 +893,12 @@ jfx_result_t jfx_project_save_sequence(const jfx_timeline_t *timeline, char *out
                     (unsigned long long)audio.fade_out_frames,(unsigned long long)audio.reference_frames)) return JFX_ERROR_BACKEND_FAILURE;
 
             const size_t effect_count = jfx_timeline_effect_count(timeline, track, clip);
+            for (uint32_t n=0;n<jfx_timeline_midi_note_count(timeline,track,clip);++n) {
+                jfx_midi_note_t note={.size=sizeof(note)};
+                if (jfx_timeline_get_midi_note(timeline,track,clip,n,&note)!=JFX_SUCCESS ||
+                    !append(out_text,out_size,&used,"midi_note %u %llu %llu %u %.9g\n",note.pitch,
+                    (unsigned long long)note.frame,(unsigned long long)note.length,note.channel,(double)note.velocity)) return JFX_ERROR_BACKEND_FAILURE;
+            }
             for (size_t e = 0; e < effect_count; ++e) {
                 const uint32_t effect = (uint32_t)e;
                 const jfx_node_kind_t *kind =

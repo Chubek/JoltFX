@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <string.h>
 #include "jfx/ffi_bridge.h"
+#include "gain_wasm.h"
 
 static const char *const sources[] = {
     "function gain(x) return jfx.clamp(x*2,0,1) end",
     "def gain(x); JFX.clamp(x*2,0,1); end",
     "function gain(x){return jfx.clamp(x*2,0,1);}",
     "import pyjoltfx as jfx\ndef gain(x):\n return jfx.clamp(x*2,0,1)\n",
-    "(module (func (export \"gain\") (param f64) (result f64) local.get 0 f64.const 2 f64.mul))"
+    NULL
 };
 int main(void) {
     const jfx_ffi_bridge_t *bridge = jfx_script_ffi_bridge();
@@ -15,7 +16,9 @@ int main(void) {
         if (!jfx_script_language_available(language)) continue;
         jfx_script_runtime_t *runtime = NULL;
         jfx_script_status_t status = bridge->init(language, NULL, &runtime);
-        if (!status) status = bridge->load_script(runtime, sources[language], strlen(sources[language]), "embedded");
+        if (!status) status = language == JFX_SCRIPT_WASM ?
+            bridge->load_script(runtime, gain_wasm, sizeof(gain_wasm), "embedded.wasm") :
+            bridge->load_script(runtime, sources[language], strlen(sources[language]), "embedded");
         const jfx_value_t input = { .type = JFX_TYPE_FLOAT, .f = 0.25 };
         jfx_value_t result = {0};
         if (!status) status = bridge->call_function(runtime, "gain", &input, 1, &result);

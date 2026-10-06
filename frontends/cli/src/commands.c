@@ -63,7 +63,7 @@ void print_command_help(const char *command) {
         printf("Usage: joltfx scripts list\n"
             "       joltfx scripts run LANG FILE [FUNCTION [NUMBER]]\n"
             "       joltfx scripts edit LANG FILE INPUT.jfx OUTPUT.jfx [FUNCTION]\n"
-            "LANG: lua, mruby, quickjs, python (MicroPython), wasm (Wasmtime).\n"
+            "LANG: lua, mruby, quickjs, python (MicroPython), wasm (WAMR).\n"
             "Only languages enabled at build time are available. WASM accepts .wasm or WAT.\n"
             "run prints the typed function result; NUMBER is one finite double argument.\n"
             "edit loads the input project, runs the script and optional zero-argument function,\n"

@@ -88,7 +88,7 @@ const char *jfx_script_language_name(jfx_script_language_t language);
 jfx_script_status_t jfx_script_runtime_create(jfx_script_language_t language,
     const jfx_script_desc_t *desc, jfx_script_runtime_t **out_runtime);
 void jfx_script_runtime_destroy(jfx_script_runtime_t *runtime);
-/* Text-only for scripting languages; Wasmtime accepts validated .wasm or WAT.
+/* Text-only for scripting languages; WAMR accepts validated binary .wasm modules.
  * Loading is additive. Failed scripts can leave globals/edits made before an
  * exception; runtime-owned registrations made by a failed load are rolled back. */
 jfx_script_status_t jfx_script_runtime_load(jfx_script_runtime_t *runtime,

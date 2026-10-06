@@ -5,33 +5,7 @@
 #include "jfx/ffi_bridge.h"
 #include "jfx/jfx_events.h"
 
-static const char scalar_module[] =
-    "(module (import \"joltfx\" \"clamp\" (func $clamp (param f64 f64 f64) (result f64)))"
-    "(func (export \"gain\") (param f64) (result f64) local.get 0 f64.const 2 f64.mul f64.const 0 f64.const 1 call $clamp)"
-    "(func (export \"integer\") (param i64) (result i64) local.get 0)"
-    "(func (export \"spin\") (loop $loop br $loop)))";
-static const char typed_module[] =
-    "(module (import \"joltfx\" \"call\" (func $call (param i32 i32 i32 i32 i32) (result i32)))"
-    "(memory (export \"memory\") 1)"
-    "(global (export \"jfx_abi_version\") i32 (i32.const 1))"
-    "(global (export \"jfx_scratch\") i32 (i32.const 4096))"
-    "(global (export \"jfx_scratch_size\") i32 (i32.const 4096))"
-    "(data (i32.const 0) \"read\") (data (i32.const 16) \"size\")"
-    "(func $identity (export \"identity\") (param $args i32) (param $n i32) (param $out i32) (result i32)"
-    "local.get $out local.get $args i64.load i64.store "
-    "local.get $out local.get $args i64.load offset=8 i64.store offset=8 "
-    "local.get $out local.get $args i64.load offset=16 i64.store offset=16 "
-    "local.get $out local.get $args i64.load offset=24 i64.store offset=24 i32.const 0)"
-    "(func (export \"read\") (param $args i32) (param $n i32) (param $out i32) (result i32)"
-    "i32.const 0 i32.const 4 local.get $args local.get $n local.get $out call $call)"
-    "(func (export \"keep\") (param i32 i32 i32) (result i32) local.get 0 local.get 1 i32.const 1024 call $identity)"
-    "(func (export \"expired\") (param i32 i32 i32) (result i32) i32.const 16 i32.const 4 i32.const 1024 i32.const 1 local.get 2 call $call)"
-    "(func (export \"forge\") (param i32 i32 i32) (result i32) i32.const 8 i32.const 99999 i32.store "
-    "i32.const 0 i32.const 4 i32.const 65530 i32.const 2 local.get 2 call $call)"
-    "(func (export \"grow\") (param i32 i32 i32) (result i32) (local $grown i32) "
-    "i32.const 1024 memory.grow local.set $grown local.get 2 i32.const 2 i32.store "
-    "local.get 2 local.get $grown i64.extend_i32_s i64.store offset=8 i32.const 0)"
-    "(func (export \"bad_status\") (param i32 i32 i32) (result i32) i32.const 100))";
+#include "wasm_fixtures.h"
 int main(void) {
     if (!jfx_script_language_available(JFX_SCRIPT_WASM)) return 0;
     tilly_allocator_t *allocator = tilly_allocator_create(TILLY_ALLOC_GENERAL, 8u * 1024u * 1024u);
@@ -39,22 +13,31 @@ int main(void) {
     jfx_script_desc_t desc = { .size = sizeof(desc), .allocator = allocator, .config = {1024u * 1024u, 10000} };
     jfx_script_runtime_t *rt = NULL;
     assert(jfx_script_runtime_create(JFX_SCRIPT_WASM, &desc, &rt) == JFX_SCRIPT_OK);
-    const char unsafe[] = "(module (import \"wasi_snapshot_preview1\" \"fd_write\" (func)))";
-    assert(jfx_script_runtime_load(rt, unsafe, sizeof(unsafe) - 1, "unsafe.wat") != JFX_SCRIPT_OK);
+    size_t baseline = jfx_script_runtime_memory_used(rt);
+    assert(jfx_script_runtime_load(rt, unsafe, sizeof(unsafe), "unsafe.wasm") != JFX_SCRIPT_OK);
     assert(jfx_script_runtime_load(rt, "garbage", 7, "invalid.wasm") != JFX_SCRIPT_OK);
-    const char bad_abi[] = "(module (global (export \"jfx_abi_version\") f64 (f64.const 1)))";
-    assert(jfx_script_runtime_load(rt, bad_abi, sizeof(bad_abi) - 1, "bad-abi.wat") == JFX_SCRIPT_TYPE_ERROR);
-    assert(jfx_script_runtime_load(rt, scalar_module, sizeof(scalar_module) - 1, "scalar.wat") == JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(rt, "(module)", 8, "text.wat") != JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(rt, start_module, sizeof(start_module), "start.wasm") != JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(rt, constructor_module, sizeof(constructor_module), "constructor.wasm") != JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(rt, large_memory, sizeof(large_memory), "large.wasm") != JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(rt, bad_abi, sizeof(bad_abi), "bad-abi.wasm") == JFX_SCRIPT_TYPE_ERROR);
+    assert(jfx_script_runtime_memory_used(rt) == baseline);
+    assert(jfx_script_runtime_load(rt, scalar_module, sizeof(scalar_module), "scalar.wasm") == JFX_SCRIPT_OK);
     double result = -1;
     assert(jfx_script_runtime_call_number(rt, "gain", 0.75, &result) == JFX_SCRIPT_OK && result == 1);
     jfx_value_t arg = {.type = JFX_TYPE_INT, .i = INT64_MAX}, out = {0};
     assert(jfx_script_runtime_call(rt, "integer", &arg, 1, &out) == JFX_SCRIPT_OK && out.i == arg.i);
     assert(jfx_script_runtime_call(rt, "spin", NULL, 0, &out) == JFX_SCRIPT_BUDGET);
     assert(jfx_script_runtime_call_number(rt, "gain", 0.25, &result) == JFX_SCRIPT_OK && result == 0.5);
+    jfx_script_runtime_t *second = NULL;
+    assert(jfx_script_runtime_create(JFX_SCRIPT_WASM, &desc, &second) == JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(second, scalar_module, sizeof(scalar_module), "second.wasm") == JFX_SCRIPT_OK);
     jfx_script_runtime_destroy(rt);
+    assert(jfx_script_runtime_call_number(second, "gain", 0.25, &result) == JFX_SCRIPT_OK && result == 0.5);
+    jfx_script_runtime_destroy(second);
     assert(jfx_script_runtime_create(JFX_SCRIPT_WASM, &desc, &rt) == JFX_SCRIPT_OK);
-    assert(jfx_script_runtime_load(rt, typed_module, sizeof(typed_module) - 1, "typed.wat") == JFX_SCRIPT_OK);
-    assert(jfx_script_runtime_load(rt, typed_module, sizeof(typed_module) - 1, "again.wat") == JFX_SCRIPT_BUSY);
+    assert(jfx_script_runtime_load(rt, typed_module, sizeof(typed_module), "typed.wasm") == JFX_SCRIPT_OK);
+    assert(jfx_script_runtime_load(rt, typed_module, sizeof(typed_module), "again.wasm") == JFX_SCRIPT_BUSY);
     out = arg;
     assert(jfx_script_runtime_call(rt, "bad_status", NULL, 0, &out) == JFX_SCRIPT_ERROR);
     assert(out.type == arg.type && out.i == arg.i);
@@ -92,6 +75,6 @@ int main(void) {
     jfx_script_runtime_destroy(rt); jfx_engine_shutdown(engine);
     assert(allocator->alloc_count == allocator->free_count);
     tilly_allocator_destroy(allocator);
-    puts("Wasmtime extension conformance passed");
+    puts("WAMR extension conformance passed");
     return 0;
 }

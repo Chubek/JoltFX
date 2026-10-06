@@ -1,6 +1,6 @@
 # Extension scripting
 
-JoltFX embeds Lua, mruby, QuickJS, MicroPython and Wasmtime over the same Core
+JoltFX embeds Lua, mruby, QuickJS, MicroPython and WAMR over the same Core
 editor, resources, events and diagnostics. Script API **1.0** exposes
 `jfx_script_runtime_t`, `jfx_value_t` and a language-neutral `jfx_ffi_bridge_t`.
 Its headers and enabled adapters are installed with the engine.
@@ -9,11 +9,11 @@ Its headers and enabled adapters are installed with the engine.
 
 Lua and mruby are enabled by default. QuickJS and MicroPython use vendored
 sources and are opt-in; mruby needs Ruby and MicroPython header generation needs
-Python 3 and Make. Wasmtime needs a separate version **38+ C API** installation.
+Python 3 and Make. WAMR builds from `third_party/wasm-micro-runtime` and is opt-in.
 
 ```sh
 cmake -S . -B build -DJFX_EXT_QUICKJS=ON -DJFX_EXT_PYTHON=ON \
-  -DJFX_EXT_WASM=ON -DJFX_WASMTIME_ROOT=/path/to/wasmtime-c-api
+  -DJFX_EXT_WASM=ON
 cmake --build build --parallel
 ctest --test-dir build -R ext_conformance --output-on-failure
 ```
@@ -32,7 +32,8 @@ $CLI nle render edited.jfx -o frame --start 0 --end 1
 ```
 
 Replace `lua` / `.lua` with `mruby` / `.rb`, `quickjs` / `.js`, `python` / `.py`
-or `wasm` / `.wat` for the matching example. `scripts run LANG FILE` loads and
+or `wasm` / `.wasm` for the matching example. Compile WAT with `wat2wasm` first;
+the checked-in `grade.wasm` is ready to run. `scripts run LANG FILE` loads and
 executes the file. An optional function takes zero arguments, or one finite
 double when `NUMBER` is supplied. `scripts edit` loads the input document first,
 executes the script and optional zero-argument function, then writes the project
@@ -55,8 +56,8 @@ target_link_libraries(script_host PRIVATE JoltFX::jfx_extif)
 
 Use `cmake --install build --prefix /path/to/joltfx`, then set
 `CMAKE_PREFIX_PATH=/path/to/joltfx` in the consumer. The package resolves its
-system dependencies; if Wasmtime is enabled, supply its prefix in the consumer
-too. The mruby runtime archive is installed beside its adapter. A C++ linker is
+system dependencies. WAMR and mruby runtime archives are installed beside their
+adapters; consumers need no separate WASM SDK. A C++ linker is
 required by the engine's color adapter; C hosts can enable both C and CXX in
 CMake, as above. The native plugin SDK has its own header-only package.
 
@@ -114,7 +115,7 @@ for budget/type failures.
 The boundary does not silently coerce strings or booleans into numbers. Vectors
 use float components; scalar INT and FLOAT round-trip their native precision.
 QuickJS Number returns FLOAT even when integral. BigInts and MicroPython integers
-outside int64 fail translation. Wasmtime encodes these types as value records
+outside int64 fail translation. WAMR encodes these types as value records
 or uses strict scalar export signatures; see [its ABI guide](../extif/wasm/README.md).
 
 At most 16 native arguments cross a call. Successful result strings are borrowed
@@ -131,13 +132,14 @@ editor commands are immediate; an exception does not undo earlier writes.
 Additive loads may leave script globals and editor edits made before an error.
 New runtime-owned event subscriptions and local batch registrations from a
 failed load are removed. The host can group editor work using editor transactions.
-Wasmtime permits one successfully loaded module per runtime.
+WAMR permits one successfully loaded module per runtime. Start sections and
+automatic constructors are rejected; invoke an explicit initialization export.
 
 ## Shared host functions
 
 Lua/QuickJS use `jfx`, mruby uses `JFX`, and MicroPython uses `import jfx`.
 Lua also exposes `ljoltfx`, QuickJS exposes `joltfx`, and MicroPython accepts
-`import pyjoltfx`. Wasmtime calls the same services through `joltfx.call`.
+`import pyjoltfx`. WAMR calls the same services through `joltfx.call`.
 
 | Function | Contract |
 |---|---|
@@ -181,19 +183,21 @@ only that runtime's subscriptions. Callback errors populate `last_status` and
 The default budget is **4 MiB** of charged runtime memory and **100,000 execution
 units per invocation**. Set `desc.config` to override either; zero selects its
 default. Tilly supplies the runtime allocations, including MicroPython's fixed
-heap and Wasmtime's linear memories. Wasmtime's compiler, executable code and
-Rust runtime metadata use Wasmtime's own allocator and are outside this byte
-counter. Native engine resources/editor history have their own engine budgets.
+heap and WAMR's module, instance, stack and linear memory. Shared WAMR bootstrap
+allocations use Tilly outside this per-runtime counter and are released when the
+last WASM runtime is destroyed. Native engine resources/editor history have
+their own engine budgets.
 
 Lua hooks count in blocks of 100 VM instructions; mruby checks fetched VM
 instructions; QuickJS's interrupt checks charge blocks of 1,000; MicroPython
-checks loop/return boundaries; Wasmtime consumes fuel. Every shared service also
+checks loop/return boundaries; WAMR meters interpreter instructions (limits above
+`INT_MAX` are capped). Every shared service also
 charges a unit. These are runtime-specific execution budgets, not interchangeable
 instruction counts or hard wall-clock deadlines for compilation/native builtins.
 Budget errors are recoverable; a subsequent invocation gets a fresh budget.
 
 Sandboxed libraries omit direct file/process/network/native-library access and
-dynamic source/bytecode loading. Wasmtime receives no WASI imports. Core editor
+dynamic source/bytecode loading. WAMR receives no WASI imports. Core editor
 commands remain host-mediated and follow the granted EDITOR capability.
 GC collect/pause/resume belongs to the host; MicroPython collects at host
 boundaries, never while unrooted native stack temporaries are live. Hosts can

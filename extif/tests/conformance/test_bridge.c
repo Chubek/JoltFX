@@ -28,6 +28,8 @@ static void run(jfx_script_language_t language, const char *source,
         { .type = JFX_TYPE_NIL }, { .type = JFX_TYPE_BOOL, .b = true },
         { .type = JFX_TYPE_INT, .i = INT64_C(9007199254740993) },
         { .type = JFX_TYPE_INT, .i = INT64_MIN },
+        { .type = JFX_TYPE_INT, .i = INT64_MAX },
+        { .type = JFX_TYPE_INT, .i = -INT64_C(9007199254740993) },
         { .type = JFX_TYPE_FLOAT, .f = 1.23456789012345 },
         { .type = JFX_TYPE_STRING, .str = "UTF-8: café" },
         { .type = JFX_TYPE_VEC2, .vec2 = {1, 2} },
@@ -51,6 +53,21 @@ static void run(jfx_script_language_t language, const char *source,
                     (size_t)(result.type - JFX_TYPE_VEC2 + 2) * sizeof(float))); break;
             default: break;
         }
+    }
+    if (language == JFX_SCRIPT_PYTHON) {
+        const char overflow_source[] =
+            "def too_large():\n return 1 << 63\n"
+            "def too_small():\n return -(1 << 63) - 1\n"
+            "def truncated_positive():\n return (1 << 80) + 7\n"
+            "def truncated_negative():\n return -(1 << 80) - 7\n";
+        assert(jfx_script_runtime_load(rt, overflow_source, sizeof(overflow_source) - 1, "integer_limits") == JFX_SCRIPT_OK);
+        const char *names[] = { "too_large", "too_small", "truncated_positive", "truncated_negative" };
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+            result = input;
+            assert(jfx_script_runtime_call(rt, names[i], NULL, 0, &result) == JFX_SCRIPT_TYPE_ERROR);
+            assert(result.type == input.type && result.f == input.f);
+        }
+        assert(jfx_script_runtime_call(rt, "identity", &input, 1, &result) == JFX_SCRIPT_OK);
     }
     result = input;
     assert(jfx_script_runtime_call(rt, "missing", NULL, 0, &result) == JFX_SCRIPT_NOT_FOUND);

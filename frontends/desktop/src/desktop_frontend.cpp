@@ -19,6 +19,10 @@
 #include "jfx/jfx_events.h"
 #include "jfx/jfx_editor.h"
 #include "jfx/jfx_color.h"
+#include "jfx/jfx_vst3.h"
+#include "jfx/jfx_midi.h"
+#include "jfx/jfx_recording.h"
+#include "jfx/jfx_automation.h"
 
 #include "host_window.h"
 #include "imgui.h"
@@ -32,6 +36,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <mutex>
 
@@ -172,7 +177,7 @@ struct jfx_desktop_frontend {
     char plugin_path[512];
     bool editing, looping, show_grade, show_nodes;
     bool show_calibration;
-    bool show_plugins, show_audio, workspace_requested;
+    bool show_plugins, show_audio, show_daw, workspace_requested;
     jfx_desktop_workspace_t workspace;
     bool grading_edit;
     bool audio_edit;
@@ -193,6 +198,27 @@ struct jfx_desktop_frontend {
     uint64_t audio_sample;
     float audio_peak[2];
     int audio_import_frames;
+    char vst3_path[JFX_NODE_PATH_MAX];
+    struct { char path[JFX_NODE_PATH_MAX]; jfx_vst3_class_t info; } vst3_catalog[128];
+    uint32_t vst3_count, vst3_selected, vst3_insert;
+    jfx_vst3_instance_t *vst3_inspector;
+    char vst3_inspector_path[JFX_NODE_PATH_MAX],vst3_inspector_cid[33];
+    char audio_export_path[512];
+    uint32_t vst3_inspector_track,vst3_inspector_insert;
+    bool native_dirty,native_edit,native_session;
+    uint32_t native_gesture;
+    jfx_audio_recording_t *recording;
+    char recording_path[512];
+    int recording_device;
+    uint32_t recording_track;
+    uint64_t recording_start;
+    int midi_pitch,midi_channel;
+    uint64_t midi_frame,midi_length;
+    float midi_velocity,input_peak[2];
+    int automation_target,automation_insert,automation_interpolation;
+    uint32_t automation_parameter;
+    uint64_t automation_frame;
+    float automation_value;
     float node_zoom, node_pan_x, node_pan_y, node_drag_x, node_drag_y, node_start_x, node_start_y;
     int node_drag;
     uint32_t node_wire_source, node_wire_port;
@@ -243,7 +269,12 @@ static void reset_audio(jfx_desktop_frontend_t *f) {
     jfx_desktop_window_clear_audio(f->window);
     f->audio_peak[0]=f->audio_peak[1]=0;
 }
-namespace { void finish_grading(jfx_desktop_frontend_t *f); void finish_audio(jfx_desktop_frontend_t *f); }
+namespace {
+void finish_grading(jfx_desktop_frontend_t *f); void finish_audio(jfx_desktop_frontend_t *f);
+jfx_result_t native_sync(jfx_desktop_frontend_t *f,bool finish);
+void close_inspector(jfx_desktop_frontend_t *f);
+void recording_poll(jfx_desktop_frontend_t *f);
+}
 
 /* Mirrors engine events into the console so the panel shows what the engine is
  * actually doing rather than a fixed string. */
@@ -310,7 +341,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_calibration = true;
     frontend->show_plugins = true;
     frontend->show_audio = true;
+    frontend->show_daw = true;
+    std::snprintf(frontend->audio_export_path,sizeof(frontend->audio_export_path),"mix.wav");
     frontend->audio_import_frames = 90;
+    frontend->recording_device=-1;
+    std::snprintf(frontend->recording_path,sizeof(frontend->recording_path),"take.wav");
+    frontend->midi_pitch=60; frontend->midi_length=15; frontend->midi_velocity=.8f;
+    frontend->automation_value=1;
     frontend->nle_width=320; frontend->nle_height=180; frontend->nle_fps_num=30; frontend->nle_fps_den=1;
     frontend->nle_gap_length=30;
     std::snprintf(frontend->nle_export_path,sizeof(frontend->nle_export_path),"frame.ppm");
@@ -415,7 +452,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
 }
 
 extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
-    if (frontend) { jfx_export_destroy(frontend->export_job); reset_audio(frontend); }
+    if (frontend) {
+        jfx_desktop_window_capture_end(frontend->window); jfx_audio_recording_destroy(frontend->recording);
+        close_inspector(frontend); jfx_export_destroy(frontend->export_job); reset_audio(frontend);
+    }
     if (!frontend) return;
     event_unsubscribe(JFX_EVENT_KERNEL_SUBMIT, engine_event_sink);
     event_unsubscribe(JFX_EVENT_KERNEL_COMPLETE, engine_event_sink);
@@ -450,6 +490,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     if (!frontend || !path || !path[0] || std::strlen(path) >= sizeof(frontend->project_path)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    if (frontend->recording) return JFX_ERROR_BUSY;
+    auto synced=native_sync(frontend,true); if (synced!=JFX_SUCCESS) return synced;
+    close_inspector(frontend);
     finish_grading(frontend);
     if (const char *ext = std::strrchr(path, '.'); ext && std::strcmp(ext, ".jfx") == 0) {
         FILE *file = std::fopen(path, "rb");
@@ -485,6 +528,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_resize(jfx_desktop_frontend_t *fron
 
 extern "C" jfx_result_t jfx_desktop_frontend_play(jfx_desktop_frontend_t *frontend) {
     if (!frontend) return JFX_ERROR_INVALID_ARGUMENT;
+    if (frontend->recording) return JFX_ERROR_BUSY;
     frontend->playing = true;
     return JFX_SUCCESS;
 }
@@ -586,13 +630,14 @@ extern "C" jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t
 namespace {
 
 #include "editor_panels.inc"
+#include "daw_features.inc"
 #include "audio_panel.inc"
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
-    "Node Compositing","Plugins","Console","Statistics","Audio Mixing"};
+    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
-    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO};
+    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,JFX_DESKTOP_PANEL_DAW};
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::TextUnformatted("Preview");
@@ -711,6 +756,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("Statistics", nullptr, &frontend->show_stats);
             ImGui::MenuItem("Plugins", nullptr, &frontend->show_plugins);
             ImGui::MenuItem("Audio Mixing", nullptr, &frontend->show_audio);
+            ImGui::MenuItem("DAW", nullptr, &frontend->show_daw);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -832,6 +878,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_STATISTICS: statistics_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_PLUGINS: plugin_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_AUDIO: audio_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_DAW: daw_panel(frontend); break;
                     default: break;
                     }
                 }
@@ -882,6 +929,15 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
     }
 
     if (window_open) {
+        jfx_vst3_pump();
+        if (frontend->native_dirty || frontend->native_edit) {
+            auto r=native_sync(frontend,false); if (r!=JFX_SUCCESS) editor_result(frontend,r);
+        }
+        if (frontend->native_session && !jfx_desktop_window_plugin_visible(frontend->window)) {
+            auto r=native_sync(frontend,true); if (r!=JFX_SUCCESS) editor_result(frontend,r);
+            frontend->native_session=false; jfx_vst3_set_edit_callback(frontend->vst3_inspector,nullptr,nullptr);
+        }
+        recording_poll(frontend);
         /* Advance the engine clock while playing, looping at the end of the
          * range so a short project keeps animating. */
         if (frontend->playing) {
@@ -1052,6 +1108,13 @@ static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
 }
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
     if (!f || !op) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->recording) return JFX_ERROR_BUSY;
+    if (f->native_session) {
+        auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
+        close_inspector(f);
+    }
+    if (!std::strcmp(op,"undo") || !std::strcmp(op,"redo") || !std::strcmp(op,"sequence.new") ||
+        !std::strcmp(op,"audio.insert.remove") || !std::strcmp(op,"audio.insert.move") || !std::strcmp(op,"track.remove") || !std::strcmp(op,"track.move")) close_inspector(f);
     if (f->audio_edit) finish_audio(f);
     if (f->grading_edit && std::strcmp(op,"effect.param")) finish_grading(f);
     auto r=edited(f,jfx_editor_command(f->editor,op,a,b,c,v,text));
@@ -1063,7 +1126,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,cons
         if (f->selected_node>=jfx_graph_node_count(jfx_editor_graph(f->editor))) f->selected_node=0;
     }
     if (r==JFX_SUCCESS && (!std::strcmp(op,"undo") || !std::strcmp(op,"redo")) &&
-        (f->workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || f->workspace==JFX_DESKTOP_WORKSPACE_AUDIO) &&
+        (f->workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || f->workspace==JFX_DESKTOP_WORKSPACE_AUDIO || f->workspace==JFX_DESKTOP_WORKSPACE_DAW) &&
         (f->workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING)!=(jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH))
         jfx_desktop_frontend_set_workspace(f,jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?JFX_DESKTOP_WORKSPACE_COMPOSITING:JFX_DESKTOP_WORKSPACE_NLE);
     return r;
@@ -1077,6 +1140,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_write_frame(jfx_desktop_frontend_t 
     return jfx_editor_write_frame(f->editor,frame,jfx_timeline_width(t),jfx_timeline_height(t),path);
 }
 extern "C" jfx_result_t jfx_desktop_frontend_export_begin(jfx_desktop_frontend_t *f,const jfx_export_options_t *o,jfx_export_job_t **out) {
+    if (f) { auto r=native_sync(f,true); if (r!=JFX_SUCCESS) return r; }
     return jfx_export_begin(f?f->editor:nullptr,o,out);
 }
 extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t *f,uint32_t rate,jfx_audio_mixer_t **out) {
@@ -1084,13 +1148,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
@@ -1100,7 +1164,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     f->workspace=workspace; f->workspace_requested=true;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
     f->nle_drag=f->node_drag=0; f->node_wiring=false;
-    if (workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || workspace==JFX_DESKTOP_WORKSPACE_AUDIO) {
+    if (workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || workspace==JFX_DESKTOP_WORKSPACE_AUDIO || workspace==JFX_DESKTOP_WORKSPACE_DAW) {
         jfx_editor_set_kind(f->editor,workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING?JFX_PROJECT_KIND_GRAPH:JFX_PROJECT_KIND_SEQUENCE);
         f->editing=true; f->preview_dirty=true; reset_audio(f);
         if (workspace!=JFX_DESKTOP_WORKSPACE_COMPOSITING) f->node_preview_selected=false;
@@ -1133,6 +1197,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
     finish_grading(f);
     char *text = static_cast<char *>(imgui_alloc(JFX_PROJECT_MAX_BYTES, nullptr));
     if (!text) return JFX_ERROR_OUT_OF_MEMORY;
@@ -1146,6 +1211,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t
 }
 extern "C" jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *f) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->recording) return JFX_ERROR_BUSY;
+    auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
+    close_inspector(f);
     finish_grading(f);
     jfx_editor_t *e=jfx_editor_create(kPreviewWidth,kPreviewHeight);
     if (!e) return JFX_ERROR_OUT_OF_MEMORY;

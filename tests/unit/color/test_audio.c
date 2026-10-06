@@ -1,5 +1,6 @@
 #include "jfx/jfx_audio.h"
 #include "jfx/jfx_editor.h"
+#include "jfx/jfx_export.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -68,8 +69,33 @@ static void overlaps(const char *path) {
     assert(jfx_timeline_render_audio(t,9000,8000,64,pcm,128)==JFX_SUCCESS); near(pcm[0],0);
     jfx_timeline_destroy(t);
 }
+static void wav_bounce(const char *source) {
+    char path[2048]; assert(snprintf(path,sizeof(path),"%s.bounce.wav",source)>0);
+    jfx_editor_t *e=jfx_editor_create(2,2); assert(e);
+    assert(jfx_editor_command(e,"sequence.new",2,2,25,1,"")==JFX_SUCCESS);
+    assert(jfx_editor_command(e,"clip.add",0,JFX_CLIP_AUDIO,0,25,source)==JFX_SUCCESS);
+    jfx_export_options_t options={.size=sizeof(options),.path=path,.sample_rate=8000,
+        .start_frame=2,.frame_count=5,.audio=true};
+    jfx_export_job_t *job=NULL;
+    assert(jfx_export_begin(e,&options,&job)==JFX_SUCCESS); /* Also with FFmpeg/VST3 disabled. */
+    jfx_editor_destroy(e);
+    while (jfx_export_state(job)==JFX_EXPORT_RUNNING) assert(jfx_export_step(job,3)==JFX_SUCCESS);
+    assert(jfx_export_completed_frames(job)==5); jfx_export_destroy(job);
+    FILE *file=fopen(path,"rb"); assert(file);
+    assert(!fseek(file,0,SEEK_END) && ftell(file)==44+1600*8); assert(!fclose(file));
+    /* Decode the generated float WAV through the ordinary source path. */
+    jfx_timeline_t *t=jfx_timeline_create(2,2,25,1); assert(t);
+    assert(jfx_timeline_add_track(t,"bounce")==0);
+    jfx_clip_desc_t clip={0}; clip.source=JFX_CLIP_AUDIO; clip.image_path=path;
+    clip.enabled=true; clip.length_frames=5;
+    assert(jfx_timeline_add_clip(t,0,&clip)==0);
+    float pcm[128]; assert(jfx_timeline_render_audio(t,0,8000,64,pcm,128)==JFX_SUCCESS);
+    for (size_t i=0;i<128;++i) near(pcm[i],.25f);
+    jfx_timeline_destroy(t); assert(!remove(path));
+}
 int main(int argc,char **argv) {
     assert(argc==2); fixture(argv[1],false);
+    wav_bounce(argv[1]);
     char ramp[2048]; assert(snprintf(ramp,sizeof(ramp),"%s.ramp.wav",argv[1])>0);
     fixture(ramp,true); rational_timing(ramp); assert(!remove(ramp)); overlaps(argv[1]);
     jfx_timeline_t *t=jfx_timeline_create(2,2,25,1); assert(t);

@@ -3,13 +3,14 @@
 #include <string.h>
 #include <time.h>
 #include "jfx/ffi_bridge.h"
+#include "../../examples/embed/gain_wasm.h"
 
 static const char *const sources[] = {
     "function gain(x) return jfx.clamp(x*2,0,1) end",
     "def gain(x); JFX.clamp(x*2,0,1); end",
     "function gain(x){return jfx.clamp(x*2,0,1);}",
     "import jfx\ndef gain(x):\n return jfx.clamp(x*2,0,1)\n",
-    "(module (func (export \"gain\") (param f64) (result f64) local.get 0 f64.const 2 f64.mul))"
+    NULL
 };
 int main(void) {
     for (jfx_script_language_t language = JFX_SCRIPT_LUA; language < JFX_SCRIPT_LANGUAGE_COUNT; ++language) {
@@ -19,7 +20,9 @@ int main(void) {
         double init_ms = (double)(clock() - start) * 1000 / CLOCKS_PER_SEC;
         size_t initial_memory = jfx_script_runtime_memory_used(rt);
         start = clock();
-        if (!status) status = jfx_script_runtime_load(rt, sources[language], strlen(sources[language]), "benchmark");
+        if (!status) status = language == JFX_SCRIPT_WASM ?
+            jfx_script_runtime_load(rt, gain_wasm, sizeof(gain_wasm), "benchmark.wasm") :
+            jfx_script_runtime_load(rt, sources[language], strlen(sources[language]), "benchmark");
         if (!status) status = jfx_script_runtime_register_kernel(rt, "cached", "gain");
         double load_ms = (double)(clock() - start) * 1000 / CLOCKS_PER_SEC;
         jfx_value_t input = { .type = JFX_TYPE_FLOAT, .f = 0.25 }, result = {0};

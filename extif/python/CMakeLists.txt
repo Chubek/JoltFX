@@ -21,6 +21,18 @@ add_custom_target(jfx_python_headers DEPENDS "${JFX_MICROPYTHON_GENERATED}/genhd
 file(GLOB JFX_MICROPYTHON_SOURCES CONFIGURE_DEPENDS "${JFX_MICROPYTHON_ROOT}/py/*.c")
 list(REMOVE_ITEM JFX_MICROPYTHON_SOURCES "${JFX_MICROPYTHON_ROOT}/py/emitnative.c")
 add_library(jfx_python STATIC src/python_runtime.c ${JFX_MICROPYTHON_SOURCES})
+# MicroPython's integer byte conversion API changed after the 1.24 port.
+# Select by declaration so both older and current source checkouts work.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${JFX_MICROPYTHON_ROOT}/py/objint.h")
+file(READ "${JFX_MICROPYTHON_ROOT}/py/objint.h" jfx_micropython_int_header)
+if(jfx_micropython_int_header MATCHES "void mp_obj_int_to_bytes\\(")
+    target_compile_definitions(jfx_python PRIVATE JFX_MICROPYTHON_HAS_INT_TO_BYTES=1)
+elseif(jfx_micropython_int_header MATCHES "mp_obj_int_to_bytes_impl\\(")
+    target_compile_definitions(jfx_python PRIVATE JFX_MICROPYTHON_HAS_INT_TO_BYTES=0)
+else()
+    message(FATAL_ERROR "The MicroPython checkout has no supported integer byte conversion API")
+endif()
 add_dependencies(jfx_python jfx_python_headers)
 target_include_directories(jfx_python PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)

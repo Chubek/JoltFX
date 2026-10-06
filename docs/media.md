@@ -34,9 +34,14 @@ builds. It includes MPEG-4, AAC, ProRes, FFV1 and PCM encoders plus common input
 decoders, with networking and codec threads disabled. It needs no FFmpeg command
 line executable at runtime. System FFmpeg builds can expose more encoders.
 
-`JFX_VIDEO_FFMPEG=OFF` retains WAV/FLAC/MP3 mixing; encoded export reports
+`JFX_VIDEO_FFMPEG=OFF` retains WAV/FLAC/MP3 mixing and float WAV mixdown; encoded video export reports
 `JFX_ERROR_NOT_IMPLEMENTED`. `joltfx capabilities`, `jfx_export_available()` and
 `jfx_export_codec_available(name, audio)` report the linked build's capabilities.
+
+The desktop **DAW** workspace adds an audio arrangement, native stereo VST3
+insert racks, tempo, master gain and cancellable WAV mixdown. Track inserts also
+run in shared playback/video exports. See [DAW and VST3](daw.md) for setup,
+commands, project records and supported plugin features.
 
 ## Add and mix audio
 

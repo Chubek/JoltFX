@@ -12,6 +12,8 @@ add_library(jfx_core STATIC
     src/editor.c
     src/nle.c
     src/audio.c
+    src/recording.c
+    src/vst3.cpp
     src/export.c
     src/project.c
     src/scheduler.c
@@ -53,3 +55,4 @@ foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
 endforeach()
 
 set_project_warnings(jfx_core)
+include(${CMAKE_SOURCE_DIR}/cmake/VST3.cmake)

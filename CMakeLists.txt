@@ -33,7 +33,7 @@ option(JFX_EXT_LUA "Build the Lua extension runtime" ON)
 option(JFX_EXT_MRUBY "Build the mruby extension runtime" ON)
 option(JFX_EXT_QUICKJS "Build the QuickJS extension runtime" OFF)
 option(JFX_EXT_PYTHON "Build the MicroPython extension runtime" OFF)
-option(JFX_EXT_WASM "Build the Wasmtime extension runtime (requires Wasmtime C API)" OFF)
+option(JFX_EXT_WASM "Build the vendored WAMR WebAssembly extension runtime" OFF)
 
 # Frontends.
 option(JFX_FRONTEND_CLI "Build the command-line frontend" ON)

@@ -1,6 +1,6 @@
 # MicroPython binding
 
-`JFX_EXT_PYTHON=ON` builds vendored **MicroPython 1.24** into `jfx_python`.
+`JFX_EXT_PYTHON=ON` builds vendored **MicroPython** into `jfx_python`.
 The library provides `import jfx` and `import pyjoltfx` for the
 [shared Script API 1.0 services](../../docs/extensions.md). This is MicroPython,
 with its embedded standard-library subset; it is not a CPython/PyPy embedding.
@@ -12,7 +12,10 @@ build/frontends/cli/joltfx scripts run python extif/examples/grade.py gain 0.75
 ```
 
 Python 3 and Make generate the vendored port's qstr/module/root headers. The
-port disables external imports, persistent bytecode, eval/exec, file/process I/O,
+build selects the integer byte conversion API declared by the checkout, supporting
+the 1.24 interface and the current signed/overflow-aware interface. Integers outside
+signed int64 return `JFX_SCRIPT_TYPE_ERROR` rather than truncating at the bridge.
+The port disables external imports, persistent bytecode, eval/exec, file/process I/O,
 sys/gc/micropython access and threads. Builtin print routes to Tilly diagnostics.
 Integers preserve int64 at the boundary using MPZ, floats use double, vectors
 use lists/tuples and resources use opaque `Value` objects. Tracebacks reach the

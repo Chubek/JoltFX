@@ -244,7 +244,7 @@ cmake --build . --target jfx_cli
   inspect or render either document kind
 - `joltfx nle new/edit/info/render` — create, edit, inspect and export sequences
 - `joltfx compose new/edit/info/render` — typed node graphs, terminal editing and PPM export
-- `joltfx scripts list/run/edit` — sandboxed Lua/mruby/QuickJS/MicroPython/Wasmtime over the shared Core editor
+- `joltfx scripts list/run/edit` — sandboxed Lua/mruby/QuickJS/MicroPython/WAMR over the shared Core editor
 - `joltfx version`, `joltfx help [COMMAND]`
 
 `DOC.jfx` is the plain-text project format in `core/include/jfx/jfx_project.h`:
@@ -260,7 +260,7 @@ history, state and export; see `docs/editor.md` for color commands and the
 CPU execution limits. Generate color controls from `jfx_color_catalog` or the
 node descriptors; `grade.*` and `calibration.*` indices are section-local.
 
-Desktop API 1.2 presents each interface in a workspace tab, with shared
+Desktop API 1.3 presents each interface in a workspace tab, with shared
 transport/clip selection/preview/history/export. Color Grading uses descriptor
 dials and RGB wheels with editor 1.5 gesture transactions. Finish gestures before
 tab/selection/reset/history/load changes; reacquire documents after cancel.
@@ -271,6 +271,25 @@ editor commands and bounded gesture transactions. Finish audio gestures before
 history, selection, tab, load/save or reset changes. Playback block peaks feed
 the stereo output meter; clear them together with queues and mixer snapshots.
 Keep mute/solo semantics aligned with NLE: they affect both audio and video.
+
+DAW appends workspace/panel identifiers and shares the sequence's Arrangement,
+Mixer, VST3 Inserts and Mixdown views. Use editor 1.6 `audio.*` commands for rack,
+tempo and master changes. The Core mixer owns insert instances for playback and
+export; the desktop parameter inspector owns a separate metadata instance.
+Preserve descriptors on load without instantiating plugins. Native VST3 support
+is gated by `JFX_AUDIO_VST3`; use generic controls and fail unsupported layouts
+explicitly. WAV mixdown uses export 1.1 incremental snapshot jobs. See
+`docs/daw.md`, `vst3_audio_host`, `daw_ui_tests` and `workspace_ui_tests`.
+
+Desktop 1.4 adds MIDI / Instruments, Recording and Automation views, native VST3
+containers and state capture. SDL native parent/input/event APIs stay in
+`desktop/src/host_window.cpp`. Native callbacks mark changes for deferred capture;
+never mutate/destroy instances from callbacks. Synchronize pending gestures before
+save/export/history/selection/load and remove views before destroying their parent.
+Recording locks model edits, consumes bounded queued input from the UI loop and
+publishes/adds a take only on successful finish. Cleanup cancels incomplete takes.
+`daw_native_window_capture` uses a real SDL window plus dummy input; portable UI
+tests cover notes, state capture and automation with headless ImGui.
 
 ### Plugins (OpenFX)
 

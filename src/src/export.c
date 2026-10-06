@@ -19,7 +19,7 @@ struct jfx_export_job {
     float *pcm;
     uint64_t start,total,completed,audio_start,audio_cursor;
     uint32_t width,height,rate,fps_num,fps_den;
-    bool sequence;
+    bool sequence,audio_only;
     jfx_export_state_t state;
     jfx_result_t result;
 };
@@ -55,6 +55,7 @@ static const char *container_for(const char *path) {
     if (!strcmp(ext,".mov")) return "mov";
     if (!strcmp(ext,".mkv")) return "matroska";
     if (!strcmp(ext,".webm")) return "webm";
+    if (!strcmp(ext,".wav")) return "wav";
     return NULL;
 }
 jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_options_t *o,jfx_export_job_t **out) {
@@ -62,9 +63,11 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
         strstr(o->path,"://") || o->width>4096 || o->height>4096 || o->start_frame>INT64_MAX || o->frame_count>INT64_MAX ||
         (o->sample_rate && (o->sample_rate<8000 || o->sample_rate>192000))) return JFX_ERROR_INVALID_ARGUMENT;
     const char *container=o->container?o->container:container_for(o->path);
-    if (!container || (strcmp(container,"mp4") && strcmp(container,"mov") && strcmp(container,"matroska") && strcmp(container,"webm"))) return JFX_ERROR_INVALID_ARGUMENT;
-    if (!jfx_export_available()) return JFX_ERROR_NOT_IMPLEMENTED;
+    if (!container || (strcmp(container,"mp4") && strcmp(container,"mov") && strcmp(container,"matroska") && strcmp(container,"webm") && strcmp(container,"wav"))) return JFX_ERROR_INVALID_ARGUMENT;
+    bool audio_only=!strcmp(container,"wav");
+    if (!audio_only && !jfx_export_available()) return JFX_ERROR_NOT_IMPLEMENTED;
     bool sequence=jfx_editor_kind(editor)==JFX_PROJECT_KIND_SEQUENCE;
+    if (audio_only && (!sequence || !o->audio)) return JFX_ERROR_INVALID_ARGUMENT;
     const jfx_timeline_t *timeline=jfx_editor_timeline((jfx_editor_t *)editor);
     uint64_t duration=sequence?jfx_timeline_duration(timeline):0;
     uint64_t count=o->frame_count?o->frame_count:(duration>o->start_frame?duration-o->start_frame:0);
@@ -75,10 +78,10 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
         (sequence && ((o->fps_num && o->fps_num!=num) || (o->fps_den && o->fps_den!=den)))) return JFX_ERROR_INVALID_ARGUMENT;
     const char *video=o->video_codec?o->video_codec:!strcmp(container,"matroska")?"ffv1":!strcmp(container,"mov")?"prores":!strcmp(container,"webm")?"libvpx-vp9":"mpeg4";
     const char *audio=o->audio_codec?o->audio_codec:!strcmp(container,"mp4")?"aac":!strcmp(container,"webm")?"libopus":"pcm_s16le";
-    if (!jfx_export_codec_available(video,false) || (sequence && o->audio && !jfx_export_codec_available(audio,true))) return JFX_ERROR_NOT_IMPLEMENTED;
+    if (!audio_only && (!jfx_export_codec_available(video,false) || (sequence && o->audio && !jfx_export_codec_available(audio,true)))) return JFX_ERROR_NOT_IMPLEMENTED;
     jfx_export_job_t *j=allocate(sizeof(*j)); if (!j) return JFX_ERROR_OUT_OF_MEMORY;
     memset(j,0,sizeof(*j)); j->state=JFX_EXPORT_RUNNING; j->start=o->start_frame; j->total=count;
-    j->sequence=sequence; j->fps_num=num; j->fps_den=den;
+    j->sequence=sequence; j->audio_only=audio_only; j->fps_num=num; j->fps_den=den;
     j->width=o->width?o->width:sequence?jfx_timeline_width(timeline):jfx_editor_graph_width(editor);
     j->height=o->height?o->height:sequence?jfx_timeline_height(timeline):jfx_editor_graph_height(editor);
     j->rate=o->sample_rate?o->sample_rate:48000;
@@ -94,8 +97,8 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
     if (result!=JFX_SUCCESS) goto fail;
     j->path=allocate(strlen(o->path)+1); j->temporary=allocate(strlen(o->path)+64);
     if (j->temporary) j->temporary[0]=0;
-    j->pixels=allocate((size_t)j->width*j->height*4);
-    if (!j->path || !j->temporary || !j->pixels) { result=JFX_ERROR_OUT_OF_MEMORY; goto fail; }
+    if (!audio_only) j->pixels=allocate((size_t)j->width*j->height*4);
+    if (!j->path || !j->temporary || (!audio_only && !j->pixels)) { result=JFX_ERROR_OUT_OF_MEMORY; goto fail; }
     strcpy(j->path,o->path); j->temporary[0]=0;
     if (sequence && o->audio) {
         timeline=jfx_editor_timeline(j->editor);
@@ -113,6 +116,20 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
         if (errno!=EEXIST) { j->temporary[0]=0; result=JFX_ERROR_NOT_FOUND; goto fail; }
     }
     if (!j->file) { j->temporary[0]=0; result=JFX_ERROR_ALREADY_EXISTS; goto fail; }
+    if (audio_only) {
+        uint64_t end;
+        result=jfx_timeline_audio_sample(timeline,j->start+j->total,j->rate,&end);
+        if (result!=JFX_SUCCESS || end-j->audio_start>(UINT32_MAX-36u)/8u) { result=JFX_ERROR_INVALID_ARGUMENT; goto fail; }
+        uint32_t bytes=(uint32_t)(end-j->audio_start)*8u;
+        uint8_t header[44]={'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',16,0,0,0,3,0,2,0,
+            0,0,0,0,0,0,0,0,8,0,32,0,'d','a','t','a',0,0,0,0};
+        for (unsigned b=0;b<4;++b) {
+            header[4+b]=(uint8_t)((bytes+36u)>>(b*8)); header[24+b]=(uint8_t)(j->rate>>(b*8));
+            header[28+b]=(uint8_t)((j->rate*8u)>>(b*8)); header[40+b]=(uint8_t)(bytes>>(b*8));
+        }
+        if (fwrite(header,1,sizeof(header),j->file)!=sizeof(header)) { result=JFX_ERROR_BACKEND_FAILURE; goto fail; }
+        *out=j; return JFX_SUCCESS;
+    }
     jolt_media_options_t media={.size=sizeof(media),.container=container,.video_codec=video,.audio_codec=audio,
         .width=j->width,.height=j->height,.fps_num=num,.fps_den=den,.sample_rate=j->rate,
         .audio=j->mixer!=NULL,.video_bitrate=o->video_bitrate,.audio_bitrate=o->audio_bitrate};
@@ -130,10 +147,12 @@ jfx_result_t jfx_export_step(jfx_export_job_t *j,uint32_t max_frames) {
     jfx_result_t r=JFX_SUCCESS;
     for (uint32_t i=0;i<max_frames && j->completed<j->total;++i) {
         uint64_t frame=j->start+j->completed;
-        r=j->sequence?jfx_editor_render_frame(j->editor,frame,j->width,j->height,j->pixels,(size_t)j->width*j->height*4)
-            :jfx_editor_render_graph(j->editor,UINT32_MAX,(double)frame*j->fps_den/j->fps_num,j->width,j->height,j->pixels,(size_t)j->width*j->height*4);
-        if (r!=JFX_SUCCESS) goto failed;
-        r=mapped(jolt_media_writer_video(j->writer,j->pixels)); if (r!=JFX_SUCCESS) goto failed;
+        if (!j->audio_only) {
+            r=j->sequence?jfx_editor_render_frame(j->editor,frame,j->width,j->height,j->pixels,(size_t)j->width*j->height*4)
+                :jfx_editor_render_graph(j->editor,UINT32_MAX,(double)frame*j->fps_den/j->fps_num,j->width,j->height,j->pixels,(size_t)j->width*j->height*4);
+            if (r!=JFX_SUCCESS) goto failed;
+            r=mapped(jolt_media_writer_video(j->writer,j->pixels)); if (r!=JFX_SUCCESS) goto failed;
+        }
         if (j->mixer) {
             uint64_t end;
             r=jfx_timeline_audio_sample(jfx_editor_timeline(j->editor),frame+1,j->rate,&end);
@@ -142,14 +161,22 @@ jfx_result_t jfx_export_step(jfx_export_job_t *j,uint32_t max_frames) {
                 size_t n=end-j->audio_cursor>JFX_AUDIO_MAX_BLOCK_FRAMES?JFX_AUDIO_MAX_BLOCK_FRAMES:(size_t)(end-j->audio_cursor);
                 r=jfx_audio_mixer_render(j->mixer,j->audio_cursor,n,j->pcm,n*2);
                 if (r!=JFX_SUCCESS) goto failed;
-                r=mapped(jolt_media_writer_audio(j->writer,j->pcm,n)); if (r!=JFX_SUCCESS) goto failed;
+                if (j->audio_only) {
+                    /* Encode explicitly little-endian, including on big-endian hosts. */
+                    uint8_t *bytes=(uint8_t *)j->pcm;
+                    for (size_t s=0;s<n*2;++s) {
+                        uint32_t bits; memcpy(&bits,j->pcm+s,sizeof(bits));
+                        for (unsigned b=0;b<4;++b) bytes[s*4+b]=(uint8_t)(bits>>(b*8));
+                    }
+                    if (fwrite(bytes,8,n,j->file)!=n) { r=JFX_ERROR_BACKEND_FAILURE; goto failed; }
+                } else { r=mapped(jolt_media_writer_audio(j->writer,j->pcm,n)); if (r!=JFX_SUCCESS) goto failed; }
                 j->audio_cursor+=n;
             }
         }
         ++j->completed;
     }
     if (j->completed==j->total) {
-        r=mapped(jolt_media_writer_finish(j->writer)); if (r!=JFX_SUCCESS) goto failed;
+        if (!j->audio_only) { r=mapped(jolt_media_writer_finish(j->writer)); if (r!=JFX_SUCCESS) goto failed; }
         jolt_media_writer_close(j->writer); j->writer=NULL;
         int flush=fflush(j->file),closed=fclose(j->file); j->file=NULL;
         if (flush || closed) { r=JFX_ERROR_BACKEND_FAILURE; goto failed; }

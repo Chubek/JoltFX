@@ -11,12 +11,14 @@ set_tests_properties(cli_integration PROPERTIES LABELS "integration;cli" TIMEOUT
 endif()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
-add_test(NAME cmake_find_wasmtime COMMAND "${CMAKE_COMMAND}"
-    "-DMODULE_DIR=${PROJECT_SOURCE_DIR}/cmake/modules"
-    "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/find-wasmtime-test"
-    "-DLIBRARY_NAME=${CMAKE_STATIC_LIBRARY_PREFIX}wasmtime${CMAKE_STATIC_LIBRARY_SUFFIX}"
-    -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_find_wasmtime.cmake")
-set_tests_properties(cmake_find_wasmtime PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
+if(JFX_EXT_WASM)
+    add_test(NAME cmake_wamr_config COMMAND "${CMAKE_COMMAND}"
+        "-DADAPTER_DIR=${PROJECT_SOURCE_DIR}/extif/wasm"
+        "-DWAMR_ROOT=${JFX_WAMR_ROOT}"
+        "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/wamr-config-test"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_wamr_config.cmake")
+    set_tests_properties(cmake_wamr_config PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
+endif()
 if(JFX_EXT_MRUBY)
     add_test(NAME mruby_source_selection COMMAND "${CMAKE_COMMAND}"
         "-DJFX_SOURCE_DIR=${PROJECT_SOURCE_DIR}"

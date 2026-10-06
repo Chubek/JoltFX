@@ -96,9 +96,9 @@ step; referenced modules report busy on unload. See [the SDK guide](../../docs/p
 
 ## Extension scripts
 
-- `joltfx scripts list` — report enabled Lua, mruby, QuickJS, MicroPython and Wasmtime adapters.
+- `joltfx scripts list` — report enabled Lua, mruby, QuickJS, MicroPython and WAMR adapters.
 - `joltfx scripts run LANG FILE [FUNCTION [NUMBER]]` — load source and optionally
-  call a function; prints its typed result. Wasmtime accepts `.wasm` or WAT.
+  call a function; prints its typed result. WAMR accepts binary `.wasm`; compile WAT with `wat2wasm` first.
 - `joltfx scripts edit LANG FILE IN.jfx OUT.jfx [FUNCTION]` — load the project,
   execute the script and optional zero-argument function, then save on success.
   Script failures preserve existing output.

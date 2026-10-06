@@ -3,66 +3,98 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include "wasmtime.h"
+#include <limits.h>
+#include <stddef.h>
+#include "wasm_export.h"
 
 typedef struct {
     bool used, callable;
     uint32_t generation;
-    wasmtime_func_t function;
+    wasm_function_inst_t function;
     jfx_value_t value;
     char *string;
 } jfx_wasm_ref_t;
 typedef struct {
     jfx_script_runtime_t base;
-    wasm_engine_t *engine;
-    wasmtime_store_t *store;
-    wasmtime_context_t *context;
-    wasmtime_module_t *module;
-    wasmtime_instance_t instance;
+    wasm_module_t module;
+    wasm_module_inst_t instance;
+    wasm_exec_env_t exec_env;
+    uint8_t *binary;
     bool loaded, typed;
     uint32_t scratch, scratch_size;
     jfx_wasm_ref_t refs[JFX_SCRIPT_REFS];
 } wasm_runtime_t;
-typedef struct { jfx_script_runtime_t *rt; uint8_t *data; size_t size, maximum; } jfx_wasm_memory_t;
 static wasm_runtime_t *as_wasm(jfx_script_runtime_t *rt) { return (wasm_runtime_t *)rt; }
 
-static jfx_script_status_t error(jfx_script_runtime_t *rt, wasmtime_error_t *err, wasm_trap_t *trap) {
-    wasm_byte_vec_t text = {0};
-    if (err) wasmtime_error_message(err, &text); else if (trap) wasm_trap_message(trap, &text);
+/* WAMR has process-wide allocator callbacks. The Script API serializes lifecycle
+ * on one owner thread; headers retain the allocating runtime even during frees
+ * performed under a different active runtime. Bootstrap allocations are shared. */
+static size_t runtime_count;
+static _Thread_local jfx_script_runtime_t *allocation_owner;
+typedef union {
+    max_align_t alignment;
+    struct { jfx_script_runtime_t *owner; size_t size; } info;
+} allocation_t;
+static void *block_alloc(unsigned int size) {
+    size_t bytes = sizeof(allocation_t) + (size_t)size;
+    if (bytes < size) return NULL;
+    allocation_t *p = allocation_owner ? jfx_script_alloc(allocation_owner, NULL, bytes) :
+        tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), bytes, _Alignof(max_align_t));
+    if (!p) return NULL;
+    p->info.owner = allocation_owner; p->info.size = size; return p + 1;
+}
+static void block_free(void *ptr) {
+    if (!ptr) return;
+    allocation_t *p = (allocation_t *)ptr - 1;
+    if (p->info.owner) (void)jfx_script_alloc(p->info.owner, p, 0);
+    else tilly_free((tilly_allocator_t *)tilly_default_allocator(), p);
+}
+static void *block_realloc(void *ptr, unsigned int size) {
+    if (!ptr) return block_alloc(size);
+    if (!size) { block_free(ptr); return NULL; }
+    allocation_t *p = (allocation_t *)ptr - 1;
+    size_t bytes = sizeof(*p) + (size_t)size;
+    if (bytes < size) return NULL;
+    if (p->info.owner) {
+        allocation_t *next = jfx_script_alloc(p->info.owner, p, bytes);
+        if (!next) return NULL;
+        next->info.size = size; return next + 1;
+    }
+    void *next = tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), bytes, _Alignof(max_align_t));
+    if (!next) return NULL;
+    allocation_t *block = next; block->info.owner = NULL; block->info.size = size;
+    memcpy(block + 1, ptr, p->info.size < size ? p->info.size : size);
+    block_free(ptr); return block + 1;
+}
+static void *wamr_malloc(mem_alloc_usage_t usage, unsigned int size) {
+    void *ptr = block_alloc(size);
+    if (ptr && usage == Alloc_For_LinearMemory) memset(ptr, 0, size);
+    return ptr;
+}
+static void *wamr_realloc(mem_alloc_usage_t usage, bool mapped, void *ptr, unsigned int size) {
+    (void)mapped;
+    size_t old = ptr ? ((allocation_t *)ptr - 1)->info.size : 0;
+    void *next = block_realloc(ptr, size);
+    if (next && usage == Alloc_For_LinearMemory && size > old)
+        memset((uint8_t *)next + old, 0, size - old);
+    return next;
+}
+static void wamr_free(mem_alloc_usage_t usage, void *ptr) {
+    (void)usage; block_free(ptr);
+}
+static jfx_script_status_t error(jfx_script_runtime_t *rt, const char *text) {
     jfx_script_status_t status = rt->fault ? rt->fault : JFX_SCRIPT_ERROR;
-    if (trap) { wasmtime_trap_code_t code; if (wasmtime_trap_code(trap, &code) && code == WASMTIME_TRAP_CODE_OUT_OF_FUEL) status = JFX_SCRIPT_BUDGET; }
-    if (text.data) (void)snprintf(rt->error, sizeof(rt->error), "%.*s", (int)fmin((double)text.size, 2047), text.data);
-    wasm_byte_vec_delete(&text);
-    if (err) wasmtime_error_delete(err);
-    if (trap) wasm_trap_delete(trap);
+    if (text && strstr(text, "instruction limit exceeded")) status = JFX_SCRIPT_BUDGET;
+    if (text) (void)snprintf(rt->error, sizeof(rt->error), "%s", text);
     return status;
 }
-static uint8_t *memory_get(void *user, size_t *size, size_t *capacity) {
-    jfx_wasm_memory_t *mem = user; *size = mem->size; *capacity = mem->size; return mem->data;
-}
-static wasmtime_error_t *memory_grow(void *user, size_t size) {
-    jfx_wasm_memory_t *mem = user;
-    if (size > mem->maximum) return wasmtime_error_new("linear memory limit exceeded");
-    uint8_t *next = jfx_script_alloc(mem->rt, mem->data, size ? size : 1);
-    if (!next) return wasmtime_error_new("linear memory budget exceeded");
-    if (size > mem->size) memset(next + mem->size, 0, size - mem->size);
-    mem->data = next; mem->size = size; return NULL;
-}
-static void memory_free(void *user) {
-    jfx_wasm_memory_t *mem = user; jfx_script_runtime_t *rt = mem->rt;
-    (void)jfx_script_alloc(rt, mem->data, 0); (void)jfx_script_alloc(rt, mem, 0);
-}
-static wasmtime_error_t *memory_new(void *user, const wasm_memorytype_t *type,
-    size_t minimum, size_t maximum, size_t reserved, size_t guard, wasmtime_linear_memory_t *out) {
-    (void)type; (void)reserved;
-    if (guard) return wasmtime_error_new("guarded memory is not enabled");
-    jfx_script_runtime_t *rt = user;
-    jfx_wasm_memory_t *mem = jfx_script_alloc(rt, NULL, sizeof(*mem));
-    if (!mem) return wasmtime_error_new("linear memory budget exceeded");
-    *mem = (jfx_wasm_memory_t){ .rt = rt, .maximum = maximum < rt->memory_limit ? maximum : rt->memory_limit };
-    wasmtime_error_t *err = memory_grow(mem, minimum);
-    if (err) { memory_free(mem); return err; }
-    *out = (wasmtime_linear_memory_t){ mem, memory_get, memory_grow, memory_free }; return NULL;
+static bool memory(wasm_runtime_t *wasm, uint8_t **data, size_t *size) {
+    wasm_memory_inst_t mem = wasm_runtime_lookup_memory(wasm->instance, "memory");
+    if (!mem) return false;
+    *data = wasm_memory_get_base_address(mem);
+    uint64_t bytes = wasm_memory_get_cur_page_count(mem) * wasm_memory_get_bytes_per_page(mem);
+    if (bytes > SIZE_MAX) return false;
+    *size = (size_t)bytes; return true;
 }
 static int ref_slot(jfx_script_runtime_t *rt, jfx_script_value_t ref) {
     size_t slot = (size_t)(ref & 255u);
@@ -166,19 +198,14 @@ static jfx_script_status_t write_value(jfx_script_runtime_t *rt, uint8_t *data, 
     }
     return JFX_SCRIPT_OK;
 }
-static wasm_trap_t *host_call(void *user, wasmtime_caller_t *caller,
-    const wasmtime_val_t *argv, size_t argc, wasmtime_val_t *ret, size_t nret) {
-    (void)argc; (void)nret;
-    jfx_script_runtime_t *rt = user;
-    wasmtime_extern_t ext;
+static void host_call(wasm_exec_env_t env, uint64_t *argv) {
+    jfx_script_runtime_t *rt = wasm_runtime_get_custom_data(wasm_runtime_get_module_inst(env));
+    uint8_t *data = NULL; size_t size = 0;
     jfx_script_status_t status = JFX_SCRIPT_TYPE_ERROR;
-    if (wasmtime_caller_export_get(caller, "memory", 6, &ext) && ext.kind == WASMTIME_EXTERN_MEMORY) {
-        wasmtime_context_t *context = wasmtime_caller_context(caller);
-        uint8_t *data = wasmtime_memory_data(context, &ext.of.memory);
-        size_t size = wasmtime_memory_data_size(context, &ext.of.memory);
-        uint32_t op = (uint32_t)argv[0].of.i32, length = (uint32_t)argv[1].of.i32;
-        uint32_t args_offset = (uint32_t)argv[2].of.i32, count = (uint32_t)argv[3].of.i32;
-        uint32_t result_offset = (uint32_t)argv[4].of.i32;
+    if (memory(as_wasm(rt), &data, &size)) {
+        uint32_t op = (uint32_t)argv[0], length = (uint32_t)argv[1];
+        uint32_t args_offset = (uint32_t)argv[2], count = (uint32_t)argv[3];
+        uint32_t result_offset = (uint32_t)argv[4];
         if (length < 96 && span(size, op, length) && !memchr(data + op, 0, length) &&
             count <= JFX_SCRIPT_MAX_ARGS && span(size, args_offset, (size_t)count * JFX_WASM_VALUE_SIZE) &&
             span(size, result_offset, JFX_WASM_VALUE_SIZE)) {
@@ -190,116 +217,149 @@ static wasm_trap_t *host_call(void *user, wasmtime_caller_t *caller,
                 if (status) break;
             }
             if (!status) status = jfx_script_host_call(rt, name, args, count, &result);
+            if (!status && !memory(as_wasm(rt), &data, &size)) status = JFX_SCRIPT_TYPE_ERROR;
             if (!status) status = write_value(rt, data, size, result_offset, &result, NULL, 0);
             for (uint32_t i = 0; i < count; ++i) (void)jfx_script_alloc(rt, strings[i], 0);
         }
     }
-    ret[0].kind = WASMTIME_I32; ret[0].of.i32 = status;
+    argv[0] = (uint32_t)status;
     if (status) (void)jfx_script_fail(rt, status, "joltwasm host call failed");
-    return NULL;
 }
-static wasm_trap_t *host_clamp(void *user, wasmtime_caller_t *caller,
-    const wasmtime_val_t *args, size_t argc, wasmtime_val_t *ret, size_t nret) {
-    (void)caller; (void)argc; (void)nret;
-    jfx_script_runtime_t *rt = user;
+static void host_clamp(wasm_exec_env_t env, uint64_t *args) {
+    wasm_module_inst_t instance = wasm_runtime_get_module_inst(env);
+    jfx_script_runtime_t *rt = wasm_runtime_get_custom_data(instance);
     jfx_value_t values[3], result = {0};
-    for (size_t i = 0; i < 3; ++i) values[i] = (jfx_value_t){ .type = JFX_TYPE_FLOAT, .f = args[i].of.f64 };
+    for (size_t i = 0; i < 3; ++i) {
+        values[i] = (jfx_value_t){ .type = JFX_TYPE_FLOAT };
+        memcpy(&values[i].f, &args[i], sizeof(double));
+    }
     jfx_script_status_t status = jfx_script_host_call(rt, "clamp", values, 3, &result);
-    if (status) { (void)jfx_script_fail(rt, status, "joltwasm clamp failed"); return wasmtime_trap_new(rt->error, strlen(rt->error)); }
-    ret[0].kind = WASMTIME_F64; ret[0].of.f64 = result.f; return NULL;
+    if (status) {
+        (void)jfx_script_fail(rt, status, "joltwasm clamp failed");
+        wasm_runtime_set_exception(instance, rt->error); return;
+    }
+    memcpy(args, &result.f, sizeof(double));
 }
 static bool global_i32(wasm_runtime_t *wasm, const char *name, uint32_t *out) {
-    wasmtime_extern_t ext;
-    if (!wasmtime_instance_export_get(wasm->context, &wasm->instance, name, strlen(name), &ext) || ext.kind != WASMTIME_EXTERN_GLOBAL) return false;
-    wasm_globaltype_t *type = wasmtime_global_type(wasm->context, &ext.of.global);
-    bool immutable = wasm_globaltype_mutability(type) == WASM_CONST;
-    wasm_globaltype_delete(type);
-    wasmtime_val_t value; wasmtime_global_get(wasm->context, &ext.of.global, &value);
-    if (value.kind != WASMTIME_I32) { wasmtime_val_unroot(&value); return false; }
-    if (!immutable || value.of.i32 < 0) return false;
-    *out = (uint32_t)value.of.i32; return true;
+    wasm_global_inst_t global;
+    if (!wasm_runtime_get_export_global_inst(wasm->instance, name, &global) ||
+        global.kind != WASM_I32 || global.is_mutable) return false;
+    int32_t value; memcpy(&value, global.global_data, sizeof(value));
+    if (value < 0) return false;
+    *out = (uint32_t)value; return true;
+}
+static void unload(wasm_runtime_t *wasm) {
+    if (wasm->exec_env) wasm_runtime_destroy_exec_env(wasm->exec_env);
+    if (wasm->instance) wasm_runtime_deinstantiate(wasm->instance);
+    if (wasm->module) wasm_runtime_unload(wasm->module);
+    (void)jfx_script_alloc(&wasm->base, wasm->binary, 0);
+    wasm->exec_env = NULL; wasm->instance = NULL; wasm->module = NULL; wasm->binary = NULL;
+    wasm->loaded = false; wasm->typed = false;
+}
+/* Instantiation runs start/constructor functions before an exec_env can be
+ * metered. Reject those entry points rather than execute unbounded guest code. */
+static bool no_start(const uint8_t *bytes, size_t length) {
+    for (size_t offset = 8; offset < length;) {
+        uint8_t id = bytes[offset++]; uint32_t size = 0; bool complete = false;
+        for (unsigned shift = 0; shift < 35 && offset < length; shift += 7) {
+            uint8_t byte = bytes[offset++];
+            if (shift == 28 && (byte & 0xf0)) return false;
+            size |= (uint32_t)(byte & 0x7f) << shift;
+            if (!(byte & 0x80)) { complete = true; break; }
+        }
+        if (!complete || size > length - offset || id == 8) return false;
+        offset += size;
+    }
+    return true;
 }
 static jfx_script_status_t load(jfx_script_runtime_t *rt, const void *source, size_t length, const char *name) {
     (void)name;
     wasm_runtime_t *wasm = as_wasm(rt);
     if (wasm->loaded) return JFX_SCRIPT_BUSY;
-    wasm_byte_vec_t binary = {0};
-    const uint8_t *bytes = source;
-    wasmtime_error_t *err = NULL;
-    if (length < 4 || memcmp(source, "\0asm", 4)) {
-        err = wasmtime_wat2wasm(source, length, &binary);
-        if (err) return error(rt, err, NULL);
-        bytes = (const uint8_t *)binary.data; length = binary.size;
+    if (length < 8 || length > UINT32_MAX || memcmp(source, "\0asm\1\0\0\0", 8))
+        return error(rt, "WAMR requires a binary .wasm module; compile WAT with wat2wasm first");
+    if (!no_start(source, length)) return error(rt, "WASM start sections are not supported");
+    wasm->binary = jfx_script_alloc(rt, NULL, length);
+    if (!wasm->binary) return JFX_SCRIPT_OUT_OF_MEMORY;
+    memcpy(wasm->binary, source, length);
+    jfx_script_runtime_t *previous = allocation_owner; allocation_owner = rt;
+    wasm->module = wasm_runtime_load(wasm->binary, (uint32_t)length, rt->error, sizeof(rt->error));
+    jfx_script_status_t status = wasm->module ? JFX_SCRIPT_OK : error(rt, NULL);
+    for (int32_t i = 0; !status && i < wasm_runtime_get_import_count(wasm->module); ++i) {
+        wasm_import_t item; wasm_runtime_get_import_type(wasm->module, i, &item);
+        if (item.kind != WASM_IMPORT_EXPORT_KIND_FUNC || !item.linked ||
+            strcmp(item.module_name, "joltfx") || (strcmp(item.name, "call") && strcmp(item.name, "clamp")))
+            status = error(rt, "Unsupported WASM import; only joltfx.call and joltfx.clamp are available");
     }
-    err = wasmtime_module_new(wasm->engine, bytes, length, &wasm->module);
-    wasm_byte_vec_delete(&binary);
-    if (err) return error(rt, err, NULL);
-    wasm->store = wasmtime_store_new(wasm->engine, rt, NULL);
-    if (!wasm->store) { wasmtime_module_delete(wasm->module); wasm->module = NULL; return JFX_SCRIPT_OUT_OF_MEMORY; }
-    wasm->context = wasmtime_store_context(wasm->store);
-    wasmtime_store_limiter(wasm->store, (int64_t)fmin((double)rt->memory_limit, (double)INT64_MAX), 128, 1, 1, 1);
-    err = wasmtime_context_set_fuel(wasm->context, rt->instruction_limit);
-    wasmtime_linker_t *linker = wasmtime_linker_new(wasm->engine);
-    wasm_valtype_vec_t params, results;
-    wasm_valtype_vec_new_uninitialized(&params, 5);
-    for (size_t i = 0; i < 5; ++i) params.data[i] = wasm_valtype_new_i32();
-    wasm_valtype_vec_new_uninitialized(&results, 1); results.data[0] = wasm_valtype_new_i32();
-    wasm_functype_t *type = wasm_functype_new(&params, &results);
-    if (!err) err = wasmtime_linker_define_func(linker, "joltfx", 6, "call", 4, type, host_call, rt, NULL);
-    wasm_functype_delete(type);
-    wasm_valtype_vec_new_uninitialized(&params, 3);
-    for (size_t i = 0; i < 3; ++i) params.data[i] = wasm_valtype_new_f64();
-    wasm_valtype_vec_new_uninitialized(&results, 1); results.data[0] = wasm_valtype_new_f64();
-    type = wasm_functype_new(&params, &results);
-    if (!err) err = wasmtime_linker_define_func(linker, "joltfx", 6, "clamp", 5, type, host_clamp, rt, NULL);
-    wasm_functype_delete(type);
-    wasm_trap_t *trap = NULL;
-    if (!err) err = wasmtime_linker_instantiate(linker, wasm->context, wasm->module, &wasm->instance, &trap);
-    wasmtime_linker_delete(linker);
-    jfx_script_status_t status = err || trap ? error(rt, err, trap) : JFX_SCRIPT_OK;
+    for (int32_t i = 0; !status && i < wasm_runtime_get_export_count(wasm->module); ++i) {
+        wasm_export_t item; wasm_runtime_get_export_type(wasm->module, i, &item);
+        if (!strcmp(item.name, "__post_instantiate") || !strcmp(item.name, "__wasm_call_ctors"))
+            status = error(rt, "WASM instantiation constructors are not supported; call an explicit export");
+    }
+    if (!status) {
+        struct InstantiationArgs2 *config = NULL;
+        if (!wasm_runtime_instantiation_args_create(&config)) status = JFX_SCRIPT_OUT_OF_MEMORY;
+        else {
+            wasm_runtime_instantiation_args_set_default_stack_size(config, 16384);
+            wasm_runtime_instantiation_args_set_max_memory_pages(config,
+                (uint32_t)(rt->memory_limit / 65536 > 65536 ? 65536 : rt->memory_limit / 65536));
+            wasm_runtime_instantiation_args_set_custom_data(config, rt);
+            wasm->instance = wasm_runtime_instantiate_ex2(wasm->module, config, rt->error, sizeof(rt->error));
+            wasm_runtime_instantiation_args_destroy(config);
+            if (!wasm->instance) status = error(rt, NULL);
+        }
+    }
+    if (!status) {
+        wasm->exec_env = wasm_runtime_create_exec_env(wasm->instance, 16384);
+        if (!wasm->exec_env) status = JFX_SCRIPT_OUT_OF_MEMORY;
+    }
     uint32_t version = 0;
-    wasmtime_extern_t ext;
-    if (!status && wasmtime_instance_export_get(wasm->context, &wasm->instance, "jfx_abi_version", 15, &ext)) {
+    bool abi_export = false;
+    for (int32_t i = 0; !status && i < wasm_runtime_get_export_count(wasm->module); ++i) {
+        wasm_export_t item; wasm_runtime_get_export_type(wasm->module, i, &item);
+        if (!strcmp(item.name, "jfx_abi_version")) abi_export = true;
+    }
+    if (!status && abi_export) {
+        uint8_t *data = NULL; size_t size = 0;
         if (!global_i32(wasm, "jfx_abi_version", &version) || version != JFX_WASM_ABI_VERSION || !global_i32(wasm, "jfx_scratch", &wasm->scratch) ||
             !global_i32(wasm, "jfx_scratch_size", &wasm->scratch_size)) status = JFX_SCRIPT_TYPE_ERROR;
-        else if (!wasmtime_instance_export_get(wasm->context, &wasm->instance, "memory", 6, &ext) ||
-            ext.kind != WASMTIME_EXTERN_MEMORY || wasm->scratch_size < JFX_WASM_VALUE_SIZE ||
+        else if (!memory(wasm, &data, &size) || wasm->scratch_size < JFX_WASM_VALUE_SIZE ||
             (uint64_t)wasm->scratch + wasm->scratch_size > UINT32_MAX ||
-            !span(wasmtime_memory_data_size(wasm->context, &ext.of.memory), wasm->scratch, wasm->scratch_size)) status = JFX_SCRIPT_TYPE_ERROR;
+            !span(size, wasm->scratch, wasm->scratch_size)) status = JFX_SCRIPT_TYPE_ERROR;
         else wasm->typed = true;
     }
-    if (status) {
-        wasmtime_store_delete(wasm->store); wasm->store = NULL; wasm->context = NULL;
-        wasmtime_module_delete(wasm->module); wasm->module = NULL;
-    } else wasm->loaded = true;
+    if (status) unload(wasm); else wasm->loaded = true;
+    allocation_owner = previous;
     return status;
 }
 static jfx_script_status_t capture(jfx_script_runtime_t *rt, const char *name, jfx_script_value_t *out) {
-    wasm_runtime_t *wasm = as_wasm(rt); wasmtime_extern_t ext;
-    if (!wasm->loaded || !wasmtime_instance_export_get(wasm->context, &wasm->instance, name, strlen(name), &ext) ||
-        ext.kind != WASMTIME_EXTERN_FUNC) return JFX_SCRIPT_NOT_FOUND;
-    jfx_wasm_ref_t value = { .callable = true, .function = ext.of.func }; return pin(rt, &value, out);
+    wasm_runtime_t *wasm = as_wasm(rt);
+    if (!wasm->loaded) return JFX_SCRIPT_NOT_FOUND;
+    wasm_function_inst_t function = wasm_runtime_lookup_function(wasm->instance, name);
+    if (!function) return JFX_SCRIPT_NOT_FOUND;
+    jfx_wasm_ref_t value = { .callable = true, .function = function }; return pin(rt, &value, out);
 }
 static jfx_script_status_t call(jfx_script_runtime_t *rt, jfx_script_value_t ref,
     const jfx_value_t *args, size_t argc, jfx_value_t *out) {
     wasm_runtime_t *wasm = as_wasm(rt);
     int slot = ref_slot(rt, ref);
     if (slot < 0 || !wasm->refs[slot].callable) return JFX_SCRIPT_TYPE_ERROR;
-    wasmtime_func_t *function = &wasm->refs[slot].function;
-    wasm_functype_t *type = wasmtime_func_type(wasm->context, function);
-    const wasm_valtype_vec_t *params = wasm_functype_params(type), *results = wasm_functype_results(type);
-    wasmtime_val_t argv[JFX_SCRIPT_MAX_ARGS], result = {0};
+    wasm_function_inst_t function = wasm->refs[slot].function;
+    uint32_t param_count = wasm_func_get_param_count(function, wasm->instance);
+    uint32_t nresults = wasm_func_get_result_count(function, wasm->instance);
+    if (param_count > JFX_SCRIPT_MAX_ARGS || nresults > 1) return JFX_SCRIPT_TYPE_ERROR;
+    wasm_valkind_t params[JFX_SCRIPT_MAX_ARGS], results[1];
+    wasm_func_get_param_types(function, wasm->instance, params);
+    wasm_func_get_result_types(function, wasm->instance, results);
+    wasm_val_t argv[JFX_SCRIPT_MAX_ARGS], result = {0};
     size_t nargs = argc; jfx_script_status_t status = JFX_SCRIPT_OK;
     uint32_t result_offset = 0;
     if (wasm->typed) {
-        if (params->size != 3 || results->size != 1 || wasm_valtype_kind(results->data[0]) != WASM_I32) status = JFX_SCRIPT_TYPE_ERROR;
-        for (size_t i = 0; i < params->size && !status; ++i) if (wasm_valtype_kind(params->data[i]) != WASM_I32) status = JFX_SCRIPT_TYPE_ERROR;
-        wasmtime_extern_t ext;
-        if (!status && (!wasmtime_instance_export_get(wasm->context, &wasm->instance, "memory", 6, &ext) ||
-            ext.kind != WASMTIME_EXTERN_MEMORY)) status = JFX_SCRIPT_TYPE_ERROR;
+        if (param_count != 3 || nresults != 1 || results[0] != WASM_I32) status = JFX_SCRIPT_TYPE_ERROR;
+        for (size_t i = 0; i < param_count && !status; ++i) if (params[i] != WASM_I32) status = JFX_SCRIPT_TYPE_ERROR;
+        uint8_t *data = NULL; size_t size = 0;
+        if (!status && !memory(wasm, &data, &size)) status = JFX_SCRIPT_TYPE_ERROR;
         if (!status) {
-            uint8_t *data = wasmtime_memory_data(wasm->context, &ext.of.memory);
-            size_t size = wasmtime_memory_data_size(wasm->context, &ext.of.memory);
             size_t records = (argc + 1) * JFX_WASM_VALUE_SIZE;
             if (!span(size, wasm->scratch, wasm->scratch_size) || records > wasm->scratch_size ||
                 (uint64_t)wasm->scratch + wasm->scratch_size > UINT32_MAX) status = JFX_SCRIPT_TYPE_ERROR;
@@ -309,44 +369,47 @@ static jfx_script_status_t call(jfx_script_runtime_t *rt, jfx_script_value_t ref
                 memset(data + wasm->scratch, 0, records);
                 for (size_t i = 0; i < argc && !status; ++i)
                     status = write_value(rt, data, size, wasm->scratch + (uint32_t)i * JFX_WASM_VALUE_SIZE, &args[i], &cursor, end);
-                argv[0] = (wasmtime_val_t){ .kind = WASMTIME_I32, .of.i32 = (int32_t)wasm->scratch };
-                argv[1] = (wasmtime_val_t){ .kind = WASMTIME_I32, .of.i32 = (int32_t)argc };
-                argv[2] = (wasmtime_val_t){ .kind = WASMTIME_I32, .of.i32 = (int32_t)result_offset };
+                argv[0] = (wasm_val_t){ .kind = WASM_I32, .of.i32 = (int32_t)wasm->scratch };
+                argv[1] = (wasm_val_t){ .kind = WASM_I32, .of.i32 = (int32_t)argc };
+                argv[2] = (wasm_val_t){ .kind = WASM_I32, .of.i32 = (int32_t)result_offset };
                 nargs = 3;
             }
         }
     } else {
-        if (params->size != argc || results->size > 1) status = JFX_SCRIPT_TYPE_ERROR;
+        if (param_count != argc) status = JFX_SCRIPT_TYPE_ERROR;
         for (size_t i = 0; i < argc && !status; ++i) {
-            wasm_valkind_t kind = wasm_valtype_kind(params->data[i]);
-            if (kind == WASM_I64 && args[i].type == JFX_TYPE_INT) argv[i] = (wasmtime_val_t){ .kind = WASMTIME_I64, .of.i64 = args[i].i };
+            wasm_valkind_t kind = params[i];
+            if (kind == WASM_I64 && args[i].type == JFX_TYPE_INT) argv[i] = (wasm_val_t){ .kind = WASM_I64, .of.i64 = args[i].i };
             else if (kind == WASM_I32 && args[i].type == JFX_TYPE_INT && args[i].i >= INT32_MIN && args[i].i <= INT32_MAX)
-                argv[i] = (wasmtime_val_t){ .kind = WASMTIME_I32, .of.i32 = (int32_t)args[i].i };
-            else if (kind == WASM_F64 && args[i].type == JFX_TYPE_FLOAT) argv[i] = (wasmtime_val_t){ .kind = WASMTIME_F64, .of.f64 = args[i].f };
+                argv[i] = (wasm_val_t){ .kind = WASM_I32, .of.i32 = (int32_t)args[i].i };
+            else if (kind == WASM_F64 && args[i].type == JFX_TYPE_FLOAT) argv[i] = (wasm_val_t){ .kind = WASM_F64, .of.f64 = args[i].f };
             else status = JFX_SCRIPT_TYPE_ERROR;
         }
     }
-    size_t nresults = results->size; wasm_functype_delete(type);
+    if (nresults && results[0] != WASM_I32 && results[0] != WASM_I64 && results[0] != WASM_F64) status = JFX_SCRIPT_TYPE_ERROR;
     if (status) return status;
-    wasmtime_error_t *err = wasmtime_context_set_fuel(wasm->context, rt->instruction_limit - rt->instructions);
-    wasm_trap_t *trap = NULL;
-    if (!err) err = wasmtime_func_call(wasm->context, function, argv, nargs, &result, nresults, &trap);
-    if (err || trap) return error(rt, err, trap);
+    if (rt->instructions >= rt->instruction_limit) return JFX_SCRIPT_BUDGET;
+    uint64_t remaining = rt->instruction_limit - rt->instructions;
+    wasm_runtime_set_instruction_count_limit(wasm->exec_env, remaining > INT_MAX ? INT_MAX : (int)remaining);
+    wasm_runtime_set_exception(wasm->instance, NULL);
+    jfx_script_runtime_t *previous = allocation_owner; allocation_owner = rt;
+    bool success = wasm_runtime_call_wasm_a(wasm->exec_env, function, nresults, &result, (uint32_t)nargs, argv);
+    allocation_owner = previous;
+    if (!success) return error(rt, wasm_runtime_get_exception(wasm->instance));
     if (wasm->typed) {
         if (result.of.i32) return result.of.i32 <= JFX_SCRIPT_INVALID_ARGUMENT && result.of.i32 >= JFX_SCRIPT_CAPABILITY ?
             (jfx_script_status_t)result.of.i32 : JFX_SCRIPT_ERROR;
-        wasmtime_extern_t ext;
-        if (!wasmtime_instance_export_get(wasm->context, &wasm->instance, "memory", 6, &ext)) return JFX_SCRIPT_TYPE_ERROR;
-        return read_value(rt, wasmtime_memory_data(wasm->context, &ext.of.memory),
-            wasmtime_memory_data_size(wasm->context, &ext.of.memory), result_offset, true, NULL, out);
+        uint8_t *data = NULL; size_t size = 0;
+        if (!memory(wasm, &data, &size)) return JFX_SCRIPT_TYPE_ERROR;
+        return read_value(rt, data, size, result_offset, true, NULL, out);
     }
     *out = (jfx_value_t){0};
     if (!nresults) return JFX_SCRIPT_OK;
     switch (result.kind) {
-        case WASMTIME_I32: out->type = JFX_TYPE_INT; out->i = result.of.i32; break;
-        case WASMTIME_I64: out->type = JFX_TYPE_INT; out->i = result.of.i64; break;
-        case WASMTIME_F64: out->type = JFX_TYPE_FLOAT; out->f = result.of.f64; if (!isfinite(out->f)) return JFX_SCRIPT_TYPE_ERROR; break;
-        default: wasmtime_val_unroot(&result); return JFX_SCRIPT_TYPE_ERROR;
+        case WASM_I32: out->type = JFX_TYPE_INT; out->i = result.of.i32; break;
+        case WASM_I64: out->type = JFX_TYPE_INT; out->i = result.of.i64; break;
+        case WASM_F64: out->type = JFX_TYPE_FLOAT; out->f = result.of.f64; if (!isfinite(out->f)) return JFX_SCRIPT_TYPE_ERROR; break;
+        default: return JFX_SCRIPT_TYPE_ERROR;
     }
     return JFX_SCRIPT_OK;
 }
@@ -368,32 +431,49 @@ static jfx_script_status_t clone(jfx_script_runtime_t *rt, jfx_script_value_t re
     int slot = ref_slot(rt, ref); return slot < 0 ? JFX_SCRIPT_TYPE_ERROR : pin(rt, &as_wasm(rt)->refs[slot], out);
 }
 static void gc(jfx_script_runtime_t *rt, int mode) {
-    if (!mode && as_wasm(rt)->context) wasmtime_context_gc(as_wasm(rt)->context);
+    (void)rt; (void)mode;
 }
 static void destroy(jfx_script_runtime_t *rt) {
     wasm_runtime_t *wasm = as_wasm(rt);
     for (size_t i = 0; i < JFX_SCRIPT_REFS; ++i) (void)jfx_script_alloc(rt, wasm->refs[i].string, 0);
-    if (wasm->store) wasmtime_store_delete(wasm->store);
-    if (wasm->module) wasmtime_module_delete(wasm->module);
-    if (wasm->engine) wasm_engine_delete(wasm->engine);
+    jfx_script_runtime_t *previous = allocation_owner; allocation_owner = rt;
+    unload(wasm);
+    allocation_owner = NULL;
+    if (!--runtime_count) wasm_runtime_destroy();
+    allocation_owner = previous;
     jfx_script_base_free(rt);
 }
 jfx_script_status_t jfx_wasm_script_create(const jfx_script_desc_t *desc, jfx_script_runtime_t **out) {
     static const jfx_script_ops_t ops = { destroy, load, capture, call, from, to, clone, release, gc };
     jfx_script_status_t status = jfx_script_base_create(sizeof(wasm_runtime_t), desc, JFX_SCRIPT_WASM, &ops, out);
     if (status) return status;
-    wasm_config_t *config = wasm_config_new();
-    if (!config) { jfx_script_base_free(*out); *out = NULL; return JFX_SCRIPT_OUT_OF_MEMORY; }
-    wasmtime_config_consume_fuel_set(config, true);
-    wasmtime_config_parallel_compilation_set(config, false);
-    wasmtime_config_memory_reservation_set(config, 0);
-    wasmtime_config_memory_guard_size_set(config, 0);
-    wasmtime_config_memory_reservation_for_growth_set(config, 0);
-    wasmtime_config_memory_may_move_set(config, true);
-    wasmtime_config_memory_init_cow_set(config, false);
-    wasmtime_memory_creator_t creator = { .env = *out, .new_memory = memory_new };
-    wasmtime_config_host_memory_creator_set(config, &creator);
-    as_wasm(*out)->engine = wasm_engine_new_with_config(config);
-    if (!as_wasm(*out)->engine) { jfx_script_base_free(*out); *out = NULL; return JFX_SCRIPT_OUT_OF_MEMORY; }
+    if (!runtime_count) {
+        RuntimeInitArgs config = { .mem_alloc_type = Alloc_With_Allocator, .running_mode = Mode_Interp };
+        /* Upstream represents callback pointers as void*. Keep the ABI
+         * conversion localized without function/object pointer casts. */
+        union { void *object; void *(*function)(mem_alloc_usage_t, unsigned int); } alloc_cb = { .function = wamr_malloc };
+        union { void *object; void *(*function)(mem_alloc_usage_t, bool, void *, unsigned int); } realloc_cb = { .function = wamr_realloc };
+        union { void *object; void (*function)(mem_alloc_usage_t, void *); } free_cb = { .function = wamr_free };
+        union { void *object; void (*function)(wasm_exec_env_t, uint64_t *); } call_cb = { .function = host_call },
+            clamp_cb = { .function = host_clamp };
+        config.mem_alloc_option.allocator.malloc_func = alloc_cb.object;
+        config.mem_alloc_option.allocator.realloc_func = realloc_cb.object;
+        config.mem_alloc_option.allocator.free_func = free_cb.object;
+        static NativeSymbol symbols[] = {
+            { "call", NULL, "(iiiii)i", NULL },
+            { "clamp", NULL, "(FFF)F", NULL }
+        };
+        symbols[0].func_ptr = call_cb.object; symbols[1].func_ptr = clamp_cb.object;
+        jfx_script_runtime_t *previous = allocation_owner; allocation_owner = NULL;
+        bool initialized = wasm_runtime_full_init(&config);
+        bool linked = initialized && wasm_runtime_register_natives_raw("joltfx", symbols, 2);
+        allocation_owner = previous;
+        if (!linked) {
+            if (initialized) wasm_runtime_destroy();
+            jfx_script_base_free(*out); *out = NULL; return JFX_SCRIPT_OUT_OF_MEMORY;
+        }
+        wasm_runtime_set_log_level(WASM_LOG_LEVEL_FATAL);
+    }
+    ++runtime_count;
     return JFX_SCRIPT_OK;
 }

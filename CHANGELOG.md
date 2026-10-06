@@ -9,16 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- DAW MIDI clips and VST3 instruments, native plugin editor windows, opaque
+  component/controller state persistence, stereo input recording and track-gain/
+  plugin-parameter automation lanes. Shared project/history/playback/export
+  snapshots, sample-offset events and note chasing, atomic WAV takes and native
+  view/run-loop lifecycle. Timeline 1.3, Editor 1.7, Audio 1.2, VST3 1.1 and
+  Desktop 1.4; MIDI/Automation/Recording APIs 1.0.
+
 - Extension Script API 1.0: language-neutral typed FFI, sandboxed editor/resource
   services, owned callbacks, cached runtime-local batch functions, allocator and
   instruction budgets, GC controls and structured diagnostics. Expanded Lua/mruby
   adapters preserve their numeric entry points; new vendored QuickJS/MicroPython
-  and optional Wasmtime adapters share the same contract.
-- Validated WASM/WAT execution with fuel, budgeted Tilly linear memory, scalar
+  and optional WAMR adapters share the same contract.
+- Validated binary WASM execution with instruction metering, budgeted Tilly memory, scalar
   exports and typed `joltwasm` ABI 1. CLI `scripts list/run/edit`, runnable grading
   examples in five languages, installed extension headers/archives and a
   dependency-resolving `JoltFX` CMake package. Cross-language/resource/lifetime,
   sandbox/budget/CLI conformance and all-adapter sanitizer CI.
+- Replaced the external Wasmtime SDK with vendored `third_party/wasm-micro-runtime`.
+  The interpreter archive ships in the CMake package. Compile WAT to `.wasm`
+  before loading; start sections and automatic constructors are rejected.
 - Correct auto-backend lifetime during probing, retaining the CPU fallback and
   replacing it with a later GPU backend instead of destroying the selected handle.
 

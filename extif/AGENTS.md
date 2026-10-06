@@ -2,7 +2,7 @@
 
 ## Overview
 
-JoltFX supports Lua, mruby, JavaScript (QuickJS), MicroPython and Wasmtime through a shared typed FFI bridge to the Core engine.
+JoltFX supports Lua, mruby, JavaScript (QuickJS), MicroPython and WAMR through a shared typed FFI bridge to the Core engine.
 
 Extensions are **sandboxed** by default: they have access only to Core engine functionality through their respective JoltFX library. They have no direct access to system resources.
 
@@ -19,9 +19,17 @@ see `docs/extensions.md` and `extif/README.md` for the working API and source la
 
 Lua/mruby retain their numeric APIs. QuickJS maps INT to BigInt. MicroPython uses
 MPZ/double, isolated saved states, a fixed heap, explicit roots and collection at
-host boundaries; it is not CPython/PyPy. Wasmtime supports validated WASM/WAT,
-fuel and Tilly linear memory, scalar exports and typed `joltwasm` ABI 1 without WASI.
-Its internal compiler/code/metadata allocator is outside the reported byte counter.
+host boundaries; it is not CPython/PyPy. WAMR supports validated binary WASM,
+instruction metering, scalar exports and typed `joltwasm` ABI 1 without WASI.
+Module/instance/stack/linear-memory allocations use the runtime's Tilly budget;
+shared bootstrap allocations use Tilly outside the per-runtime counter. All WAMR
+lifecycle calls share the serialized extension-owner thread. Start sections and
+automatic constructors are rejected; initialization uses explicit callable exports.
+
+MicroPython's integer conversion API is selected from `py/objint.h` during
+configuration. Support both `mp_obj_int_to_bytes_impl` (older ports) and
+`mp_obj_int_to_bytes` (current ports); signed int64 boundaries must round-trip
+exactly and larger MPZ integers must return TYPE_ERROR without truncation.
 
 Local `register_kernel` captures a runtime-owned batch callable and never adds an
 engine-catalog kernel. Event callbacks receive event-name strings, not native
@@ -179,10 +187,9 @@ cmake --build . --target jfx_quickjs
 cmake -DJFX_EXT_PYTHON=ON ..
 cmake --build . --target jfx_python
 
-# Wasmtime (default OFF; external version 38+ C API)
-# Keep the C API SDK in a persistent directory; its headers/library are needed
-# for rebuilds. Missing cached SDK paths are discarded during configuration.
-cmake -DJFX_EXT_WASM=ON -DJFX_WASMTIME_ROOT=/path/to/wasmtime ..
+# WAMR (default OFF; builds third_party/wasm-micro-runtime)
+# JFX_WAMR_ROOT can select an external source checkout.
+cmake -DJFX_EXT_WASM=ON ..
 cmake --build . --target jfx_wasm
 ```
 

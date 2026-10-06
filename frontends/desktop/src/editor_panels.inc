@@ -25,7 +25,7 @@ void encoded_export(jfx_desktop_frontend_t *f) {
         if (ImGui::Button("Cancel video export")) jfx_export_cancel(f->export_job);
     }
 }
-void timeline_tracks(jfx_desktop_frontend_t *f) {
+void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
     auto *t = jfx_editor_timeline(f->editor);
     auto command=[&](const char *op,uint32_t a=0,uint32_t b=0,uint32_t c=0,double v=0,const char *text="") {
         auto r=jfx_desktop_frontend_edit(f,op,a,b,c,v,text); editor_result(f,r);
@@ -49,7 +49,7 @@ void timeline_tracks(jfx_desktop_frontend_t *f) {
     if (ImGui::Button("Redo")) { command("redo"); f->nle_drag=0; }
     ImGui::EndDisabled(); ImGui::SameLine();
     if (ImGui::Button("Add track")) {
-        if (command("track.add",0,0,0,0,"Video")==JFX_SUCCESS) { f->selected_track=(uint32_t)jfx_timeline_track_count(t)-1; f->selected_clip=0; }
+        if (command("track.add",0,0,0,0,daw?"Audio":"Video")==JFX_SUCCESS) { f->selected_track=(uint32_t)jfx_timeline_track_count(t)-1; f->selected_clip=0; }
     }
     if (f->nle_zoom<=0) { f->nle_zoom=2; f->nle_snap=true; }
     ImGui::SetNextItemWidth(160); ImGui::SliderFloat("Zoom px/frame",&f->nle_zoom,0.1f,20,"%.1f");
@@ -61,6 +61,7 @@ void timeline_tracks(jfx_desktop_frontend_t *f) {
     ImGui::SameLine();
     if (ImGui::BeginCombo("Add clip", "Choose source")) {
         for (int source = 0; source < JFX_CLIP_SOURCE_COUNT; ++source) {
+            if (daw && source!=JFX_CLIP_AUDIO) continue;
             if (ImGui::Selectable(jfx_clip_source_name((jfx_clip_source_t)source))) {
                 if (frame<=UINT32_MAX && command("clip.add",f->selected_track,(uint32_t)source,(uint32_t)frame,90,f->media_path)==JFX_SUCCESS)
                     f->selected_clip=(uint32_t)jfx_timeline_clip_count(t,f->selected_track)-1;
@@ -69,7 +70,7 @@ void timeline_tracks(jfx_desktop_frontend_t *f) {
         ImGui::EndCombo();
     }
     float scale=f->nle_zoom;
-    ImGui::BeginChild("NLE lanes",ImVec2(0,125),true);
+    ImGui::BeginChild("NLE lanes",ImVec2(0,daw?240.0f:125.0f),true);
     float available=ImGui::GetContentRegionAvail().x;
     ImVec2 ruler=ImGui::GetCursorScreenPos(); ruler.x+=120;
     ImGui::SetCursorScreenPos(ruler); ImGui::InvisibleButton("Ruler",ImVec2(available>120?available-120:20,20));
@@ -144,6 +145,11 @@ void timeline_tracks(jfx_desktop_frontend_t *f) {
             int64_t best=edge; double distance=8/scale;
             auto snap=[&](uint64_t candidate) { double d=std::fabs((double)candidate-(double)edge); if (d<distance) { distance=d; best=(int64_t)candidate; } };
             snap(frame);
+            if (daw) {
+                double frames_per_beat=jfx_timeline_fps(t)*60/jfx_timeline_audio_tempo(t);
+                double beat=std::fmax(0,std::round((double)edge/frames_per_beat)*frames_per_beat);
+                snap((uint64_t)std::llround(beat));
+            }
             for (uint32_t c=0;c<jfx_timeline_clip_count(t,f->nle_drop_track);++c) {
                 if (f->nle_drop_track==f->nle_drag_track && c==f->nle_drag_clip) continue;
                 auto start=jfx_timeline_clip_start(t,f->nle_drop_track,c); snap(start); snap(start+jfx_timeline_clip_length(t,f->nle_drop_track,c));

@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_AUDIO_API_MAJOR 1
-#define JFX_AUDIO_API_MINOR 0
+#define JFX_AUDIO_API_MINOR 2
 #define JFX_AUDIO_API_PATCH 0
 #define JFX_AUDIO_MAX_BLOCK_FRAMES 65536u
 typedef struct {
@@ -37,7 +37,9 @@ jfx_result_t jfx_audio_mixer_create(const jfx_timeline_t *timeline,
 void jfx_audio_mixer_destroy(jfx_audio_mixer_t *mixer);
 /* Interleaved stereo float, silence in gaps and after EOF. Overlaps sum without
  * clipping (headroom is retained). Output untouched on error; arbitrary seeks
- * and contiguous blocks have the same sequence clock. Capacity is float count. */
+ * and contiguous blocks have the same source clock. VST3 inserts preserve state
+ * across contiguous blocks; seeking resets plugin instances/tails. Track insert
+ * delays are compensated up to two seconds per rack. Capacity is float count. */
 jfx_result_t jfx_audio_mixer_render(jfx_audio_mixer_t *mixer, uint64_t start_sample,
     size_t frames, float *out_stereo, size_t capacity);
 /* Convenience one-block preview; repeated playback should retain a mixer. */

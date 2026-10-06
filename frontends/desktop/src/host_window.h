@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "jfx/jfx_vst3.h"
 
 /* Host window for the desktop frontend.
  *
@@ -37,6 +38,14 @@ void jfx_desktop_window_destroy(jfx_desktop_window_t *window);
 bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *window,const float *stereo,uint32_t frames);
 uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *window);
 void jfx_desktop_window_clear_audio(jfx_desktop_window_t *window);
+int jfx_desktop_window_input_count(void);
+const char *jfx_desktop_window_input_name(int index);
+bool jfx_desktop_window_capture_begin(jfx_desktop_window_t *window,int device);
+bool jfx_desktop_window_capture_read(jfx_desktop_window_t *window,float *stereo,uint32_t capacity,uint32_t *out_frames);
+void jfx_desktop_window_capture_end(jfx_desktop_window_t *window);
+jfx_result_t jfx_desktop_window_plugin_open(jfx_desktop_window_t *window,jfx_vst3_instance_t *plugin,const char *title);
+void jfx_desktop_window_plugin_close(jfx_desktop_window_t *window);
+bool jfx_desktop_window_plugin_visible(jfx_desktop_window_t *window);
 
 /* Pumps OS events, feeds them to ImGui and opens a new ImGui frame. Returns
  * false once the user has asked to close the window. */
