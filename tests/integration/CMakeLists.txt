@@ -18,6 +18,11 @@ add_test(NAME cmake_find_wasmtime COMMAND "${CMAKE_COMMAND}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_find_wasmtime.cmake")
 set_tests_properties(cmake_find_wasmtime PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
 if(JFX_EXT_MRUBY)
+    add_test(NAME mruby_source_selection COMMAND "${CMAKE_COMMAND}"
+        "-DJFX_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+        "-DJFX_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/mruby-source-selection"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/extif/test_mruby_source.cmake")
+    set_tests_properties(mruby_source_selection PROPERTIES LABELS "integration;cmake" TIMEOUT 60)
     add_test(NAME cmake_mruby_config COMMAND "${CMAKE_COMMAND}"
         "-DADAPTER_DIR=${PROJECT_SOURCE_DIR}/extif/mruby"
         "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/mruby-config-test"

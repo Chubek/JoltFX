@@ -1,16 +1,4 @@
-set(JFX_MRUBY_ROOT "${PROJECT_SOURCE_DIR}/third_party/mruby" CACHE PATH
-    "Path to a compatible mruby source checkout (tested with 3.3.0)")
-if(NOT EXISTS "${JFX_MRUBY_ROOT}/include/mruby.h")
-    message(FATAL_ERROR "mruby headers not found at '${JFX_MRUBY_ROOT}'. "
-        "Set -DJFX_MRUBY_ROOT=<mruby-3.3.0-checkout>.")
-endif()
-file(STRINGS "${JFX_MRUBY_ROOT}/include/mruby.h" JFX_MRUBY_ALLOCATOR_API
-    REGEX "mrb_open_allocf" LIMIT_COUNT 1)
-if(NOT JFX_MRUBY_ALLOCATOR_API)
-    message(FATAL_ERROR "This mruby checkout lacks mrb_open_allocf, required "
-        "for JoltFX's sandbox memory budgets. Use mruby 3.3.0 via "
-        "-DJFX_MRUBY_ROOT=<checkout>, or disable mruby with -DJFX_EXT_MRUBY=OFF.")
-endif()
+include(ResolveSource.cmake)
 string(SHA256 JFX_MRUBY_SOURCE_KEY "${JFX_MRUBY_ROOT}")
 string(SUBSTRING "${JFX_MRUBY_SOURCE_KEY}" 0 12 JFX_MRUBY_SOURCE_KEY)
 set(JFX_MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/runtime/${JFX_MRUBY_SOURCE_KEY}")

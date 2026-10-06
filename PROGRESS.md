@@ -1,5 +1,23 @@
 # Progress
 
+## Default mruby dependency selection (2026-10-06)
+
+- Reproduced the configure failure with the vendored mruby checkout: its removed
+  custom allocator API is incompatible with the sandbox memory budget.
+- Added automatic selection of SHA-256-pinned mruby 3.3.0 when the default
+  vendored source is missing or incompatible, including existing caches.
+  Explicit external roots retain compatibility validation. Added seven offline
+  configure cases for default, fallback and explicit-root selection.
+- Default configuration and the downloaded runtime/adapter build succeed with
+  ASAN/UBSan. Reconfiguration also succeeds with FetchContent fully disconnected,
+  reusing the downloaded source. All six focused tests pass: source selection,
+  build isolation and four Lua/mruby extension conformance tests (including CLI),
+  with leak detection enabled. The existing build-isolation fixture now compares
+  canonical paths so workspace aliases do not cause a false failure.
+- Updated the mruby README and extension build contract. The Vulkan SDK status
+  line is informational and does not block configuration. `git diff --check`
+  passes.
+
 ## Core engine directory renamed to `src` (2026-10-05)
 
 - Renamed the top-level `mograph/` directory to `src/` with `git mv`, so history is

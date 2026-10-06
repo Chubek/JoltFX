@@ -190,7 +190,10 @@ The mruby adapter includes both upstream headers and the generated headers from
 `<runtime-build>/jfx/include` in its build directory. Presymbol IDs must come from the
 `jfx` cross build that produces `libmruby.a`, rather than the host mrbc build.
 `JFX_MRUBY_ROOT` may select an external checkout; require `mrb_open_allocf` for
-the budget allocator and reject incompatible runtimes during configuration.
+the budget allocator and reject incompatible explicit roots during configuration.
+When the default vendored checkout is missing or incompatible, CMake fetches
+the SHA-256-pinned mruby 3.3.0 release into the build tree. External compatible
+roots support offline builds. `mruby_source_selection` tests these paths offline.
 Rake configuration and its generated lockfile belong in the CMake build tree.
 Changing the source root must invalidate the runtime archive.
 
