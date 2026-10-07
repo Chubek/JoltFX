@@ -13,7 +13,7 @@ globalThis.cancelAnimationFrame = () => {};
 globalThis.requestAnimationFrame = () => 1;
 
 function canvas() {
-  return { width: 0, height: 0, getContext: () => ({ putImageData: () => {} }) };
+  return { width: 0, height: 0, style: {}, addEventListener: () => {}, getContext: () => ({ putImageData: () => {} }) };
 }
 const bridge = {
   loadPackage: () => {},

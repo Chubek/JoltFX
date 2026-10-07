@@ -178,6 +178,7 @@ struct jfx_desktop_frontend {
     bool editing, looping, show_grade, show_nodes;
     bool show_calibration;
     bool show_plugins, show_audio, show_daw, workspace_requested;
+    bool show_animation;
     jfx_desktop_workspace_t workspace;
     bool grading_edit;
     bool audio_edit;
@@ -195,6 +196,7 @@ struct jfx_desktop_frontend {
     bool video_audio;
     jfx_export_job_t *export_job;
     jfx_audio_mixer_t *audio_mixer;
+    jfx_animation_tab_t *animation_tab;
     uint64_t audio_sample;
     float audio_peak[2];
     int audio_import_frames;
@@ -234,6 +236,7 @@ struct jfx_desktop_frontend {
 
     uint32_t width;
     uint32_t height;
+    double workspace_zoom;
     double time_seconds;
     double duration_seconds;
     bool playing;
@@ -334,6 +337,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->width = (config && config->width) ? config->width : JFX_DESKTOP_DEFAULT_WIDTH;
     frontend->height = (config && config->height) ? config->height : JFX_DESKTOP_DEFAULT_HEIGHT;
     frontend->duration_seconds = JFX_DESKTOP_DEFAULT_DURATION;
+    frontend->workspace_zoom = 1.0;
     frontend->show_viewport = true;
     frontend->show_timeline = true;
     frontend->show_properties = true;
@@ -342,6 +346,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_plugins = true;
     frontend->show_audio = true;
     frontend->show_daw = true;
+    frontend->show_animation = true;
     std::snprintf(frontend->audio_export_path,sizeof(frontend->audio_export_path),"mix.wav");
     frontend->audio_import_frames = 90;
     frontend->recording_device=-1;
@@ -420,6 +425,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     ImGui::GetIO().IniFilename = imgui_ini_path();
     frontend->editor = jfx_editor_create(kPreviewWidth, kPreviewHeight);
     if (!frontend->editor) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    frontend->animation_tab = jfx_animation_tab_create(kPreviewWidth, kPreviewHeight);
+    if (!frontend->animation_tab) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     result=jfx_plugin_host_create(frontend->engine,&frontend->plugins);
     if (result!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(frontend); return result; }
 
@@ -455,6 +462,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
     if (frontend) {
         jfx_desktop_window_capture_end(frontend->window); jfx_audio_recording_destroy(frontend->recording);
         close_inspector(frontend); jfx_export_destroy(frontend->export_job); reset_audio(frontend);
+        jfx_animation_tab_destroy(frontend->animation_tab);
     }
     if (!frontend) return;
     event_unsubscribe(JFX_EVENT_KERNEL_SUBMIT, engine_event_sink);
@@ -526,10 +534,25 @@ extern "C" jfx_result_t jfx_desktop_frontend_resize(jfx_desktop_frontend_t *fron
     return JFX_SUCCESS;
 }
 
+extern "C" jfx_result_t jfx_desktop_frontend_set_zoom(jfx_desktop_frontend_t *frontend,
+    double zoom) {
+    if (!frontend || !std::isfinite(zoom) || zoom < 0.25 || zoom > 8.0) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    frontend->workspace_zoom = zoom;
+    frontend->preview_dirty = true;
+    return JFX_SUCCESS;
+}
+
+extern "C" double jfx_desktop_frontend_zoom(const jfx_desktop_frontend_t *frontend) {
+    return frontend ? frontend->workspace_zoom : 0.0;
+}
+
 extern "C" jfx_result_t jfx_desktop_frontend_play(jfx_desktop_frontend_t *frontend) {
     if (!frontend) return JFX_ERROR_INVALID_ARGUMENT;
     if (frontend->recording) return JFX_ERROR_BUSY;
     frontend->playing = true;
+    jfx_animation_tab_set_playing(frontend->animation_tab, true);
     return JFX_SUCCESS;
 }
 
@@ -537,6 +560,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_pause(jfx_desktop_frontend_t *front
     if (!frontend) return JFX_ERROR_INVALID_ARGUMENT;
     reset_audio(frontend);
     frontend->playing = false;
+    jfx_animation_tab_set_playing(frontend->animation_tab, false);
     return JFX_SUCCESS;
 }
 
@@ -546,6 +570,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_seek(jfx_desktop_frontend_t *fronte
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     reset_audio(frontend); frontend->time_seconds = time_seconds;
+    jfx_animation_tab_set_time(frontend->animation_tab, time_seconds);
     frontend->preview_dirty = true;
     return JFX_SUCCESS;
 }
@@ -634,10 +659,56 @@ namespace {
 #include "audio_panel.inc"
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
-    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW"};
+    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
-    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,JFX_DESKTOP_PANEL_DAW};
+    JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
+    JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION};
+
+void animation_panel(jfx_desktop_frontend_t *frontend) {
+    auto *tab = frontend->animation_tab;
+    ImGui::TextUnformatted("2D skeletal animation");
+    ImGui::TextWrapped("Author and preview bones, poses, curves, and runtime bytecode in one renderer-neutral scene.");
+    if (ImGui::Button("Add root bone")) {
+        jfx_animation_bone_desc_t desc{sizeof(desc), "root", UINT32_MAX, {{0, 0}, 0, {1, 1}}};
+        uint32_t bone = UINT32_MAX;
+        if (jfx_animation_scene_add_bone(jfx_animation_tab_scene(tab), &desc, &bone) != JFX_SUCCESS)
+            std::snprintf(frontend->status, sizeof(frontend->status), "Unable to add animation bone");
+    }
+    ImGui::SameLine();
+    bool playing = jfx_animation_tab_playing(tab);
+    if (ImGui::Button(playing ? "Pause" : "Play")) {
+        jfx_animation_tab_set_playing(tab, !playing);
+        frontend->playing = !playing;
+    }
+    auto *scene = jfx_animation_tab_scene(tab);
+    jfx_animation_scene_info_t info{sizeof(info), 0, 0, 0};
+    jfx_animation_scene_info(scene, &info);
+    double duration = std::max(1.0, info.duration);
+    double current = jfx_animation_tab_time(tab);
+    float scrub = (float)current;
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::SliderFloat("Animation time", &scrub, 0.0f, (float)duration, "%.3f s")) {
+        jfx_animation_tab_set_time(tab, scrub);
+        frontend->time_seconds = scrub;
+        frontend->preview_dirty = true;
+    }
+    ImGui::Text("Bones: %u   Keys: %u   Duration: %.3f s", info.bone_count, info.key_count, info.duration);
+    ImGui::Separator();
+    ImGui::TextUnformatted("Runtime bytecode");
+    uint8_t *bytes = nullptr; size_t size = 0;
+    if (ImGui::Button("Compile JFA1")) {
+        auto result = jfx_animation_compile(scene, &bytes, &size);
+        if (result == JFX_SUCCESS) {
+            std::snprintf(frontend->status, sizeof(frontend->status), "Compiled animation bytecode: %zu bytes", size);
+            jfx_animation_bytes_destroy(bytes);
+        } else {
+            std::snprintf(frontend->status, sizeof(frontend->status), "Animation bytecode compilation failed");
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Compatible with native and WASM players");
+}
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::TextUnformatted("Preview");
@@ -651,7 +722,8 @@ void preview_panel(jfx_desktop_frontend_t *frontend) {
         if (texture) {
             frontend->preview_texture=texture;
             float width=std::fmin((float)kPreviewWidth,ImGui::GetContentRegionAvail().x);
-            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texture)),ImVec2(width,width*9/16));
+            const float zoom = (float)frontend->workspace_zoom;
+            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texture)),ImVec2(width*zoom,width*9/16*zoom));
         } else ImGui::TextDisabled("Preview texture upload failed.");
     } else ImGui::TextWrapped("Headless: %ux%u preview rendered through %s.",kPreviewWidth,kPreviewHeight,jfx_engine_backend_name(frontend->engine));
     ImGui::TextWrapped("Project: %s",frontend->project_path[0]?frontend->project_path:"Untitled");
@@ -757,6 +829,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("Plugins", nullptr, &frontend->show_plugins);
             ImGui::MenuItem("Audio Mixing", nullptr, &frontend->show_audio);
             ImGui::MenuItem("DAW", nullptr, &frontend->show_daw);
+            ImGui::MenuItem("2D Animation", nullptr, &frontend->show_animation);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -806,6 +879,11 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     ImGui::SetNextWindowPos(viewport->WorkPos); ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::Begin("JoltFX workspace",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|
         ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
+    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+        ImGui::GetIO().KeyCtrl && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f) {
+        const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
+        jfx_desktop_frontend_set_zoom(frontend, next);
+    }
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -814,6 +892,11 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     ImGui::SameLine(); ImGui::SetNextItemWidth(210);
     float time=(float)frontend->time_seconds;
     if (ImGui::SliderFloat("Time",&time,0,(float)frontend->duration_seconds,"%.3f s")) jfx_desktop_frontend_seek(frontend,time);
+    ImGui::SameLine();
+    float zoom = (float)frontend->workspace_zoom;
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::SliderFloat("Zoom", &zoom, 0.25f, 4.0f, "%.2fx"))
+        jfx_desktop_frontend_set_zoom(frontend, zoom);
     ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_undo(frontend->editor));
     if (ImGui::Button("Undo")) { finish_grading(frontend); editor_result(frontend,jfx_desktop_frontend_edit(frontend,"undo",0,0,0,0,"")); }
     ImGui::EndDisabled(); ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_redo(frontend->editor));
@@ -879,6 +962,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_PLUGINS: plugin_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_AUDIO: audio_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_DAW: daw_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_ANIMATION: animation_panel(frontend); break;
                     default: break;
                     }
                 }
@@ -944,6 +1028,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             const ImGuiIO &io = ImGui::GetIO();
             const double delta = io.DeltaTime > 0.0f ? (double)io.DeltaTime : 1.0 / 60.0;
             frontend->time_seconds += delta;
+            jfx_animation_tab_tick(frontend->animation_tab, delta);
             if (frontend->time_seconds > frontend->duration_seconds) {
                 frontend->time_seconds = frontend->looping ? 0.0 : frontend->duration_seconds;
                 if (!frontend->looping) frontend->playing = false;
@@ -1148,13 +1233,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {

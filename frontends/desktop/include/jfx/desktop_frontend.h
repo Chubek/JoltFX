@@ -11,6 +11,7 @@
 #include "jfx/jfx_lut.h"
 #include "jfx/jfx_export.h"
 #include "jfx/jfx_plugin_sdk.h"
+#include "jfx/jfx_animation.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,12 +32,13 @@ typedef enum {
     JFX_DESKTOP_PANEL_PLUGINS,
     JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_DAW,
+    JFX_DESKTOP_PANEL_ANIMATION,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 4
+#define JFX_DESKTOP_API_MINOR 5
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -49,6 +51,7 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_STATISTICS,
     JFX_DESKTOP_WORKSPACE_AUDIO,
     JFX_DESKTOP_WORKSPACE_DAW,
+    JFX_DESKTOP_WORKSPACE_ANIMATION,
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
 
@@ -92,6 +95,8 @@ jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *frontend,
 jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_resize(jfx_desktop_frontend_t *frontend,
     uint32_t width, uint32_t height);
+jfx_result_t jfx_desktop_frontend_set_zoom(jfx_desktop_frontend_t *frontend, double zoom);
+double jfx_desktop_frontend_zoom(const jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_play(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_pause(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_seek(jfx_desktop_frontend_t *frontend,

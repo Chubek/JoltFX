@@ -771,7 +771,7 @@ int cmd_capabilities(void) {
     printf("joltfx %s frontend capabilities\n\n", JOLTFX_CLI_VERSION);
     static const char *const kNames[] = { "run", "open_project", "save_project",
         "close_project", "playback", "loop", "render", "export", "selection",
-        "viewport_state" };
+        "viewport_state", "zoom" };
     jfx_frontend_t *probe = NULL;
     jfx_frontend_desc_t desc;
     memset(&desc, 0, sizeof(desc));

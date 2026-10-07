@@ -6,6 +6,10 @@ and accepts drag-and-drop package input. It enforces a 256 MiB package limit
 and rejects cross-origin package URLs; host applications should proxy trusted,
 CORS-validated content through their own origin.
 
+The player and editor canvases support 0.25x–8x workspace zoom through
+`setZoom()` or Ctrl/Cmd plus mouse wheel. Zoom changes presentation size without
+changing the frame dimensions returned by the WASM bridge.
+
 `jfx_web_session` now renders bundled effects to caller-owned RGBA8 memory.
 `EmscriptenJoltBridge` connects its exports to `JoltPlayer`. The beta transport
 is a UTF-8 JSON envelope such as `{"effect":"brightness","parameter":0.1}`;
@@ -108,3 +112,6 @@ work with the bundled build above; WebM needs FFmpeg's external VP9/Opus encoder
 snapshot, and `.beginVideoExport()` returns a step/cancel/dispose handle.
 Real-WASM tests cover audio persistence/timing, media decoding, nonzero muxed
 audio, encoded output and cancellation. See [media usage](../../docs/media.md).
+The web player and editor canvases support 0.25x–8x workspace zoom through
+`setZoom()` or Ctrl/Cmd plus mouse wheel. Zoom changes presentation size without
+changing the frame dimensions returned by the WASM bridge.

@@ -9,13 +9,30 @@ export class JoltPlayer {
     _time = 0;
     _loop = false;
     _playing = false;
+    _zoom = 1;
     constructor(canvas, bridge) {
         this.canvas = canvas;
         this.bridge = bridge;
+        if (this.canvas.addEventListener)
+            this.canvas.addEventListener("wheel", (event) => {
+                if (!event.ctrlKey && !event.metaKey)
+                    return;
+                event.preventDefault();
+                this.setZoom(this._zoom * Math.exp(-event.deltaY / 500));
+            }, { passive: false });
     }
     get playing() { return this._playing; }
     get time() { return this._time; }
     get duration() { return this._duration; }
+    get zoom() { return this._zoom; }
+    setZoom(zoom) {
+        if (!Number.isFinite(zoom) || zoom < 0.25 || zoom > 8)
+            throw new RangeError("zoom must be between 0.25 and 8");
+        this._zoom = zoom;
+        this.canvas.style.transformOrigin = "top left";
+        this.canvas.style.transform = `scale(${zoom})`;
+        this.emit("state", this._time);
+    }
     async load(source, durationSeconds) {
         if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
             throw new RangeError("durationSeconds must be a finite positive number");

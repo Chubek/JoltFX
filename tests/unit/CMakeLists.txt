@@ -21,6 +21,7 @@ endif()
 # The engine, its memory/scheduler/event subsystems and the resource objects.
 jfx_test_target(test_core SOURCES core/test_engine.c LIBRARIES jfx_core)
 target_include_directories(test_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+jfx_test_target(test_animation SOURCES core/test_animation.cpp LIBRARIES jfx_core)
 jfx_test_target(test_scheduler SOURCES core/test_scheduler.c LIBRARIES jfx_core)
 
 add_library(test_plugin_module MODULE core/test_plugin_module.c)
@@ -151,6 +152,7 @@ endfunction()
 
 jfx_register_test(test_tillyz test_tillyz)
 jfx_register_test(test_core test_core)
+jfx_register_test(test_animation test_animation)
 jfx_register_test(test_scheduler test_scheduler)
 jfx_register_test(plugin_host test_plugin_host $<TARGET_FILE:test_plugin_module>)
 if(NOT EMSCRIPTEN)

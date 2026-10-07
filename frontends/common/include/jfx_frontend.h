@@ -47,6 +47,7 @@ typedef struct {
     double duration_seconds;
     bool playing;
     bool looping;
+    double zoom;             /* viewport zoom, 1.0 is native size */
 } jfx_viewport_state_t;
 
 /* Progress callback: return 0 to continue, non-zero to cancel the export. */
@@ -84,6 +85,7 @@ typedef struct jfx_frontend_ops {
     jfx_result_t (*render_frame)(void *state, uint32_t width, uint32_t height,
         uint8_t *out_rgba, size_t out_size);
     jfx_result_t (*resize_viewport)(void *state, uint32_t width, uint32_t height);
+    jfx_result_t (*set_zoom)(void *state, double zoom);
 
     /* Export: writes one binary PPM per frame into output_directory. */
     jfx_result_t (*export_frames)(void *state, const char *output_directory,
@@ -114,7 +116,8 @@ typedef enum {
     JFX_FRONTEND_CAP_RENDER = 1u << 6,
     JFX_FRONTEND_CAP_EXPORT = 1u << 7,
     JFX_FRONTEND_CAP_SELECTION = 1u << 8,
-    JFX_FRONTEND_CAP_VIEWPORT_STATE = 1u << 9
+    JFX_FRONTEND_CAP_VIEWPORT_STATE = 1u << 9,
+    JFX_FRONTEND_CAP_ZOOM = 1u << 10
 } jfx_frontend_capability_t;
 
 /* The capability bitmask implied by `frontend`'s ops table. */
@@ -143,6 +146,7 @@ jfx_result_t jfx_frontend_render_frame(jfx_frontend_t *frontend, uint32_t width,
     uint32_t height, uint8_t *out_rgba, size_t out_size);
 jfx_result_t jfx_frontend_resize_viewport(jfx_frontend_t *frontend, uint32_t width,
     uint32_t height);
+jfx_result_t jfx_frontend_set_zoom(jfx_frontend_t *frontend, double zoom);
 jfx_result_t jfx_frontend_export_frames(jfx_frontend_t *frontend,
     const char *output_directory, uint32_t width, uint32_t height, uint32_t start_frame,
     uint32_t end_frame, jfx_export_progress_fn progress_cb, void *user_data);

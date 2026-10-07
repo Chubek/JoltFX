@@ -175,6 +175,7 @@ int main(void) {
     assert(jfx_frontend_render_frame(frontend, 64, 64, frame, sizeof(frame)) ==
         JFX_ERROR_NOT_IMPLEMENTED);
     assert(jfx_frontend_resize_viewport(frontend, 64, 64) == JFX_ERROR_NOT_IMPLEMENTED);
+    assert(jfx_frontend_set_zoom(frontend, 1.0) == JFX_ERROR_NOT_IMPLEMENTED);
     assert(jfx_frontend_export_frames(frontend, "out", 64, 64, 0, 1, NULL, NULL) ==
         JFX_ERROR_NOT_IMPLEMENTED);
     char selection[16];
@@ -192,6 +193,8 @@ int main(void) {
     assert(jfx_frontend_render_frame(frontend, 64, 64, frame, 4) ==
         JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frontend_resize_viewport(frontend, 0, 0) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_frontend_set_zoom(frontend, 0.0) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_frontend_set_zoom(frontend, NAN) == JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frontend_export_frames(frontend, "", 64, 64, 0, 1, NULL, NULL) ==
         JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frontend_export_frames(frontend, "out", 64, 64, 5, 1, NULL, NULL) ==
@@ -210,6 +213,7 @@ int main(void) {
     assert(jfx_frontend_render_frame(NULL, 1, 1, frame, sizeof(frame)) ==
         JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frontend_resize_viewport(NULL, 1, 1) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_frontend_set_zoom(NULL, 1.0) == JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frontend_export_frames(NULL, "o", 1, 1, 0, 0, NULL, NULL) ==
         JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_frontend_get_selection(NULL, selection, sizeof(selection)) ==

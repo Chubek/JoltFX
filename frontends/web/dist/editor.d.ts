@@ -81,9 +81,11 @@ export declare class JoltEditor {
     private audioWhen;
     private exportJob?;
     private exportRequest;
+    private zoom;
     private readonly listener;
     private readonly shortcuts;
     constructor(root: HTMLElement, bridge: EditorBridge);
+    setZoom(zoom: number): void;
     private panel;
     private colorPanel;
     private number;

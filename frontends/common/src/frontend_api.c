@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "tilly/allocator.h"
 
@@ -34,6 +35,7 @@ uint32_t jfx_frontend_capabilities(const jfx_frontend_t *frontend) {
     if (ops->export_frames) capabilities |= JFX_FRONTEND_CAP_EXPORT;
     if (ops->get_selection && ops->set_selection) capabilities |= JFX_FRONTEND_CAP_SELECTION;
     if (ops->get_viewport_state) capabilities |= JFX_FRONTEND_CAP_VIEWPORT_STATE;
+    if (ops->set_zoom) capabilities |= JFX_FRONTEND_CAP_ZOOM;
     return capabilities;
 }
 
@@ -49,6 +51,7 @@ const char *jfx_frontend_capability_name(uint32_t capability) {
     case JFX_FRONTEND_CAP_EXPORT: return "export";
     case JFX_FRONTEND_CAP_SELECTION: return "selection";
     case JFX_FRONTEND_CAP_VIEWPORT_STATE: return "viewport_state";
+    case JFX_FRONTEND_CAP_ZOOM: return "zoom";
     default: return "unknown";
     }
 }
@@ -169,6 +172,14 @@ jfx_result_t jfx_frontend_resize_viewport(jfx_frontend_t *frontend, uint32_t wid
     if (!width || !height) return JFX_ERROR_INVALID_ARGUMENT;
     if (!frontend->ops->resize_viewport) return JFX_ERROR_NOT_IMPLEMENTED;
     return frontend->ops->resize_viewport(frontend->state, width, height);
+}
+
+jfx_result_t jfx_frontend_set_zoom(jfx_frontend_t *frontend, double zoom) {
+    if (!frontend || !frontend->ops || !isfinite(zoom) || zoom <= 0.0) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    if (!frontend->ops->set_zoom) return JFX_ERROR_NOT_IMPLEMENTED;
+    return frontend->ops->set_zoom(frontend->state, zoom);
 }
 
 jfx_result_t jfx_frontend_export_frames(jfx_frontend_t *frontend,

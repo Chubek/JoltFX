@@ -138,6 +138,14 @@ jfx_result_t jfx_mobile_player_pinch(jfx_mobile_player_t *player,
     return JFX_SUCCESS;
 }
 
+jfx_result_t jfx_mobile_player_set_zoom(jfx_mobile_player_t *player, double zoom) {
+    if (!player || !isfinite(zoom) || zoom < 0.25 || zoom > 8.0) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    player->viewport_scale = zoom;
+    return JFX_SUCCESS;
+}
+
 /* Advances the playback clock by `elapsed_seconds`, looping at the end. */
 static void advance(jfx_mobile_player_t *player, double elapsed_seconds) {
     if (!player->playing) {

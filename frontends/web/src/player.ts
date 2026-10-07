@@ -24,15 +24,31 @@ export class JoltPlayer {
   private _time = 0;
   private _loop = false;
   private _playing = false;
+  private _zoom = 1;
 
   public constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly bridge: JoltWasmBridge,
-  ) {}
+  ) {
+    if (this.canvas.addEventListener) this.canvas.addEventListener("wheel", (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      this.setZoom(this._zoom * Math.exp(-event.deltaY / 500));
+    }, { passive: false });
+  }
 
   public get playing(): boolean { return this._playing; }
   public get time(): number { return this._time; }
   public get duration(): number { return this._duration; }
+  public get zoom(): number { return this._zoom; }
+
+  public setZoom(zoom: number): void {
+    if (!Number.isFinite(zoom) || zoom < 0.25 || zoom > 8) throw new RangeError("zoom must be between 0.25 and 8");
+    this._zoom = zoom;
+    this.canvas.style.transformOrigin = "top left";
+    this.canvas.style.transform = `scale(${zoom})`;
+    this.emit("state", this._time);
+  }
 
   public async load(source: string | Blob | Uint8Array, durationSeconds: number): Promise<void> {
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {

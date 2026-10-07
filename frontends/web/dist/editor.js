@@ -65,6 +65,7 @@ export class JoltEditor {
     audioWhen = 0;
     exportJob;
     exportRequest = 0;
+    zoom = 1;
     listener = (event) => {
         const target = event.target;
         if (target === this.frame) {
@@ -114,6 +115,12 @@ export class JoltEditor {
         root.classList.add("jolt-editor");
         root.tabIndex = 0;
         root.addEventListener("keydown", this.shortcuts);
+        root.addEventListener("wheel", (event) => {
+            if (!event.ctrlKey && !event.metaKey)
+                return;
+            event.preventDefault();
+            this.setZoom(this.zoom * Math.exp(-event.deltaY / 500));
+        }, { passive: false });
         const toolbar = document.createElement("nav");
         root.append(toolbar, this.preview, this.status);
         toolbar.append(this.button("Play / pause", () => {
@@ -329,6 +336,15 @@ export class JoltEditor {
         };
         root.addEventListener("change", this.listener);
         this.perform(() => bridge.edit(bridge.graphState().active ? "graph" : "sequence"));
+    }
+    setZoom(zoom) {
+        if (!Number.isFinite(zoom) || zoom < 0.25 || zoom > 8)
+            throw new RangeError("zoom must be between 0.25 and 8");
+        this.zoom = zoom;
+        for (const canvas of [this.preview, this.timeline, this.graph]) {
+            canvas.style.transformOrigin = "top left";
+            canvas.style.transform = `scale(${zoom})`;
+        }
     }
     panel(title) {
         const section = document.createElement("section"), heading = document.createElement("h2");

@@ -2,9 +2,11 @@
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Audio Mixing**, **DAW**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Audio Mixing**, **DAW**, **2D Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
+The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
+Ctrl/Cmd plus mouse wheel; the zoom value is independent of render resolution.
 
 **Color Grading** has Resolve-inspired Lift/Gamma/Gain and Shadows/Midtones/
 Highlights wheels, master dials and rotary scalar controls generated from kernel

@@ -41,6 +41,7 @@ jfx_result_t jfx_mobile_player_swipe(jfx_mobile_player_t *player,
     double horizontal_pixels);
 jfx_result_t jfx_mobile_player_pinch(jfx_mobile_player_t *player,
     double scale_delta);
+jfx_result_t jfx_mobile_player_set_zoom(jfx_mobile_player_t *player, double zoom);
 jfx_result_t jfx_mobile_player_render(jfx_mobile_player_t *player,
     double elapsed_seconds);
 jfx_result_t jfx_mobile_player_get_state(const jfx_mobile_player_t *player,

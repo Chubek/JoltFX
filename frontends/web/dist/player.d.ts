@@ -19,10 +19,13 @@ export declare class JoltPlayer {
     private _time;
     private _loop;
     private _playing;
+    private _zoom;
     constructor(canvas: HTMLCanvasElement, bridge: JoltWasmBridge);
     get playing(): boolean;
     get time(): number;
     get duration(): number;
+    get zoom(): number;
+    setZoom(zoom: number): void;
     load(source: string | Blob | Uint8Array, durationSeconds: number): Promise<void>;
     play(): void;
     pause(): void;

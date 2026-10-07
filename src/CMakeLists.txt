@@ -20,6 +20,7 @@ add_library(jfx_core STATIC
     src/memory.c
     src/event_bus.c
     src/plugin_host.c
+    src/animation.cpp
     src/result.c
 )
 
@@ -31,6 +32,15 @@ target_include_directories(jfx_core PUBLIC
 # The engine compiles Joltscript and dispatches JBC1 bytecode, so the Glue
 # layer sits underneath it. The Glue layer never links back.
 target_link_libraries(jfx_core PUBLIC joltscript_glue jfx_api jolt_effects)
+target_include_directories(jfx_core PRIVATE
+    "${CMAKE_SOURCE_DIR}/third_party/sdl/include"
+    "${CMAKE_SOURCE_DIR}/third_party/eigen"
+    "${CMAKE_SOURCE_DIR}/third_party/xsimd/include"
+    "${CMAKE_SOURCE_DIR}/third_party/glm"
+    "${CMAKE_SOURCE_DIR}/third_party/satie/include"
+    "${CMAKE_SOURCE_DIR}/third_party/simdette/include"
+    "${CMAKE_SOURCE_DIR}/third_party/LIEF/include"
+)
 include(${CMAKE_SOURCE_DIR}/cmake/ColorKernels.cmake)
 target_include_directories(jfx_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 

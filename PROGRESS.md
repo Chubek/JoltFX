@@ -642,3 +642,23 @@ Follow-on from the plan audit above. Two changes, both additive.
 - Verification: `bash -n` passes. No other file references the removed
   arguments, and the run was not executed against the network, so the clone
   list is verified by inspection only.
+# Progress
+
+## 2026-10-07
+
+- Added the first 2D animation API slice in `jfx_animation.h`.
+- Added deterministic skeletal scene evaluation with hierarchical transforms,
+  keyframes, step/linear/smooth curves, and a renderer-neutral editor tab clock.
+- Added JFA1 bytecode compilation, validation, and playback APIs. The format is
+  architecture-independent and suitable for a later LIEF object-file section
+  writer and native/WASM player.
+- Wired the implementation into `jfx_core` and exposed the vendored math/render
+  include roots, including `third_party/simdette`.
+- Added a dedicated desktop **2D Animation** workspace tab with transport,
+  timeline scrubbing, root-bone creation, scene statistics, and JFA1 bytecode
+  compilation feedback.
+- Standardized viewport zoom across the shared frontend contract, headless CLI,
+  desktop workspace, web player/editor canvases, and mobile player APIs. Zoom is
+  clamped to 0.25x–8x and supports Ctrl/Cmd-wheel on desktop and web.
+- Hardened animation scene input validation and bytecode playback error
+  propagation, and added shared frontend contract coverage for zoom dispatch.

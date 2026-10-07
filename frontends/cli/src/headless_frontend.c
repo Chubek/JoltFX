@@ -28,6 +28,7 @@ struct headless_state {
     double time_seconds;
     bool playing;
     bool looping;
+    double zoom;
     char effect_name[HEADLESS_EFFECT_NAME_MAX];
     float effect_parameter;
     bool has_parameter;
@@ -100,6 +101,7 @@ static jfx_result_t headless_init(const jfx_frontend_desc_t *desc, void **out_st
     headless->height = desc->height ? desc->height : 64u;
     headless->duration_seconds = HEADLESS_DEFAULT_DURATION;
     headless->looping = true;
+    headless->zoom = 1.0;
     if (headless->width > HEADLESS_MAX_DIMENSION || headless->height > HEADLESS_MAX_DIMENSION) {
         tilly_free((tilly_allocator_t *)tilly_default_allocator(), headless);
         return JFX_ERROR_INVALID_ARGUMENT;
@@ -184,6 +186,15 @@ static jfx_result_t headless_resize(void *state, uint32_t width, uint32_t height
     return JFX_SUCCESS;
 }
 
+static jfx_result_t headless_set_zoom(void *state, double zoom) {
+    struct headless_state *headless = (struct headless_state *)state;
+    if (!headless || !isfinite(zoom) || zoom < 0.25 || zoom > 8.0) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    headless->zoom = zoom;
+    return JFX_SUCCESS;
+}
+
 static jfx_result_t headless_render_frame(void *state, uint32_t width, uint32_t height,
     uint8_t *out_rgba, size_t out_size) {
     struct headless_state *headless = (struct headless_state *)state;
@@ -241,6 +252,7 @@ static jfx_result_t headless_get_viewport_state(void *state, jfx_viewport_state_
     out_state->duration_seconds = headless->duration_seconds;
     out_state->playing = headless->playing;
     out_state->looping = headless->looping;
+    out_state->zoom = headless->zoom;
     return JFX_SUCCESS;
 }
 
@@ -358,6 +370,7 @@ const jfx_frontend_ops_t jfx_headless_frontend_ops = {
     .set_loop = headless_set_loop,
     .render_frame = headless_render_frame,
     .resize_viewport = headless_resize,
+    .set_zoom = headless_set_zoom,
     .export_frames = headless_export_frames,
     .get_selection = NULL,
     .set_selection = NULL,
