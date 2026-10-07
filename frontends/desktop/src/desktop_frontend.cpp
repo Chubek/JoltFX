@@ -25,6 +25,8 @@
 #include "jfx/jfx_automation.h"
 
 #include "host_window.h"
+#include "animation_drawing.h"
+#include <new>
 #include "imgui.h"
 #include "joltscript/effects.h"
 #include "tilly/allocator.h"
@@ -197,6 +199,7 @@ struct jfx_desktop_frontend {
     jfx_export_job_t *export_job;
     jfx_audio_mixer_t *audio_mixer;
     jfx_animation_tab_t *animation_tab;
+    jfx_drawing::Editor *drawing;
     uint64_t audio_sample;
     float audio_peak[2];
     int audio_import_frames;
@@ -427,6 +430,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     if (!frontend->editor) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     frontend->animation_tab = jfx_animation_tab_create(kPreviewWidth, kPreviewHeight);
     if (!frontend->animation_tab) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    void *drawing_memory=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), sizeof(jfx_drawing::Editor), alignof(jfx_drawing::Editor));
+    if (!drawing_memory) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    frontend->drawing=new(drawing_memory) jfx_drawing::Editor();
     result=jfx_plugin_host_create(frontend->engine,&frontend->plugins);
     if (result!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(frontend); return result; }
 
@@ -463,6 +469,10 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
         jfx_desktop_window_capture_end(frontend->window); jfx_audio_recording_destroy(frontend->recording);
         close_inspector(frontend); jfx_export_destroy(frontend->export_job); reset_audio(frontend);
         jfx_animation_tab_destroy(frontend->animation_tab);
+        if (frontend->drawing) {
+            frontend->drawing->~Editor();
+            tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->drawing);
+        }
     }
     if (!frontend) return;
     event_unsubscribe(JFX_EVENT_KERNEL_SUBMIT, engine_event_sink);
@@ -665,50 +675,7 @@ constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION};
 
-void animation_panel(jfx_desktop_frontend_t *frontend) {
-    auto *tab = frontend->animation_tab;
-    ImGui::TextUnformatted("2D skeletal animation");
-    ImGui::TextWrapped("Author and preview bones, poses, curves, and runtime bytecode in one renderer-neutral scene.");
-    if (ImGui::Button("Add root bone")) {
-        jfx_animation_bone_desc_t desc{sizeof(desc), "root", UINT32_MAX, {{0, 0}, 0, {1, 1}}};
-        uint32_t bone = UINT32_MAX;
-        if (jfx_animation_scene_add_bone(jfx_animation_tab_scene(tab), &desc, &bone) != JFX_SUCCESS)
-            std::snprintf(frontend->status, sizeof(frontend->status), "Unable to add animation bone");
-    }
-    ImGui::SameLine();
-    bool playing = jfx_animation_tab_playing(tab);
-    if (ImGui::Button(playing ? "Pause" : "Play")) {
-        jfx_animation_tab_set_playing(tab, !playing);
-        frontend->playing = !playing;
-    }
-    auto *scene = jfx_animation_tab_scene(tab);
-    jfx_animation_scene_info_t info{sizeof(info), 0, 0, 0};
-    jfx_animation_scene_info(scene, &info);
-    double duration = std::max(1.0, info.duration);
-    double current = jfx_animation_tab_time(tab);
-    float scrub = (float)current;
-    ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::SliderFloat("Animation time", &scrub, 0.0f, (float)duration, "%.3f s")) {
-        jfx_animation_tab_set_time(tab, scrub);
-        frontend->time_seconds = scrub;
-        frontend->preview_dirty = true;
-    }
-    ImGui::Text("Bones: %u   Keys: %u   Duration: %.3f s", info.bone_count, info.key_count, info.duration);
-    ImGui::Separator();
-    ImGui::TextUnformatted("Runtime bytecode");
-    uint8_t *bytes = nullptr; size_t size = 0;
-    if (ImGui::Button("Compile JFA1")) {
-        auto result = jfx_animation_compile(scene, &bytes, &size);
-        if (result == JFX_SUCCESS) {
-            std::snprintf(frontend->status, sizeof(frontend->status), "Compiled animation bytecode: %zu bytes", size);
-            jfx_animation_bytes_destroy(bytes);
-        } else {
-            std::snprintf(frontend->status, sizeof(frontend->status), "Animation bytecode compilation failed");
-        }
-    }
-    ImGui::SameLine();
-    ImGui::TextDisabled("Compatible with native and WASM players");
-}
+#include "animation_panel.inc"
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::TextUnformatted("Preview");
@@ -789,18 +756,24 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     bool open_requested=false;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("Open Project...")) {
-                open_requested=true;
+            bool drawing=frontend->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION;
+            if (ImGui::MenuItem(drawing?"Open drawing...":"Open Project...")) {
+                if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
             }
             if (ImGui::MenuItem("New sequence")) { finish_grading(frontend); jfx_desktop_frontend_close_project(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_NLE); }
             if (ImGui::MenuItem("New composition")) { finish_grading(frontend); jfx_desktop_frontend_node_compositing_new_graph(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_COMPOSITING); }
-            if (ImGui::MenuItem("Save project...")) open_requested=true;
-            if (ImGui::MenuItem("Export Frame...")) {
+            if (ImGui::MenuItem(drawing?"Save drawing...":"Save project...")) {
+                if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
+            }
+            if (ImGui::MenuItem(drawing?"Export drawing SVG...":"Export Frame...")) {
+                if(drawing) frontend->drawing->files_requested=true;
+                else {
                 auto *t=jfx_editor_timeline(frontend->editor);
                 editor_result(frontend,jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_GRAPH?
                     jfx_desktop_frontend_write_graph(frontend,UINT32_MAX,frontend->time_seconds,frontend->node_export_path):
                     jfx_editor_write_frame(frontend->editor,jfx_desktop_frontend_timeline_current_frame(frontend),
                         jfx_timeline_width(t),jfx_timeline_height(t),frontend->nle_export_path));
+                }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit")) {
@@ -884,6 +857,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
         jfx_desktop_frontend_set_zoom(frontend, next);
     }
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION) {
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -929,6 +903,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         ImGui::SameLine();
         if (ImGui::Button("Cancel export")) jfx_export_cancel(frontend->export_job);
     } else ImGui::TextDisabled("%s",frontend->status);
+    } else ImGui::TextDisabled("Vector animation | %s",frontend->status);
     ImGui::Separator();
     if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int i=0;i<JFX_DESKTOP_WORKSPACE_COUNT;++i) {
@@ -941,13 +916,14 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     frontend->workspace_requested=false;
                 }
                 bool wide=ImGui::GetContentRegionAvail().x>=760;
-                bool columns=frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
+                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION;
+                bool columns=!animation && frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
                 if (columns) {
                     ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableSetupColumn("Preview",ImGuiTableColumnFlags_WidthFixed,330);
                     ImGui::TableNextColumn();
                 }
-                if (frontend->show_viewport && !wide && ImGui::CollapsingHeader("Shared preview")) preview_panel(frontend);
+                if (!animation && frontend->show_viewport && !wide && ImGui::CollapsingHeader("Shared preview")) preview_panel(frontend);
                 if (ImGui::BeginChild("Editor interface",ImVec2(0,0))) {
                     switch ((jfx_desktop_workspace_t)i) {
                     case JFX_DESKTOP_WORKSPACE_NLE: timeline_tracks(frontend); break;
@@ -979,7 +955,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     }
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
         const auto &io=ImGui::GetIO();
-        if ((io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_Z)) {
+        if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && (io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_Z)) {
             finish_grading(frontend);
             editor_result(frontend,jfx_desktop_frontend_edit(frontend,io.KeyShift?"redo":"undo",0,0,0,0,""));
             frontend->nle_drag=0;
@@ -1246,6 +1222,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     finish_grading(f);
     finish_audio(f);
+    if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; }
+    if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
     f->nle_drag=f->node_drag=0; f->node_wiring=false;

@@ -182,3 +182,40 @@ the shared shortcuts.
   and by the frontend on the headless path. Do not build it in `create`: the
   OpenGL3 backend flags the atlas as renderer-backed, and a second build trips
   `ImFontAtlas::Build`'s `RendererHasTextures` assertion.
+
+## Vector animation workspace
+
+The **2D Animation** tab has a dedicated 960 × 540 vector stage, tool shelf and
+layer exposure sheet. Draw with Brush (B), Line (L), Rectangle (R) and Ellipse
+(O). Stroke/fill colors, fill enable and stroke width apply to new artwork;
+**Apply style** updates the selected shape as one undoable edit.
+Select (V) picks the topmost shape on the active layer; drag to move it or press
+Delete to remove it. Eraser (E) removes a clicked shape. Hand (H) pans, the wheel
+zooms, and **Fit stage** resets the view. Escape cancels a drawing/move gesture.
+
+Click a frame cell or scrub the frame slider. Drawings hold until the next key;
+**Duplicate key** (F6) copies the held drawing to the current frame, while **Blank
+key** (F7) starts an empty cel (or clears an existing key). Editing a held exposure
+changes its source key. Add layers and toggle their visibility or lock. Onion
+skin shows the neighboring keys in red/blue. Space or **Play drawing** loops the
+120-frame sequence at the selected FPS. The drawing clock is independent of NLE
+playback and pauses when switching workspaces.
+
+Use **Undo drawing** / **Redo drawing**, Ctrl/Cmd-Z and Ctrl/Cmd-Shift-Z for up to
+32 document edits. Each completed stroke or move is one undo step. Artwork
+survives workspace switches. **Drawing files...** saves/loads a versioned
+`.jfxdraw` document, including layers, cels and vector styles; Ctrl/Cmd-S saves
+to its drawing path. Loading is undoable and invalid files preserve the current
+drawing. **Export frame SVG** exports visible artwork at the current frame with
+transparent background, without selection, grid or onion skins.
+
+Drawing files are separate from `.jfx` sequence/composition projects and JFA1
+skeletal bytecode. Use the drawing-specific file controls to preserve artwork
+before closing the application. This first vector workflow does not yet provide
+Bezier/node editing, pressure sensitivity, tweening, audio sync, or animated
+video export. Interactive limits are eight layers, 256 shapes per cel and 2,048
+points per stroke; loaded files are additionally limited to one million points.
+
+`animation_drawing` covers exposure/history/persistence and malformed files;
+`animation_ui_tests` drives actual ImGui mouse/keyboard input and checks vector
+geometry, movement, cancellation, undo/redo, cel clearing and tab retention.

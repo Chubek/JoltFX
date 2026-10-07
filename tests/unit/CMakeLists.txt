@@ -221,6 +221,11 @@ if(JFX_FRONTEND_DESKTOP)
     target_include_directories(test_composition_ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/third_party/imgui)
     jfx_register_test(composition_ui_tests test_composition_ui)
     set_property(TEST composition_ui_tests APPEND PROPERTY LABELS "frontend;conformance")
+    jfx_test_target(test_animation_ui SOURCES frontends/test_animation_ui.cpp LIBRARIES jfx_desktop_frontend)
+    target_include_directories(test_animation_ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(test_animation_ui SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/imgui)
+    jfx_register_test(animation_ui_tests test_animation_ui)
+    set_property(TEST animation_ui_tests APPEND PROPERTY LABELS "frontend;conformance")
     if(TARGET jfx_example_plugin)
         jfx_test_target(test_workspace_ui SOURCES frontends/test_workspace_ui.cpp LIBRARIES jfx_desktop_frontend)
         target_include_directories(test_workspace_ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -484,3 +489,6 @@ add_dependencies(validate_kernels test_image_kernels test_image_program)
 add_custom_command(TARGET validate_kernels POST_BUILD
     COMMAND $<TARGET_FILE:test_image_kernels>
     COMMAND $<TARGET_FILE:test_image_program>)
+
+jfx_test_target(test_animation_drawing SOURCES frontends/test_animation_drawing.cpp)
+jfx_register_test(animation_drawing test_animation_drawing)

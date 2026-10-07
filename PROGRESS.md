@@ -1,5 +1,27 @@
 # Progress
 
+## Desktop vector animation workspace (2026-10-07)
+
+- Confirmed the animation tab only exposes skeleton statistics and bytecode;
+  it has no canvas or drawing tools.
+- Implemented a full-width 960 x 540 vector stage with brush, line, rectangle,
+  ellipse, selection/move, whole-shape eraser, hand/pan, zoom, stroke/fill styles
+  and applying styles to existing shapes. The animation tab no longer shows an
+  unrelated NLE preview or routes undo to the NLE history.
+- Added eight-layer authoring with visibility/locking, a 120-frame exposure
+  sheet, held cels, duplicate/blank keys (F6/F7), onion skins and independent
+  looping playback. Drawing and move gestures commit once or cancel on Escape;
+  tab switches preserve artwork and cancel gestures/playback.
+- Added 32-step drawing history, validated/undoable `.jfxdraw` loading, saving
+  through a temporary file, and visible-current-frame SVG export. Animation's
+  File menu routes to drawing persistence; skeleton controls remain in a popup.
+- Documented separate drawing files and current limits (no Bezier/node editing,
+  tweening, pressure sensitivity, audio sync or animated video export).
+- Validation: desktop builds without warnings; all eight targeted animation,
+  desktop, composition, DAW, workspace UI and headless checks pass. Five focused
+  ASan/UBSan checks also pass with leak detection outside the sandbox (LSan
+  cannot run under sandbox process tracing). No public ABI changes.
+
 ## DAW instruments, native editors, capture and plugin state (2026-10-06)
 
 - Added MIDI note clips/piano-roll display and VST3 instruments, sample-offset

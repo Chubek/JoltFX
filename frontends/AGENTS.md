@@ -1027,3 +1027,15 @@ Long exports appear frozen without a progress bar and ETA.
 - **UI/UX design**: `#joltfx-design`
 
 For questions about the frontend interface or adding a new frontend, post in `#joltfx-frontend-core`.
+
+### Desktop vector animation
+
+The 2D Animation workspace uses `desktop/src/animation_drawing.h` for its private
+vector document/history and `animation_panel.inc` for the ImGui stage and exposure
+sheet. Keep its frame clock, selection and history separate from the NLE editor.
+Shapes use stage coordinates; held cels resolve to the last key at or before the
+playhead. Commit drawing/move gestures once on release; cancel on Escape or tab
+switch. Hidden/locked layers cannot be drawn into. Drawing `.jfxdraw` save/load
+and current-frame SVG export are distinct from `.jfx` projects and JFA1 bytecode.
+Validate loaded documents before replacement, preserve load undo, and extend
+`animation_drawing` / `animation_ui_tests` when changing this workflow.
