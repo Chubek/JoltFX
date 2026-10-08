@@ -240,27 +240,171 @@ void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
     }
 }
 #include "color_controls.inc"
+/* Human-readable options for calibration's integral (enum-like) parameters.
+ * Only names with kernel-documented meanings are mapped; anything else falls
+ * back to a plain integer slider so the UI cannot mislabel a value. */
+static const char *calibration_option_label(const char *name, int value, float maximum) {
+    if (!name) return nullptr;
+    if (!std::strcmp(name, "channel")) {
+        static const char *options[] = {"RGB", "R", "G", "B", "A"};
+        return (value >= 0 && value < 5) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "interpolation")) {
+        static const char *options[] = {"Nearest", "Linear/Tri"};
+        return (value >= 0 && value < 2) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "clamp") || !std::strcmp(name, "preserve_luma") ||
+        !std::strcmp(name, "preserve_hues") || !std::strcmp(name, "preserve_shadows") ||
+        !std::strcmp(name, "preserve_highlights") || !std::strcmp(name, "black_point_compensation")) {
+        static const char *options[] = {"Off", "On"};
+        return (value >= 0 && value < 2) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "intent")) {
+        static const char *options[] = {"Relative", "Absolute"};
+        return (value >= 0 && value < 2) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "adaptation")) {
+        static const char *options[] = {"None", "Bradford", "von Kries"};
+        return (value >= 0 && value < 3) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "tone_curve")) {
+        static const char *options[] = {"Reinhard", "Hable", "ACES"};
+        return (value >= 0 && value < 3) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "log_curve")) {
+        static const char *options[] = {"Cineon", "S-Log", "C-Log", "V-Log", "ARRI LogC"};
+        return (value >= 0 && value < 5) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "color_space")) {
+        static const char *options[] = {"sRGB", "Linear"};
+        return (value >= 0 && value < 2) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "input_space") || !std::strcmp(name, "output_space")) {
+        if (maximum <= 1.5f) {
+            static const char *options[] = {"sRGB", "Linear"};
+            return (value >= 0 && value < 2) ? options[value] : nullptr;
+        }
+        static const char *options[] = {"sRGB", "Linear", "Rec.709", "Rec.2020", "Display P3"};
+        return (value >= 0 && value < 5) ? options[value] : nullptr;
+    }
+    if (!std::strcmp(name, "profile")) {
+        static const char *options[] = {"sRGB", "Rec.709", "Rec.2020", "Display P3", "DCI-P3"};
+        return (value >= 0 && value < 5) ? options[value] : nullptr;
+    }
+    return nullptr;
+}
+static bool calibration_combo(const jfx_param_desc_t &desc, float *value) {
+    int current = (int)*value;
+    int lo = (int)desc.minimum, hi = (int)desc.maximum;
+    const char *current_label = calibration_option_label(desc.name, current, desc.maximum);
+    char preview[96];
+    std::snprintf(preview, sizeof(preview), "%s",
+        current_label ? current_label : desc.label);
+    if (!ImGui::BeginCombo(desc.label, preview)) return false;
+    bool changed = false;
+    for (int option = lo; option <= hi; ++option) {
+        const char *label = calibration_option_label(desc.name, option, desc.maximum);
+        char item[96];
+        if (label) std::snprintf(item, sizeof(item), "%s", label);
+        else std::snprintf(item, sizeof(item), "%d", option);
+        bool selected = (option == current);
+        if (ImGui::Selectable(item, selected)) {
+            *value = (float)option;
+            changed = true;
+        }
+        if (selected) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+    return changed;
+}
 void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_COLOR_NONE) {
     auto *t=jfx_editor_timeline(f->editor); uint32_t track=f->selected_track, clip=f->selected_clip;
     if (clip>=jfx_timeline_clip_count(t,track)) { ImGui::TextUnformatted("Select a clip in the timeline."); return; }
     ImGui::Text("Clip: %s",jfx_timeline_clip_name(t,track,clip));
-    if (ImGui::BeginCombo("Add effect","Choose operator")) {
-        for (size_t i=0;i<jfx_node_kind_count();++i) {
-            const auto *k=jfx_node_kind_at(i);
-            if (jfx_color_section(k)!=section) continue;
-            if (k->input_count==1 && k->inputs[0].type==JFX_PORT_IMAGE && ImGui::Selectable(k->label))
-                editor_result(f,jfx_desktop_frontend_layer_effects_add(f,track,clip,k->name));
-        }
-        ImGui::EndCombo();
+    if (section == JFX_COLOR_NONE) {
+        ImGui::TextUnformatted("Layer stack: transforms, keys, blends and adjustments.");
+        ImGui::TextDisabled("Layers composite in clip order; blend and opacity control how each layer mixes.");
+    } else if (section == JFX_COLOR_CALIBRATION) {
+        ImGui::TextUnformatted("Calibration pipeline: normalize white, levels and spaces first.");
+        ImGui::TextDisabled("Technical correction before creative grading. Suggested order: white balance, black/white levels, gamma, log/legal, color space, LUT.");
     }
+    /* Count section-local stages for "Stage N of M" numbering. */
+    uint32_t stages = 0;
+    for (uint32_t i = 0; i < jfx_timeline_effect_count(t, track, clip); ++i)
+        if (jfx_color_section(jfx_timeline_effect_kind_desc(t, track, clip, i)) == section) ++stages;
+    if (section == JFX_COLOR_NONE) {
+        if (ImGui::BeginCombo("Add layer effect", "Choose operator")) {
+            for (size_t i=0;i<jfx_node_kind_count();++i) {
+                const auto *k=jfx_node_kind_at(i);
+                if (jfx_color_section(k)!=section) continue;
+                if (k->input_count==1 && k->inputs[0].type==JFX_PORT_IMAGE) {
+                    char item[192]; std::snprintf(item, sizeof(item), "%s / %s", k->category, k->label);
+                    if (ImGui::Selectable(item))
+                        editor_result(f,jfx_desktop_frontend_layer_effects_add(f,track,clip,k->name));
+                }
+            }
+            ImGui::EndCombo();
+        }
+    } else {
+        const char *combo_label = section == JFX_COLOR_CALIBRATION ? "Add calibration stage" : "Add effect";
+        if (ImGui::BeginCombo(combo_label, "Choose operator")) {
+            for (size_t i=0;i<jfx_node_kind_count();++i) {
+                const auto *k=jfx_node_kind_at(i);
+                if (jfx_color_section(k)!=section) continue;
+                if (k->input_count==1 && k->inputs[0].type==JFX_PORT_IMAGE && ImGui::Selectable(k->label))
+                    editor_result(f,jfx_desktop_frontend_layer_effects_add(f,track,clip,k->name));
+            }
+            ImGui::EndCombo();
+        }
+    }
+    if (section == JFX_COLOR_CALIBRATION && stages > 0) {
+        bool any_enabled = false;
+        for (uint32_t i = 0; i < jfx_timeline_effect_count(t, track, clip); ++i) {
+            if (jfx_color_section(jfx_timeline_effect_kind_desc(t, track, clip, i)) != section) continue;
+            if (jfx_timeline_effect_enabled(t, track, clip, i)) { any_enabled = true; break; }
+        }
+        if (ImGui::SmallButton(any_enabled ? "Bypass all calibration" : "Enable all calibration")) {
+            finish_grading(f);
+            finish_audio(f);
+            if (jfx_editor_begin_edit(f->editor, JFX_PROJECT_KIND_SEQUENCE) == JFX_SUCCESS) {
+                jfx_result_t first_error = JFX_SUCCESS;
+                for (uint32_t i = 0; i < jfx_timeline_effect_count(t, track, clip); ++i) {
+                    if (jfx_color_section(jfx_timeline_effect_kind_desc(t, track, clip, i)) != section) continue;
+                    jfx_result_t r = jfx_editor_command(f->editor, "effect.enabled", track, clip, i,
+                        !any_enabled ? 1.0 : 0.0, "");
+                    if (r != JFX_SUCCESS && first_error == JFX_SUCCESS) first_error = r;
+                }
+                if (first_error == JFX_SUCCESS) {
+                    editor_result(f, jfx_editor_commit_edit(f->editor));
+                } else {
+                    jfx_editor_cancel_edit(f->editor);
+                    editor_result(f, first_error);
+                }
+                t = jfx_editor_timeline(f->editor);
+            } else {
+                editor_result(f, JFX_ERROR_BUSY);
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%u stage%s", stages, stages == 1 ? "" : "s");
+    }
+    uint32_t ordinal = 0;
     for (uint32_t e=0;e<jfx_timeline_effect_count(t,track,clip);++e) {
         const auto *k=jfx_timeline_effect_kind_desc(t,track,clip,e);
         if (jfx_color_section(k)!=section) continue;
+        ++ordinal;
         ImGui::PushID((int)e);
+        if (section == JFX_COLOR_NONE)
+            ImGui::Text("Layer %u of %u (clip order %u): %s [%s]", ordinal, stages, e, k->label, k->category);
+        else if (section == JFX_COLOR_CALIBRATION)
+            ImGui::Text("Stage %u of %u (clip order %u): %s", ordinal, stages, e, k->label);
+        else
+            ImGui::Text("%s", k->label);
         bool enabled=jfx_timeline_effect_enabled(t,track,clip,e);
-        if (ImGui::Checkbox(k->label,&enabled)) editor_result(f,jfx_desktop_frontend_layer_effects_set_enabled(f,track,clip,e,enabled));
+        const char *toggle_label = section == JFX_COLOR_CALIBRATION ? (enabled ? "Calibrated" : "Bypassed") : k->label;
+        if (ImGui::Checkbox(toggle_label,&enabled)) editor_result(f,jfx_desktop_frontend_layer_effects_set_enabled(f,track,clip,e,enabled));
         float opacity=jfx_timeline_effect_opacity(t,track,clip,e);
-        if (ImGui::SliderFloat("Opacity",&opacity,0,1)) editor_result(f,jfx_desktop_frontend_layer_effects_set_opacity(f,track,clip,e,opacity));
+        if (ImGui::SliderFloat(section == JFX_COLOR_CALIBRATION ? "Stage mix##Opacity" : "Opacity",&opacity,0,1)) editor_result(f,jfx_desktop_frontend_layer_effects_set_opacity(f,track,clip,e,opacity));
         auto blend=jfx_timeline_effect_blend(t,track,clip,e);
         if (ImGui::BeginCombo("Blend",jfx_blend_mode_name(blend))) {
             for (int b=0;b<JFX_BLEND_COUNT;++b) if (ImGui::Selectable(jfx_blend_mode_name((jfx_blend_mode_t)b)))
@@ -285,6 +429,7 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
             wheel_params=9;
         }
         bool dials=section==JFX_COLOR_GRADING;
+        bool calibration = section == JFX_COLOR_CALIBRATION;
         int columns=(int)(ImGui::GetContentRegionAvail().x/150);
         if (columns<1) columns=1;
         if (columns>4) columns=4;
@@ -294,16 +439,23 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
             ImGui::PushID((int)p);
             float v=jfx_timeline_effect_param(t,track,clip,e,p);
             bool changed_value=false;
-            if (k->params[p].integral) {
+            if (calibration && k->params[p].integral &&
+                calibration_option_label(k->params[p].name, (int)v, k->params[p].maximum)) {
+                changed_value=calibration_combo(k->params[p],&v);
+            } else if (k->params[p].integral) {
                 int integer=(int)v;
                 changed_value=ImGui::SliderInt(k->params[p].label,&integer,(int)k->params[p].minimum,(int)k->params[p].maximum);
                 v=(float)integer;
+            } else if (calibration && !std::strcmp(k->params[p].name, "temperature")) {
+                int kelvin=(int)std::lround(v);
+                changed_value=ImGui::SliderInt("Temperature (K)",&kelvin,(int)k->params[p].minimum,(int)k->params[p].maximum,"%d K");
+                v=(float)kelvin;
             } else if (dials && p>=wheel_params) {
                 changed_value=grading_dial(k->params[p],&v,ImGui::GetContentRegionAvail().x);
             } else changed_value=ImGui::SliderFloat(k->params[p].label,&v,k->params[p].minimum,k->params[p].maximum);
             if (changed_value && v!=jfx_timeline_effect_param(t,track,clip,e,p) && (!dials || begin_grading(f)))
                 editor_result(f,jfx_desktop_frontend_layer_effects_set_param(f,track,clip,e,p,v));
-            if (ImGui::SmallButton("Set key")) editor_result(f,jfx_desktop_frontend_layer_effects_add_key(f,track,clip,e,p,jfx_desktop_frontend_timeline_current_frame(f),v));
+            if (ImGui::SmallButton(calibration ? "Set calibration key" : "Set key")) editor_result(f,jfx_desktop_frontend_layer_effects_add_key(f,track,clip,e,p,jfx_desktop_frontend_timeline_current_frame(f),v));
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove key")) editor_result(f,jfx_desktop_frontend_layer_effects_remove_key(f,track,clip,e,p,jfx_desktop_frontend_timeline_current_frame(f)));
             ImGui::SameLine(); ImGui::Text("%zu keys",jfx_timeline_key_count(t,track,clip,e,p));
@@ -323,11 +475,16 @@ void effect_stack(jfx_desktop_frontend_t *f, jfx_color_section_t section = JFX_C
             }
         }
         bool changed=false;
-        if (section!=JFX_COLOR_NONE && ImGui::SmallButton("Reset parameters")) {
+        const char *reset_label = section == JFX_COLOR_CALIBRATION ? "Reset stage" : "Reset parameters";
+        if (section!=JFX_COLOR_NONE && ImGui::SmallButton(reset_label)) {
             finish_grading(f);
             if (begin_grading(f)) for (size_t p=0;p<k->param_count;++p)
                 editor_result(f,jfx_desktop_frontend_layer_effects_set_param(f,track,clip,e,p,k->params[p].default_value));
             finish_grading(f);
+        }
+        if (section == JFX_COLOR_CALIBRATION) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("Renders in shared clip order with layers and grades.");
         }
         uint32_t previous=UINT32_MAX, next=UINT32_MAX;
         for (uint32_t i=0;i<jfx_timeline_effect_count(t,track,clip);++i) {

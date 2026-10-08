@@ -100,38 +100,63 @@ class Effect final : public IComponent,
     }
     tresult PLUGIN_API initialize(FUnknown *host) override
     {
-        assert(host && !initialized && entered);
+        /* Every host call below has a side effect (out-params, created
+         * objects), so each result is checked explicitly. Burying them in
+         * assert() would silently skip the calls in NDEBUG builds, leaving
+         * null/outdated state behind. */
+        if (!host || initialized || !entered)
+            return kInvalidArgument;
         IHostApplication *app = nullptr;
-        assert(host->queryInterface(IHostApplication::iid.toTUID(),
-                                    reinterpret_cast<void **>(&app)) == kResultOk);
+        if (host->queryInterface(IHostApplication::iid.toTUID(),
+                                 reinterpret_cast<void **>(&app)) != kResultOk ||
+            !app)
+            return kResultFalse;
         String128 name{};
-        assert(app->getName(name) == kResultOk && name[0] == 'J');
+        if (app->getName(name) != kResultOk || name[0] != 'J') {
+            app->release();
+            return kResultFalse;
+        }
         IMessage *message = nullptr;
         TUID uid;
         IMessage::iid.toTUID(uid);
-        assert(app->createInstance(uid, uid, reinterpret_cast<void **>(&message)) == kResultOk);
+        if (app->createInstance(uid, uid, reinterpret_cast<void **>(&message)) != kResultOk ||
+            !message) {
+            app->release();
+            return kResultFalse;
+        }
         message->setMessageID("test");
-        assert(!std::strcmp(message->getMessageID(), "test"));
+        if (std::strcmp(message->getMessageID(), "test")) {
+            message->release();
+            app->release();
+            return kResultFalse;
+        }
         auto *attrs = message->getAttributes();
+        if (!attrs) {
+            message->release();
+            app->release();
+            return kResultFalse;
+        }
         attrs->addRef();
-        assert(attrs->setInt("int", 42) == kResultOk);
+        bool ok = attrs->setInt("int", 42) == kResultOk;
         int64 integer = 0;
-        assert(attrs->getInt("int", integer) == kResultOk && integer == 42);
-        assert(attrs->setFloat("float", .25) == kResultOk);
+        ok = ok && attrs->getInt("int", integer) == kResultOk && integer == 42;
+        ok = ok && attrs->setFloat("float", .25) == kResultOk;
         double floating = 0;
-        assert(attrs->getFloat("float", floating) == kResultOk && floating == .25);
+        ok = ok && attrs->getFloat("float", floating) == kResultOk && floating == .25;
         TChar text[] = {'o', 'k', 0}, copy[3]{};
-        assert(attrs->setString("string", text) == kResultOk &&
-               attrs->getString("string", copy, sizeof(copy)) == kResultOk && copy[0] == 'o');
+        ok = ok && attrs->setString("string", text) == kResultOk &&
+            attrs->getString("string", copy, sizeof(copy)) == kResultOk && copy[0] == 'o';
         const void *binary = nullptr;
         uint32 bytes = 0;
-        assert(attrs->setBinary("binary", text, sizeof(text)) == kResultOk &&
-               attrs->getBinary("binary", binary, bytes) == kResultOk && bytes == sizeof(text) &&
-               !std::memcmp(binary, text, bytes));
+        ok = ok && attrs->setBinary("binary", text, sizeof(text)) == kResultOk &&
+            attrs->getBinary("binary", binary, bytes) == kResultOk && bytes == sizeof(text) &&
+            !std::memcmp(binary, text, bytes);
         message->release();
-        assert(attrs->getInt("int", integer) == kResultOk);
+        ok = ok && attrs->getInt("int", integer) == kResultOk && integer == 42;
         attrs->release();
         app->release();
+        if (!ok)
+            return kResultFalse;
         initialized = true;
         return kResultOk;
     }
@@ -250,16 +275,18 @@ class Effect final : public IComponent,
             }
         for (int32 i = 0; i < d.numSamples; ++i) {
             if (gain_queue) {
-                int32 left_offset=0; double left_value=gain; gain_queue->getPoint(0,left_offset,left_value);
+                int32 left_offset=0; double left_value=gain;
+                if (gain_queue->getPoint(0,left_offset,left_value)!=kResultOk) return kResultFalse;
                 gain=left_value;
                 for (int32 point=1;point<gain_queue->getPointCount();++point) {
-                    int32 right_offset=0; double right_value=0; assert(gain_queue->getPoint(point,right_offset,right_value)==kResultOk);
+                    int32 right_offset=0; double right_value=0;
+                    if (gain_queue->getPoint(point,right_offset,right_value)!=kResultOk) return kResultFalse;
                     if (i<right_offset) { gain=left_value+(right_value-left_value)*(double)(i-left_offset)/(double)(right_offset-left_offset); break; }
                     gain=right_value; left_offset=right_offset; left_value=right_value;
                 }
             }
             if (instrument && d.inputEvents) for (int32 e=0;e<d.inputEvents->getEventCount();++e) {
-                Event ev{}; assert(d.inputEvents->getEvent(e,ev)==kResultOk);
+                Event ev{}; if (d.inputEvents->getEvent(e,ev)!=kResultOk) return kResultFalse;
                 if (ev.sampleOffset!=i) continue;
                 if (ev.type==Event::kNoteOnEvent) voices[ev.noteOn.pitch]=ev.noteOn.velocity;
                 else if (ev.type==Event::kNoteOffEvent) voices[ev.noteOff.pitch]=0;
@@ -373,19 +400,39 @@ public:
     uint32 PLUGIN_API release() override { auto n=--refs; if (!n) delete this; return n; }
     tresult PLUGIN_API isPlatformTypeSupported(FIDString type) override { return !std::strcmp(type,"X11EmbedWindowID") || !std::strcmp(type,"HWND") || !std::strcmp(type,"NSView")?kResultTrue:kResultFalse; }
     tresult PLUGIN_API attached(void *parent,FIDString type) override {
-        assert(parent && frame && isPlatformTypeSupported(type)==kResultTrue); is_attached=true;
-        assert(frame->queryInterface(Linux::IRunLoop::iid.toTUID(),reinterpret_cast<void **>(&loop))==kResultOk);
-        assert(loop->registerTimer(this,1)==kResultOk);
-        ViewRect rect(0,0,420,240); assert(frame->resizeView(this,&rect)==kResultOk); return kResultOk;
+        /* The run-loop/timer/resize calls below mutate host and fixture
+         * state, so they run unconditionally with explicit error returns.
+         * Inside assert() they would vanish in NDEBUG builds. */
+        if (!parent || !frame || isPlatformTypeSupported(type)!=kResultTrue)
+            return kInvalidArgument;
+        is_attached=true;
+        if (frame->queryInterface(Linux::IRunLoop::iid.toTUID(),reinterpret_cast<void **>(&loop))!=kResultOk || !loop) {
+            loop=nullptr; is_attached=false; return kResultFalse;
+        }
+        if (loop->registerTimer(this,1)!=kResultOk) {
+            loop=nullptr; is_attached=false; return kResultFalse;
+        }
+        ViewRect rect(0,0,420,240);
+        if (frame->resizeView(this,&rect)!=kResultOk) {
+            loop->unregisterTimer(this); loop=nullptr; is_attached=false; return kResultFalse;
+        }
+        return kResultOk;
     }
-    tresult PLUGIN_API removed() override { assert(is_attached); is_attached=false; assert(loop->unregisterTimer(this)==kResultOk); loop->release(); loop=nullptr; return kResultOk; }
+    tresult PLUGIN_API removed() override {
+        if (!is_attached || !loop) return kResultFalse;
+        is_attached=false;
+        tresult result=loop->unregisterTimer(this);
+        loop->release(); loop=nullptr;
+        return result;
+    }
     tresult PLUGIN_API onWheel(float) override {
-        assert(owner->handler); owner->handler->beginEdit(0); owner->handler->performEdit(0,.25); owner->handler->endEdit(0); return kResultOk;
+        if (!owner->handler) return kResultFalse;
+        owner->handler->beginEdit(0); owner->handler->performEdit(0,.25); owner->handler->endEdit(0); return kResultOk;
     }
     tresult PLUGIN_API onKeyDown(char16,int16,int16) override { return kResultOk; }
     tresult PLUGIN_API onKeyUp(char16,int16,int16) override { return kResultOk; }
     tresult PLUGIN_API getSize(ViewRect *r) override { *r=ViewRect(0,0,400,200); return kResultOk; }
-    tresult PLUGIN_API onSize(ViewRect *r) override { assert(r && r->getWidth()>0); return kResultOk; }
+    tresult PLUGIN_API onSize(ViewRect *r) override { if (!r || r->getWidth()<1) return kInvalidArgument; return kResultOk; }
     tresult PLUGIN_API onFocus(TBool) override { return kResultOk; }
     tresult PLUGIN_API setFrame(IPlugFrame *f) override { if (frame) frame->release(); frame=f; if (f) f->addRef(); return kResultOk; }
     tresult PLUGIN_API canResize() override { return kResultTrue; }

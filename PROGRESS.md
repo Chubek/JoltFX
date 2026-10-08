@@ -666,6 +666,28 @@ Follow-on from the plan audit above. Two changes, both additive.
   list is verified by inspection only.
 # Progress
 
+## 2026-10-08
+
+- Differentiated the desktop **Layer Effects** and **Color Calibration** tabs,
+  which previously shared one generic `effect_stack` layout. Layer Effects is
+  now the per-clip composite stack (category-grouped add menu, layer/clip-order
+  numbering, blend, opacity, keyframes). Calibration is now the technical
+  normalization pipeline (stage numbering, suggested white/levels/gamma/range/
+  space/LUT order, labeled combos for channel/space/curve/clamp/preserve
+  options, Kelvin temperature slider, one-step bypass-all toggle). Grading
+  keeps its wheels/dials. Updated `frontends/desktop/README.md` and
+  `docs/editor.md`.
+- Solidifying pass: full test suite green in both the default build and an
+  ASan/UBSan build (361/361 each). The sanitizer run exposed a real latent bug:
+  `tests/unit/color/vst3_fixture.cpp` buried side-effecting VST3 calls inside
+  `assert()`, so NDEBUG builds skipped host `queryInterface`/`createInstance`,
+  timer registration, `resizeView`, parameter/event reads and timer
+  unregistration, causing null dereferences (`vst3_audio_host`,
+  `daw_ui_tests`, `daw_native_window_capture` under sanitizers). Rewrote the
+  fixture to run every host call unconditionally with explicit error returns;
+  pure state validations stay as asserts. Verified shipped host code
+  (`src/src/vst3*.cpp/inc`) contains no assert-with-side-effect.
+
 ## 2026-10-07
 
 - Added the first 2D animation API slice in `jfx_animation.h`.

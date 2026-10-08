@@ -10,9 +10,13 @@ nodes, alongside sources, keys, transforms and blends.
 
 ## Frontends
 
-- **Desktop:** select a clip in NLE or the shared selector, then choose **Color
-  Calibration** or **Color Grading** in the tab bar. Add an operator, set keys,
-  bypass, reset base parameters, reorder or remove it. Grading uses rotary scalar
+- **Desktop:** select a clip in NLE or the shared selector, then choose **Layer
+  Effects**, **Color Calibration** or **Color Grading** in the tab bar. Layer
+  Effects manages the transform/key/blend/adjustment stack with per-layer clip
+  order, blend, opacity and keyframes. Calibration manages the technical
+  normalization pipeline (white balance, levels, gamma, log/legal, color space,
+  LUT) with stage numbering, labeled option combos, a Kelvin temperature slider
+  and a one-step bypass-all toggle. Grading uses rotary scalar
   dials and Resolve-inspired Lift/Gamma/Gain or Shadows/Midtones/Highlights wheels
   for the corresponding operators. Drag a wheel puck for color balance or its
   master dial for a common RGB adjustment. Dial drags use right/up to increase,

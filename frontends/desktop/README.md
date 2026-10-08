@@ -17,6 +17,20 @@ parameters operation creates one undo step. Tab/selection changes finish the
 current gesture. Color controls also support LUT paths, bypass, reorder and
 keyframes. See [color/editor usage](../../docs/editor.md).
 
+**Layer Effects** is the per-clip composite stack for transforms, keys, blends
+and adjustments. Operators are grouped by category in the add menu, each layer
+shows its clip order, blend mode, opacity, parameters and keyframe counts, and
+reorder/remove act within the layer stack.
+
+**Color Calibration** is the technical normalization pipeline that runs before
+creative grading: white balance, black/white levels, gamma, log/legal range,
+color space and LUT stages. Stages are numbered in pipeline order with their
+clip order, integral options (channel, color space, tone/log curves, clamp and
+preserve switches) render as labeled combos, white-balance temperature uses a
+Kelvin slider, and **Bypass all calibration** toggles the whole pipeline in one
+undo step. Rendering always follows the shared clip order across layers,
+calibration and grading.
+
 The **Timeline** is an interactive NLE: drag clip bodies to move between tracks,
 drag edges to trim, scrub the ruler, zoom/pan, Fit or Snap. Controls expose split,
 duplicate, source slip, delete/ripple delete, gap insertion, track ordering,
