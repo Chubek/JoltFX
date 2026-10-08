@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Shared 3D modeling and animation: desktop workspace tab, web/Android sections,
+  iOS controller, CLI/terminal and portable host APIs. Mesh primitives, vertex
+  editing, libigl subdivision/normals, CGAL validation, VTK principal axes,
+  Bullet rigid-body key baking, tinyply PLY interchange and stb PNG export.
+  Embedded `.jfx` scenes, independent history, keyframes/camera/material controls,
+  CPU shaded preview and shared encoded export. Modeling3D 1.0, Editor 1.8,
+  Desktop 1.6; appended identifiers preserve existing numeric values.
+
 - Application-wide MemTKX allocation through Tilly allocator API 2.0, preserving
   the C struct layout/signatures while changing default-buffer ownership and
   general-heap capacity to live-payload budgets. C11 helpers and C++17 STL/RAII

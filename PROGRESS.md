@@ -1,5 +1,56 @@
 # Progress
 
+## Shared 3D modeling and animation workspace (2026-10-09)
+
+- Added an editor-owned 3D scene document, embedded mesh/key/camera persistence,
+  failure-atomic commands, independent bounded history and CPU shaded rendering.
+- Integrated CGAL triangle validation, libigl normals/subdivision, VTK principal
+  axes, Bullet rigid-body baking, tinyply mesh interchange and stb PNG export.
+- Added desktop 1.6 tab/outliner/inspector/transport, web and Android sections,
+  an iOS controller, CLI/terminal commands and portable host scene APIs. Shared
+  frame/video exports dispatch scenes using their own FPS/duration.
+- Added engine, real ImGui, cross-frontend and CLI round-trip checks, mounted web
+  control checks and a real-WASM test. All 3D checks pass natively and under
+  Clang ASan/UBSan, including encoded export and failure-preservation coverage.
+- Pinned Eigen 3.4.1 headers to satisfy vendored libigl, with an offline override.
+  Limited VTK to CommonCore; reduced external template debug data after the full
+  native build exhausted disk from large repeated static test links.
+- Hardened PNG/PLY exports with exclusive temporary ownership and Windows
+  destination replacement; rejected nonmanifold subdivision edges before libigl.
+  Added failed-load/output preservation, interpolation, malformed/truncated PLY,
+  nonmanifold and physics-floor regressions. Engine, real ImGui, CLI and web tests
+  pass. Corrected the cross-frontend fixture to respect single-runtime ownership.
+- Full-build verification encountered native linker segmentation faults and a
+  GCC 16 internal compiler error in VTK's sanitizer build. Completed native builds
+  using GNU gold, sanitizer builds using Clang/LLD. iOS scene loading now checks
+  document kind before replacement.
+- Resolved VTK installation dependencies by building its required CommonDataModel
+  export and disabling wrapper/remote tools. Added explicit private Boost header
+  discovery and installed modeling documentation and dependency license notices.
+  Switched sanitizer verification to Clang/LLD and native linking to GNU gold after
+  repeated GCC/BFD toolchain failures. Added shared CLI project-info/render dispatch
+  and mobile name/visibility/material/clock controls; extended encoded-export tests.
+- Clang ASan/UBSan validation passed all five selected checks: modeling3d engine,
+  real ImGui workspace, desktop/web/mobile/host conformance, CLI and desktop
+  headless smoke, with leak detection and halt-on-UB enabled. LLD was unpacked
+  into `/tmp/opencode` from the matching Arch package after verifying its SHA-256;
+  no system compiler/linker installation was changed. Web tests pass 13/13.
+- Installation and relocated `find_package(JoltFX)` C/C++ consumer checks pass,
+  including rendering, PNG output, subdivision and principal-axis alignment.
+  Fixed VTK subproject export filenames by setting its package/destination explicitly.
+- Full native suite passes **370/370**, including the existing plugin and workspace
+  tests. Preserved sequence/graph mode switching inside plugin transactions while
+  blocking scene transitions; extended tab-name assertions for the appended workspace.
+- Fixed allocation-policy scanning of directories with source-file suffixes by
+  checking `is_file()` before reading. The policy check now passes, and the separate
+  changed-production-file audit passes for 27 files. Android/iOS platform builds
+  and real Emscripten execution have not been run; their toolchains are absent.
+- Final evidence: `/tmp/opencode/jfx-3d-native-complete-tests.log` (370/370),
+  `jfx-3d-sanitizer-final-tests.log` (5/5, leak detection and halt-on-UB),
+  `jfx-3d-web-tests.log` (13/13), and `jfx-3d-package-final-{install,configure,build}.log`.
+  Relocated consumer executes successfully; `git diff --check` passes. Changes are
+  uncommitted; pre-existing extension/joltbundle work is retained.
+
 ## Application-wide MemTKX memory migration (2026-10-08)
 
 - Audited allocation entry points and the vendored MemTKX contract. Most engine,

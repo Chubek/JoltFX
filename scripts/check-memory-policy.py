@@ -13,7 +13,7 @@ failures = []
 for directory in ("src", "tilly", "backends", "extif", "kernels", "frontends", "joltscript", "examples", "sdk"):
     for path in (root / directory).rglob("*"):
         relative = path.relative_to(root).as_posix()
-        if path.suffix not in extensions or relative in bootstrap or any(p in {"tests", "build", ".cxx", "node_modules"} for p in path.parts):
+        if not path.is_file() or path.suffix not in extensions or relative in bootstrap or any(p in {"tests", "build", ".cxx", "node_modules"} for p in path.parts):
             continue
         source = tokens.sub(lambda m: "\n" * m[0].count("\n"), path.read_text())
         for match in allocation.finditer(source):

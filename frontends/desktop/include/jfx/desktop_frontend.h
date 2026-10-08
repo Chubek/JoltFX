@@ -33,12 +33,13 @@ typedef enum {
     JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_DAW,
     JFX_DESKTOP_PANEL_ANIMATION,
+    JFX_DESKTOP_PANEL_MODELING3D,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 5
+#define JFX_DESKTOP_API_MINOR 6
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -52,6 +53,7 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_AUDIO,
     JFX_DESKTOP_WORKSPACE_DAW,
     JFX_DESKTOP_WORKSPACE_ANIMATION,
+    JFX_DESKTOP_WORKSPACE_MODELING3D,
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
 
@@ -112,6 +114,7 @@ bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *frontend,
 jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *frontend,const char *op,
     uint32_t a,uint32_t b,uint32_t c,double value,const char *text);
 jfx_result_t jfx_desktop_frontend_sequence_state(jfx_desktop_frontend_t *frontend,char *out_json,size_t capacity);
+jfx_result_t jfx_desktop_frontend_scene3d_state(jfx_desktop_frontend_t *frontend,char *out_json,size_t capacity);
 jfx_result_t jfx_desktop_frontend_write_frame(jfx_desktop_frontend_t *frontend,uint64_t frame,const char *path);
 jfx_result_t jfx_desktop_frontend_export_begin(jfx_desktop_frontend_t *frontend,const jfx_export_options_t *options,jfx_export_job_t **out_job);
 jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t *frontend,uint32_t rate,jfx_audio_mixer_t **out_mixer);

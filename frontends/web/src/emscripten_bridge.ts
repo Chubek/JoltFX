@@ -1,5 +1,5 @@
 import type { JoltFrame, JoltWasmBridge } from "./player.js";
-import type { ColorOperator, VideoExport } from "./editor.js";
+import type { ColorOperator, VideoExport, Scene3DState } from "./editor.js";
 import type { SequenceState } from "./nle.js";
 import type { GraphState, NodeKind } from "./composition.js";
 
@@ -122,6 +122,7 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
   }
   public nodeKinds(): NodeKind[] { return this.jsonExport("jfx_node_catalog", false); }
   public graphState(): GraphState { return this.jsonExport("jfx_web_session_graph_state", true); }
+  public scene3dState(): Scene3DState { return this.jsonExport("jfx_web_session_scene3d_state",true,4*1024*1024); }
   public renderGraphNode(node: number | null, seconds: number, width = this.width, height = this.height): JoltFrame {
     this.ensureOpen();
     if (node !== null && (!Number.isInteger(node) || node < 0 || node >= 256) || !Number.isFinite(seconds) || seconds < 0 || seconds > 1e9 ||
@@ -141,6 +142,11 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
     if (bytes.length > 64 * 1024 * 1024) throw new RangeError("Asset exceeds 64 MiB");
     const path = "/" + name.replace(/[^a-zA-Z0-9._-]/g, "_");
     this.module.FS.writeFile(path, bytes); this.resetAudio(); return path;
+  }
+  public readAsset(path: string): Uint8Array {
+    this.ensureOpen();
+    if (!this.module.FS?.readFile) throw new Error("This WASM build cannot read virtual files");
+    return this.module.FS.readFile(path).slice();
   }
 
   public async loadPackage(bytes: Uint8Array): Promise<void> {

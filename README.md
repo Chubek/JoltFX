@@ -31,6 +31,10 @@ JoltFX is built in layers, each of which can be used on its own:
 
 ## Quick start
 
+The 3D engine needs Boost 1.74+ development headers. CMake fetches pinned Eigen
+3.4.1 headers; use `JFX_3D_EIGEN_ROOT` for offline builds. See
+[3D build dependencies](docs/modeling3d.md#libraries-and-build).
+
 ```bash
 # Configure and build (needs SDL2 for the desktop window; it degrades to a
 # headless-only build without it)
@@ -104,6 +108,26 @@ build/frontends/cli/joltfx compose render edited.jfx -o composition.ppm
 
 See [the composition guide](docs/composition.md) for desktop/web/touch controls,
 the embeddable iOS controller, host APIs and the shared command reference.
+
+### 3D modeling and animation
+
+The desktop **3D Modeling & Animation** tab provides a scene outliner, mesh
+primitives, vertex editing, subdivision, principal-axis alignment, transforms,
+materials, camera controls, keyframes and rigid-body animation baking. Web and
+Android have corresponding editor sections; iOS has a dedicated controller;
+CLI/terminal and host bridges use the same scene engine and `.jfx` documents.
+
+```sh
+build/frontends/cli/joltfx 3d new scene.jfx
+build/frontends/cli/joltfx 3d edit scene.jfx animated.jfx
+build/frontends/cli/joltfx 3d render animated.jfx frame.png 1.0
+build/frontends/desktop/jfx_desktop --project animated.jfx
+```
+
+CGAL, Bullet, tinyply, VTK, libigl and stb are integrated from `third_party`.
+Scenes include their mesh data and animate translation, Euler rotation and scale.
+See [3D usage](docs/modeling3d.md) for library roles, command examples, CPU
+viewport/physics limits and the pinned Eigen dependency's offline build override.
 
 ### Audio mixing and video export
 

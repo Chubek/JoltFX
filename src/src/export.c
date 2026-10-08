@@ -67,15 +67,16 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
     bool audio_only=!strcmp(container,"wav");
     if (!audio_only && !jfx_export_available()) return JFX_ERROR_NOT_IMPLEMENTED;
     bool sequence=jfx_editor_kind(editor)==JFX_PROJECT_KIND_SEQUENCE;
+    bool scene=jfx_editor_kind(editor)==JFX_PROJECT_KIND_SCENE3D;
     if (audio_only && (!sequence || !o->audio)) return JFX_ERROR_INVALID_ARGUMENT;
     const jfx_timeline_t *timeline=jfx_editor_timeline((jfx_editor_t *)editor);
-    uint64_t duration=sequence?jfx_timeline_duration(timeline):0;
+    uint64_t duration=sequence?jfx_timeline_duration(timeline):scene?jfx_scene3d_frames(jfx_editor_scene3d((jfx_editor_t *)editor)):0;
     uint64_t count=o->frame_count?o->frame_count:(duration>o->start_frame?duration-o->start_frame:0);
     if (!count || count>10000000 || o->start_frame>(uint64_t)INT64_MAX-count) return JFX_ERROR_INVALID_ARGUMENT;
-    uint32_t num=sequence?jfx_timeline_fps_num(timeline):(o->fps_num?o->fps_num:30);
-    uint32_t den=sequence?jfx_timeline_fps_den(timeline):(o->fps_den?o->fps_den:1);
+    uint32_t num=sequence?jfx_timeline_fps_num(timeline):scene?jfx_scene3d_fps(jfx_editor_scene3d((jfx_editor_t *)editor)):(o->fps_num?o->fps_num:30);
+    uint32_t den=sequence?jfx_timeline_fps_den(timeline):scene?1:(o->fps_den?o->fps_den:1);
     if (!num || !den || num>INT_MAX || den>INT_MAX || (double)num/den<1 || (double)num/den>240 ||
-        (sequence && ((o->fps_num && o->fps_num!=num) || (o->fps_den && o->fps_den!=den)))) return JFX_ERROR_INVALID_ARGUMENT;
+        ((sequence || scene) && ((o->fps_num && o->fps_num!=num) || (o->fps_den && o->fps_den!=den)))) return JFX_ERROR_INVALID_ARGUMENT;
     const char *video=o->video_codec?o->video_codec:!strcmp(container,"matroska")?"ffv1":!strcmp(container,"mov")?"prores":!strcmp(container,"webm")?"libvpx-vp9":"mpeg4";
     const char *audio=o->audio_codec?o->audio_codec:!strcmp(container,"mp4")?"aac":!strcmp(container,"webm")?"libopus":"pcm_s16le";
     if (!audio_only && (!jfx_export_codec_available(video,false) || (sequence && o->audio && !jfx_export_codec_available(audio,true)))) return JFX_ERROR_NOT_IMPLEMENTED;
@@ -85,7 +86,8 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
     j->width=o->width?o->width:sequence?jfx_timeline_width(timeline):jfx_editor_graph_width(editor);
     j->height=o->height?o->height:sequence?jfx_timeline_height(timeline):jfx_editor_graph_height(editor);
     j->rate=o->sample_rate?o->sample_rate:48000;
-    if (!j->width || !j->height || j->width>4096 || j->height>4096) { jfx_export_destroy(j); return JFX_ERROR_INVALID_ARGUMENT; }
+    if (!j->width || !j->height || j->width>4096 || j->height>4096 ||
+        (scene && (j->width>2048 || j->height>2048))) { jfx_export_destroy(j); return JFX_ERROR_INVALID_ARGUMENT; }
     jfx_result_t result=JFX_ERROR_OUT_OF_MEMORY;
     char *text=allocate(JFX_PROJECT_MAX_BYTES); size_t length=0;
     if (!text) { jfx_export_destroy(j); return result; }
@@ -149,7 +151,7 @@ jfx_result_t jfx_export_step(jfx_export_job_t *j,uint32_t max_frames) {
         uint64_t frame=j->start+j->completed;
         if (!j->audio_only) {
             r=j->sequence?jfx_editor_render_frame(j->editor,frame,j->width,j->height,j->pixels,(size_t)j->width*j->height*4)
-                :jfx_editor_render_graph(j->editor,UINT32_MAX,(double)frame*j->fps_den/j->fps_num,j->width,j->height,j->pixels,(size_t)j->width*j->height*4);
+                :jfx_editor_render(j->editor,(double)frame*j->fps_den/j->fps_num,j->width,j->height,j->pixels,(size_t)j->width*j->height*4);
             if (r!=JFX_SUCCESS) goto failed;
             r=mapped(jolt_media_writer_video(j->writer,j->pixels)); if (r!=JFX_SUCCESS) goto failed;
         }

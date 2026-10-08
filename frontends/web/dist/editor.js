@@ -53,6 +53,9 @@ export class JoltEditor {
     nle;
     composition;
     graphState;
+    scene3d;
+    sceneObject = 0;
+    refreshScene = () => { };
     previewNode = null;
     refreshGraph = () => { };
     sequence;
@@ -94,6 +97,13 @@ export class JoltEditor {
             this.perform(() => this.bridge.edit(event.shiftKey ? "redo" : "undo"));
         }
         else if (event.key === "Delete" || event.key.toLowerCase() === "s" && !modifier) {
+            if (this.scene3d?.active) {
+                if (event.key === "Delete") {
+                    event.preventDefault();
+                    this.perform(() => this.bridge.edit("3d.remove", this.sceneObject));
+                }
+                return;
+            }
             if (this.graphState?.active) {
                 if (event.key === "Delete") {
                     event.preventDefault();
@@ -335,7 +345,9 @@ export class JoltEditor {
             });
         };
         root.addEventListener("change", this.listener);
-        this.perform(() => bridge.edit(bridge.graphState().active ? "graph" : "sequence"));
+        if (bridge.scene3dState)
+            this.modeling3dPanel();
+        this.perform(() => bridge.edit(bridge.scene3dState?.().active ? "3d" : bridge.graphState().active ? "graph" : "sequence"));
     }
     setZoom(zoom) {
         if (!Number.isFinite(zoom) || zoom < 0.25 || zoom > 8)
@@ -352,6 +364,89 @@ export class JoltEditor {
         section.append(heading);
         this.root.append(section);
         return section;
+    }
+    modeling3dPanel() {
+        const panel = this.panel("3D Modeling & Animation"), objects = this.select([]), inspector = document.createElement("div"), keys = document.createElement("pre");
+        panel.append(this.button("Preview 3D workspace", () => { this.previewNode = null; this.bridge.edit("3d"); }), this.button("New 3D scene", () => { this.bridge.edit("3d.new"); this.time = 0; }));
+        for (const primitive of ["cube", "sphere", "plane"])
+            panel.append(this.button(`Add ${primitive}`, () => this.bridge.edit("3d.add", 0, 0, 0, 0, primitive)));
+        this.field(panel, "Scene object", objects);
+        panel.append(inspector, keys);
+        objects.onchange = () => { this.sceneObject = objects.selectedIndex; this.refreshScene(); };
+        const ply = this.text("mesh.ply"), vertex = this.number(0, 0), axis = this.select(["X", "Y", "Z"]), coordinate = this.number(0);
+        this.field(panel, "PLY path", ply);
+        panel.append(this.assetPicker(ply), this.button("Import PLY", () => this.bridge.edit("3d.import_ply", 0, 0, 0, 0, ply.value)), this.button("Export PLY", () => {
+            this.bridge.edit("3d.export_ply", this.sceneObject, 0, 0, 0, ply.value);
+            const bytes = this.bridge.readAsset?.(ply.value);
+            if (bytes) {
+                const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }));
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = "mesh.ply";
+                link.click();
+                URL.revokeObjectURL(url);
+            }
+        }));
+        this.field(panel, "Vertex index", vertex);
+        this.field(panel, "Vertex axis", axis);
+        this.field(panel, "Vertex coordinate", coordinate);
+        panel.append(this.button("Set vertex coordinate", () => this.bridge.edit("3d.vertex", this.sceneObject, +vertex.value, axis.selectedIndex, +coordinate.value)), this.button("Subdivide mesh", () => this.bridge.edit("3d.subdivide", this.sceneObject)), this.button("Align principal axes", () => this.bridge.edit("3d.align", this.sceneObject)), this.button("Duplicate mesh", () => this.bridge.edit("3d.duplicate", this.sceneObject)), this.button("Delete mesh", () => this.bridge.edit("3d.remove", this.sceneObject)), this.button("Export 3D frame as PPM", () => { this.bridge.edit("3d"); this.downloadPPM(this.bridge.renderFrame(this.time), "scene3d.ppm"); }));
+        const bake = this.number(60, 1, 600);
+        this.field(panel, "Rigid body bake frames", bake);
+        panel.append(this.button("Bake rigid-body animation", () => this.bridge.edit("3d.bake", 0, 0, +bake.value)));
+        this.refreshScene = () => {
+            this.scene3d = this.bridge.scene3dState?.();
+            const state = this.scene3d;
+            if (!state)
+                return;
+            if (state.active) {
+                this.fps = state.fps;
+                this.duration = state.frames;
+            }
+            this.sceneObject = Math.max(0, Math.min(this.sceneObject, state.objects.length - 1));
+            objects.replaceChildren();
+            for (const object of state.objects) {
+                const option = document.createElement("option");
+                option.textContent = object.name;
+                objects.append(option);
+            }
+            objects.selectedIndex = this.sceneObject;
+            inspector.replaceChildren();
+            const clockFPS = this.number(state.fps, 1, 240), duration = this.number(state.frames, 1, 36000);
+            this.field(inspector, "3D FPS", clockFPS);
+            this.field(inspector, "3D duration frames", duration);
+            inspector.append(this.button("Set 3D clock", () => this.bridge.edit("3d.clock", +clockFPS.value, +duration.value)));
+            ["Orbit yaw", "Orbit pitch", "Camera distance", "Target X", "Target Y", "Target Z", "Field of view"].forEach((name, i) => {
+                const input = this.number(state.camera[i]);
+                this.field(inspector, name, input);
+                input.onchange = () => this.perform(() => this.bridge.edit("3d.camera", i, 0, 0, +input.value));
+            });
+            const object = state.objects[this.sceneObject];
+            keys.textContent = "";
+            if (!object)
+                return;
+            const label = this.text(object.name), mass = this.number(object.mass, 0, 10000);
+            this.field(inspector, "3D object name", label);
+            label.onchange = () => this.perform(() => this.bridge.edit("3d.name", this.sceneObject, 0, 0, 0, label.value));
+            this.field(inspector, "Mass (0 = static)", mass);
+            mass.onchange = () => this.perform(() => this.bridge.edit("3d.mass", this.sceneObject, 0, 0, +mass.value));
+            inspector.append(this.button(object.visible ? "Hide mesh" : "Show mesh", () => this.bridge.edit("3d.visible", this.sceneObject, 0, 0, object.visible ? 0 : 1)));
+            ["Position X", "Position Y", "Position Z", "Rotation X", "Rotation Y", "Rotation Z", "Scale X", "Scale Y", "Scale Z"].forEach((name, ch) => {
+                const input = this.number(object.transform[ch]);
+                this.field(inspector, name, input);
+                input.onchange = () => this.perform(() => this.bridge.edit("3d.transform", this.sceneObject, ch, 0, +input.value));
+                inspector.append(this.button(`Key ${name}`, () => this.bridge.edit("3d.key", this.sceneObject, ch, this.currentFrame(), +input.value)), this.button(`Remove ${name} key`, () => this.bridge.edit("3d.key_remove", this.sceneObject, ch, this.currentFrame())));
+                const curve = this.select(["Hold", "Linear", "Smooth"]);
+                this.field(inspector, `${name} interpolation`, curve);
+                curve.onchange = () => this.perform(() => this.bridge.edit("3d.interpolation", this.sceneObject, ch, this.currentFrame(), curve.selectedIndex));
+            });
+            ["R", "G", "B"].forEach((name, ch) => {
+                const input = this.number(object.color[ch], 0, 1);
+                this.field(inspector, `Material ${name}`, input);
+                input.onchange = () => this.perform(() => this.bridge.edit("3d.color", this.sceneObject, ch, 0, +input.value));
+            });
+            keys.textContent = `${object.vertices} vertices / ${object.triangles} triangles\n` + object.keys.map(key => `Channel ${key.channel}: frame ${key.frame} = ${key.value} (curve ${key.interpolation})`).join("\n");
+        };
     }
     colorPanel(title, section, catalog) {
         const panel = this.panel(title), operators = catalog.filter(op => op.section === section);
@@ -447,6 +542,7 @@ export class JoltEditor {
             this.refreshNLE();
             this.refreshColors.forEach(refresh => refresh());
             this.refreshGraph();
+            this.refreshScene();
             this.render();
         }
         catch (error) {
@@ -526,7 +622,7 @@ export class JoltEditor {
     }
     scheduleAudio() {
         const context = this.audioContext;
-        if (!context || !this.bridge.renderAudio || this.graphState?.active)
+        if (!context || !this.bridge.renderAudio || this.graphState?.active || this.scene3d?.active)
             return;
         try {
             if (!this.audioWhen || this.audioWhen < context.currentTime) {

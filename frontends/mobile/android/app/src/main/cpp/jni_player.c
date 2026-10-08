@@ -121,6 +121,11 @@ JNIEXPORT jstring JNICALL JNI(nativeGraphState)(JNIEnv *env,jobject self,jlong h
     if (json && jfx_mobile_player_graph_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
     tilly_container_free(json); return out;
 }
+JNIEXPORT jstring JNICALL JNI(nativeScene3DState)(JNIEnv *env,jobject self,jlong h) {
+    (void)self; size_t cap=4*1024*1024; char *json=tilly_container_alloc(cap); jstring out=NULL;
+    if (json && jfx_mobile_player_scene3d_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
+    tilly_container_free(json); return out;
+}
 JNIEXPORT jint JNICALL JNI(nativeWriteGraph)(JNIEnv *env,jobject self,jlong h,jdouble seconds,jstring path) {
     (void)self; if (!path) return JFX_ERROR_INVALID_ARGUMENT;
     const char *p=(*env)->GetStringUTFChars(env,path,NULL); if (!p) return JFX_ERROR_OUT_OF_MEMORY;

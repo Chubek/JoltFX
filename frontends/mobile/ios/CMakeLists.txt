@@ -5,6 +5,7 @@ add_library(jfx_ios_ui STATIC
     Sources/JFXNLEViewController.m
     Sources/JFXColorViewController.m
     Sources/JFXCompositionViewController.m
+    Sources/JFXModeling3DViewController.m
 )
 target_include_directories(jfx_ios_ui PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Sources>

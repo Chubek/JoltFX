@@ -22,6 +22,9 @@ list(APPEND JFX_INSTALL_TARGETS
     jolt_effects
     jfx_api
     jfx_ffmpeg
+    LinearMath
+    BulletCollision
+    BulletDynamics
 )
 
 foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
@@ -161,7 +164,7 @@ if(JFX_INSTALL_DOCS_PRESENT)
     install(FILES ${JFX_INSTALL_DOCS_PRESENT}
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
 endif()
-install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/daw.md docs/plugins.md docs/extensions.md docs/memory.md
+install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/daw.md docs/plugins.md docs/extensions.md docs/memory.md docs/modeling3d.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(DIRECTORY extif/examples DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/extensions)
 foreach(extension IN ITEMS lua mruby quickjs python wasm)
@@ -171,6 +174,17 @@ install(FILES extif/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/extif)
 install(FILES kernels/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/kernels)
 install(FILES third_party/miniaudio/LICENSE
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/miniaudio)
+install(FILES third_party/bullet3/LICENSE.txt
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/bullet3)
+install(FILES third_party/libigl/LICENSE.MPL2
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/libigl)
+install(FILES third_party/cgal/Installation/LICENSE third_party/cgal/Installation/LICENSE.LGPL
+    third_party/cgal/Installation/LICENSE.GPL third_party/cgal/Installation/LICENSE.BSL
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/cgal)
+install(FILES third_party/stb/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/stb)
+install(FILES third_party/tinyply/source/tinyply.h
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/tinyply)
 if(JFX_VIDEO_FFMPEG AND JFX_MEDIA_FFMPEG_BUNDLED)
     install(FILES third_party/ffmpeg/COPYING.LGPLv2.1
         DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/ffmpeg)

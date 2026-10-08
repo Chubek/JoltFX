@@ -193,6 +193,9 @@ jfx_result_t jfx_web_session_edit(jfx_web_session_t *session, const char *op, ui
 jfx_result_t jfx_web_session_sequence_state(jfx_web_session_t *session,char *out,size_t capacity) {
     return session?jfx_editor_sequence_state(session->editor,out,capacity):JFX_ERROR_INVALID_ARGUMENT;
 }
+jfx_result_t jfx_web_session_scene3d_state(jfx_web_session_t *session,char *out,size_t capacity) {
+    return session?jfx_editor_scene3d_state(session->editor,out,capacity):JFX_ERROR_INVALID_ARGUMENT;
+}
 jfx_result_t jfx_web_session_render_frame(jfx_web_session_t *session,uint32_t frame,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
     return session?jfx_editor_render_frame(session->editor,frame,w,h,out,cap):JFX_ERROR_INVALID_ARGUMENT;
 }

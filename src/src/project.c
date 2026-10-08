@@ -993,6 +993,10 @@ jfx_result_t jfx_project_kind_of(const char *text, size_t length, jfx_project_ki
         if (!read_word(&cursor, end, key, sizeof(key))) {
             continue;
         }
+        if (strcmp(key, "scene3d") == 0) {
+            *out_kind = JFX_PROJECT_KIND_SCENE3D;
+            return JFX_SUCCESS;
+        }
         if (strcmp(key, "size") == 0) {
             saw_size = true;
             continue;

@@ -17,6 +17,14 @@ Hosts pass initialized node values and an optional borrowed LUT. Native tests
 exercise all three bridges. Host UI registration still belongs to the SDK adapter.
 See [the shared color API](../../docs/editor.md).
 
+## 3D scenes
+
+`jfx_host_scene3d_create/state` exposes a portable 3D workspace for each host.
+Use the session's load/save/edit/render/write_frame/export functions and `3d.*`
+commands to author and animate meshes; scene JSON drives host panel controls.
+Proprietary host UI registration stays in its SDK adapter. See
+[3D usage](../../docs/modeling3d.md) for geometry, physics and rendering limits.
+
 ## NLE sessions
 
 All three hosts also expose `jfx_host_nle_create/destroy`, `load/save`, `edit`,

@@ -18,4 +18,5 @@ if(EMSCRIPTEN)
         "-sEXPORTED_RUNTIME_METHODS=['cwrap','FS','HEAPU8']" "-sFORCE_FILESYSTEM=1"
         "-sMODULARIZE=1" "-sEXPORT_NAME=JoltFX" "-sALLOW_MEMORY_GROWTH=1"
         "-sINITIAL_MEMORY=33554432" "-sMAXIMUM_MEMORY=268435456" "-sSTACK_SIZE=1048576")
+    target_link_options(joltfx_web PRIVATE "-sEXPORTED_FUNCTIONS+=['_jfx_web_session_scene3d_state']")
 endif()

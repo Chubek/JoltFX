@@ -33,6 +33,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)cancelVideoExport;
 - (NSArray<NSDictionary *> *)nodeKinds;
 - (NSDictionary *)graphState;
+- (NSDictionary *)scene3DState;
+- (BOOL)loadScene3D:(NSString *)document;
 - (BOOL)loadComposition:(NSString *)document;
 /* NSNotFound previews the composition output, without changing its selection. */
 - (nullable NSData *)previewGraphNode:(NSUInteger)node seconds:(NSTimeInterval)seconds;

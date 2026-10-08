@@ -34,7 +34,6 @@ target_include_directories(jfx_core PUBLIC
 target_link_libraries(jfx_core PUBLIC joltscript_glue jfx_api jolt_effects)
 target_include_directories(jfx_core PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/sdl/include"
-    "${CMAKE_SOURCE_DIR}/third_party/eigen"
     "${CMAKE_SOURCE_DIR}/third_party/xsimd/include"
     "${CMAKE_SOURCE_DIR}/third_party/glm"
     "${CMAKE_SOURCE_DIR}/third_party/satie/include"
@@ -66,3 +65,4 @@ endforeach()
 
 set_project_warnings(jfx_core)
 include(${CMAKE_SOURCE_DIR}/cmake/VST3.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/Modeling3D.cmake)

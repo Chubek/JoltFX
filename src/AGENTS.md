@@ -148,6 +148,16 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Modeling3D API 1.0 (`jfx_modeling3d.h`) and editor 1.8 append a scene document
+kind. Scene `3d.*` commands validate and commit transactionally with independent
+32-step/32-MiB history. Embedded `scene3d 1` documents validate before load; keys
+are sorted by channel/frame and use the scene's clock. Render/export dispatch by
+kind rather than treating every non-sequence as a graph. Keep vendor types inside
+`modeling3d.cpp`; C callbacks must not leak exceptions. CGAL/libigl geometry,
+VTK math, Bullet physics, tinyply and stb are configured by
+`cmake/Modeling3D.cmake`, with serial libigl and allocator hooks for Bullet/stb.
+See `docs/modeling3d.md` and the modeling3d engine/frontend/CLI/UI checks.
+
 The implemented color API is `include/jfx/jfx_color.h` (1.0.0). Its immutable
 descriptors come from `cmake/ColorKernels.cmake` and `.jolt` parameter declarations.
 `src/color.c` marshals straight RGBA and LUT resources into the budgeted image

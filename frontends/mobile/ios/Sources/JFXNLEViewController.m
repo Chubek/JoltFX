@@ -1,6 +1,7 @@
 #import "JFXNLEViewController.h"
 #import "JFXColorViewController.h"
 #import "JFXCompositionViewController.h"
+#import "JFXModeling3DViewController.h"
 #include <math.h>
 #include <stdint.h>
 
@@ -106,6 +107,9 @@
     [self.preview.heightAnchor constraintEqualToConstant:180].active=YES; [self.content addArrangedSubview:self.preview];
     self.status=[[UILabel alloc] init]; self.status.numberOfLines=0; [self.content addArrangedSubview:self.status];
     __weak JFXNLEViewController *weak=self;
+    [self button:@"3D Modeling & Animation" action:^{
+        [weak stopPlayback]; [weak.navigationController pushViewController:[[JFXModeling3DViewController alloc] initWithPlayer:weak.player] animated:YES];
+    }];
     [self button:@"Play / pause" action:^{
         if (weak.clock) [weak stopPlayback];
         else { weak.previous=0; weak.clock=[CADisplayLink displayLinkWithTarget:weak selector:@selector(tick:)]; weak.clock.preferredFramesPerSecond=30; [weak.clock addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes]; }

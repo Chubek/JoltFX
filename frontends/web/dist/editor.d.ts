@@ -22,14 +22,40 @@ export interface EditorBridge {
     sequenceDocument(): string;
     renderFrame(seconds: number): JoltFrame;
     importAsset(name: string, bytes: Uint8Array): string;
+    readAsset?(path: string): Uint8Array;
     colorOperators(): ColorOperator[];
     sequenceState(): SequenceState;
     renderSequenceFrame(frame: number): JoltFrame;
     nodeKinds(): NodeKind[];
     graphState(): GraphState;
+    scene3dState?(): Scene3DState;
     renderGraphNode(node: number | null, seconds: number, width?: number, height?: number): JoltFrame;
     renderAudio?(sample: number, frames: number, rate?: number): Float32Array;
     beginVideoExport?(name: string, start?: number, frames?: number, audio?: boolean, codec?: string): VideoExport;
+}
+export interface Scene3DState {
+    active: boolean;
+    fps: number;
+    frames: number;
+    camera: number[];
+    undo: boolean;
+    redo: boolean;
+    objects: {
+        id: number;
+        name: string;
+        visible: boolean;
+        mass: number;
+        vertices: number;
+        triangles: number;
+        transform: number[];
+        color: number[];
+        keys: {
+            channel: number;
+            frame: number;
+            value: number;
+            interpolation: number;
+        }[];
+    }[];
 }
 export interface VideoExport {
     step(): {
@@ -69,6 +95,9 @@ export declare class JoltEditor {
     private nle;
     private composition;
     private graphState?;
+    private scene3d?;
+    private sceneObject;
+    private refreshScene;
     private previewNode;
     private refreshGraph;
     private sequence?;
@@ -87,6 +116,7 @@ export declare class JoltEditor {
     constructor(root: HTMLElement, bridge: EditorBridge);
     setZoom(zoom: number): void;
     private panel;
+    private modeling3dPanel;
     private colorPanel;
     private number;
     private text;

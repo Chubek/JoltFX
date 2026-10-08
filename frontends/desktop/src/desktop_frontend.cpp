@@ -181,6 +181,10 @@ struct jfx_desktop_frontend {
     bool show_calibration;
     bool show_plugins, show_audio, show_daw, workspace_requested;
     bool show_animation;
+    bool show_modeling3d;
+    int scene_object,scene_vertex,scene_channel,scene_interpolation;
+    int scene_bake_frames;
+    char scene_mesh_path[512],scene_png_path[512];
     jfx_desktop_workspace_t workspace;
     bool grading_edit;
     bool audio_edit;
@@ -350,6 +354,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_audio = true;
     frontend->show_daw = true;
     frontend->show_animation = true;
+    frontend->show_modeling3d = true;
+    frontend->scene_bake_frames=60;
+    std::snprintf(frontend->scene_mesh_path,sizeof(frontend->scene_mesh_path),"mesh.ply");
+    std::snprintf(frontend->scene_png_path,sizeof(frontend->scene_png_path),"scene.png");
     std::snprintf(frontend->audio_export_path,sizeof(frontend->audio_export_path),"mix.wav");
     frontend->audio_import_frames = 90;
     frontend->recording_device=-1;
@@ -524,7 +532,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
         frontend->node_preview_selected=false; frontend->node_drag=0; frontend->node_wiring=false;
         frontend->time_seconds = 0; frontend->preview_dirty = true;
         jfx_desktop_frontend_set_workspace(frontend,jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_GRAPH?
-            JFX_DESKTOP_WORKSPACE_COMPOSITING:JFX_DESKTOP_WORKSPACE_NLE);
+            JFX_DESKTOP_WORKSPACE_COMPOSITING:jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_SCENE3D?
+            JFX_DESKTOP_WORKSPACE_MODELING3D:JFX_DESKTOP_WORKSPACE_NLE);
     }
     std::strcpy(frontend->project_path, path);
     std::snprintf(frontend->project_input, sizeof(frontend->project_input), "%s", path);
@@ -665,13 +674,14 @@ namespace {
 #include "audio_panel.inc"
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
-    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation"};
+    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
-    JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION};
+    JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION,JFX_DESKTOP_PANEL_MODELING3D};
 
 #include "animation_panel.inc"
+#include "modeling3d_panel.inc"
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::TextUnformatted("Preview");
@@ -799,6 +809,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("Audio Mixing", nullptr, &frontend->show_audio);
             ImGui::MenuItem("DAW", nullptr, &frontend->show_daw);
             ImGui::MenuItem("2D Animation", nullptr, &frontend->show_animation);
+            ImGui::MenuItem("3D Modeling & Animation", nullptr, &frontend->show_modeling3d);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -853,7 +864,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
         jfx_desktop_frontend_set_zoom(frontend, next);
     }
-    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION) {
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D) {
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -912,7 +923,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     frontend->workspace_requested=false;
                 }
                 bool wide=ImGui::GetContentRegionAvail().x>=760;
-                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION;
+                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D;
                 bool columns=!animation && frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
                 if (columns) {
                     ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
@@ -935,6 +946,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_AUDIO: audio_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_DAW: daw_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_ANIMATION: animation_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_MODELING3D: modeling3d_panel(frontend); break;
                     default: break;
                     }
                 }
@@ -994,6 +1006,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             frontend->native_session=false; jfx_vst3_set_edit_callback(frontend->vst3_inspector,nullptr,nullptr);
         }
         recording_poll(frontend);
+        if (frontend->editing && jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_SCENE3D)
+            frontend->duration_seconds=(double)jfx_scene3d_frames(jfx_editor_scene3d(frontend->editor))/jfx_scene3d_fps(jfx_editor_scene3d(frontend->editor));
         /* Advance the engine clock while playing, looping at the end of the
          * range so a short project keeps animating. */
         if (frontend->playing) {
@@ -1010,7 +1024,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
 
         if (frontend->editing && jfx_editor_kind(frontend->editor) == JFX_PROJECT_KIND_SEQUENCE)
             frontend->duration_seconds = (double)jfx_timeline_duration(jfx_editor_timeline(frontend->editor)) / jfx_timeline_fps(jfx_editor_timeline(frontend->editor));
-        else if (frontend->editing) frontend->duration_seconds=JFX_DESKTOP_DEFAULT_DURATION;
+        else if (frontend->editing && jfx_editor_kind(frontend->editor)!=JFX_PROJECT_KIND_SCENE3D) frontend->duration_seconds=JFX_DESKTOP_DEFAULT_DURATION;
         compose_ui(frontend);
         if (frontend->export_job && jfx_export_state(frontend->export_job)==JFX_EXPORT_RUNNING) {
             auto r=jfx_export_step(frontend->export_job,1);
@@ -1191,6 +1205,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,cons
 extern "C" jfx_result_t jfx_desktop_frontend_sequence_state(jfx_desktop_frontend_t *f,char *out,size_t cap) {
     return f?jfx_editor_sequence_state(f->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
 }
+extern "C" jfx_result_t jfx_desktop_frontend_scene3d_state(jfx_desktop_frontend_t *f,char *out,size_t cap) {
+    return f?jfx_editor_scene3d_state(f->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
+}
 extern "C" jfx_result_t jfx_desktop_frontend_write_frame(jfx_desktop_frontend_t *f,uint64_t frame,const char *path) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
     auto *t=jfx_editor_timeline(f->editor);
@@ -1205,13 +1222,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
@@ -1223,6 +1240,12 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     f->workspace=workspace; f->workspace_requested=true;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
     f->nle_drag=f->node_drag=0; f->node_wiring=false;
+    if (workspace==JFX_DESKTOP_WORKSPACE_MODELING3D) {
+        jfx_editor_set_kind(f->editor,JFX_PROJECT_KIND_SCENE3D);
+        f->editing=true; f->preview_dirty=true; f->node_preview_selected=false;
+        f->duration_seconds=(double)jfx_scene3d_frames(jfx_editor_scene3d(f->editor))/jfx_scene3d_fps(jfx_editor_scene3d(f->editor));
+        f->time_seconds=0; f->playing=false; reset_audio(f);
+    }
     if (workspace<=JFX_DESKTOP_WORKSPACE_COMPOSITING || workspace==JFX_DESKTOP_WORKSPACE_AUDIO || workspace==JFX_DESKTOP_WORKSPACE_DAW) {
         jfx_editor_set_kind(f->editor,workspace==JFX_DESKTOP_WORKSPACE_COMPOSITING?JFX_PROJECT_KIND_GRAPH:JFX_PROJECT_KIND_SEQUENCE);
         f->editing=true; f->preview_dirty=true; reset_audio(f);

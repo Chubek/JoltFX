@@ -67,6 +67,11 @@ jfx_result_t jfx_host_color_process(jfx_host_kind_t host, const char *kind,
  * sequence-state JSON and commands as desktop/mobile/web, including color
  * sections. Rendering is RGBA8, project import/export is the shared .jfx form. */
 typedef struct jfx_host_nle jfx_host_nle_t;
+/* 3D workspace over the same portable host session. Use 3d.* commands, shared
+ * load/save/render/export calls, and this state for a host's panel controls. */
+typedef jfx_host_nle_t jfx_host_scene3d_t;
+jfx_result_t jfx_host_scene3d_create(jfx_host_kind_t host,uint32_t width,uint32_t height,jfx_host_scene3d_t **out_session);
+jfx_result_t jfx_host_scene3d_state(jfx_host_scene3d_t *session,char *out_json,size_t capacity);
 jfx_result_t jfx_host_nle_create(jfx_host_kind_t host,uint32_t width,uint32_t height,jfx_host_nle_t **out_session);
 void jfx_host_nle_destroy(jfx_host_nle_t *session);
 jfx_result_t jfx_host_nle_load(jfx_host_nle_t *session,const char *text,size_t length,char *out_error,size_t error_size);

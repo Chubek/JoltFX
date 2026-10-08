@@ -66,6 +66,7 @@ jfx_result_t jfx_mobile_player_render_rgba8(jfx_mobile_player_t *player,
 
 /* The borrowed session is shared by NLE, layer effects, grading and nodes. */
 jfx_editor_t *jfx_mobile_player_editor(jfx_mobile_player_t *player);
+jfx_result_t jfx_mobile_player_scene3d_state(jfx_mobile_player_t *player,char *out_json,size_t capacity);
 jfx_result_t jfx_mobile_player_export_begin(jfx_mobile_player_t *player,const jfx_export_options_t *options,jfx_export_job_t **out_job);
 jfx_result_t jfx_mobile_player_audio_mixer(jfx_mobile_player_t *player,uint32_t rate,jfx_audio_mixer_t **out_mixer);
 jfx_result_t jfx_mobile_player_load_document(jfx_mobile_player_t *player, const char *text, size_t length,

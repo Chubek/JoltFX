@@ -43,6 +43,7 @@ void print_usage(void) {
     printf("  nle info IN.jfx            NLE state as JSON\n");
     printf("  nle render IN.jfx -o PREFIX Render a PPM sequence\n");
     printf("  compose new/edit/info/render Node-based composition editor and PPM export\n");
+    printf("  3d new/edit/info/render    3D mesh modeling, keyframe animation and PNG export\n");
     printf("\nColor Grading (dedicated section):\n");
     printf("  grade list                 List grading kernels and parameter ranges\n");
     printf("  grade apply KIND IN OUT    Grade an image; append name=value or --lut FILE\n");
@@ -60,6 +61,17 @@ void print_usage(void) {
 }
 
 void print_command_help(const char *command) {
+    if (command && !strcmp(command,"3d")) {
+        printf("Usage: joltfx 3d new SCENE.jfx\n"
+            "       joltfx 3d edit INPUT.jfx OUTPUT.jfx\n"
+            "       joltfx 3d info SCENE.jfx\n"
+            "       joltfx 3d render SCENE.jfx OUT.png [SECONDS]\n"
+            "Terminal syntax: OP OBJECT CHANNEL FRAME VALUE TEXT (zero-based indices).\n"
+            "Commands: 3d.add/transform/vertex/color/key/key_remove/interpolation,\n"
+            "3d.subdivide/align/mass/bake/import_ply/export_ply/name/visible/remove/duplicate,\n"
+            "3d.camera/clock/new; undo, redo, scene3d (JSON), show, save.\n"
+            "See docs/modeling3d.md for channel indices, physics and file limits.\n"); return;
+    }
     if (command && !strcmp(command, "scripts")) {
         printf("Usage: joltfx scripts list\n"
             "       joltfx scripts run LANG FILE [FUNCTION [NUMBER]]\n"

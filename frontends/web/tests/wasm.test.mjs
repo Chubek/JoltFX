@@ -37,6 +37,19 @@ test("real WASM exposes the typed node and kernel-backed color catalogs", () => 
   assert.equal(bridge.graphState().nodes[0].kind, "solid");
   assert.equal(bridge.sequenceState().tracks[0].clips[0].length, 300);
 }));
+test("real WASM 3D scene keys, mesh processing, physics and persistence", () => {
+  const bridge=new EmscriptenJoltBridge(module,128,128);
+  try {
+    bridge.edit("3d.add",0,0,0,0,"cube"); bridge.edit("3d.key",0,0,0,0); bridge.edit("3d.key",0,0,30,2);
+    const a=pixels(bridge.renderFrame(0)),b=pixels(bridge.renderFrame(1)); assert.notDeepEqual(a,b);
+    bridge.edit("3d.subdivide",0); assert.equal(bridge.scene3dState().objects[0].triangles,48);
+    bridge.edit("3d.align",0); bridge.edit("3d.mass",0,0,0,1); bridge.edit("3d.bake",0,0,30);
+    assert.ok(bridge.scene3dState().objects[0].keys.length>100);
+    const text=bridge.saveDocument(),image=pixels(bridge.renderFrame(.5)); bridge.loadDocument(text);
+    assert.deepEqual(pixels(bridge.renderFrame(.5)),image);
+    const before=bridge.saveDocument(); assert.throws(() => bridge.edit("3d.transform",0,6,0,0)); assert.equal(bridge.saveDocument(),before);
+  } finally { bridge.dispose(); }
+});
 
 test("real WASM graph edits, history and interior previews match native conformance", () => withBridge(bridge => {
   bridge.loadDocument(fixture("composition.jfx"));

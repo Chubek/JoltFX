@@ -49,11 +49,18 @@ static uint8_t to_unorm8(float value) {
     return (uint8_t)lrintf(value * 255.0f);
 }
 static double duration(const jfx_mobile_player_t *p) {
+    if (p->editing && jfx_editor_kind(p->editor)==JFX_PROJECT_KIND_SCENE3D) {
+        const jfx_scene3d_t *s=jfx_editor_scene3d(p->editor);
+        return (double)jfx_scene3d_frames(s)/jfx_scene3d_fps(s);
+    }
     if (p->editing && jfx_editor_kind(p->editor)==JFX_PROJECT_KIND_SEQUENCE) {
         const jfx_timeline_t *t=jfx_editor_timeline(p->editor);
         return (double)jfx_timeline_duration(t)/jfx_timeline_fps(t);
     }
     return p->duration_seconds;
+}
+jfx_result_t jfx_mobile_player_scene3d_state(jfx_mobile_player_t *p,char *out,size_t cap) {
+    return p?jfx_editor_scene3d_state(p->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
 }
 
 jfx_result_t jfx_mobile_player_create(const jfx_mobile_player_config_t *config,

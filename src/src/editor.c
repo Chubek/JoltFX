@@ -18,6 +18,7 @@ typedef struct {
 struct jfx_editor {
     jfx_timeline_t *timeline;
     jfx_graph_t *graph;
+    jfx_scene3d_t *scene3d;
     uint32_t output, width, height;
     jfx_project_kind_t kind;
     snapshot_t undo[32], redo[32];
@@ -40,7 +41,8 @@ jfx_editor_t *jfx_editor_create(uint32_t w, uint32_t h) {
     e->width = w; e->height = h;
     e->timeline = jfx_timeline_create(w, h, 30, 1);
     e->graph = jfx_graph_create();
-    if (!e->timeline || !e->graph) { jfx_editor_destroy(e); return NULL; }
+    e->scene3d = jfx_scene3d_create();
+    if (!e->timeline || !e->graph || !e->scene3d) { jfx_editor_destroy(e); return NULL; }
     uint32_t track = jfx_timeline_add_track(e->timeline, "V1");
     jfx_clip_desc_t clip = {0};
     clip.name = "First clip"; clip.source = JFX_CLIP_SOLID;
@@ -56,13 +58,23 @@ jfx_editor_t *jfx_editor_create(uint32_t w, uint32_t h) {
 void jfx_editor_destroy(jfx_editor_t *e) {
     if (!e) return;
     jfx_editor_clear_history(e);
-    jfx_timeline_destroy(e->timeline); jfx_graph_destroy(e->graph); release(e);
+    jfx_timeline_destroy(e->timeline); jfx_graph_destroy(e->graph); jfx_scene3d_destroy(e->scene3d); release(e);
 }
 jfx_timeline_t *jfx_editor_timeline(jfx_editor_t *e) { return e ? e->timeline : NULL; }
 jfx_graph_t *jfx_editor_graph(jfx_editor_t *e) { return e ? e->graph : NULL; }
+jfx_scene3d_t *jfx_editor_scene3d(jfx_editor_t *e) { return e ? e->scene3d : NULL; }
+jfx_result_t jfx_editor_scene3d_state(const jfx_editor_t *e,char *out,size_t cap) {
+    if (!e || !out || cap<32) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_result_t r=jfx_scene3d_state(e->scene3d,out+16,cap-16);
+    if (r!=JFX_SUCCESS) return r;
+    const char *prefix=e->kind==JFX_PROJECT_KIND_SCENE3D?"{\"active\":true,":"{\"active\":false,";
+    size_t n=strlen(out+16),p=strlen(prefix);
+    memmove(out+p,out+17,n); memcpy(out,prefix,p); return JFX_SUCCESS;
+}
 jfx_project_kind_t jfx_editor_kind(const jfx_editor_t *e) { return e ? e->kind : JFX_PROJECT_KIND_SEQUENCE; }
 jfx_result_t jfx_editor_set_kind(jfx_editor_t *e, jfx_project_kind_t kind) {
-    if (!e || (kind != JFX_PROJECT_KIND_SEQUENCE && kind != JFX_PROJECT_KIND_GRAPH)) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!e || (kind != JFX_PROJECT_KIND_SEQUENCE && kind != JFX_PROJECT_KIND_GRAPH && kind != JFX_PROJECT_KIND_SCENE3D)) return JFX_ERROR_INVALID_ARGUMENT;
+    if (e->edit_active && kind==JFX_PROJECT_KIND_SCENE3D) return JFX_ERROR_BUSY;
     e->kind = kind; return JFX_SUCCESS;
 }
 uint32_t jfx_editor_output(const jfx_editor_t *e) { return e ? e->output : UINT32_MAX; }
@@ -78,7 +90,10 @@ jfx_result_t jfx_editor_load(jfx_editor_t *e, const char *text, size_t n, char *
     jfx_project_kind_t kind;
     jfx_result_t r = jfx_project_kind_of(text, n, &kind, err, cap);
     if (r != JFX_SUCCESS) return r;
-    if (kind == JFX_PROJECT_KIND_SEQUENCE) {
+    if (kind == JFX_PROJECT_KIND_SCENE3D) {
+        r=jfx_scene3d_load(e->scene3d,text,n,err,cap);
+        if (r!=JFX_SUCCESS) return r;
+    } else if (kind == JFX_PROJECT_KIND_SEQUENCE) {
         jfx_timeline_t *t = NULL;
         r = jfx_project_load_sequence(text, n, &t, err, cap);
         if (r != JFX_SUCCESS) return r;
@@ -97,6 +112,7 @@ jfx_result_t jfx_editor_load(jfx_editor_t *e, const char *text, size_t n, char *
 }
 jfx_result_t jfx_editor_save(const jfx_editor_t *e, char *text, size_t cap, size_t *written) {
     if (!e || !text || !written) return JFX_ERROR_INVALID_ARGUMENT;
+    if (e->kind==JFX_PROJECT_KIND_SCENE3D) return jfx_scene3d_save(e->scene3d,text,cap,written);
     return e->kind == JFX_PROJECT_KIND_SEQUENCE ? jfx_project_save_sequence(e->timeline, text, cap, written)
         : jfx_project_save_graph(e->graph, e->output, e->width, e->height, text, cap, written);
 }
@@ -106,6 +122,7 @@ jfx_result_t jfx_editor_render(jfx_editor_t *e, double seconds, uint32_t w, uint
         !isfinite(seconds) || seconds < 0 || seconds > 1.e9) return JFX_ERROR_INVALID_ARGUMENT;
     if (e->kind==JFX_PROJECT_KIND_SEQUENCE)
         return jfx_editor_render_frame(e,(uint64_t)floor(seconds*jfx_timeline_fps(e->timeline)+1.e-7),w,h,out,cap);
+    if (e->kind==JFX_PROJECT_KIND_SCENE3D) return jfx_scene3d_render(e->scene3d,seconds,w,h,out,cap);
     return jfx_editor_render_graph(e,UINT32_MAX,seconds,w,h,out,cap);
 }
 jfx_result_t jfx_editor_render_graph(jfx_editor_t *e,uint32_t node,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
@@ -120,6 +137,8 @@ jfx_result_t jfx_editor_render_graph(jfx_editor_t *e,uint32_t node,double second
     release(pixels); return r;
 }
 jfx_result_t jfx_editor_render_frame(jfx_editor_t *e,uint64_t frame,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
+    if (e && e->kind==JFX_PROJECT_KIND_SCENE3D && frame<=INT64_MAX)
+        return jfx_scene3d_render(e->scene3d,(double)frame/jfx_scene3d_fps(e->scene3d),w,h,out,cap);
     if (!e || e->kind!=JFX_PROJECT_KIND_SEQUENCE || !out || !w || !h || w>4096 || h>4096 ||
         frame>INT64_MAX || cap<(size_t)w*h*4) return JFX_ERROR_INVALID_ARGUMENT;
     uint32_t sw=jfx_timeline_width(e->timeline),sh=jfx_timeline_height(e->timeline);
@@ -390,8 +409,8 @@ static jfx_result_t command_apply(jfx_editor_t *e, const char *op, uint32_t a,
     return JFX_ERROR_INVALID_ARGUMENT;
 }
 
-bool jfx_editor_can_undo(const jfx_editor_t *e) { return e && e->undo_count!=0; }
-bool jfx_editor_can_redo(const jfx_editor_t *e) { return e && e->redo_count!=0; }
+bool jfx_editor_can_undo(const jfx_editor_t *e) { return e && (e->kind==JFX_PROJECT_KIND_SCENE3D?jfx_scene3d_can_undo(e->scene3d):e->undo_count!=0); }
+bool jfx_editor_can_redo(const jfx_editor_t *e) { return e && (e->kind==JFX_PROJECT_KIND_SCENE3D?jfx_scene3d_can_redo(e->scene3d):e->redo_count!=0); }
 static void snapshot_release(snapshot_t *s) {
     for (size_t i=0;i<s->plugin_count;++i) jfx_plugin_kind_release(s->plugins[i]);
     release(s->text);
@@ -410,6 +429,7 @@ static void release_edit_baseline(jfx_editor_t *e) {
 }
 void jfx_editor_clear_history(jfx_editor_t *e) {
     if (!e) return;
+    jfx_scene3d_clear_history(e->scene3d);
     if (e->edit_active) { snapshot_release(&e->edit); release_edit_baseline(e); e->edit_active=false; e->edit_changed=false; }
     clear_stack(e,e->undo,&e->undo_count); clear_stack(e,e->redo,&e->redo_count);
 }
@@ -486,6 +506,13 @@ jfx_result_t jfx_editor_cancel_edit(jfx_editor_t *e) {
 }
 jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32_t b,uint32_t c,double value,const char *text) {
     if (!e || !op || !isfinite(value) || value<-1.e9 || value>1.e9) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!strcmp(op,"3d")) return jfx_editor_set_kind(e,JFX_PROJECT_KIND_SCENE3D);
+    if (!strncmp(op,"3d.",3) || (e->kind==JFX_PROJECT_KIND_SCENE3D && (!strcmp(op,"undo") || !strcmp(op,"redo")))) {
+        if (e->edit_active) return JFX_ERROR_BUSY;
+        jfx_result_t r=jfx_scene3d_command(e->scene3d,op,a,b,c,value,text);
+        if (r==JFX_SUCCESS) e->kind=JFX_PROJECT_KIND_SCENE3D;
+        return r;
+    }
     if (!strcmp(op,"undo") || !strcmp(op,"redo")) {
         if (e->edit_active) return JFX_ERROR_BUSY;
         bool undo=!strcmp(op,"undo");

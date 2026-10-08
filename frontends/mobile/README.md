@@ -16,6 +16,15 @@ renderer through native image views and respect foreground/background lifecycle
 ownership. Platform targets are enabled by their NDK/iOS CMake toolchains; the
 portable library also builds and runs its conformance tests on Linux.
 
+## 3D workspace
+
+Android exposes a **3D Modeling & Animation** section with scene/index controls,
+primitives, vertex editing, subdivision, transforms, keys, camera and physics
+baking. `JFXModeling3DViewController` provides the iOS screen, reached from NLE.
+Both reuse the mobile session's scene document, playback, history and frame
+export; 3D playback uses its own clock and does not mix NLE audio. See
+[3D usage](../../docs/modeling3d.md) and `jfx_mobile_player_scene3d_state`.
+
 ## Build Android
 
 Use JDK 17 and an Android SDK installation. The project pins Gradle 8.9 (included

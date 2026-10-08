@@ -11,6 +11,12 @@ cmake --build build --target joltfx_cli
 
 ## Commands
 
+- `joltfx 3d new SCENE.jfx` — default 3D scene with a cube.
+- `joltfx 3d edit IN.jfx OUT.jfx` — terminal/piped `3d.*` mesh, camera, key and physics edits.
+- `joltfx 3d info SCENE.jfx` — scene/object/key state as JSON.
+- `joltfx 3d render SCENE.jfx OUT.png [SECONDS]` — shaded PNG frame.
+  Shared `export-video` also exports scene animation. See [3D usage](../../docs/modeling3d.md).
+
 - `joltfx compose new OUT.jfx [--size W H]` — new Solid-source composition.
 - `joltfx compose edit IN.jfx OUT.jfx` — terminal/piped node edits and history;
   `composition` prints state JSON, `nodes` prints the typed library.

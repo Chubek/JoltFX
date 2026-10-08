@@ -2,7 +2,7 @@
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Audio Mixing**, **DAW**, **2D Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
@@ -55,6 +55,16 @@ cmake --build build --target jfx_desktop
 ```
 
 ## Options
+
+The **3D Modeling & Animation** tab has its own scene outliner, mesh/transform
+inspector, frame slider, playback, undo/redo and shaded viewport. Add a cube,
+sphere or plane; select it in the outliner; enter numeric values and press Enter
+to commit. **Key** stores a transform channel at the current frame. Select a
+channel/frame to change interpolation or remove a key. Mesh editing exposes
+vertices, subdivision and principal-axis alignment; rigid-body controls set mass
+and bake motion into editable keys. Camera orbit/target/distance/FOV controls are
+numeric. PLY import/export and PNG/video output use explicit paths. File > Open/
+Save handles embedded `.jfx` scenes. See [3D usage](../../docs/modeling3d.md).
 
 | Option | Meaning |
 |---|---|

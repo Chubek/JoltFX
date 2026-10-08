@@ -47,6 +47,8 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
     private var audioPending: FloatArray? = null
     private var audioOffset = 0
     private var compositionActive = false
+    private var scene3DActive = false
+    private var refreshScene3D: () -> Unit = {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +84,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
             if (result == 0) {
                 stopAudio()
                 previewNode = -1
-                invalidateColors.forEach { it() }; refreshNLE(); refreshGraph()
+                invalidateColors.forEach { it() }; refreshNLE(); refreshGraph(); refreshScene3D()
             }
             return result == 0
         }
@@ -312,6 +314,61 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         val time = field("Composition preview seconds", "0")
         action("Seek composition time") { if (nativeSeek(nativeHandle, time.text.toString().toDouble()) != 0) throw IllegalArgumentException("Invalid time") }
         action("Export composition (PPM)") { if (nativeWriteGraph(nativeHandle, time.text.toString().toDouble(), output.text.toString()) != 0) throw IllegalArgumentException("Unable to export composition") }
+        heading("3D Modeling & Animation")
+        val sceneState = TextView(this); content.addView(sceneState)
+        refreshScene3D = {
+            if (nativeHandle != 0L) {
+                val state = JSONObject(nativeScene3DState(nativeHandle) ?: "{}")
+                scene3DActive = state.optBoolean("active")
+                sceneState.text = "${state.optInt("fps",30)} FPS / ${state.optInt("frames",120)} frames\n${state.optJSONArray("objects") ?: JSONArray()}"
+            }
+        }
+        action("Preview 3D workspace") { edit("3d") }
+        action("New 3D scene") { edit("3d.new"); nativeSeek(nativeHandle, 0.0) }
+        for (primitive in listOf("cube", "sphere", "plane")) action("Add $primitive") { edit("3d.add", text = primitive) }
+        val object3D = field("3D object index", "0")
+        val name3D = field("3D object name", "Mesh")
+        action("Rename 3D object") { edit("3d.name", object3D.text.toString().toInt(), text = name3D.text.toString()) }
+        action("Show 3D object") { edit("3d.visible", object3D.text.toString().toInt(), value = 1.0) }
+        action("Hide 3D object") { edit("3d.visible", object3D.text.toString().toInt(), value = 0.0) }
+        for ((channel, title) in listOf("Material R", "Material G", "Material B").withIndex()) {
+            val input = field(title, listOf("0.32", "0.65", "0.9")[channel])
+            action("Apply $title") { edit("3d.color", object3D.text.toString().toInt(), channel, value = input.text.toString().toDouble()) }
+        }
+        val frame3D = field("3D frame", "0")
+        val fps3D = field("3D FPS", "30"); val duration3D = field("3D duration frames", "120")
+        action("Set 3D clock") { edit("3d.clock", fps3D.text.toString().toInt(), duration3D.text.toString().toInt()) }
+        action("Seek 3D frame") {
+            val state = JSONObject(nativeScene3DState(nativeHandle) ?: "{}")
+            if (edit("3d")) nativeSeek(nativeHandle, frame3D.text.toString().toDouble() / state.optDouble("fps",30.0))
+        }
+        for ((channel, title) in listOf("Position X", "Position Y", "Position Z", "Rotation X", "Rotation Y", "Rotation Z", "Scale X", "Scale Y", "Scale Z").withIndex()) {
+            val input = field(title, if (channel >= 6) "1" else "0")
+            action("Apply $title") { edit("3d.transform", object3D.text.toString().toInt(), channel, value = input.text.toString().toDouble()) }
+            action("Key $title") { edit("3d.key", object3D.text.toString().toInt(), channel, frame3D.text.toString().toInt(), input.text.toString().toDouble()) }
+            action("Remove $title key") { edit("3d.key_remove", object3D.text.toString().toInt(), channel, frame3D.text.toString().toInt()) }
+        }
+        val keyChannel = field("3D key channel (0..8)", "0"); val interpolation = field("3D interpolation (0 hold, 1 linear, 2 smooth)", "1")
+        action("Set 3D key interpolation") { edit("3d.interpolation", object3D.text.toString().toInt(), keyChannel.text.toString().toInt(), frame3D.text.toString().toInt(), interpolation.text.toString().toDouble()) }
+        val mesh = field("3D PLY path", "${filesDir}/mesh.ply")
+        action("Import PLY") { edit("3d.import_ply", text = mesh.text.toString()) }
+        action("Export PLY") { edit("3d.export_ply", object3D.text.toString().toInt(), text = mesh.text.toString()) }
+        action("Subdivide mesh") { edit("3d.subdivide", object3D.text.toString().toInt()) }
+        action("Align principal axes") { edit("3d.align", object3D.text.toString().toInt()) }
+        action("Duplicate mesh") { edit("3d.duplicate", object3D.text.toString().toInt()) }
+        action("Delete mesh") { edit("3d.remove", object3D.text.toString().toInt()) }
+        val vertex3D = field("3D vertex index", "0"); val axis3D = field("Vertex axis (0..2)", "0"); val coordinate3D = field("Vertex coordinate", "0")
+        action("Set vertex coordinate") { edit("3d.vertex", object3D.text.toString().toInt(), vertex3D.text.toString().toInt(), axis3D.text.toString().toInt(), coordinate3D.text.toString().toDouble()) }
+        val mass3D = field("Rigid body mass (0 = static)", "0"); val bake3D = field("Physics bake frames", "60")
+        action("Set rigid body mass") { edit("3d.mass", object3D.text.toString().toInt(), value = mass3D.text.toString().toDouble()) }
+        action("Bake rigid-body animation") { edit("3d.bake", c = bake3D.text.toString().toInt()) }
+        for ((channel, title) in listOf("Orbit yaw", "Orbit pitch", "Camera distance", "Target X", "Target Y", "Target Z", "Field of view").withIndex()) {
+            val input = field(title, listOf("35","22","7","0","0","0","45")[channel])
+            action("Apply $title") { edit("3d.camera", channel, value = input.text.toString().toDouble()) }
+        }
+        action("Export 3D frame (PPM)") {
+            if (edit("3d") && nativeWriteFrame(nativeHandle, frame3D.text.toString().toLong(), output.text.toString()) != 0) throw IllegalArgumentException("Unable to export 3D frame")
+        }
         setContentView(ScrollView(this).apply { addView(content) })
     }
 
@@ -320,6 +377,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         if (nativeHandle == 0L) nativeHandle = nativeCreate(320, 180, 60.0)
         refreshNLE()
         refreshGraph()
+        refreshScene3D()
         lastFrameNanos = 0L
         Choreographer.getInstance().postFrameCallback(this)
     }
@@ -367,7 +425,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         audioMixer = 0L; audioWritten = 0L; audioPending = null; audioOffset = 0
     }
     private fun pumpAudio() {
-        if (!nativePlaying(nativeHandle) || compositionActive) { stopAudio(); return }
+        if (!nativePlaying(nativeHandle) || compositionActive || scene3DActive) { stopAudio(); return }
         val now = (nativeTime(nativeHandle) * 48000).toLong()
         if (audioTrack != null && kotlin.math.abs(audioSample - now) > 19200) stopAudio()
         if (audioTrack == null) {
@@ -406,6 +464,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
     private external fun nativeGraphPixels(handle: Long, node: Int): IntArray?
     private external fun nativeNodeCatalog(): String?
     private external fun nativeGraphState(handle: Long): String?
+    private external fun nativeScene3DState(handle: Long): String?
     private external fun nativeWriteGraph(handle: Long, seconds: Double, path: String): Int
     private external fun nativeCreate(width: Int, height: Int, duration: Double): Long
     private external fun nativeDestroy(handle: Long)

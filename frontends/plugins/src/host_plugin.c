@@ -2,6 +2,17 @@
 #include "tilly/containers.h"
 
 struct jfx_host_nle { jfx_editor_t *editor; };
+jfx_result_t jfx_host_scene3d_create(jfx_host_kind_t host,uint32_t w,uint32_t h,jfx_host_scene3d_t **out) {
+    if (!out) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_host_nle_t *s=NULL; jfx_result_t r=jfx_host_nle_create(host,w,h,&s);
+    if (r!=JFX_SUCCESS) return r;
+    r=jfx_editor_command(s->editor,"3d",0,0,0,0,"");
+    if (r!=JFX_SUCCESS) { jfx_host_nle_destroy(s); return r; }
+    *out=s; return JFX_SUCCESS;
+}
+jfx_result_t jfx_host_scene3d_state(jfx_host_scene3d_t *s,char *out,size_t cap) {
+    return s?jfx_editor_scene3d_state(s->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
+}
 jfx_result_t jfx_host_nle_export_begin(jfx_host_nle_t *s,const jfx_export_options_t *o,jfx_export_job_t **out) {
     return jfx_export_begin(s?s->editor:NULL,o,out);
 }

@@ -59,6 +59,7 @@ jfx_result_t jfx_web_session_save_sequence(jfx_web_session_t *session,char *out_
 jfx_result_t jfx_web_session_edit(jfx_web_session_t *session, const char *op, uint32_t a,
     uint32_t b, uint32_t c, double value, const char *text);
 jfx_result_t jfx_web_session_sequence_state(jfx_web_session_t *session, char *out_json, size_t capacity);
+jfx_result_t jfx_web_session_scene3d_state(jfx_web_session_t *session,char *out_json,size_t capacity);
 jfx_result_t jfx_web_session_render_frame(jfx_web_session_t *session,uint32_t frame,
     uint32_t width,uint32_t height,uint8_t *out_rgba,size_t capacity);
 jfx_result_t jfx_web_session_graph_state(jfx_web_session_t *session,char *out_json,size_t capacity);

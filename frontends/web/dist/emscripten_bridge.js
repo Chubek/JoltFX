@@ -118,6 +118,7 @@ export class EmscriptenJoltBridge {
     }
     nodeKinds() { return this.jsonExport("jfx_node_catalog", false); }
     graphState() { return this.jsonExport("jfx_web_session_graph_state", true); }
+    scene3dState() { return this.jsonExport("jfx_web_session_scene3d_state", true, 4 * 1024 * 1024); }
     renderGraphNode(node, seconds, width = this.width, height = this.height) {
         this.ensureOpen();
         if (node !== null && (!Number.isInteger(node) || node < 0 || node >= 256) || !Number.isFinite(seconds) || seconds < 0 || seconds > 1e9 ||
@@ -146,6 +147,12 @@ export class EmscriptenJoltBridge {
         this.module.FS.writeFile(path, bytes);
         this.resetAudio();
         return path;
+    }
+    readAsset(path) {
+        this.ensureOpen();
+        if (!this.module.FS?.readFile)
+            throw new Error("This WASM build cannot read virtual files");
+        return this.module.FS.readFile(path).slice();
     }
     async loadPackage(bytes) {
         this.ensureOpen();

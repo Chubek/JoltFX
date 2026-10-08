@@ -483,7 +483,16 @@ int cmd_project(int argc, char **argv) {
         if (detected != JFX_SUCCESS) {
             return fail("%s", error);
         }
-        printf("kind: %s\n", kind == JFX_PROJECT_KIND_GRAPH ? "graph (a grade)" : "sequence");
+        printf("kind: %s\n", kind == JFX_PROJECT_KIND_GRAPH ? "graph (a grade)" : kind==JFX_PROJECT_KIND_SCENE3D?"scene3d":"sequence");
+        if (kind==JFX_PROJECT_KIND_SCENE3D) {
+            text=read_file(document,&length); if (!text) return fail("cannot read '%s'",document);
+            jfx_scene3d_t *scene=jfx_scene3d_create();
+            jfx_result_t status=scene?jfx_scene3d_load(scene,text,length,error,sizeof(error)):JFX_ERROR_OUT_OF_MEMORY;
+            tilly_mem_free(text);
+            if (status!=JFX_SUCCESS) { jfx_scene3d_destroy(scene); return fail("%s",error); }
+            printf("rate:       %u fps\nduration:   %u frames\nobjects:    %u\n",jfx_scene3d_fps(scene),jfx_scene3d_frames(scene),jfx_scene3d_object_count(scene));
+            jfx_scene3d_destroy(scene); return 0;
+        }
         if (kind == JFX_PROJECT_KIND_GRAPH) {
             jfx_graph_t *graph = NULL;
             uint32_t node = 0, width = 0, height = 0;
@@ -576,6 +585,15 @@ int cmd_project(int argc, char **argv) {
         }
         if (kind == JFX_PROJECT_KIND_GRAPH) {
             return render_graph_document(document, output, 0, 0, 0.0f);
+        }
+        if (kind==JFX_PROJECT_KIND_SCENE3D) {
+            text=read_file(document,&length); if (!text) return fail("cannot read '%s'",document);
+            jfx_editor_t *editor=jfx_editor_create(960,540);
+            jfx_result_t status=editor?jfx_editor_load(editor,text,length,error,sizeof(error)):JFX_ERROR_OUT_OF_MEMORY;
+            tilly_mem_free(text);
+            if (status==JFX_SUCCESS) status=jfx_editor_write_frame(editor,0,960,540,output);
+            jfx_editor_destroy(editor);
+            return status==JFX_SUCCESS?0:fail("cannot render scene '%s': %s",document,error);
         }
         char path_copy[MAX_PATH];
         snprintf(path_copy, sizeof(path_copy), "%s", document);

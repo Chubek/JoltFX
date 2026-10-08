@@ -29,11 +29,12 @@ int cmd_edit(int argc, char **argv) {
         if (jfx_plugin_host_load(plugins,argv[i+1],&id)!=JFX_SUCCESS) { fprintf(stderr,"%s\n",jfx_plugin_host_error(plugins)); goto done; }
     }
     if (failed || jfx_editor_load(e,doc,n,error,sizeof(error))!=JFX_SUCCESS) { fprintf(stderr,"%s\n",error); goto done; }
-    fprintf(stderr,"JoltFX editor: NLE | Layer Effects | Color Calibration | Color Grading | Node Compositing\n"
+    fprintf(stderr,"JoltFX editor: NLE | Layer Effects | Color Calibration | Color Grading | Node Compositing | 3D Modeling & Animation\n"
         "Color Grading: grade.add/param/path/enabled/reset/remove/move; 'grade' lists operators.\n"
         "Color Calibration: calibration.add/param/path/enabled/reset/remove/move; 'calibration' lists operators.\n"
         "NLE: clip.split/move/trim/duplicate/slip/ripple_delete, track.move/solo/insert_gap.\n"
         "Composition: node.add/connect/disconnect/param/path/label/position/duplicate/reset/remove/output.\n"
+        "3D Modeling & Animation: 3d.add/transform/vertex/key/subdivide/align/mass/bake/import_ply/export_ply; scene3d (JSON).\n"
         "Audio: clip.audio.enabled/gain/pan/fade_in/fade_out; track.audio.gain.\n"
         "Plugins: plugin.load PATH, plugin.unload ID, plugin.action NAME TRACK CLIP NODE, plugins.\n"
         "Commands: OP A B C VALUE TEXT (zero-based indices); undo, redo, timeline, composition, nodes, show, save, quit.\n");
@@ -65,7 +66,7 @@ int cmd_edit(int argc, char **argv) {
             if (jfx_plugin_host_invoke(plugins,action,&context)!=JFX_SUCCESS) { fprintf(stderr,"%s\n",jfx_plugin_host_error(plugins)); goto done; }
             continue;
         }
-        if (!strcmp(line,"undo") || !strcmp(line,"redo") || !strcmp(line,"graph") || !strcmp(line,"sequence")) {
+        if (!strcmp(line,"undo") || !strcmp(line,"redo") || !strcmp(line,"graph") || !strcmp(line,"sequence") || !strcmp(line,"3d")) {
             if (jfx_editor_command(e,line,0,0,0,0,"")!=JFX_SUCCESS) { fprintf(stderr,"No edit to %s.\n",line); goto done; }
             continue;
         }
@@ -75,6 +76,10 @@ int cmd_edit(int argc, char **argv) {
         }
         if (!strcmp(line,"composition")) {
             if (jfx_editor_graph_state(e,doc,JFX_PROJECT_MAX_BYTES)==JFX_SUCCESS) puts(doc);
+            continue;
+        }
+        if (!strcmp(line,"scene3d")) {
+            if (jfx_editor_scene3d_state(e,doc,JFX_PROJECT_MAX_BYTES)==JFX_SUCCESS) puts(doc);
             continue;
         }
         if (!strcmp(line,"nodes")) { cmd_nodes(0,NULL); continue; }
@@ -108,6 +113,35 @@ static int positive(const char *text,uint32_t *out) {
     char *end; unsigned long n=strtoul(text,&end,10);
     if (!*text || *end || !n || n>1000000000u) return 0;
     *out=(uint32_t)n; return 1;
+}
+int cmd_scene3d(int argc,char **argv) {
+    if (argc>=1 && !strcmp(argv[0],"edit")) return cmd_edit(argc-1,argv+1);
+    if (argc<2) { fprintf(stderr,"usage: joltfx 3d new FILE | info FILE | edit IN OUT | render FILE OUT.png [SECONDS]\n"); return 1; }
+    bool create=!strcmp(argv[0],"new"),info=!strcmp(argv[0],"info"),render=!strcmp(argv[0],"render");
+    if ((!create && !info && !render) || (render?(argc<3 || argc>4):argc!=2)) return 1;
+    char *buffer=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),JFX_PROJECT_MAX_BYTES+1,_Alignof(max_align_t));
+    jfx_editor_t *e=jfx_editor_create(960,540); int code=1; size_t n=0;
+    if (!buffer || !e) goto cleanup;
+    if (create) {
+        if (jfx_editor_command(e,"3d.new",0,0,0,0,"")!=JFX_SUCCESS ||
+            jfx_editor_command(e,"3d.add",0,0,0,0,"cube")!=JFX_SUCCESS ||
+            jfx_editor_save(e,buffer,JFX_PROJECT_MAX_BYTES,&n)!=JFX_SUCCESS) goto cleanup;
+        FILE *file=fopen(argv[1],"wb"); if (!file) goto cleanup;
+        bool failed=fwrite(buffer,1,n,file)!=n; if (fclose(file)) failed=true; code=failed?1:0;
+    } else {
+        FILE *file=fopen(argv[1],"rb"); if (!file) goto cleanup;
+        n=fread(buffer,1,JFX_PROJECT_MAX_BYTES+1,file); bool failed=ferror(file)!=0; fclose(file);
+        char error[256]={0};
+        if (failed || jfx_editor_load(e,buffer,n,error,sizeof(error))!=JFX_SUCCESS || jfx_editor_kind(e)!=JFX_PROJECT_KIND_SCENE3D) { fprintf(stderr,"3D scene rejected: %s\n",error); goto cleanup; }
+        if (info) { if (jfx_editor_scene3d_state(e,buffer,JFX_PROJECT_MAX_BYTES)==JFX_SUCCESS) { puts(buffer); code=0; } }
+        else {
+            double seconds=0;
+            if (argc==4) { char *end=NULL; seconds=strtod(argv[3],&end); if (end==argv[3] || *end || !isfinite(seconds) || seconds<0) goto cleanup; }
+            code=jfx_scene3d_write_png(jfx_editor_scene3d(e),seconds,960,540,argv[2])==JFX_SUCCESS?0:1;
+        }
+    }
+cleanup:
+    tilly_free((tilly_allocator_t *)tilly_default_allocator(),buffer); jfx_editor_destroy(e); return code;
 }
 int cmd_nle(int argc,char **argv) {
     if (argc<2) { print_command_help("nle"); return 1; }

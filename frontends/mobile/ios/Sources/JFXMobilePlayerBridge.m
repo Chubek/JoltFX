@@ -84,6 +84,15 @@
     }
     tilly_container_free(json); return result;
 }
+- (NSDictionary *)scene3DState {
+    size_t capacity=4*1024*1024; char *json=tilly_container_alloc(capacity); NSDictionary *result=@{};
+    if (json && jfx_mobile_player_scene3d_state(_player,json,capacity)==JFX_SUCCESS) {
+        NSData *data=[NSData dataWithBytes:json length:strlen(json)];
+        id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if ([value isKindOfClass:NSDictionary.class]) result=value;
+    }
+    tilly_container_free(json); return result;
+}
 - (BOOL)edit:(NSString *)operation track:(NSUInteger)track clip:(NSUInteger)clip
       target:(NSUInteger)target value:(double)value text:(NSString *)text {
     if (track>UINT32_MAX || clip>UINT32_MAX || target>UINT32_MAX) return NO;
@@ -180,6 +189,13 @@
     if (!data.length || data.length>JFX_PROJECT_MAX_BYTES ||
         jfx_project_kind_of(data.bytes,data.length,&kind,NULL,0)!=JFX_SUCCESS || kind!=JFX_PROJECT_KIND_GRAPH) return NO;
     return jfx_mobile_player_load_document(_player,data.bytes,data.length,NULL,0)==JFX_SUCCESS;
+}
+- (BOOL)loadScene3D:(NSString *)document {
+    NSData *data=[document dataUsingEncoding:NSUTF8StringEncoding]; jfx_project_kind_t kind;
+    if (!data.length || data.length>JFX_PROJECT_MAX_BYTES ||
+        jfx_project_kind_of(data.bytes,data.length,&kind,NULL,0)!=JFX_SUCCESS || kind!=JFX_PROJECT_KIND_SCENE3D) return NO;
+    if (jfx_mobile_player_load_document(_player,data.bytes,data.length,NULL,0)!=JFX_SUCCESS) return NO;
+    [self stopAudio]; return YES;
 }
 - (nullable NSData *)previewGraphNode:(NSUInteger)node seconds:(NSTimeInterval)seconds {
     if (node!=NSNotFound && node>UINT32_MAX) return nil;

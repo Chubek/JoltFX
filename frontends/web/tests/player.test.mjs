@@ -218,6 +218,36 @@ test("mounted editor can add the first color operator and uses the rendered fram
   } finally { globalThis.document = previousDocument; }
 });
 
+test("mounted 3D workspace uses scene FPS for keys and retains mode across refresh", () => {
+  const previousDocument=globalThis.document;
+  globalThis.document={createElement:tag => new Element(tag),createTextNode:text => ({textContent:text})};
+  try {
+    const calls=[],root=new Element("main"),state={active:true,fps:24,frames:120,camera:[35,22,7,0,0,0,45],undo:false,redo:false,
+      objects:[{id:0,name:"Cube",visible:true,mass:0,vertices:8,triangles:12,transform:[0,0,0,0,0,0,1,1,1],color:[.3,.6,.9],keys:[]}]};
+    const editor=new JoltEditor(root,{
+      ...bridge,sequenceDocument:() => "track V1\nclip solid 0 60\n",saveDocument:() => "scene3d 1\n",
+      sequenceState:() => ({width:1,height:1,fpsNum:30,fpsDen:1,duration:60,tracks:[]}),
+      nodeKinds:() => [],graphState:() => ({active:false,width:1,height:1,nodes:[]}),colorOperators:() => [],
+      scene3dState:() => structuredClone(state),edit(op,a=0,b=0,c=0,value=0,text="") {
+        calls.push([op,a,b,c,value,text]); if (op==="3d") state.active=true; if (op==="sequence") state.active=false;
+        if (op==="3d.transform") state.objects[a].transform[b]=value;
+      },
+    });
+    assert.equal(calls[0][0],"3d"); assert.equal(editor.fps,24);
+    const panel=root.children.find(s => s.children?.[0]?.textContent==="3D Modeling & Animation");
+    const inspector=() => panel.children.find(s => s.tag==="div");
+    const x=inspector().children.find(e => e.tag==="label" && e.children[0]?.textContent==="Position X ").children[1];
+    x.value="2"; x.onchange(); assert.deepEqual(calls.at(-1),["3d.transform",0,0,0,2,""]);
+    editor.time=2.5;
+    inspector().children.find(e => e.textContent==="Key Position X").onclick();
+    assert.deepEqual(calls.at(-1),["3d.key",0,0,60,2,""]);
+    const sequence=root.children.find(s => s.children?.[0]?.textContent==="NLE timeline");
+    sequence.children.find(e => e.textContent==="Preview sequence").onclick(); assert.equal(editor.fps,30);
+    panel.children.find(e => e.textContent==="Preview 3D workspace").onclick(); assert.equal(editor.fps,24);
+    editor.dispose();
+  } finally { globalThis.document=previousDocument; }
+});
+
 const nodeCatalog = [
   { name: "color", label: "Color", category: "Utility", inputs: [], outputs: [{ name: "out", label: "Color", type: "color" }], params: [], strings: [] },
   { name: "solid", label: "Solid", category: "Source", inputs: [{ name: "color", label: "Color", type: "color" }], outputs: [{ name: "out", label: "Image", type: "image" }], params: [], strings: [] },

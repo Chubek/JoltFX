@@ -23,6 +23,16 @@ npm install
 npm test
 ```
 
+## 3D modeling and animation
+
+The named **3D Modeling & Animation** section edits the shared scene with object
+selection, primitives, transforms, materials, vertex coordinates, subdivision,
+principal axes, keyframes, camera and physics controls. Preview/transport/save
+switch to the scene document; playback uses its FPS and suppresses NLE audio.
+Imported PLY meshes live in the WASM filesystem; Export PLY downloads the native
+mesh output. Scene `.jfx` files embed geometry. See
+[3D usage](../../docs/modeling3d.md) for commands and rendering limits.
+
 ## NLE editor
 
 `JoltEditor` uses `NLETimeline` and the shared native sequence-state JSON for

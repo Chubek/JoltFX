@@ -1046,3 +1046,16 @@ switch. Hidden/locked layers cannot be drawn into. Drawing `.jfxdraw` save/load
 and current-frame SVG export are distinct from `.jfx` projects and JFA1 bytecode.
 Validate loaded documents before replacement, preserve load undo, and extend
 `animation_drawing` / `animation_ui_tests` when changing this workflow.
+
+### 3D modeling and animation
+
+The desktop API 1.6 appends a 3D workspace/panel; `modeling3d_panel.inc` uses the
+shared editor 1.8 scene document and `3d.*` commands. Web/Android have named 3D
+sections, iOS has `JFXModeling3DViewController`, CLI has `3d new/edit/info/render`,
+and portable host sessions expose 3D state/rendering. Keep the scene's FPS and
+history independent from NLE, and suppress NLE audio during 3D playback. Select
+the 3D workspace when opening `scene3d 1` documents. Values/keys/meshes/camera
+belong to Core; frontend state owns selection and transport. See
+`docs/modeling3d.md`, `modeling3d_ui_tests`, `modeling3d_frontend_conformance`,
+and `modeling3d_cli`. Native scene libraries are linked through Core's C boundary;
+WASM exports must include `jfx_web_session_scene3d_state`.

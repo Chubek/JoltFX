@@ -1,6 +1,7 @@
 #ifndef JFX_EDITOR_H
 #define JFX_EDITOR_H
 #include "jfx_project.h"
+#include "jfx_modeling3d.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -8,12 +9,15 @@ extern "C" {
  * valid until a successful load/reset/undo/redo/cancel or destruction. Edits use the timeline and
  * graph APIs, so every interface uses the same validators and evaluator. */
 #define JFX_EDITOR_API_MAJOR 1
-#define JFX_EDITOR_API_MINOR 7
+#define JFX_EDITOR_API_MINOR 8
 typedef struct jfx_editor jfx_editor_t;
 jfx_editor_t *jfx_editor_create(uint32_t width, uint32_t height);
 void jfx_editor_destroy(jfx_editor_t *editor);
 jfx_timeline_t *jfx_editor_timeline(jfx_editor_t *editor);
 jfx_graph_t *jfx_editor_graph(jfx_editor_t *editor);
+/* Borrowed 3D scene and frontend-neutral JSON; active indicates preview mode. */
+jfx_scene3d_t *jfx_editor_scene3d(jfx_editor_t *editor);
+jfx_result_t jfx_editor_scene3d_state(const jfx_editor_t *editor,char *out_json,size_t capacity);
 jfx_project_kind_t jfx_editor_kind(const jfx_editor_t *editor);
 jfx_result_t jfx_editor_set_kind(jfx_editor_t *editor, jfx_project_kind_t kind);
 uint32_t jfx_editor_output(const jfx_editor_t *editor);

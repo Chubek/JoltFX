@@ -1,5 +1,5 @@
 import type { JoltFrame, JoltWasmBridge } from "./player.js";
-import type { ColorOperator, VideoExport } from "./editor.js";
+import type { ColorOperator, VideoExport, Scene3DState } from "./editor.js";
 import type { SequenceState } from "./nle.js";
 import type { GraphState, NodeKind } from "./composition.js";
 type NativeFunction = (...args: Array<number | string>) => number;
@@ -40,8 +40,10 @@ export declare class EmscriptenJoltBridge implements JoltWasmBridge {
     private jsonExport;
     nodeKinds(): NodeKind[];
     graphState(): GraphState;
+    scene3dState(): Scene3DState;
     renderGraphNode(node: number | null, seconds: number, width?: number, height?: number): JoltFrame;
     importAsset(name: string, bytes: Uint8Array): string;
+    readAsset(path: string): Uint8Array;
     loadPackage(bytes: Uint8Array): Promise<void>;
     renderFrame(timeSeconds: number): JoltFrame;
     renderSequenceFrame(frame: number): JoltFrame;

@@ -101,7 +101,8 @@ jfx_result_t jfx_project_save_sequence(const jfx_timeline_t *timeline, char *out
  * that knows which it wants should call the specific reader. */
 typedef enum {
     JFX_PROJECT_KIND_SEQUENCE = 0,
-    JFX_PROJECT_KIND_GRAPH
+    JFX_PROJECT_KIND_GRAPH,
+    JFX_PROJECT_KIND_SCENE3D
 } jfx_project_kind_t;
 
 jfx_result_t jfx_project_kind_of(const char *text, size_t length, jfx_project_kind_t *out_kind,
