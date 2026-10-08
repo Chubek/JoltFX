@@ -100,7 +100,7 @@ foreach(extension IN ITEMS lua mruby quickjs python wasm)
     endif()
 endforeach()
 install(DIRECTORY tilly/include/tilly tilly/tillyz/include/tillyz DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h")
+    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 install(DIRECTORY backends/common/include/jfx
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING
@@ -161,7 +161,7 @@ if(JFX_INSTALL_DOCS_PRESENT)
     install(FILES ${JFX_INSTALL_DOCS_PRESENT}
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
 endif()
-install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/daw.md docs/plugins.md docs/extensions.md
+install(FILES docs/editor.md docs/nle.md docs/composition.md docs/media.md docs/daw.md docs/plugins.md docs/extensions.md docs/memory.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(DIRECTORY extif/examples DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/extensions)
 foreach(extension IN ITEMS lua mruby quickjs python wasm)

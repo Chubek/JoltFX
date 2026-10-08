@@ -319,7 +319,7 @@ The following vendored or linked libraries are used across JoltFX's subsystems. 
 
 | Library              | Purpose                                               |
 |----------------------|-------------------------------------------------------|
-| mimalloc             | High-performance memory allocator                     |
+| MemTKX               | Tilly-managed stable-address heaps/pools and scratch regions |
 | xxHash               | Fast non-cryptographic hashing                        |
 | utf8.h               | UTF-8 string utilities                                |
 | PCRE2                | Regular expression engine                             |

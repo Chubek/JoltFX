@@ -1,4 +1,8 @@
 #include "jfx/web_session.h"
+#include "tilly/memory.h"
+
+void *jfx_web_alloc(size_t bytes) { return tilly_mem_alloc(bytes); }
+void jfx_web_free(void *pointer) { tilly_mem_free(pointer); }
 
 jfx_result_t jfx_web_session_export_begin(jfx_web_session_t *s,const char *path,const char *codec,
     uint32_t start,uint32_t count,bool audio,jfx_export_job_t **out) {

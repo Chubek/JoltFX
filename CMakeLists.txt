@@ -8,6 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(EMSCRIPTEN)
+    # The MemTKX C boundary translates C++ allocation failures into NULL/status.
+    # Emscripten must retain catches in both the adapter and C++ frontends.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fexceptions>)
+    add_link_options(-fexceptions)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 
 option(JOLTFX_BUILD_TESTS "Build tests" ON)

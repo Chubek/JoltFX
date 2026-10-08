@@ -93,6 +93,12 @@ this build runs the synchronous CPU reference renderer and needs no cross-origin
 isolation headers. The WebGPU adapter name identifies the selected backend;
 graph/color evaluation uses the shared CPU path.
 
+Transfer buffers use exported `_jfx_web_alloc` / `_jfx_web_free` over MemTKX.
+Release through the matching export, never `_free`. Rebuild the native module
+and TypeScript package together. The bridge copies output before releasing it,
+refreshes heap views after growth, and rejects session calls after idempotent
+disposal. See [memory ownership](../../docs/memory.md).
+
 `npm test` covers UI gestures, inspectors and bridge validation with native-call
 doubles. `test:wasm` executes the actual compiled module through
 `EmscriptenJoltBridge`: exports/catalogs, editing/history, native pixel parity,

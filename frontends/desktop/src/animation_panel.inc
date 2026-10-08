@@ -61,13 +61,13 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::Checkbox("Fill shapes",&e.filled);
     ImGui::SetNextItemWidth(-1); ImGui::SliderFloat("##Stroke width",&e.width,0.5f,40,"Width %.1f");
     ImGui::BeginDisabled(e.selected<0 || !e.editable());
-    if(ImGui::Button("Apply style")) {
-        e.checkpoint(); auto &s=e.cel().shapes[(size_t)e.selected];
+    if(ImGui::Button("Apply style") && e.checkpoint()) {
+        auto &s=e.cel().shapes[(size_t)e.selected];
         s.width=e.width; s.filled=e.filled;
         s.stroke=ImGui::ColorConvertFloat4ToU32(ImVec4(e.stroke[0],e.stroke[1],e.stroke[2],e.stroke[3]));
         s.fill=ImGui::ColorConvertFloat4ToU32(ImVec4(e.fill[0],e.fill[1],e.fill[2],e.fill[3]));
     }
-    if(ImGui::Button("Delete selected")) {e.checkpoint();e.cel().shapes.erase(e.cel().shapes.begin()+e.selected);e.selected=-1;}
+    if(ImGui::Button("Delete selected") && e.checkpoint()) {e.cel().shapes.erase(e.cel().shapes.begin()+e.selected);e.selected=-1;}
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::TextWrapped("Drag to draw. Select to move. Wheel to zoom; Hand to pan. Escape cancels a stroke.");
@@ -88,7 +88,7 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
         if(e.tool==0 || e.tool==5) {
             e.selected=e.hit(mouse);
             if(e.selected>=0) {
-                if(e.tool==5) {e.checkpoint();e.cel().shapes.erase(e.cel().shapes.begin()+e.selected);e.selected=-1;}
+                if(e.tool==5) {if(e.checkpoint()) {e.cel().shapes.erase(e.cel().shapes.begin()+e.selected);e.selected=-1;}}
                 else e.dragging=true;
             }
         } else if(e.tool==6) e.dragging=true;
@@ -96,7 +96,7 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
             e.pending=Shape{}; e.pending.kind=(Kind)(e.tool-1); e.pending.width=e.width;
             e.pending.stroke=ImGui::ColorConvertFloat4ToU32(ImVec4(e.stroke[0],e.stroke[1],e.stroke[2],e.stroke[3]));
             e.pending.fill=ImGui::ColorConvertFloat4ToU32(ImVec4(e.fill[0],e.fill[1],e.fill[2],e.fill[3]));
-            e.pending.filled=e.filled; e.pending.points={mouse,mouse}; e.dragging=true;
+            e.pending.filled=e.filled; e.begin_shape(mouse);
         } else std::snprintf(frontend->status,sizeof(frontend->status),"Drawing limit: 256 shapes per cel");
     }
     // Selection movement is previewed through pending delta and committed once
@@ -115,10 +115,10 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     if(e.dragging && (ImGui::IsMouseReleased(0) || cancel)) {
         if(!cancel && e.tool==0 && e.selected>=0) {
             Point delta{mouse.x-e.last.x,mouse.y-e.last.y};
-            if(std::hypot(delta.x,delta.y)>0.01f) { e.checkpoint(); for(auto &p:e.cel().shapes[(size_t)e.selected].points) {p.x+=delta.x;p.y+=delta.y;} }
+            if(std::hypot(delta.x,delta.y)>0.01f && e.checkpoint()) { for(auto &p:e.cel().shapes[(size_t)e.selected].points) {p.x+=delta.x;p.y+=delta.y;} }
         } else if(!cancel && e.tool>0 && e.tool<5) {
             if(e.tool==1 || std::hypot(e.pending.points.back().x-e.pending.points.front().x,e.pending.points.back().y-e.pending.points.front().y)>1) {
-                e.checkpoint(); e.cel().shapes.push_back(e.pending); e.selected=(int)e.cel().shapes.size()-1;
+                e.commit_shape();
             }
         }
         e.dragging=false;
@@ -178,12 +178,12 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::BeginDisabled(e.dragging);
     ImGui::Text("EXPOSURE SHEET   Frame %d / %d   |   960 x 540",e.frame,e.doc.frames);
     ImGui::SameLine(); ImGui::SetNextItemWidth(85);
-    int fps=e.doc.fps; if(ImGui::SliderInt("FPS",&fps,1,60)) {e.checkpoint();e.doc.fps=fps;}
+    int fps=e.doc.fps; if(ImGui::SliderInt("FPS",&fps,1,60) && e.checkpoint()) e.doc.fps=fps;
     ImGui::SameLine(); ImGui::BeginDisabled(!e.editable());
     if(ImGui::Button("Duplicate key")) e.key(false);
     ImGui::SameLine(); if(ImGui::Button("Blank key")) e.key(true);
     ImGui::EndDisabled(); ImGui::SameLine(); ImGui::BeginDisabled(e.doc.layers.size()>=8 || e.playing);
-    if(ImGui::Button("Add layer")) {e.checkpoint();e.doc.layers.push_back(Layer{});e.layer=(int)e.doc.layers.size()-1;e.selected=-1;}
+    if(ImGui::Button("Add layer")) e.add_layer();
     ImGui::EndDisabled();
     ImGui::SetNextItemWidth(-1);
     if(ImGui::SliderInt("##Drawing frame",&e.frame,1,e.doc.frames,"Frame %d")) {e.playing=false;e.selected=-1;}
@@ -191,8 +191,8 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     for(size_t li=0;li<e.doc.layers.size();++li) {
         auto &l=e.doc.layers[li]; ImGui::PushID((int)li);
         bool visible=l.visible,locked=l.locked;
-        if(ImGui::Checkbox("##visible",&visible)) {e.checkpoint();l.visible=visible;e.selected=-1;}
-        ImGui::SameLine(); if(ImGui::Checkbox("Lock",&locked)) {e.checkpoint();l.locked=locked;e.selected=-1;}
+        if(ImGui::Checkbox("##visible",&visible) && e.checkpoint()) {l.visible=visible;e.selected=-1;}
+        ImGui::SameLine(); if(ImGui::Checkbox("Lock",&locked) && e.checkpoint()) {l.locked=locked;e.selected=-1;}
         ImGui::SameLine(); char label[32]; std::snprintf(label,sizeof(label),"Layer %zu",li+1);
         if(ImGui::Selectable(label,(int)li==e.layer,0,ImVec2(80,20))) {e.layer=(int)li;e.selected=-1;}
         for(int frame=1;frame<=e.doc.frames;++frame) {
@@ -216,10 +216,14 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
         } else if(!ImGui::IsAnyItemActive()) {
             const ImGuiKey keys[]={ImGuiKey_V,ImGuiKey_B,ImGuiKey_L,ImGuiKey_R,ImGuiKey_O,ImGuiKey_E,ImGuiKey_H};
             for(int i=0;i<7;++i) if(ImGui::IsKeyPressed(keys[i])) {e.tool=i;e.selected=-1;}
-            if(ImGui::IsKeyPressed(ImGuiKey_Delete) && e.selected>=0 && e.editable()) {e.checkpoint();e.cel().shapes.erase(e.cel().shapes.begin()+e.selected);e.selected=-1;}
+            if(ImGui::IsKeyPressed(ImGuiKey_Delete) && e.selected>=0 && e.editable() && e.checkpoint()) {e.cel().shapes.erase(e.cel().shapes.begin()+e.selected);e.selected=-1;}
             if(ImGui::IsKeyPressed(ImGuiKey_F6)) e.key(false);
             if(ImGui::IsKeyPressed(ImGuiKey_F7)) e.key(true);
             if(ImGui::IsKeyPressed(ImGuiKey_Space)) {e.playing=!e.playing;e.elapsed=0;}
         }
+    }
+    if(e.allocation_failed) {
+        std::snprintf(frontend->status,sizeof(frontend->status),"Drawing edit failed: out of memory");
+        e.allocation_failed=false;
     }
 }

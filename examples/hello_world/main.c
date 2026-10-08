@@ -1,3 +1,4 @@
+#include "tilly/memory.h"
 #include "jfx/jfx_engine.h"
 #include "joltscript/compiler.h"
 #include "joltscript/pipeline.h"
@@ -28,13 +29,13 @@ static char *read_file(const char *path) {
     }
     size_t len = (size_t)tell;
     rewind(fp);
-    char *buf = (char *)malloc(len + 1);
+    char *buf = (char *)tilly_mem_alloc(len + 1);
     if (buf == NULL) {
         fclose(fp);
         return NULL;
     }
     if (fread(buf, 1, len, fp) != len) {
-        free(buf);
+        tilly_mem_free(buf);
         fclose(fp);
         return NULL;
     }
@@ -67,7 +68,7 @@ int main(int argc, char **argv) {
     jfx_engine_t *engine = NULL;
     if (jfx_engine_init(&config, &engine) != JFX_SUCCESS) {
         fprintf(stderr, "hello_world: engine init failed\n");
-        free(owned);
+        tilly_mem_free(owned);
         return 1;
     }
     printf("Engine initialized (backend %s)\n", jfx_engine_backend_name(engine));
@@ -79,7 +80,7 @@ int main(int argc, char **argv) {
     if (jolt_compile(source, &program, &diag) != JOLT_OK || program == NULL) {
         fprintf(stderr, "hello_world: compile failed: %s\n",
                 diag.message[0] != '\0' ? diag.message : "unknown error");
-        free(owned);
+        tilly_mem_free(owned);
         jfx_engine_shutdown(engine);
         return 1;
     }
@@ -101,7 +102,7 @@ int main(int argc, char **argv) {
     if (pipeline == NULL) {
         fprintf(stderr, "hello_world: pipeline create failed\n");
         jolt_program_destroy(program);
-        free(owned);
+        tilly_mem_free(owned);
         jfx_engine_shutdown(engine);
         return 1;
     }
@@ -112,7 +113,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "hello_world: pipeline add failed (%d)\n", (int)status);
         jolt_pipeline_destroy(pipeline);
         jolt_program_destroy(program);
-        free(owned);
+        tilly_mem_free(owned);
         jfx_engine_shutdown(engine);
         return 1;
     }
@@ -121,7 +122,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "hello_world: pipeline run failed (%d)\n", (int)status);
         jolt_pipeline_destroy(pipeline);
         jolt_program_destroy(program);
-        free(owned);
+        tilly_mem_free(owned);
         jfx_engine_shutdown(engine);
         return 1;
     }
@@ -139,7 +140,7 @@ int main(int argc, char **argv) {
 
     jolt_pipeline_destroy(pipeline);
     jolt_program_destroy(program);
-    free(owned);
+    tilly_mem_free(owned);
 
     if (jfx_engine_tick(engine) != JFX_SUCCESS) {
         fprintf(stderr, "hello_world: engine tick failed\n");

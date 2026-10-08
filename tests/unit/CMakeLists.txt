@@ -2,6 +2,10 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/TestHelpers.cmake")
 
 jfx_test_target(test_tillyz SOURCES tilly/test_tillyz.c LIBRARIES tillyz)
 jfx_test_target(test_allocator SOURCES tilly/test_allocator.c LIBRARIES tilly)
+jfx_test_target(test_memory SOURCES tilly/test_memory.cpp LIBRARIES tilly)
+add_test(NAME memtkx_memory COMMAND test_memory)
+jfx_test_target(test_image SOURCES core/test_image.c LIBRARIES jfx_core)
+add_test(NAME image_memory COMMAND test_image)
 if(UNIX AND NOT EMSCRIPTEN)
     add_library(tilly_test_module MODULE tilly/module_fixture.c)
     add_library(tilly_test_dependency MODULE tilly/module_fixture.c)
@@ -490,5 +494,11 @@ add_custom_command(TARGET validate_kernels POST_BUILD
     COMMAND $<TARGET_FILE:test_image_kernels>
     COMMAND $<TARGET_FILE:test_image_program>)
 
-jfx_test_target(test_animation_drawing SOURCES frontends/test_animation_drawing.cpp)
+jfx_test_target(test_animation_drawing SOURCES frontends/test_animation_drawing.cpp LIBRARIES tilly)
 jfx_register_test(animation_drawing test_animation_drawing)
+
+# LSan sees backing pages; explicitly check remaining process-heap objects too.
+get_property(memory_tests DIRECTORY PROPERTY TESTS)
+foreach(test IN LISTS memory_tests)
+    set_property(TEST ${test} APPEND PROPERTY ENVIRONMENT "TILLY_CHECK_LEAKS=1")
+endforeach()

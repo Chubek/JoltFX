@@ -4,6 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Version 2 replaces malloc-compatible default storage with owned MemTKX
+ * storage and gives general capacity a live-payload budget. Struct ABI/layout
+ * and existing function signatures are retained. */
+#define TILLY_ALLOCATOR_API_MAJOR 2
+#define TILLY_ALLOCATOR_API_MINOR 0
+#define TILLY_ALLOCATOR_API_PATCH 0
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,32 +36,37 @@ typedef struct tilly_allocator {
     size_t (*usage)(const struct tilly_allocator *alloc);
 } tilly_allocator_t;
 
-// Get the default system allocator (malloc/free)
+/* Process-lifetime MemTKX allocator. Storage is not libc-compatible; release
+ * through tilly_free. Operations and usage snapshots are synchronized. */
 const tilly_allocator_t *tilly_default_allocator(void);
 
-// Create a new allocator
+/* Create a MemTKX allocator. General capacity bounds live payload bytes (zero
+ * means growable). Pool capacity is rounded to 64-byte slots, at least one.
+ * Scratch capacity includes alignment/guard overhead. */
 tilly_allocator_t *tilly_allocator_create(
     tilly_alloc_strategy_t strategy,
     size_t capacity
 );
 
-// Destroy an allocator, clearing its binding on the calling thread if present.
+/* Reclaim all owned storage, clearing its calling-thread binding. Finish all
+ * operations and release resource-owning objects before destruction. */
 void tilly_allocator_destroy(tilly_allocator_t *alloc);
 
 // Allocate memory
 void *tilly_alloc(tilly_allocator_t *alloc, size_t size, size_t align);
 
-// Free memory
+/* Free an exact live pointer. Foreign/interior/already-freed pointers are
+ * ignored by built-in heaps/pools. Arena/stack frees are deferred to reset. */
 void tilly_free(tilly_allocator_t *alloc, void *ptr);
 
 /* Reallocate memory.
  *
- * Only TILLY_ALLOC_GENERAL can grow a block in place; arena, pool and stack
- * blocks carry no size header, so growing one returns NULL and logs an error
- * (it is not an out-of-memory condition). Allocate a new block and copy when
+ * Only built-in TILLY_ALLOC_GENERAL heaps support resizing, preserving the
+ * original alignment and bytes. Other strategies return NULL. Copy when
  * the allocator is not general. Custom general allocators cannot resize
  * non-null blocks either; they may return storage that
- * is incompatible with libc. `ptr` is left untouched on failure. */
+ * is incompatible with libc. Invalid/foreign pointers are rejected by built-in
+ * heaps. `ptr` and live usage are left untouched on failure. */
 void *tilly_realloc(tilly_allocator_t *alloc, void *ptr, size_t new_size);
 
 // Reset allocator (for arena/stack)
@@ -64,7 +76,8 @@ void tilly_allocator_reset(tilly_allocator_t *alloc);
  * counter retains the high-water mark across arena, pool and stack resets. */
 size_t tilly_allocator_usage(const tilly_allocator_t *alloc);
 
-// Thread-local stack allocator
+/* Thread-local binding. Built-in allocator destruction invalidates bindings
+ * on other threads too; custom allocators require caller-managed lifetime. */
 void tilly_thread_set_allocator(tilly_allocator_t *alloc);
 tilly_allocator_t *tilly_thread_get_allocator(void);
 

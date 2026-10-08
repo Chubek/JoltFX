@@ -1,3 +1,4 @@
+#include "tilly/memory.h"
 #include "commands.h"
 #include "jfx/jfx_export.h"
 
@@ -180,7 +181,7 @@ static char *read_source(const char *path, size_t *out_len) {
     }
     size_t len = (size_t)tell;
     rewind(fp);
-    char *buf = (char *)malloc(len + 1);
+    char *buf = (char *)tilly_mem_alloc(len + 1);
     if (buf == NULL) {
         fclose(fp);
         return NULL;
@@ -188,7 +189,7 @@ static char *read_source(const char *path, size_t *out_len) {
     size_t got = fread(buf, 1, len, fp);
     fclose(fp);
     if (got != len) {
-        free(buf);
+        tilly_mem_free(buf);
         return NULL;
     }
     buf[len] = '\0';
@@ -208,7 +209,7 @@ static uint8_t *read_bytecode(const char *path, size_t *out_len) {
         return NULL;
     }
     if (len < JOLT_BYTECODE_HEADER_SIZE) {
-        free(bytes);
+        tilly_mem_free(bytes);
         return NULL;
     }
     uint32_t magic = 0;
@@ -216,7 +217,7 @@ static uint8_t *read_bytecode(const char *path, size_t *out_len) {
         magic |= (uint32_t)(unsigned char)bytes[i] << (8u * i);
     }
     if (magic != JOLT_BYTECODE_MAGIC) {
-        free(bytes);
+        tilly_mem_free(bytes);
         return NULL;
     }
     if (out_len != NULL) {
@@ -308,7 +309,7 @@ int cmd_compile(int argc, char **argv) {
     }
     jolt_program_t *program = NULL;
     int rc = compile_source(input, source, &program);
-    free(source);
+    tilly_mem_free(source);
     if (rc != 0) {
         return 1;
     }
@@ -359,7 +360,7 @@ int cmd_verify(int argc, char **argv) {
     }
     jolt_program_t *program = NULL;
     int rc = compile_source(input, source, &program);
-    free(source);
+    tilly_mem_free(source);
     if (rc != 0) {
         return 1;
     }
@@ -436,7 +437,7 @@ static int info_for_file(const char *path) {
     uint8_t *raw = read_bytecode(path, &raw_size);
     if (raw != NULL) {
         int rc = info_for_bytecode(path, raw, raw_size);
-        free(raw);
+        tilly_mem_free(raw);
         return rc;
     }
     char *source = read_source(path, NULL);
@@ -447,7 +448,7 @@ static int info_for_file(const char *path) {
     jolt_program_t *program = NULL;
     int rc = compile_source(path, source, &program);
     if (rc != 0) {
-        free(source);
+        tilly_mem_free(source);
         return 1;
     }
     size_t size = 0;
@@ -455,7 +456,7 @@ static int info_for_file(const char *path) {
     char name[64];
     extract_kernel_name(source, name, sizeof(name));
     printf("file: %s\nkernel: %s\nbytecode: %zu bytes\n", path, name, size);
-    free(source);
+    tilly_mem_free(source);
     jolt_program_destroy(program);
     return 0;
 }
@@ -656,7 +657,7 @@ int cmd_render(int argc, char **argv) {
     }
 
     const size_t frame_bytes = (size_t)width * (size_t)height * 4u;
-    uint8_t *frame = malloc(frame_bytes);
+    uint8_t *frame = tilly_mem_alloc(frame_bytes);
     if (frame == NULL) {
         fprintf(stderr, "error: out of memory\n");
         cli_session_release(&session);
@@ -667,12 +668,12 @@ int cmd_render(int argc, char **argv) {
     if (status != JFX_SUCCESS) {
         fprintf(stderr, "error: render failed for effect '%s' (%s)\n", effect,
             jfx_result_to_string(status));
-        free(frame);
+        tilly_mem_free(frame);
         cli_session_release(&session);
         return 1;
     }
     const int rc = write_ppm(output, frame, (uint32_t)width, (uint32_t)height);
-    free(frame);
+    tilly_mem_free(frame);
     if (rc != 0) {
         cli_session_release(&session);
         return 1;

@@ -109,6 +109,14 @@ The engine owns all allocations. External callers and kernels never call `malloc
 - **Pool objects** must be returned before the pool is destroyed. Leaked pool slots are a hard error in debug builds.
 - **All allocations** go through Tilly's memory manager; backend code uses the engine's resource budget layer.
 
+Tilly allocator API 2.0 uses stable-address MemTKX free lists and bump regions.
+Default buffers are not libc-compatible. Pair allocation with the named API
+destructor or `tilly_free`; use `tilly/memory.h` / C++17 `memory.hpp` for process
+storage. `src/image.c` configures all stb allocation macros to this same path,
+so decoded and rendered images share `jfx_image_release` ownership. Decode failure
+must leave output untouched; reject memory input sizes exceeding stb's `int` limit.
+See `docs/memory.md` and the `image_memory`/allocator regression tests.
+
 ---
 
 ## Threading Model

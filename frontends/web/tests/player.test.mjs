@@ -41,8 +41,8 @@ test("Emscripten bridge passes a JSON effect envelope to Core", async () => {
   let effect = "";
   const module = {
     HEAPU8: heap,
-    _malloc: () => 128,
-    _free: () => {},
+    _jfx_web_alloc: () => 128,
+    _jfx_web_free: () => {},
     cwrap(name) {
       if (name === "jfx_web_session_create") return (_backend, outputPointer) => {
         new DataView(heap.buffer).setUint32(outputPointer, 9, true); return 0;
@@ -135,7 +135,7 @@ test("NLE exact-frame bridge validates indices and releases failed render buffer
   const heap = new Uint8Array(8192), edits = [], frames = [], freed = [];
   let failed = false;
   const module = {
-    HEAPU8: heap, _malloc: () => 128, _free: pointer => freed.push(pointer),
+    HEAPU8: heap, _jfx_web_alloc: () => 128, _jfx_web_free: pointer => freed.push(pointer),
     cwrap(name) {
       if (name === "jfx_web_session_create") return (_, pointer) => { new DataView(heap.buffer).setUint32(pointer, 9, true); return 0; };
       if (name === "jfx_web_session_destroy" || name === "jfx_web_session_set_effect" || name === "jfx_web_session_render_rgba") return () => 0;
@@ -159,6 +159,29 @@ test("NLE exact-frame bridge validates indices and releases failed render buffer
   assert.throws(() => bridge.renderSequenceFrame(20), /Unable to render/);
   assert.equal(freed.length, before + 1); assert.equal(pixels[0], 17);
   bridge.dispose();
+});
+
+test("WASM ownership survives heap growth, allocation failure and repeated disposal", async () => {
+  let destroyed = 0, fail = false, freed = 0;
+  const module = { HEAPU8: new Uint8Array(2048),
+    _jfx_web_alloc: () => fail ? 0 : 128, _jfx_web_free: () => freed++,
+    cwrap(name) {
+      if (name === "jfx_web_session_create") return (_, p) => { new DataView(module.HEAPU8.buffer).setUint32(p, 9, true); return 0; };
+      if (name === "jfx_web_session_destroy") return () => { destroyed++; return 0; };
+      if (name === "jfx_web_session_set_effect") return () => 0;
+      if (name === "jfx_web_session_render_rgba") return (_, t, w, h, p) => { module.HEAPU8 = new Uint8Array(4096); module.HEAPU8.fill(7, p, p + 4); return 0; };
+      throw new Error(`unexpected export ${name}`);
+    },
+  };
+  const bridge = new EmscriptenJoltBridge(module, 1, 1);
+  assert.equal(bridge.renderFrame(0).pixels[0], 7);
+  fail = true; const before = freed;
+  assert.throws(() => bridge.renderFrame(0), /allocation failed/);
+  assert.equal(freed, before);
+  bridge.dispose(); bridge.dispose(); assert.equal(destroyed, 1);
+  for (const call of [() => bridge.renderFrame(0), () => bridge.edit("undo"), () => bridge.graphState(), () => bridge.saveDocument()])
+    assert.throws(call, /closed/);
+  await assert.rejects(() => bridge.loadPackage(new TextEncoder().encode('{"effect":"invert"}')), /closed/);
 });
 
 class Element {
@@ -236,7 +259,7 @@ test("composition canvas commits one layout edit and typed edge per drag", () =>
 });
 test("composition FFI reads native descriptors/state and frees failed previews", () => {
   const heap = new Uint8Array(2 * 1024 * 1024), freed = [], rendered = []; let failed = false;
-  const module = { HEAPU8: heap, _malloc: () => 128, _free: p => freed.push(p), cwrap(name) {
+  const module = { HEAPU8: heap, _jfx_web_alloc: () => 128, _jfx_web_free: p => freed.push(p), cwrap(name) {
     if (name === "jfx_web_session_create") return (_, p) => { new DataView(heap.buffer).setUint32(p, 9, true); return 0; };
     if (["jfx_web_session_destroy", "jfx_web_session_set_effect", "jfx_web_session_render_rgba"].includes(name)) return () => 0;
     if (name === "jfx_node_catalog" || name === "jfx_web_session_graph_state") return (...args) => {

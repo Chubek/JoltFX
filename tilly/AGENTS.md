@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Tilly** is the foundational runtime engine of JoltFX. It provides the primitive systems that all higher layers depend on: memory management, error handling, logging, reflection, module loading, configuration, and platform abstraction. Tilly is written in C11 and designed for embedding, minimal dependencies, and deterministic resource usage.
+**Tilly** is the foundational runtime engine of JoltFX. It provides the primitive systems that all higher layers depend on: memory management, error handling, logging, reflection, module loading, configuration, and platform abstraction. Tilly exposes C11 interfaces; its private MemTKX allocator adapter uses C++20. It is designed for embedding and deterministic resource ownership.
 
 **TillyZ** is the zero-dependency bootstrap subset of Tilly. It is a self-contained, statically-linkable core (~50KB compiled) that initializes the Tilly runtime without external libraries, making it suitable for embedded systems, WASM targets, and cold-start scenarios.
 
@@ -295,6 +295,14 @@ Once TillyZ has bootstrapped, Tilly extends it with production-grade subsystems.
 ### 1. Memory Manager
 
 Tilly's memory manager provides multiple allocation strategies:
+
+The implemented API is `include/tilly/allocator.h` (allocator API 2.0), backed by
+MemTKX free lists and bump allocation in `src/allocator.cpp`. General capacity is
+a live-payload budget (zero is growable); pool requests fit 64-byte slots; scratch
+capacity includes guards/alignment. Default allocations require Tilly release,
+not libc free/realloc. `memory.h` and C++17 `memory.hpp` provide process-heap
+helpers and STL/RAII ownership. See `docs/memory.md` for the current contract;
+the sketches below describe the original design.
 
 ```c
 typedef enum TillyAllocStrategy {
@@ -934,14 +942,14 @@ TillyStatus load_config(const char* path) {
   - Logging sinks
 
 - **Allocators**: Each `TillyAllocator` has its own lock. Prefer per-thread allocators for performance.
-  Arena, pool and general heap operations and usage snapshots are locked; stack
-  allocators are confined to one thread. General heaps track live payload bytes
-  through allocation headers, including realloc growth/shrink and free. The
-  default allocator retains plain malloc-compatible storage. Pool bookkeeping
-  rejects an already-free slot so duplicate frees cannot corrupt the free list.
-  Peak usage survives reset. `tests/unit/tilly/test_allocator.c` covers these
+  All built-in operations and usage snapshots are locked. Heaps/pools use
+  out-of-band exact-pointer ownership records; default storage is MemTKX-owned.
+  Free/reset require no metadata allocation. ASan guards and free/reset poisoning
+  expose suballocation errors; `TILLY_CHECK_LEAKS=1` adds a process-object census.
+  Peak usage survives reset. `tests/unit/tilly/test_allocator.c` and `test_memory.cpp` cover these
   contracts; do not read the public counters concurrently with mutations.
-  Destroying an allocator clears its calling-thread binding. Custom general
+  Destroying a built-in allocator invalidates TLS bindings via weak lifetime
+  tokens; finish all operations before destruction. Custom general
   allocators without realloc support reject resizing existing blocks instead
   of passing arbitrary storage to libc; null allocation and zero-size free
   still dispatch through the custom callbacks.

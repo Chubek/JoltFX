@@ -12,6 +12,7 @@ export class EmscriptenJoltBridge {
     setEffect;
     renderRgba;
     session;
+    disposed = false;
     audioMixer = 0;
     audioRate = 0;
     exportNumber = 0;
@@ -20,14 +21,16 @@ export class EmscriptenJoltBridge {
         this.module = module;
         this.width = width;
         this.height = height;
-        if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || width > 4096 || height > 4096) {
             throw new RangeError("WASM output dimensions must be positive integers");
         }
         this.create = module.cwrap("jfx_web_session_create", "number", ["string", "number"]);
         this.destroy = module.cwrap("jfx_web_session_destroy", null, ["number"]);
         this.setEffect = module.cwrap("jfx_web_session_set_effect", "number", ["number", "string", "number"]);
         this.renderRgba = module.cwrap("jfx_web_session_render_rgba", "number", ["number", "number", "number", "number", "number", "number"]);
-        const outPointer = module._malloc(4);
+        const outPointer = module._jfx_web_alloc(4);
+        if (!outPointer)
+            throw new Error("WASM heap allocation failed");
         try {
             const result = this.create("webgpu", outPointer);
             if (result !== 0)
@@ -35,12 +38,17 @@ export class EmscriptenJoltBridge {
             this.session = new DataView(module.HEAPU8.buffer).getUint32(outPointer, true);
         }
         finally {
-            module._free(outPointer);
+            module._jfx_web_free(outPointer);
         }
         if (!this.session)
             throw new Error("WASM session creation returned a null handle");
     }
+    ensureOpen() {
+        if (this.disposed)
+            throw new Error("WASM session is closed");
+    }
     loadDocument(text) {
+        this.ensureOpen();
         const bytes = new TextEncoder().encode(text);
         if (!bytes.length || bytes.length > 8 * 1024 * 1024)
             throw new RangeError("Project exceeds 8 MiB");
@@ -55,9 +63,10 @@ export class EmscriptenJoltBridge {
     }
     sequenceDocument() { return this.saveText("jfx_web_session_save_sequence"); }
     saveText(name) {
+        this.ensureOpen();
         const save = this.module.cwrap(name, "number", ["number", "number", "number", "number"]);
         const capacity = 8 * 1024 * 1024;
-        const pointer = this.module._malloc(capacity + 4);
+        const pointer = this.module._jfx_web_alloc(capacity + 4);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         try {
@@ -65,13 +74,16 @@ export class EmscriptenJoltBridge {
             if (result !== 0)
                 throw new Error(`Unable to save project (${result})`);
             const length = new DataView(this.module.HEAPU8.buffer).getUint32(pointer + capacity, true);
+            if (length > capacity)
+                throw new Error("Native document exceeds its buffer");
             return new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, pointer + length));
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
     }
     edit(op, a = 0, b = 0, c = 0, value = 0, text = "") {
+        this.ensureOpen();
         if (![a, b, c].every(index => Number.isInteger(index) && index >= 0 && index <= 0xffffffff) || !Number.isFinite(value))
             throw new RangeError("Edit indices must be nonnegative integers and the value must be finite");
         const command = this.module.cwrap("jfx_web_session_edit", "number", ["number", "string", "number", "number", "number", "number", "string"]);
@@ -81,37 +93,14 @@ export class EmscriptenJoltBridge {
         this.resetAudio();
     }
     colorOperators() {
-        const catalog = this.module.cwrap("jfx_color_catalog", "number", ["number", "number"]);
-        const capacity = 65536, pointer = this.module._malloc(capacity);
-        if (!pointer)
-            throw new Error("WASM heap allocation failed");
-        try {
-            if (catalog(pointer, capacity) !== 0)
-                throw new Error("Unable to read color operator metadata");
-            const end = this.module.HEAPU8.indexOf(0, pointer);
-            return JSON.parse(new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, end)));
-        }
-        finally {
-            this.module._free(pointer);
-        }
+        return this.jsonExport("jfx_color_catalog", false);
     }
     sequenceState() {
-        const state = this.module.cwrap("jfx_web_session_sequence_state", "number", ["number", "number", "number"]);
-        const capacity = 4 * 1024 * 1024, pointer = this.module._malloc(capacity);
-        if (!pointer)
-            throw new Error("WASM heap allocation failed");
-        try {
-            if (state(this.session, pointer, capacity) !== 0)
-                throw new Error("Unable to read NLE state");
-            const end = this.module.HEAPU8.indexOf(0, pointer);
-            return JSON.parse(new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, end)));
-        }
-        finally {
-            this.module._free(pointer);
-        }
+        return this.jsonExport("jfx_web_session_sequence_state", true, 4 * 1024 * 1024);
     }
-    jsonExport(name, session) {
-        const capacity = 1024 * 1024, pointer = this.module._malloc(capacity);
+    jsonExport(name, session, capacity = 1024 * 1024) {
+        this.ensureOpen();
+        const pointer = this.module._jfx_web_alloc(capacity);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         try {
@@ -124,16 +113,17 @@ export class EmscriptenJoltBridge {
             return JSON.parse(new TextDecoder().decode(this.module.HEAPU8.subarray(pointer, pointer + end)));
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
     }
     nodeKinds() { return this.jsonExport("jfx_node_catalog", false); }
     graphState() { return this.jsonExport("jfx_web_session_graph_state", true); }
     renderGraphNode(node, seconds, width = this.width, height = this.height) {
+        this.ensureOpen();
         if (node !== null && (!Number.isInteger(node) || node < 0 || node >= 256) || !Number.isFinite(seconds) || seconds < 0 || seconds > 1e9 ||
             ![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 4096))
             throw new RangeError("Invalid graph preview node, time or raster");
-        const length = width * height * 4, pointer = this.module._malloc(length);
+        const length = width * height * 4, pointer = this.module._jfx_web_alloc(length);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         try {
@@ -143,10 +133,11 @@ export class EmscriptenJoltBridge {
             return { width, height, pixels: new Uint8ClampedArray(this.module.HEAPU8.slice(pointer, pointer + length)) };
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
     }
     importAsset(name, bytes) {
+        this.ensureOpen();
         if (!this.module.FS)
             throw new Error("This WASM build has no virtual filesystem");
         if (bytes.length > 64 * 1024 * 1024)
@@ -157,6 +148,7 @@ export class EmscriptenJoltBridge {
         return path;
     }
     async loadPackage(bytes) {
+        this.ensureOpen();
         const document = new TextDecoder().decode(bytes);
         if (!document.trimStart().startsWith("{")) {
             this.loadDocument(document);
@@ -176,10 +168,11 @@ export class EmscriptenJoltBridge {
             throw new Error(`Core rejected effect '${manifest.effect}' (${result})`);
     }
     renderFrame(timeSeconds) {
+        this.ensureOpen();
         if (!Number.isFinite(timeSeconds) || timeSeconds < 0)
             throw new RangeError("invalid render time");
         const byteLength = this.width * this.height * 4;
-        const pointer = this.module._malloc(byteLength);
+        const pointer = this.module._jfx_web_alloc(byteLength);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         try {
@@ -190,14 +183,15 @@ export class EmscriptenJoltBridge {
                 pixels: new Uint8ClampedArray(this.module.HEAPU8.slice(pointer, pointer + byteLength)) };
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
     }
     renderSequenceFrame(frame) {
+        this.ensureOpen();
         if (!Number.isInteger(frame) || frame < 0 || frame > 0xffffffff)
             throw new RangeError("Invalid sequence frame");
         const render = this.module.cwrap("jfx_web_session_render_frame", "number", ["number", "number", "number", "number", "number", "number"]);
-        const length = this.width * this.height * 4, pointer = this.module._malloc(length);
+        const length = this.width * this.height * 4, pointer = this.module._jfx_web_alloc(length);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         try {
@@ -206,16 +200,17 @@ export class EmscriptenJoltBridge {
             return { width: this.width, height: this.height, pixels: new Uint8ClampedArray(this.module.HEAPU8.slice(pointer, pointer + length)) };
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
     }
     renderAudio(sample, frames, rate = 48000) {
+        this.ensureOpen();
         if (!Number.isSafeInteger(sample) || sample < 0 || sample > 1e12 || !Number.isInteger(frames) || frames < 1 || frames > 65536 ||
             !Number.isInteger(rate) || rate < 8000 || rate > 192000)
             throw new RangeError("Invalid audio sample range");
         if (this.audioRate !== rate)
             this.resetAudio();
-        const pointer = this.module._malloc(frames * 8 + 4);
+        const pointer = this.module._jfx_web_alloc(frames * 8 + 4);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         try {
@@ -233,7 +228,7 @@ export class EmscriptenJoltBridge {
             return new Float32Array(this.module.HEAPU8.slice(pointer, pointer + frames * 8).buffer);
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
     }
     resetAudio() {
@@ -242,13 +237,14 @@ export class EmscriptenJoltBridge {
         this.audioMixer = this.audioRate = 0;
     }
     beginVideoExport(name, start = 0, frames = 0, audio = true, codec = "") {
+        this.ensureOpen();
         if (![start, frames].every(n => Number.isInteger(n) && n >= 0 && n <= 0xffffffff) || !/\.(mp4|mov|mkv|webm)$/.test(name))
             throw new RangeError("Invalid export name or frame range");
         const fs = this.module.FS;
         if (!fs?.readFile || !fs.unlink)
             throw new Error("This WASM build has no export filesystem");
         const path = `/jfx_export_${this.session}_${++this.exportNumber}.${name.split(".").pop()}`;
-        const pointer = this.module._malloc(4);
+        const pointer = this.module._jfx_web_alloc(4);
         if (!pointer)
             throw new Error("WASM heap allocation failed");
         let job;
@@ -260,7 +256,7 @@ export class EmscriptenJoltBridge {
             job = new DataView(this.module.HEAPU8.buffer).getUint32(pointer, true);
         }
         finally {
-            this.module._free(pointer);
+            this.module._jfx_web_free(pointer);
         }
         const step = this.module.cwrap("jfx_export_step", "number", ["number", "number"]);
         const state = this.module.cwrap("jfx_export_state", "number", ["number"]);
@@ -294,6 +290,9 @@ export class EmscriptenJoltBridge {
         return handle;
     }
     dispose() {
+        if (this.disposed)
+            return;
+        this.disposed = true;
         for (const job of this.exports)
             job.dispose();
         this.resetAudio();

@@ -11,6 +11,24 @@ set_tests_properties(cli_integration PROPERTIES LABELS "integration;cli" TIMEOUT
 endif()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME memory_allocation_policy COMMAND "${Python3_EXECUTABLE}"
+        "${PROJECT_SOURCE_DIR}/scripts/check-memory-policy.py" "${PROJECT_SOURCE_DIR}")
+    add_test(NAME memory_tool_edges COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/memory/test_tools.py"
+        "$<TARGET_FILE:joltfmt>" "$<TARGET_FILE:joltdoc>" "$<TARGET_FILE:joltscript-lsp>")
+    set_tests_properties(memory_allocation_policy memory_tool_edges PROPERTIES LABELS "integration;memory" TIMEOUT 60)
+    if(TARGET joltfx_cli)
+        add_test(NAME memory_image_cli COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/memory/test_image_cli.py" "$<TARGET_FILE:joltfx_cli>")
+        set_tests_properties(memory_image_cli PROPERTIES LABELS "integration;memory" TIMEOUT 60)
+    endif()
+    if(JFX_ASAN)
+        add_test(NAME memory_sanitizer_detection COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/memory/test_detection.py" "$<TARGET_FILE:test_memory>")
+        set_tests_properties(memory_sanitizer_detection PROPERTIES LABELS "integration;memory" TIMEOUT 60)
+    endif()
+endif()
 if(JFX_EXT_WASM)
     add_test(NAME cmake_wamr_config COMMAND "${CMAKE_COMMAND}"
         "-DADAPTER_DIR=${PROJECT_SOURCE_DIR}/extif/wasm"
@@ -89,3 +107,9 @@ if(JFX_FRONTEND_DESKTOP)
         )
     endif()
 endif()
+
+# Child CLI/tool processes inherit the object-level MemTKX leak census.
+get_property(memory_tests DIRECTORY PROPERTY TESTS)
+foreach(test IN LISTS memory_tests)
+    set_property(TEST ${test} APPEND PROPERTY ENVIRONMENT "TILLY_CHECK_LEAKS=1")
+endforeach()

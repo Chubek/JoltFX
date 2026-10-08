@@ -11,12 +11,14 @@
  *       --tcp <port>  Use TCP for communication
  */
 
+#include "tilly/memory.h"
 #include "joltscript/compiler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #define JOLTLS_VERSION "0.1.0"
 
@@ -38,44 +40,8 @@ static void print_version(void) {
     printf("joltscript-lsp %s — Joltscript LSP server\n", JOLTLS_VERSION);
 }
 
-/* LSP message handling */
-typedef struct {
-    char *data;
-    size_t size;
-    size_t capacity;
-} buffer_t;
-
-static void buffer_init(buffer_t *buf) {
-    buf->capacity = 4096;
-    buf->size = 0;
-    buf->data = malloc(buf->capacity);
-    if (buf->data) buf->data[0] = 0;
-}
-
-static void buffer_free(buffer_t *buf) {
-    free(buf->data);
-    buf->data = NULL;
-    buf->size = 0;
-    buf->capacity = 0;
-}
-
-static bool buffer_append(buffer_t *buf, const char *data, size_t len) {
-    if (buf->size + len + 1 > buf->capacity) {
-        size_t new_cap = (buf->size + len + 1) * 2;
-        char *new_data = realloc(buf->data, new_cap);
-        if (!new_data) return false;
-        buf->data = new_data;
-        buf->capacity = new_cap;
-    }
-    memcpy(buf->data + buf->size, data, len);
-    buf->size += len;
-    buf->data[buf->size] = 0;
-    return true;
-}
-
+/* Bounded, exact-length LSP messages; malformed lengths never reach allocation. */
 static char *read_message(void) {
-    buffer_t buf;
-    buffer_init(&buf);
     char header[256];
     size_t content_length = 0;
     bool headers_done = false;
@@ -85,18 +51,25 @@ static char *read_message(void) {
             break;
         }
         if (strncmp(header, "Content-Length:", 15) == 0) {
-            content_length = atoi(header + 15);
+            char *start = header + 15, *end;
+            while (*start && isspace((unsigned char)*start)) ++start;
+            if (!isdigit((unsigned char)*start)) return NULL;
+            errno = 0;
+            unsigned long long length = strtoull(start, &end, 10);
+            if (errno || end == start || !length || length > 16u * 1024u * 1024u) return NULL;
+            while (*end && isspace((unsigned char)*end)) ++end;
+            if (*end) return NULL;
+            content_length = (size_t)length;
         }
     }
     if (!headers_done || content_length == 0) {
-        buffer_free(&buf);
         return NULL;
     }
-    char *body = malloc(content_length + 1);
-    if (!body) { buffer_free(&buf); return NULL; }
+    char *body = tilly_mem_alloc(content_length + 1);
+    if (!body) return NULL;
     size_t read = fread(body, 1, content_length, stdin);
+    if (read != content_length) { tilly_mem_free(body); return NULL; }
     body[read] = 0;
-    buffer_free(&buf);
     return body;
 }
 
@@ -144,10 +117,11 @@ static void handle_shutdown(int id, const char *params) {
     send_response(id, "null");
 }
 
+static bool server_running = true;
 static void handle_exit(int id, const char *params) {
     (void)id;
     (void)params;
-    exit(0);
+    server_running = false;
 }
 
 static void handle_request(int id, const char *method, const char *params) {
@@ -191,7 +165,7 @@ static void parse_and_handle(const char *json) {
             char key[256] = {0};
             size_t i = 0;
             while (*p && *p != '"' && i < sizeof(key) - 1) {
-                if (*p == '\\') p++;
+                if (*p == '\\') { if (!p[1]) return; p++; }
                 key[i++] = *p++;
             }
             if (*p == '"') p++;
@@ -207,7 +181,7 @@ static void parse_and_handle(const char *json) {
                 if (*p == '"') p++;
                 size_t i = 0;
                 while (*p && *p != '"' && i < sizeof(method) - 1) {
-                    if (*p == '\\') p++;
+                    if (*p == '\\') { if (!p[1]) return; p++; }
                     method[i++] = *p++;
                 }
                 if (*p == '"') p++;
@@ -242,7 +216,7 @@ static void parse_and_handle(const char *json) {
                     p++;
                 }
             }
-        }
+        } else if (*p && *p != '}') p++;
         if (*p == ',') p++;
     }
 
@@ -254,11 +228,11 @@ static void parse_and_handle(const char *json) {
 }
 
 static void lsp_server(void) {
-    while (1) {
+    while (server_running) {
         char *msg = read_message();
         if (!msg) break;
         parse_and_handle(msg);
-        free(msg);
+        tilly_mem_free(msg);
     }
 }
 

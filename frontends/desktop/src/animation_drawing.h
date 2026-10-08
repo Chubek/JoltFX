@@ -5,8 +5,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
-#include <vector>
-#include <string>
+#include <cstring>
+#include "tilly/memory.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -21,21 +21,21 @@ struct Point { float x=0, y=0; };
 enum class Kind { Brush, Line, Rectangle, Ellipse };
 struct Shape {
     Kind kind=Kind::Brush;
-    std::vector<Point> points;
+    tilly::vector<Point> points;
     uint32_t stroke=0xff302820u, fill=0xffe0a050u;
     float width=3;
     bool filled=true;
 };
-struct Cel { int frame=1; std::vector<Shape> shapes; };
-struct Layer { bool visible=true, locked=false; std::vector<Cel> cels{Cel{}}; };
-struct Document { int frames=120, fps=24; std::vector<Layer> layers{Layer{}}; };
+struct Cel { int frame=1; tilly::vector<Shape> shapes; };
+struct Layer { bool visible=true, locked=false; tilly::vector<Cel> cels{Cel{}}; };
+struct Document { int frames=120, fps=24; tilly::vector<Layer> layers{Layer{}}; };
 struct Editor {
     Document doc;
-    std::vector<Document> past, future;
+    tilly::vector<Document> past, future;
     int frame=1, layer=0, selected=-1, tool=1;
     float stroke[4]={0.12f,0.16f,0.20f,1}, fill[4]={0.31f,0.63f,0.88f,1};
     float width=3, zoom=1;
-    bool filled=true, onion=true, grid=false, playing=false, dragging=false, files_requested=false;
+    bool filled=true, onion=true, grid=false, playing=false, dragging=false, files_requested=false, allocation_failed=false;
     double elapsed=0;
     Point pan{}, last{};
     Shape pending;
@@ -50,20 +50,39 @@ struct Editor {
         return l.cels[(size_t)(&exposure(l,frame)-l.cels.data())];
     }
     bool editable() const { const auto &l=doc.layers[(size_t)layer]; return l.visible && !l.locked && !playing; }
-    void checkpoint() { if(past.size()==32) past.erase(past.begin()); past.push_back(doc); future.clear(); }
+    bool checkpoint() noexcept {
+        try { past.push_back(doc); if(past.size()>32) past.erase(past.begin()); future.clear(); return true; }
+        catch (...) { allocation_failed=true; return false; }
+    }
     void reset_selection() { layer=std::min(layer,(int)doc.layers.size()-1); frame=std::min(frame,doc.frames); selected=-1; dragging=false; playing=false; }
-    void undo() { if(past.empty()) return; future.push_back(doc); doc=past.back(); past.pop_back(); reset_selection(); }
-    void redo() { if(future.empty()) return; past.push_back(doc); doc=future.back(); future.pop_back(); reset_selection(); }
-    void key(bool blank) {
+    void undo() noexcept { try { if(past.empty()) return; future.push_back(doc); doc=std::move(past.back()); past.pop_back(); reset_selection(); } catch (...) { allocation_failed=true; } }
+    void redo() noexcept { try { if(future.empty()) return; past.push_back(doc); doc=std::move(future.back()); future.pop_back(); reset_selection(); } catch (...) { allocation_failed=true; } }
+    void key(bool blank) noexcept { try {
         if(!editable()) return;
         auto &l=doc.layers[(size_t)layer];
         for(auto &c:l.cels) if(c.frame==frame) {
-            if(blank && !c.shapes.empty()) { checkpoint(); c.shapes.clear(); selected=-1; }
+            if(blank && !c.shapes.empty() && checkpoint()) { c.shapes.clear(); selected=-1; }
             return;
         }
-        Cel next{frame,blank?std::vector<Shape>{}:cel().shapes}; checkpoint();
-        l.cels.push_back(next); std::sort(l.cels.begin(),l.cels.end(),[](const Cel&a,const Cel&b){return a.frame<b.frame;}); selected=-1;
-    }
+        Cel next{frame,blank?tilly::vector<Shape>{}:cel().shapes};
+        l.cels.reserve(l.cels.size()+1); if(!checkpoint()) return;
+        l.cels.push_back(std::move(next)); std::sort(l.cels.begin(),l.cels.end(),[](const Cel&a,const Cel&b){return a.frame<b.frame;}); selected=-1;
+    } catch (...) { allocation_failed=true; } }
+    void add_layer() noexcept { try {
+        Layer next; doc.layers.reserve(doc.layers.size()+1);
+        if(!checkpoint()) return;
+        doc.layers.push_back(std::move(next)); layer=(int)doc.layers.size()-1; selected=-1;
+    } catch (...) { allocation_failed=true; } }
+    bool begin_shape(Point p) noexcept { try {
+        // Reserve the entire bounded stroke before opening a gesture. UI input
+        // can then append points without throwing through ImGui scopes.
+        pending.points.reserve(2048); pending.points={p,p}; dragging=true; return true;
+    } catch (...) { allocation_failed=true; dragging=false; return false; } }
+    void commit_shape() noexcept { try {
+        auto &shapes=cel().shapes; shapes.reserve(shapes.size()+1);
+        if(!checkpoint()) return;
+        shapes.push_back(std::move(pending)); selected=(int)shapes.size()-1;
+    } catch (...) { allocation_failed=true; } }
     static float distance(Point p,Point a,Point b) {
         float dx=b.x-a.x,dy=b.y-a.y, length=dx*dx+dy*dy;
         float t=length>0?std::clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/length,0.0f,1.0f):0;
@@ -94,8 +113,9 @@ struct Editor {
     }
     // Bounded, versioned text format. Load validates a temporary document before
     // replacing the current one, so malformed files never erase artwork.
-    bool save(const char *name) const {
-        std::string temporary=std::string(name)+".tmp";
+    bool save(const char *name) const try {
+        if(!name) return false;
+        tilly::string temporary=tilly::string(name)+".tmp";
         FILE *f=std::fopen(temporary.c_str(),"wb"); if(!f) return false;
         std::fprintf(f,"JFXDRAW1 %d %d %zu\n",doc.frames,doc.fps,doc.layers.size());
         for(const auto &l:doc.layers) {
@@ -116,12 +136,15 @@ struct Editor {
 #endif
         if(!ok) std::remove(temporary.c_str());
         return ok;
-    }
-    bool load(const char *name) {
+    } catch (...) { return false; }
+    bool load(const char *name) try {
+        if(!name) return false;
         FILE *f=std::fopen(name,"rb"); if(!f) return false;
+        auto close_file=[](FILE *handle) { std::fclose(handle); };
+        std::unique_ptr<FILE,decltype(close_file)> file(f,close_file);
         Document next; next.layers.clear(); char magic[16]{}; unsigned count=0; size_t total=0;
         bool ok=std::fscanf(f,"%15s %d %d %u",magic,&next.frames,&next.fps,&count)==4;
-        ok=ok && std::string(magic)=="JFXDRAW1" && next.frames>=1 && next.frames<=240 && next.fps>=1 && next.fps<=60 && count>=1 && count<=8;
+        ok=ok && std::strcmp(magic,"JFXDRAW1")==0 && next.frames>=1 && next.frames<=240 && next.fps>=1 && next.fps<=60 && count>=1 && count<=8;
         for(unsigned i=0;ok && i<count;++i) {
             Layer l; l.cels.clear(); int visible=0,locked=0; unsigned keys=0;
             ok=std::fscanf(f,"%d %d %u",&visible,&locked,&keys)==3 && (visible==0 || visible==1) && (locked==0 || locked==1) && keys>=1 && keys<=(unsigned)next.frames;
@@ -145,14 +168,17 @@ struct Editor {
             if(ok) next.layers.push_back(l);
         }
         if(ok) { int ch; do { ch=std::fgetc(f); } while(ch==' ' || ch=='\n' || ch=='\r' || ch=='\t'); ok=ch==EOF && !std::ferror(f); }
-        std::fclose(f); if(!ok) return false;
-        checkpoint(); doc=next; reset_selection(); return true;
-    }
+        if(!ok) return false;
+        if(!checkpoint()) return false;
+        doc=std::move(next); reset_selection(); return true;
+    } catch (...) { return false; }
     bool export_svg(const char *name) const {
+        if(!name) return false;
         FILE *f=std::fopen(name,"wb"); if(!f) return false;
         std::fputs("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"960\" height=\"540\" viewBox=\"0 0 960 540\">\n",f);
         auto rgb=[](uint32_t c) {return ((c&255u)<<16)|(c&0xff00u)|((c>>16)&255u);};
         for(const auto &l:doc.layers) if(l.visible) for(const auto &s:exposure(l,frame).shapes) {
+            if(s.points.size()<2) continue;
             Point a=s.points.front(),b=s.points.back();
             if(s.kind==Kind::Rectangle) std::fprintf(f,"<rect x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\"",(double)std::min(a.x,b.x),(double)std::min(a.y,b.y),(double)std::abs(b.x-a.x),(double)std::abs(b.y-a.y));
             else if(s.kind==Kind::Ellipse) std::fprintf(f,"<ellipse cx=\"%g\" cy=\"%g\" rx=\"%g\" ry=\"%g\"",(double)(a.x+b.x)/2,(double)(a.y+b.y)/2,(double)std::abs(b.x-a.x)/2,(double)std::abs(b.y-a.y)/2);

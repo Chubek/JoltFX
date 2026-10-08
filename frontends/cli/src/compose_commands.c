@@ -5,6 +5,7 @@
  * interchange format in core. So anything a panel can do is scriptable, and a
  * render is reproducible from a text file alone. */
 
+#include "tilly/memory.h"
 #include "commands.h"
 
 #include <math.h>
@@ -45,7 +46,7 @@ static char *read_file(const char *path, size_t *out_size) {
         return NULL;
     }
     rewind(file);
-    char *text = malloc((size_t)length + 1u);
+    char *text = tilly_mem_alloc((size_t)length + 1u);
     if (!text) {
         fclose(file);
         return NULL;
@@ -288,8 +289,9 @@ int cmd_lut(int argc, char **argv) {
             jfx_lut_destroy(lut);
             return fail("cannot decode '%s'", argv[2]);
         }
-        const size_t count = (size_t)image.width * image.height;
-        uint8_t *out = malloc(count * 4u);
+        const uint32_t width = image.width, height = image.height;
+        const size_t count = (size_t)width * height;
+        uint8_t *out = tilly_mem_alloc(count * 4u);
         if (!out) {
             jfx_image_release(&image);
             jfx_lut_destroy(lut);
@@ -299,11 +301,11 @@ int cmd_lut(int argc, char **argv) {
         jfx_image_release(&image);
         jfx_lut_destroy(lut);
         if (status != JFX_SUCCESS) {
-            free(out);
+            tilly_mem_free(out);
             return fail("cannot apply that LUT");
         }
-        const int written = write_ppm(argv[3], out, image.width, image.height);
-        free(out);
+        const int written = write_ppm(argv[3], out, width, height);
+        tilly_mem_free(out);
         if (written != 0) {
             return fail("cannot write '%s'", argv[3]);
         }
@@ -323,10 +325,10 @@ static int render_graph_document(const char *path, const char *output, uint32_t 
         return fail("cannot read '%s'", path);
     }
     jfx_editor_t *editor=jfx_editor_create(320,180);
-    if (!editor) { free(text); return fail("out of memory"); }
+    if (!editor) { tilly_mem_free(text); return fail("out of memory"); }
     char error[256] = { 0 };
     const jfx_result_t status=jfx_editor_load(editor,text,length,error,sizeof(error));
-    free(text);
+    tilly_mem_free(text);
     if (status != JFX_SUCCESS || jfx_editor_kind(editor)!=JFX_PROJECT_KIND_GRAPH) {
         jfx_editor_destroy(editor);
         return fail("%s", error);
@@ -405,11 +407,11 @@ int cmd_render_sequence(int argc, char **argv) {
         return fail("cannot read '%s'", document);
     }
     jfx_editor_t *editor=jfx_editor_create(320,180);
-    if (!editor) { free(text); return fail("out of memory"); }
+    if (!editor) { tilly_mem_free(text); return fail("out of memory"); }
     char error[256] = { 0 };
     const jfx_result_t status =
         jfx_editor_load(editor,text,length,error,sizeof(error));
-    free(text);
+    tilly_mem_free(text);
     if (status != JFX_SUCCESS || jfx_editor_kind(editor)!=JFX_PROJECT_KIND_SEQUENCE) {
         jfx_editor_destroy(editor);
         return fail("%s", error);
@@ -477,7 +479,7 @@ int cmd_project(int argc, char **argv) {
         char error[256] = { 0 };
         const jfx_result_t detected =
             jfx_project_kind_of(text, length, &kind, error, sizeof(error));
-        free(text);
+        tilly_mem_free(text);
         if (detected != JFX_SUCCESS) {
             return fail("%s", error);
         }
@@ -491,7 +493,7 @@ int cmd_project(int argc, char **argv) {
             }
             const jfx_result_t status = jfx_project_load_graph(text, length, &graph, &node, &width,
                 &height, error, sizeof(error));
-            free(text);
+            tilly_mem_free(text);
             if (status != JFX_SUCCESS) {
                 return fail("%s", error);
             }
@@ -511,7 +513,7 @@ int cmd_project(int argc, char **argv) {
             }
             const jfx_result_t status =
                 jfx_project_load_sequence(text, length, &timeline, error, sizeof(error));
-            free(text);
+            tilly_mem_free(text);
             if (status != JFX_SUCCESS) {
                 return fail("%s", error);
             }
@@ -568,7 +570,7 @@ int cmd_project(int argc, char **argv) {
         char error[256] = { 0 };
         const jfx_result_t detected =
             jfx_project_kind_of(text, length, &kind, error, sizeof(error));
-        free(text);
+        tilly_mem_free(text);
         if (detected != JFX_SUCCESS) {
             return fail("%s", error);
         }

@@ -2,8 +2,12 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include "tilly/allocator.h"
 
 int main() {
+    const auto *allocator = tilly_default_allocator();
+    const size_t baseline = tilly_allocator_usage(allocator);
     auto *s = jfx_animation_scene_create(); assert(s);
     jfx_animation_bone_desc_t root{sizeof(root), "root", UINT32_MAX, {{0, 0}, 0, {1, 1}}};
     uint32_t bone = UINT32_MAX; assert(jfx_animation_scene_add_bone(s, &root, &bone) == JFX_SUCCESS);
@@ -21,5 +25,18 @@ int main() {
     tr[0].translation.x = 0;
     assert(jfx_animation_play(bytes, size, 0.5, &pose) == JFX_SUCCESS);
     assert(std::fabs(tr[0].translation.x - 5.0f) < 0.001f);
+    // Structurally sized bytecode must still reject invalid references/fields
+    // before mutating caller output or constructing a partial scene.
+    bytes[16] = 0; bytes[17] = 0; bytes[18] = 0; bytes[19] = 0;
+    tr[0].translation.x = 123;
+    assert(jfx_animation_validate(bytes, size) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(jfx_animation_play(bytes, size, 0.5, &pose) == JFX_ERROR_INVALID_ARGUMENT);
+    assert(tr[0].translation.x == 123);
+    std::memset(bytes + 16, 255, 4);
+    bytes[45] = 255;
+    assert(jfx_animation_validate(bytes, size) == JFX_ERROR_INVALID_ARGUMENT);
+    bytes[45] = JFX_ANIMATION_CURVE_LINEAR;
+    assert(jfx_animation_validate(bytes, size - 1) == JFX_ERROR_INVALID_ARGUMENT);
     jfx_animation_bytes_destroy(bytes); jfx_animation_scene_destroy(s);
+    assert(tilly_allocator_usage(allocator) == baseline);
 }

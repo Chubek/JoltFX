@@ -204,6 +204,11 @@ provide. At least one backend must be enabled.
 
 Presets: `default`, `release`, `sanitizers`, `minimal`.
 
+Native application memory uses the required `third_party/memtkx` checkout through
+Tilly. Building the private allocator adapter requires C++20; public clients remain
+C11/C++17-compatible. Release Tilly-owned storage through its matching allocator
+or API destructor. See [memory ownership and sanitizer checks](docs/memory.md).
+
 ## Documentation
 
 - `AGENTS.md` — architecture and contribution rules
@@ -212,6 +217,7 @@ Presets: `default`, `release`, `sanitizers`, `minimal`.
 - `docs/media.md` — audio mixing, encoded export and media dependencies
 - `docs/plugins.md`, `sdk/` — native/static plugin API, installed CMake SDK and example
 - `docs/extensions.md`, `extif/` — five extension languages, typed host API and CLI scripts
+- `docs/memory.md` — MemTKX allocation, ownership, budgets and safety verification
 - `PROGRESS.md` — what is implemented, what is verified, and what is not
 - `CHANGELOG.md` — release history
 

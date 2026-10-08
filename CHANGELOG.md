@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Application-wide MemTKX allocation through Tilly allocator API 2.0, preserving
+  the C struct layout/signatures while changing default-buffer ownership and
+  general-heap capacity to live-payload budgets. C11 helpers and C++17 STL/RAII
+  adapters; synchronized stable-address heaps/pools, aligned failure-atomic
+  realloc, exact-pointer checks and allocation-free reclamation. Migrated tools,
+  CLI, animation/drawing containers, stb decoding and browser transfer buffers.
+- ASan-visible suballocation guards/free/reset poisoning, process-object leak
+  census, native allocation-policy checks and OOM/ownership/input regressions.
+  Fixed image decoder/render allocator mismatch, failed decode output ownership,
+  tool input/output overreads/undersizing and repeated browser session disposal.
+
 - DAW MIDI clips and VST3 instruments, native plugin editor windows, opaque
   component/controller state persistence, stereo input recording and track-gain/
   plugin-parameter automation lanes. Shared project/history/playback/export

@@ -430,9 +430,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     if (!frontend->editor) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     frontend->animation_tab = jfx_animation_tab_create(kPreviewWidth, kPreviewHeight);
     if (!frontend->animation_tab) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
-    void *drawing_memory=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), sizeof(jfx_drawing::Editor), alignof(jfx_drawing::Editor));
-    if (!drawing_memory) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
-    frontend->drawing=new(drawing_memory) jfx_drawing::Editor();
+    frontend->drawing=tilly::create<jfx_drawing::Editor>();
+    if (!frontend->drawing) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     result=jfx_plugin_host_create(frontend->engine,&frontend->plugins);
     if (result!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(frontend); return result; }
 
@@ -469,10 +468,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
         jfx_desktop_window_capture_end(frontend->window); jfx_audio_recording_destroy(frontend->recording);
         close_inspector(frontend); jfx_export_destroy(frontend->export_job); reset_audio(frontend);
         jfx_animation_tab_destroy(frontend->animation_tab);
-        if (frontend->drawing) {
-            frontend->drawing->~Editor();
-            tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->drawing);
-        }
+        tilly::destroy(frontend->drawing);
     }
     if (!frontend) return;
     event_unsubscribe(JFX_EVENT_KERNEL_SUBMIT, engine_event_sink);

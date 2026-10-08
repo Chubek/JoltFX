@@ -100,12 +100,12 @@ test("real WASM virtual image/LUT resources propagate errors and survive heap gr
   assert.deepEqual(pixels(bridge.renderGraphNode(null, 0)), [100, 50, 25, 255, 10, 20, 40, 255]);
   const retained = bridge.renderGraphNode(null, 0);
   const oldHeap = module.HEAPU8.buffer;
-  const allocation = module._malloc(48 * 1024 * 1024); assert.ok(allocation);
+  const allocation = module._jfx_web_alloc(48 * 1024 * 1024); assert.ok(allocation);
   try {
     assert.notEqual(module.HEAPU8.buffer, oldHeap);
     assert.deepEqual(pixels(bridge.renderGraphNode(null, 0)), pixels(retained));
     assert.deepEqual(pixels(retained), [100, 50, 25, 255, 10, 20, 40, 255]);
-  } finally { module._free(allocation); }
+  } finally { module._jfx_web_free(allocation); }
   bridge.edit("node.path", 0, 0, 0, 0, "/missing/image.ppm");
   assert.throws(() => bridge.renderGraphNode(null, 0), /Unable to render composition/);
   bridge.edit("undo");

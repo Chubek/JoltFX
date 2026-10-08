@@ -1,5 +1,57 @@
 # Progress
 
+## Application-wide MemTKX memory migration (2026-10-08)
+
+- Audited allocation entry points and the vendored MemTKX contract. Most engine,
+  Glue, Execution, backend and extension storage already routed through Tilly;
+  CLI/tools and C++ animation/drawing containers bypassed it before this migration.
+- Replaced Tilly allocation with a private C++20 MemTKX adapter behind the
+  existing C struct/function ABI. Stable-address free lists serve heaps/pools;
+  bump regions serve arenas/stacks. Added exact out-of-band ownership, checked
+  sizes/alignment, live-payload budgets, failure-atomic aligned realloc, locking,
+  idle-page reclamation and weak-token invalidation of destroyed TLS bindings.
+- Added C11 process helpers and C++17 STL/RAII adapters. Migrated context/CLI/tool
+  buffers, animation scenes/bytecode, desktop drawing/history, stb decoding and
+  browser transfer buffers. Hardened tool/animation input boundaries, failed
+  image-load output ownership, drawing OOM commits and post-disposal web calls.
+- Staged checked fixes to the ignored vendor headers through `cmake/MemTKX.cmake`:
+  failure-atomic reservation, safe extents, sorted cell splitting/adjacent merging
+  and allocation-free release. The original checkout is preserved. The low-memory
+  regression caught normal vendor includes taking precedence over staged system
+  includes; fixed the interface target to reference only reviewed headers.
+- Full-suite testing exposed decoded/rendered image ownership mismatches at stb
+  release; configured all stb allocation macros to Tilly. Added native decode/
+  release coverage and a real CLI LUT round trip, also fixing dimensions read
+  after image release. No test failures were suppressed.
+- Added ASan guards/free/reset poisoning and `TILLY_CHECK_LEAKS` process-object
+  census. Regressions cover ownership/budgets/over-alignment, metadata OOM,
+  freeing with allocations disabled, randomized fragmentation, concurrent use,
+  TLS lifetime, UI/history failures, malformed inputs and native allocation policy.
+  Negative subprocess checks prove overrun/underrun/use-after-free/use-after-reset
+  and leak diagnostics actually fire.
+- Final native Debug suite passes **366/366**; full ASan+UBSan all-five-runtime
+  suite passes **369/369**, with leak/strict-string/stack-use checks enabled.
+  Node/TypeScript bridge/UI checks pass **12/12**. One earlier GCC ASan run failed
+  during pre-main sanitizer global registration; subsequent complete runs passed
+  with identical options, including the final run after all allocator/CLI edits.
+- Targeted ThreadSanitizer heap/realloc concurrency and TLS-destruction handoff
+  checks pass. GCC builds and the Clang adapter/headers syntax check have no
+  diagnostics. Installed/relocated C11 and strict C++17 consumers link and run
+  with object leak checks; exports contain neither MemTKX paths nor C++20 features.
+- Release mixed-size, 64-byte-aligned 256-slot fragmentation benchmark measures
+  **204 ns** per alloc/write/free pair (libc baseline **28 ns**, without ownership/
+  guards/over-alignment). Sorted split/merge reduced the first MemTKX measurement
+  from **2.03 microseconds**. Native engine tick benchmark: **96 ns** average over
+  1,000 ticks. These are local microbenchmarks, not end-to-end rendering claims.
+- Updated `docs/memory.md`, README, changelog and subsystem contracts, including
+  allocator API **2.0**: default pointers require Tilly release, general capacity
+  bounds live payload, scratch capacity includes guards/padding. Logs and package
+  fixtures: `/tmp/opencode/jfx-memory-*`. Linux native/headless UI verified;
+  Emscripten and `xvfb-run` are absent, so actual browser WASM/window lanes and
+  Windows/macOS/mobile builds were not run. MemTKX does not itself establish
+  complete raw-pointer safety; documented ownership plus the verified checks
+  define the evidence and coverage. `git diff --check` and allocation policy pass.
+
 ## Desktop vector animation workspace (2026-10-07)
 
 - Confirmed the animation tab only exposes skeleton statistics and bytecode;

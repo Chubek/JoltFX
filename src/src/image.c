@@ -5,7 +5,12 @@
  * includes the header. */
 
 #include "jfx/jfx_image.h"
+#include "tilly/memory.h"
+#include <limits.h>
 
+#define STBI_MALLOC(bytes) tilly_mem_alloc(bytes)
+#define STBI_REALLOC(pointer, bytes) tilly_mem_realloc(pointer, bytes)
+#define STBI_FREE(pointer) tilly_mem_free(pointer)
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO_WRITE
 #define STBI_ONLY_JPEG
@@ -32,10 +37,6 @@ static jfx_result_t adopt(stbi_uc *pixels, int width, int height, int channels,
             (size_t)width > SIZE_MAX / (size_t)height / 4u)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
-    out_image->width = (uint32_t)width;
-    out_image->height = (uint32_t)height;
-    out_image->channels = (uint32_t)channels;
-    out_image->pixels = (uint8_t *)pixels;
     if (options && options->flip_vertically) {
         const size_t stride = (size_t)width * (size_t)channels;
         uint8_t *scratch = tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), stride,
@@ -44,14 +45,18 @@ static jfx_result_t adopt(stbi_uc *pixels, int width, int height, int channels,
             return JFX_ERROR_OUT_OF_MEMORY;
         }
         for (int y = 0; y < height / 2; ++y) {
-            uint8_t *top = out_image->pixels + (size_t)y * stride;
-            uint8_t *bottom = out_image->pixels + (size_t)(height - 1 - y) * stride;
+            uint8_t *top = pixels + (size_t)y * stride;
+            uint8_t *bottom = pixels + (size_t)(height - 1 - y) * stride;
             memcpy(scratch, top, stride);
             memcpy(top, bottom, stride);
             memcpy(bottom, scratch, stride);
         }
         tilly_free((tilly_allocator_t *)tilly_default_allocator(), scratch);
     }
+    out_image->width = (uint32_t)width;
+    out_image->height = (uint32_t)height;
+    out_image->channels = (uint32_t)channels;
+    out_image->pixels = (uint8_t *)pixels;
     (void)options;
     return JFX_SUCCESS;
 }
@@ -75,7 +80,7 @@ jfx_result_t jfx_image_load(const char *path, const jfx_image_load_options_t *op
 
 jfx_result_t jfx_image_load_from_memory(const void *data, size_t size, const char *hint,
     const jfx_image_load_options_t *options, jfx_image_t *out_image) {
-    if (!data || !size || !out_image || out_image->size < sizeof(*out_image)) {
+    if (!data || !size || size > INT_MAX || !out_image || out_image->size < sizeof(*out_image)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     int width = 0, height = 0, channels = 0;

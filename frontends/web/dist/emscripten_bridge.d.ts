@@ -5,8 +5,8 @@ import type { GraphState, NodeKind } from "./composition.js";
 type NativeFunction = (...args: Array<number | string>) => number;
 export interface EmscriptenModule {
     HEAPU8: Uint8Array;
-    _malloc(bytes: number): number;
-    _free(pointer: number): void;
+    _jfx_web_alloc(bytes: number): number;
+    _jfx_web_free(pointer: number): void;
     FS?: {
         writeFile(path: string, bytes: Uint8Array): void;
         readFile?(path: string): Uint8Array;
@@ -23,11 +23,13 @@ export declare class EmscriptenJoltBridge implements JoltWasmBridge {
     private readonly setEffect;
     private readonly renderRgba;
     private readonly session;
+    private disposed;
     private audioMixer;
     private audioRate;
     private exportNumber;
     private readonly exports;
     constructor(module: EmscriptenModule, width?: number, height?: number);
+    private ensureOpen;
     loadDocument(text: string): void;
     saveDocument(): string;
     sequenceDocument(): string;

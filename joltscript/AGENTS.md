@@ -637,6 +637,12 @@ IR (Joltscript IR — SSA-based, kernel-aware)
 
 ## Tooling
 
+Native compiler/tool buffers use Tilly's MemTKX-backed allocation. Pair process
+helpers in `tilly/memory.h` with `tilly_mem_free`; validate size arithmetic, OOM
+and input boundaries before access. The LSP caps exact-length messages at 16 MiB
+and frees the current request before exit. `memory_tool_edges` exercises empty,
+large and malformed formatter/documentation/LSP input under sanitizers.
+
 | Tool | Purpose |
 |------|---------|
 | `joltc` | Compiler driver (all targets) |

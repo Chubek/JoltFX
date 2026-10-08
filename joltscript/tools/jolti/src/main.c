@@ -10,6 +10,7 @@
  *   -e, --eval <expr>  Evaluate expression and exit
  */
 
+#include "tilly/memory.h"
 #include "joltscript/compiler.h"
 #include "joltscript/vm.h"
 #include <stdio.h>
@@ -76,11 +77,11 @@ static int eval_source(const char *source, const char *name) {
         return 1;
     }
 
-    float *in = calloc(inputs, sizeof(float));
-    float *out = calloc(outputs, sizeof(float));
+    float *in = tilly_mem_calloc(inputs ? inputs : 1, sizeof(float));
+    float *out = tilly_mem_calloc(outputs ? outputs : 1, sizeof(float));
     if (!in || !out) {
         fprintf(stderr, "error: out of memory\n");
-        free(in); free(out);
+        tilly_mem_free(in); tilly_mem_free(out);
         jolt_vm_destroy(vm);
         jolt_program_destroy(program);
         return 1;
@@ -89,14 +90,14 @@ static int eval_source(const char *source, const char *name) {
     status = jolt_vm_run(vm, data, size, in, inputs, out, outputs);
     if (status != JOLT_OK) {
         fprintf(stderr, "error: execution failed with status %d\n", status);
-        free(in); free(out);
+        tilly_mem_free(in); tilly_mem_free(out);
         jolt_vm_destroy(vm);
         jolt_program_destroy(program);
         return 1;
     }
 
     print_result(out, outputs);
-    free(in); free(out);
+    tilly_mem_free(in); tilly_mem_free(out);
     jolt_vm_destroy(vm);
     jolt_program_destroy(program);
     return 0;

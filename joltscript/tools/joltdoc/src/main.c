@@ -12,6 +12,7 @@
  *       --stdin          Read from stdin, write to stdout
  */
 
+#include "tilly/memory.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,7 +49,7 @@ static char *read_file(const char *path, size_t *out_size) {
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (size < 0) { fclose(f); return NULL; }
-    char *buf = malloc((size_t)size + 1);
+    char *buf = tilly_mem_alloc((size_t)size + 1);
     if (!buf) { fclose(f); return NULL; }
     size_t read = fread(buf, 1, (size_t)size, f);
     buf[read] = 0;
@@ -60,14 +61,15 @@ static char *read_file(const char *path, size_t *out_size) {
 static char *read_stdin(size_t *out_size) {
     size_t capacity = 4096;
     size_t size = 0;
-    char *buf = malloc(capacity);
+    char *buf = tilly_mem_alloc(capacity);
     if (!buf) return NULL;
     int c;
     while ((c = fgetc(stdin)) != EOF) {
         if (size + 1 >= capacity) {
+            if (capacity > SIZE_MAX / 2) { tilly_mem_free(buf); return NULL; }
             capacity *= 2;
-            char *new_buf = realloc(buf, capacity);
-            if (!new_buf) { free(buf); return NULL; }
+            char *new_buf = tilly_mem_realloc(buf, capacity);
+            if (!new_buf) { tilly_mem_free(buf); return NULL; }
             buf = new_buf;
         }
         buf[size++] = (char)c;
@@ -88,9 +90,13 @@ static int write_file(const char *path, const char *content) {
 
 /* Extract documentation from source */
 static char *extract_docs(const char *src, bool html) {
-    size_t capacity = strlen(src) * 2;
+    /* Every emitted form has at most its source length plus 80 markup bytes;
+     * the shortest recognized form has five source bytes.
+     * Reserve a checked worst case including the fixed HTML header/footer. */
+    if (strlen(src) > (SIZE_MAX - 4096) / 16) return NULL;
+    size_t capacity = strlen(src) * 16 + 4096;
     size_t size = 0;
-    char *out = malloc(capacity);
+    char *out = tilly_mem_alloc(capacity);
     if (!out) return NULL;
 
     if (html) {
@@ -124,8 +130,8 @@ static char *extract_docs(const char *src, bool html) {
             size_t len = p - start;
             if (size + len + 16 > capacity) {
                 capacity = (size + len + 16) * 2;
-                char *new_out = realloc(out, capacity);
-                if (!new_out) { free(out); return NULL; }
+                char *new_out = tilly_mem_realloc(out, capacity);
+                if (!new_out) { tilly_mem_free(out); return NULL; }
                 out = new_out;
             }
             memcpy(out + size, start, len);
@@ -143,7 +149,8 @@ static char *extract_docs(const char *src, bool html) {
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(') p++;
             size_t name_len = p - name_start;
-            char *name = strndup(name_start, name_len);
+            char *name = tilly_mem_strndup(name_start, name_len);
+            if (!name) { tilly_mem_free(out); return NULL; }
 
             if (html) {
                 size += sprintf(out + size, "<div class=\"kernel\">\n");
@@ -151,7 +158,7 @@ static char *extract_docs(const char *src, bool html) {
             } else {
                 size += sprintf(out + size, "## `%s`\n\n", name);
             }
-            free(name);
+            tilly_mem_free(name);
 
             /* Find the body */
             int depth = 1;
@@ -171,14 +178,15 @@ static char *extract_docs(const char *src, bool html) {
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(' && *p != '[') p++;
             size_t name_len = p - name_start;
-            char *name = strndup(name_start, name_len);
+            char *name = tilly_mem_strndup(name_start, name_len);
+            if (!name) { tilly_mem_free(out); return NULL; }
 
             if (html) {
                 size += sprintf(out + size, "<h2><code>%s</code></h2>\n", name);
             } else {
                 size += sprintf(out + size, "## `%s`\n\n", name);
             }
-            free(name);
+            tilly_mem_free(name);
 
             /* Find the body */
             int depth = 1;
@@ -198,14 +206,15 @@ static char *extract_docs(const char *src, bool html) {
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(' && *p != '[') p++;
             size_t name_len = p - name_start;
-            char *name = strndup(name_start, name_len);
+            char *name = tilly_mem_strndup(name_start, name_len);
+            if (!name) { tilly_mem_free(out); return NULL; }
 
             if (html) {
                 size += sprintf(out + size, "<h2><code>%s</code> <em>(macro)</em></h2>\n", name);
             } else {
                 size += sprintf(out + size, "## `%s` *(macro)*\n\n", name);
             }
-            free(name);
+            tilly_mem_free(name);
 
             /* Find the body */
             int depth = 1;
@@ -225,14 +234,15 @@ static char *extract_docs(const char *src, bool html) {
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(') p++;
             size_t name_len = p - name_start;
-            char *name = strndup(name_start, name_len);
+            char *name = tilly_mem_strndup(name_start, name_len);
+            if (!name) { tilly_mem_free(out); return NULL; }
 
             if (html) {
                 size += sprintf(out + size, "<h2><code>%s</code> <em>(constant)</em></h2>\n", name);
             } else {
                 size += sprintf(out + size, "## `%s` *(constant)*\n\n", name);
             }
-            free(name);
+            tilly_mem_free(name);
 
             /* Find the body */
             int depth = 1;
@@ -323,7 +333,7 @@ int main(int argc, char **argv) {
     char *docs = extract_docs(source, opts.html_output);
     if (!docs) {
         fprintf(stderr, "error: documentation generation failed\n");
-        free(source);
+        tilly_mem_free(source);
         return 1;
     }
 
@@ -332,8 +342,8 @@ int main(int argc, char **argv) {
     } else if (opts.output_path) {
         if (write_file(opts.output_path, docs) != 0) {
             fprintf(stderr, "error: cannot write '%s'\n", opts.output_path);
-            free(source);
-            free(docs);
+            tilly_mem_free(source);
+            tilly_mem_free(docs);
             return 1;
         }
         printf("Generated documentation %s -> %s\n", opts.input_path, opts.output_path);
@@ -341,7 +351,7 @@ int main(int argc, char **argv) {
         printf("%s", docs);
     }
 
-    free(source);
-    free(docs);
+    tilly_mem_free(source);
+    tilly_mem_free(docs);
     return 0;
 }

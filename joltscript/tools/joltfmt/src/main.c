@@ -12,6 +12,7 @@
  *       --stdin          Read from stdin, write to stdout
  */
 
+#include "tilly/memory.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,7 +51,7 @@ static char *read_file(const char *path, size_t *out_size) {
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (size < 0) { fclose(f); return NULL; }
-    char *buf = malloc((size_t)size + 1);
+    char *buf = tilly_mem_alloc((size_t)size + 1);
     if (!buf) { fclose(f); return NULL; }
     size_t read = fread(buf, 1, (size_t)size, f);
     buf[read] = 0;
@@ -62,14 +63,15 @@ static char *read_file(const char *path, size_t *out_size) {
 static char *read_stdin(size_t *out_size) {
     size_t capacity = 4096;
     size_t size = 0;
-    char *buf = malloc(capacity);
+    char *buf = tilly_mem_alloc(capacity);
     if (!buf) return NULL;
     int c;
     while ((c = fgetc(stdin)) != EOF) {
         if (size + 1 >= capacity) {
+            if (capacity > SIZE_MAX / 2) { tilly_mem_free(buf); return NULL; }
             capacity *= 2;
-            char *new_buf = realloc(buf, capacity);
-            if (!new_buf) { free(buf); return NULL; }
+            char *new_buf = tilly_mem_realloc(buf, capacity);
+            if (!new_buf) { tilly_mem_free(buf); return NULL; }
             buf = new_buf;
         }
         buf[size++] = (char)c;
@@ -152,31 +154,33 @@ static void lexer_skip_ws(lexer_t *lex) {
 static token_t *lexer_next(lexer_t *lex) {
     lexer_skip_ws(lex);
     if (lex->pos >= lex->len) {
-        token_t *tok = calloc(1, sizeof(token_t));
+        token_t *tok = tilly_mem_calloc(1, sizeof(token_t));
+        if (!tok) return NULL;
         tok->type = TOKEN_EOF;
         return tok;
     }
     char c = lex->src[lex->pos];
-    token_t *tok = calloc(1, sizeof(token_t));
+    token_t *tok = tilly_mem_calloc(1, sizeof(token_t));
+    if (!tok) return NULL;
     tok->line = lex->line;
     tok->col = lex->col;
-    if (c == '(') { tok->type = TOKEN_LPAREN; tok->text = strdup("("); tok->len = 1; lex->pos++; lex->col++; }
-    else if (c == ')') { tok->type = TOKEN_RPAREN; tok->text = strdup(")"); tok->len = 1; lex->pos++; lex->col++; }
-    else if (c == '[') { tok->type = TOKEN_LBRACKET; tok->text = strdup("["); tok->len = 1; lex->pos++; lex->col++; }
-    else if (c == ']') { tok->type = TOKEN_RBRACKET; tok->text = strdup("]"); tok->len = 1; lex->pos++; lex->col++; }
-    else if (c == '{') { tok->type = TOKEN_LBRACE; tok->text = strdup("{"); tok->len = 1; lex->pos++; lex->col++; }
-    else if (c == '}') { tok->type = TOKEN_RBRACE; tok->text = strdup("}"); tok->len = 1; lex->pos++; lex->col++; }
+    if (c == '(') { tok->type = TOKEN_LPAREN; tok->text = tilly_mem_strdup("("); tok->len = 1; lex->pos++; lex->col++; }
+    else if (c == ')') { tok->type = TOKEN_RPAREN; tok->text = tilly_mem_strdup(")"); tok->len = 1; lex->pos++; lex->col++; }
+    else if (c == '[') { tok->type = TOKEN_LBRACKET; tok->text = tilly_mem_strdup("["); tok->len = 1; lex->pos++; lex->col++; }
+    else if (c == ']') { tok->type = TOKEN_RBRACKET; tok->text = tilly_mem_strdup("]"); tok->len = 1; lex->pos++; lex->col++; }
+    else if (c == '{') { tok->type = TOKEN_LBRACE; tok->text = tilly_mem_strdup("{"); tok->len = 1; lex->pos++; lex->col++; }
+    else if (c == '}') { tok->type = TOKEN_RBRACE; tok->text = tilly_mem_strdup("}"); tok->len = 1; lex->pos++; lex->col++; }
     else if (c == '"') {
         size_t start = lex->pos;
         lex->pos++; lex->col++;
         while (lex->pos < lex->len && lex->src[lex->pos] != '"') {
-            if (lex->src[lex->pos] == '\\') { lex->pos++; lex->col++; }
+            if (lex->src[lex->pos] == '\\' && lex->pos + 1 < lex->len) { lex->pos++; lex->col++; }
             lex->pos++; lex->col++;
         }
         if (lex->pos < lex->len) { lex->pos++; lex->col++; }
         tok->type = TOKEN_STRING;
         tok->len = lex->pos - start;
-        tok->text = strndup(lex->src + start, tok->len);
+        tok->text = tilly_mem_strndup(lex->src + start, tok->len);
     }
     else if (c == ':') {
         size_t start = lex->pos;
@@ -190,7 +194,7 @@ static token_t *lexer_next(lexer_t *lex) {
         }
         tok->type = TOKEN_KEYWORD;
         tok->len = lex->pos - start;
-        tok->text = strndup(lex->src + start, tok->len);
+        tok->text = tilly_mem_strndup(lex->src + start, tok->len);
     }
     else if (c == ';') {
         size_t start = lex->pos;
@@ -199,7 +203,7 @@ static token_t *lexer_next(lexer_t *lex) {
         }
         tok->type = TOKEN_COMMENT;
         tok->len = lex->pos - start;
-        tok->text = strndup(lex->src + start, tok->len);
+        tok->text = tilly_mem_strndup(lex->src + start, tok->len);
     }
     else {
         size_t start = lex->pos;
@@ -211,7 +215,8 @@ static token_t *lexer_next(lexer_t *lex) {
             lex->pos++; lex->col++;
         }
         tok->len = lex->pos - start;
-        tok->text = strndup(lex->src + start, tok->len);
+        tok->text = tilly_mem_strndup(lex->src + start, tok->len);
+        if (!tok->text) { tilly_mem_free(tok); return NULL; }
         /* Check if it's a number */
         char *end;
         strtod(tok->text, &end);
@@ -221,29 +226,32 @@ static token_t *lexer_next(lexer_t *lex) {
             tok->type = TOKEN_SYMBOL;
         }
     }
+    if (!tok->text) { tilly_mem_free(tok); return NULL; }
     return tok;
 }
 
 static void token_free(token_t *tok) {
-    if (tok) { free(tok->text); free(tok); }
+    if (tok) { tilly_mem_free(tok->text); tilly_mem_free(tok); }
 }
 
 /* Simple formatter: re-indent with 2-space indentation */
 static char *format_source(const char *src) {
     lexer_t lex;
     lexer_init(&lex, lex.src = src);
-    size_t capacity = strlen(src) * 2;
+    if (strlen(src) > (SIZE_MAX - 32) / 2) return NULL;
+    size_t capacity = strlen(src) * 2 + 32;
     size_t size = 0;
-    char *out = malloc(capacity);
+    char *out = tilly_mem_alloc(capacity);
     if (!out) return NULL;
-    int indent = 0;
+    size_t indent = 0;
     bool at_line_start = true;
     token_t *tok;
-    while ((tok = lexer_next(&lex))->type != TOKEN_EOF) {
+    while ((tok = lexer_next(&lex)) && tok->type != TOKEN_EOF) {
+        if (tok->len > SIZE_MAX - size - 16) { token_free(tok); tilly_mem_free(out); return NULL; }
         if (size + tok->len + 16 > capacity) {
-            capacity = (size + tok->len + 16) * 2;
-            char *new_out = realloc(out, capacity);
-            if (!new_out) { free(out); token_free(tok); return NULL; }
+            capacity = size + tok->len + 16;
+            char *new_out = tilly_mem_realloc(out, capacity);
+            if (!new_out) { tilly_mem_free(out); token_free(tok); return NULL; }
             out = new_out;
         }
         if (tok->type == TOKEN_LPAREN || tok->type == TOKEN_LBRACKET || tok->type == TOKEN_LBRACE) {
@@ -252,7 +260,7 @@ static char *format_source(const char *src) {
             indent++;
             at_line_start = false;
         } else if (tok->type == TOKEN_RPAREN || tok->type == TOKEN_RBRACKET || tok->type == TOKEN_RBRACE) {
-            indent--;
+            if (indent) indent--;
             memcpy(out + size, tok->text, tok->len); size += tok->len;
             at_line_start = false;
         } else if (tok->type == TOKEN_COMMENT) {
@@ -261,7 +269,8 @@ static char *format_source(const char *src) {
             at_line_start = false;
         } else {
             if (at_line_start) {
-                for (int i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
+                /* Leading indentation is zero in this flat profile. */
+                for (size_t i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
                 at_line_start = false;
             } else {
                 out[size++] = ' ';
@@ -270,6 +279,7 @@ static char *format_source(const char *src) {
         }
         token_free(tok);
     }
+    if (!tok) { tilly_mem_free(out); return NULL; }
     token_free(tok);
     out[size++] = '\n';
     out[size] = 0;
@@ -333,20 +343,20 @@ int main(int argc, char **argv) {
     char *formatted = format_source(source);
     if (!formatted) {
         fprintf(stderr, "error: formatting failed\n");
-        free(source);
+        tilly_mem_free(source);
         return 1;
     }
 
     if (opts.check_only) {
         if (strcmp(source, formatted) != 0) {
             fprintf(stderr, "error: file is not formatted\n");
-            free(source);
-            free(formatted);
+            tilly_mem_free(source);
+            tilly_mem_free(formatted);
             return 1;
         }
         printf("OK\n");
-        free(source);
-        free(formatted);
+        tilly_mem_free(source);
+        tilly_mem_free(formatted);
         return 0;
     }
 
@@ -355,8 +365,8 @@ int main(int argc, char **argv) {
     } else if (opts.output_path) {
         if (write_file(opts.output_path, formatted) != 0) {
             fprintf(stderr, "error: cannot write '%s'\n", opts.output_path);
-            free(source);
-            free(formatted);
+            tilly_mem_free(source);
+            tilly_mem_free(formatted);
             return 1;
         }
         printf("Formatted %s -> %s\n", opts.input_path, opts.output_path);
@@ -364,7 +374,7 @@ int main(int argc, char **argv) {
         printf("%s", formatted);
     }
 
-    free(source);
-    free(formatted);
+    tilly_mem_free(source);
+    tilly_mem_free(formatted);
     return 0;
 }

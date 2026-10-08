@@ -2,6 +2,7 @@
 #include "tilly/allocator.h"
 #include "tilly/logger.h"
 #include "tilly/module.h"
+#include "tilly/memory.h"
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
@@ -25,28 +26,28 @@ tilly_context_t *tilly_init(const tilly_config_t *config) {
     }
     
     // Create context
-    tilly_context_t *ctx = calloc(1, sizeof(tilly_context_t));
+    tilly_context_t *ctx = tilly_mem_calloc(1, sizeof(tilly_context_t));
     if (!ctx) {
         return NULL;
     }
     
     ctx->bootstrap_ctx = default_config.bootstrap_ctx;
-    if (pthread_mutex_init(&ctx->module_lock, NULL) != 0) { free(ctx); return NULL; }
+    if (pthread_mutex_init(&ctx->module_lock, NULL) != 0) { tilly_mem_free(ctx); return NULL; }
     pthread_mutexattr_t attributes;
     if (pthread_mutexattr_init(&attributes) != 0) {
-        pthread_mutex_destroy(&ctx->module_lock); free(ctx); return NULL;
+        pthread_mutex_destroy(&ctx->module_lock); tilly_mem_free(ctx); return NULL;
     }
     int status = pthread_mutexattr_settype(&attributes, PTHREAD_MUTEX_RECURSIVE);
     if (!status) status = pthread_mutex_init(&ctx->lifecycle_lock, &attributes);
     pthread_mutexattr_destroy(&attributes);
-    if (status) { pthread_mutex_destroy(&ctx->module_lock); free(ctx); return NULL; }
+    if (status) { pthread_mutex_destroy(&ctx->module_lock); tilly_mem_free(ctx); return NULL; }
     
     // Create heap allocator
     ctx->heap = tilly_allocator_create(TILLY_ALLOC_GENERAL, default_config.heap_size);
     if (!ctx->heap) {
         pthread_mutex_destroy(&ctx->lifecycle_lock);
         pthread_mutex_destroy(&ctx->module_lock);
-        free(ctx);
+        tilly_mem_free(ctx);
         return NULL;
     }
     
@@ -91,7 +92,7 @@ void tilly_shutdown(tilly_context_t *ctx) {
     if (--runtime_count == 0) tilly_log_shutdown();
     pthread_mutex_unlock(&runtime_lock);
     
-    free(ctx);
+    tilly_mem_free(ctx);
 }
 
 tilly_allocator_t *tilly_get_heap_allocator(tilly_context_t *ctx) {

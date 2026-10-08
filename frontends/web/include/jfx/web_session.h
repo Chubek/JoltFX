@@ -14,6 +14,15 @@ extern "C" {
 
 typedef struct jfx_web_session jfx_web_session_t;
 
+#define JFX_WEB_MEMORY_API_MAJOR 1
+#define JFX_WEB_MEMORY_API_MINOR 0
+#define JFX_WEB_MEMORY_API_PATCH 0
+/* Browser transfer buffers share the process MemTKX heap. Allocations are
+ * aligned for fundamental types and survive individual session teardown.
+ * Free only through jfx_web_free; zero-size allocation returns NULL. */
+void *jfx_web_alloc(size_t bytes);
+void jfx_web_free(void *pointer);
+
 jfx_result_t jfx_web_session_create(const char *backend_name,
     jfx_web_session_t **out_session);
 void jfx_web_session_destroy(jfx_web_session_t *session);

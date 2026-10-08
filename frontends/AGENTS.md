@@ -368,6 +368,13 @@ Run `npm --prefix frontends/web test` for UI/bridge unit tests. Run
 `JFX_WASM_MODULE=/absolute/path/to/joltfx_web.js npm --prefix frontends/web run test:wasm`
 against the actual module before changing exports, memory settings or the bridge.
 
+Native transfer storage uses `jfx_web_alloc` / `jfx_web_free` over the process
+MemTKX heap; never mix those pointers with Emscripten `_free`. The bridge must
+release on failure, refresh views after growth and reject calls after disposal.
+Desktop drawing uses `tilly::vector`/`string`; reserve fallible mutations before
+checkpoint/commit, and recover allocation failures inside UI operations so C++
+exceptions cannot cross C callbacks or leave ImGui scopes open. See `docs/memory.md`.
+
 ### Mobile (Android)
 
 Requires JDK 17, SDK/build tools 35, NDK 27.2.12479018 and CMake 3.22.1.
