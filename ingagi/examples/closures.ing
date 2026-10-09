@@ -1,0 +1,10 @@
+module examples::closures;
+
+fn adder(n: i32) {
+    return |x: i32| { return n + x; };
+}
+
+fn main() {
+    let add_two = adder(2);
+    return add_two(40);
+}

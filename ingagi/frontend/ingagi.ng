@@ -1,0 +1,229 @@
+// Ingagi core grammar for NovoParse (third_party/novoparse).
+//
+// Draft grammar derived from Ingagi.ebnf. Native builds with the novoparse
+// tag use this grammar for scannerless recognition before Go AST lowering.
+// NGRuleCoverage is a bookkeeping map, not a proof of parser equivalence.
+// Validate with: novoparse check ingagi.ng
+//
+// The grammar is scannerless: %skip trivia applies between every terminal,
+// and overlapping terminals (e.g. "<" vs "<<=") resolve by grammar context,
+// The full language reference remains frontend/Ingagi.ebnf. Generic syntax
+// is parsed but monomorphization is not implemented; async runs synchronously.
+
+%grammar Ingagi;
+%start compilation_unit;
+%disambiguate first;
+%skip /([ \t\r\n]|\/\/[^\n]*)+/;
+%token IDENT /[A-Za-z_][A-Za-z0-9_]*/;
+%token INT /0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|[0-9][0-9_]*/;
+%token FLOAT /[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?|[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*/;
+%token STRING /"([^"\\\n]|\\(["\\\/bfnrt]|u[0-9a-fA-F]{4}))*"/;
+%token CHAR /'([^'\\\n]|\\(['"\\nrt0]|x[0-9a-fA-F]{2}))'/;
+
+%right "=" "+=" "-=" "*=" "/=" "%=" "&=" "|=" "^=" "<<=" ">>=";
+%right "?" ":";
+%left "||";
+%left "&&";
+%left "|";
+%left "^";
+%left "&";
+%left "==" "!=";
+%left "<" "<=" ">" ">=";
+%left "<<" ">>";
+%left "+" "-";
+%left "*" "/" "%";
+%right "!" "~";
+%left "." "->" "(" "[";
+
+compilation_unit: module_decl? import_decl* external_decl* => CompilationUnit;
+
+module_decl: "module" qualified_name ";" => ModuleDecl;
+
+import_decl: "import" qualified_name ("as" IDENT)? ";" => ImportDecl;
+
+external_decl: attr_list extern_body => ExternalDecl;
+extern_body: const_decl | type_alias_decl | struct_decl | enum_decl
+           | func_decl | component_decl | entity_decl | system_decl
+           | event_decl | resource_decl | shader_decl | pipeline_decl
+           | interface_decl | extend_decl | extern_decl => ExternBody;
+
+attr_list: attribute* => AttrList;
+attribute: "@" IDENT ("(" arg_list? ")")? => Attribute;
+
+visibility: "public" | "private" | "internal" => Visibility;
+
+const_decl: visibility? "const" IDENT (":" type_expr)? "=" expr ";" => ConstDecl;
+type_alias_decl: visibility? "type" IDENT generic_params? "=" type_expr ";" => TypeAliasDecl;
+generic_params: "<" IDENT ("," IDENT)* ">" => GenericParams;
+
+extern_decl: "extern" STRING "{" (func_decl | var_decl_stmt)* "}" => ExternDecl;
+extend_decl: "extend" type_expr block => ExtendDecl;
+
+struct_decl: visibility? "struct" IDENT generic_params? (":" type_list)? "{" struct_member* "}" => StructDecl;
+struct_member: attr_list (var_decl_stmt | func_decl) => StructMember;
+
+enum_decl: visibility? "enum" IDENT (":" type_expr)? "{" enum_variants ","? "}" => EnumDecl;
+enum_variants: enum_variant ("," enum_variant)* => EnumVariants;
+enum_variant: IDENT ("(" type_list ")")? ("=" expr)? => EnumVariant;
+
+type_list: type_expr ("," type_expr)* => TypeList;
+type_expr: qualified_type "?"? => TypeName
+         | "[" type_expr ";" expr "]" => ArrayType
+         | "(" type_list? ")" => TupleType
+         | "fn" "(" param_type_list? ")" ("->" type_expr)? => FnType
+         | "&" "mut"? type_expr => RefType
+         | "*" "mut"? type_expr => PtrType;
+qualified_type: IDENT ("::" IDENT)* generic_args? => QualifiedType;
+generic_args: "<" type_expr ("," type_expr)* ">" => GenericArgs;
+param_type_list: type_expr ("," type_expr)* => ParamTypeList;
+
+var_decl_stmt: attr_list ("let" | "var")? IDENT (":" type_expr)? ("=" expr)? ";" => VarDecl;
+
+func_decl: visibility? "async"? "fn" IDENT generic_params? "(" param_list? ")" ("->" type_expr)? (block | ";") => FuncDecl;
+param_list: param ("," param)* ","? => ParamList;
+param: attr_list "mut"? IDENT ":" type_expr ("=" expr)? => Param;
+
+block: "{" stmt* expr? "}" => Block;
+
+// --- expressions (precedence resolved by %left/%right above) ---
+expr: assign_expr => Expr;
+assign_expr: ternary_expr (assign_op assign_expr)? => AssignExpr;
+assign_op: "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" => AssignOp;
+ternary_expr: or_expr ("?" expr ":" expr)? => TernaryExpr;
+or_expr: and_expr ("||" and_expr)* => OrExpr;
+and_expr: bitor_expr ("&&" bitor_expr)* => AndExpr;
+bitor_expr: bitxor_expr ("|" bitxor_expr)* => BitorExpr;
+bitxor_expr: bitand_expr ("^" bitxor_expr)* => BitxorExpr;
+bitand_expr: eq_expr ("&" eq_expr)* => BitandExpr;
+eq_expr: rel_expr (("==" | "!=") rel_expr)* => EqExpr;
+rel_expr: shift_expr (("<" | "<=" | ">" | ">=") shift_expr)* => RelExpr;
+shift_expr: add_expr (("<<" | ">>") add_expr)* => ShiftExpr;
+add_expr: mul_expr (("+" | "-") mul_expr)* => AddExpr;
+mul_expr: unary_expr (("*" | "/" | "%") unary_expr)* => MulExpr;
+unary_expr: ("!" | "~" | "-" | "+" | "*" | "&" | "await")* postfix_expr => UnaryExpr;
+postfix_expr: primary_expr postfix_suffix* => PostfixExpr;
+postfix_suffix: "(" arg_list? ")" => CallSuffix
+              | ("." | "->") IDENT => MemberSuffix
+              | "[" expr "]" => IndexSuffix
+              | "?" => QuestionSuffix;
+arg_list: arg ("," arg)* ","? => ArgList;
+arg: (IDENT ":")? expr => Arg;
+primary_expr: literal | IDENT | qualified_name | "self" => PrimarySimple
+            | "(" expr ")" => ParenExpr
+            | "(" expr "," arg_list? ")" => TupleExpr
+            | "[" arg_list? "]" => ArrayExpr
+            | "[" expr ";" expr "]" => ArrayRepeatExpr
+            | qualified_name "{" struct_inits? "}" => StructExpr
+            | lambda_expr => LambdaExpr
+            | "if" expr block ("else" (block | if_expr))? => IfExpr
+            | "match" expr "{" match_arms "}" => MatchExpr;
+struct_inits: struct_init ("," struct_init)* ","? => StructInits;
+struct_init: IDENT (":" expr)? => StructInit;
+lambda_expr: "|" param_list? "|" ("->" type_expr)? (expr | block) => LambdaExpr;
+match_arms: match_arm ("," match_arm)* ","? => MatchArms;
+match_arm: pattern ("if" expr)? "=>" (expr | block) => MatchArm;
+if_expr: "if" expr block ("else" (block | if_expr))? => IfExpr;
+
+literal: INT => IntLit | FLOAT => FloatLit
+       | "true" => TrueLit | "false" => FalseLit
+       | STRING => StringLit | CHAR => CharLit | "null" => NullLit;
+
+// --- statements ---
+stmt: block | var_decl_stmt | return_stmt | break_stmt | continue_stmt
+    | if_stmt | while_stmt | for_stmt | loop_stmt | match_stmt
+    | defer_stmt | unsafe_stmt | foreach_stmt | bind_stmt | emit_stmt
+    | on_stmt | func_decl | const_decl | expr ";" => Stmt;
+
+return_stmt: "return" expr? ";" => ReturnStmt;
+break_stmt: "break" IDENT? expr? ";" => BreakStmt;
+continue_stmt: "continue" IDENT? ";" => ContinueStmt;
+if_stmt: "if" expr block ("else" (block | if_stmt))? => IfStmt;
+while_stmt: "while" expr block => WhileStmt;
+for_stmt: "for" pattern "in" expr block => ForStmt;
+loop_stmt: "loop" block => LoopStmt;
+match_stmt: "match" expr "{" match_arms "}" => MatchStmt;
+defer_stmt: "defer" block => DeferStmt;
+unsafe_stmt: "unsafe" block => UnsafeStmt;
+
+pattern: "_" => WildcardPat | IDENT => BindPat | literal => LitPat
+       | qualified_name => PathPat
+       | "(" pattern ("," pattern)* ","? ")" => TuplePat
+       | qualified_name "{" pattern_fields? "}" => StructPat
+       | "[" (pattern ("," pattern)*)? (".." IDENT?)? "]" => ArrayPat
+       | pattern "|" pattern => OrPat;
+pattern_fields: pattern_field ("," pattern_field)* ","? => PatternFields;
+pattern_field: IDENT (":" pattern)? => PatternField;
+
+qualified_name: IDENT ("::" IDENT)* => QualifiedName;
+
+// --- ECS ---
+component_decl: visibility? "component" IDENT generic_params? (":" type_expr)? "{" component_member* "}" => ComponentDecl;
+component_member: attr_list (component_field | func_decl) => ComponentMember;
+component_field: IDENT ":" type_expr ("=" expr)? ";" => ComponentField;
+
+entity_decl: visibility? "entity" IDENT generic_params? "{" entity_member* "}" => EntityDecl;
+entity_member: component_attach | entity_child | entity_prop => EntityMember;
+component_attach: qualified_name ("{" struct_inits? "}")? ";" => ComponentAttach;
+entity_child: "child" IDENT ":" entity_expr ";" => EntityChild;
+entity_prop: IDENT ":" type_expr ("=" expr)? ";" => EntityProp;
+entity_expr: qualified_name "(" arg_list? ")" => CallEntity
+           | qualified_name "{" struct_inits? "}" => StructEntity
+           | qualified_name => NamedEntity;
+
+system_decl: visibility? "system" IDENT generic_params? "{" system_member* "}" => SystemDecl;
+system_member: system_query | system_hook | system_dep | func_decl | var_decl_stmt => SystemMember;
+system_query: "query" IDENT query_filter? ";" => SystemQuery;
+query_filter: "with" "(" query_comps? ")" ("without" "(" query_comps? ")")? ("optional" "(" query_comps? ")")? => QueryWith
+            | "without" "(" query_comps? ")" ("optional" "(" query_comps? ")")? => QueryWithout
+            | "optional" "(" query_comps? ")" => QueryOptional;
+query_comps: query_comp ("," query_comp)* => QueryComps;
+query_comp: ("&" "mut"?)? qualified_name ("as" IDENT)? => QueryComp;
+system_hook: hook_name "(" param_list? ")" block => SystemHook;
+hook_name: "startup" | "shutdown" | "update" | "fixed_update" | "late_update" | "pre_render" | "post_render" | "on_event" => HookName;
+system_dep: "before" qualified_name ";" => BeforeDep
+          | "after" qualified_name ";" => AfterDep
+          | "parallel" ("true" | "false") ";" => ParallelDep;
+
+// Ingagi innovations: query loops, shader binding, event emission, observers.
+foreach_stmt: "for" "each" "(" query_bindings? ")" "in" expr block => ForEachStmt;
+query_bindings: query_binding ("," query_binding)* => QueryBindings;
+query_binding: ("&" "mut"?)? IDENT ("as" IDENT)? => QueryBinding;
+bind_stmt: "bind" ("pipeline" | "shader") IDENT (":" IDENT)? "to" "each" "with" "(" query_comps? ")" ("without" "(" query_comps? ")")? "in" expr ";" => BindStmt;
+emit_stmt: "emit" expr ";" => EmitStmt;
+on_stmt: "on" ("add" | "remove" | "set") qualified_name block => OnStmt;
+
+event_decl: visibility? "event" IDENT generic_params? (":" type_expr)? "{" component_field* "}" => EventDecl;
+resource_decl: visibility? "resource" IDENT (":" type_expr)? ("=" expr)? ";" => ResourceDecl;
+
+interface_decl: visibility? "interface" IDENT "{" (func_decl | var_decl_stmt)* "}" => InterfaceDecl;
+
+// --- shaders (first-class) ---
+shader_decl: visibility? "shader" IDENT ("(" shader_options? ")")? "{" shader_member* "}" => ShaderDecl;
+shader_options: shader_option ("," shader_option)* => ShaderOptions;
+shader_option: IDENT ":" expr => ShaderOption;
+shader_member: shader_struct | shader_const | shader_resource | shader_func | shader_stage | shader_spec => ShaderMember;
+shader_struct: "struct" IDENT "{" shader_field* "}" => ShaderStruct;
+shader_field: attr_list IDENT ":" shader_type ";" => ShaderField;
+shader_const: "const" IDENT ":" shader_type "=" expr ";" => ShaderConst;
+shader_spec: "specialize" IDENT ":" shader_type ("=" expr)? ";" => ShaderSpec;
+shader_resource: attr_list shader_resource_body => ShaderResource;
+shader_resource_body: "uniform" IDENT "{" shader_field* "}" IDENT? ";" => UniformBlock
+                   | ("read" | "write" | "read_write")? "storage" "buffer" IDENT "{" shader_field* "}" IDENT? ";" => StorageBlock
+                   | texture_kind IDENT (":" shader_type)? ";" => TextureDecl
+                   | "comparison"? "sampler" IDENT ";" => SamplerDecl
+                   | "storage_image" texture_kind IDENT ":" ("read" | "write" | "read_write") ";" => StorageImageDecl;
+texture_kind: "texture1d" | "texture2d" | "texture2d_array" | "texture3d" | "texture_cube" | "texture_cube_array" | "texture2d_ms" => TextureKind;
+shader_func: "fn"? IDENT "(" shader_params? ")" ("->" shader_type)? block => ShaderFunc;
+shader_params: shader_param ("," shader_param)* ","? => ShaderParams;
+shader_param: attr_list IDENT ":" shader_type => ShaderParam;
+shader_type: IDENT ("<" type_expr ("," type_expr)* ">")? => ShaderType
+           | "[" shader_type ";" expr "]" => ShaderArrayType;
+shader_stage: ("vertex" | "fragment" | "compute" | "geometry" | "tess_control" | "tess_evaluation" | "mesh" | "task") ("(" shader_options? ")")? block => ShaderStage;
+
+// --- pipelines ---
+pipeline_decl: visibility? "pipeline" IDENT "{" pipeline_member* "}" => PipelineDecl;
+pipeline_member: ("vertex" | "fragment" | "geometry" | "tess_control" | "tess_evaluation" | "mesh" | "task") ":" qualified_name ";" => PipelineStage
+              | "layout" ":" qualified_name ";" => PipelineLayout
+              | "vertex_layout" ":" qualified_name ";" => PipelineVertexLayout
+              | ("raster" | "depth" | "blend" | "target" | "compute") "{" state_assign* "}" => PipelineState;
+state_assign: IDENT ":" expr ";" => StateAssign;
