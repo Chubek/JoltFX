@@ -1,3 +1,9 @@
+;; @kernel spin
+;; @category 3d
+;; @description Adds 90 degrees per second for Rotation Y.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.5.0
 ;; Assign to Rotation Y (channel 4).
 (defkernel spin [time frame index value]
   (+ value (* time 90)))

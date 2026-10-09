@@ -8,10 +8,12 @@ Zoltan is implemented in **Rust** (stable, 1.70+), standard library only so it
 builds and runs offline.
 
 > **The layout below is the design target, not the current tree.** What exists
-> today is `src/main.rs` (command drivers) and `src/validate.rs` (the
-> validator) plus `src/bytecode.rs` (the JBC1 emitter). There is no FFI to the
-> Core engine, no `context.rs`, and none of the `commands/` or `core/`
-> subdirectories. See `PROGRESS.md` for the verified state.
+> today is `src/main.rs` (command drivers), `src/validate.rs` (the
+> validator), `src/bytecode.rs` (the JBC1 emitter), `src/sketch.rs` (the
+> creative-sketch layer) and `src/stdlib.rs` (bundled snippets) plus
+> `stdlib/*.jolt` example sketches. There is no FFI to the Core engine, no
+> `context.rs`, and none of the `commands/` or `core/` subdirectories. See
+> `PROGRESS.md` for the verified state.
 
 ---
 
@@ -41,7 +43,20 @@ The format constants live in `vm.h` (`JOLT_BYTECODE_MAGIC`, `_VERSION`,
 - `zoltan compile FILE [-o OUTPUT] [--emit-metadata]` — validate and, with
   `-o`, write JBC1 bytecode.
 - `zoltan verify FILE` — validate only.
+- `zoltan new NAME [--dir DIR]` — scaffold a creative sketch (`sketch.jolt`).
+- `zoltan run FILE [--frames N] [--width W] [--height H]` — CPU preview
+  (bounded to 16 frames, 320x180) with a deterministic checksum.
+- `zoltan export FILE --as obj|html|wasm [-o OUTPUT]` — minimal ELF64 with a
+  `.jolt` section, standalone HTML Canvas, or WAT for `wat2wasm`.
+- `zoltan stdlib list|show NAME` — paste-ready creative body fragments.
 - `zoltan help`, `--version`.
+
+Sketches are `(defkernel name [x y t ...] body)` programs: `x`/`y` are
+normalized coordinates, `t` seconds, optional `mx`/`my` the pointer, with
+`@canvas`/`@fps`/`@duration` metadata. See `stdlib/README.md` and
+`docs/creative.md`. The validator accepts every operation the Glue compiler
+implements (arithmetic, comparison, logical, bitwise, `select`); any
+divergence is a bug.
 
 ---
 

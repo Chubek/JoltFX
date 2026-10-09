@@ -96,7 +96,7 @@ int main(int argc,char **argv) {
     assert(jfx_desktop_frontend_edit(f,"clip.add",0,0,0,30,"")==JFX_SUCCESS);
     assert(jfx_desktop_frontend_set_workspace(nullptr,JFX_DESKTOP_WORKSPACE_NLE)==JFX_ERROR_INVALID_ARGUMENT);
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_COUNT)==JFX_ERROR_INVALID_ARGUMENT);
-    const char *names[]={"NLE","Layer Effects","Color Calibration","Color Grading","Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation"};
+    const char *names[]={"NLE","Layer Effects","Color Calibration","Color Grading","Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation","Creative Programming"};
     static_assert(sizeof(names)/sizeof(names[0])==JFX_DESKTOP_WORKSPACE_COUNT,"Every workspace needs a tab assertion");
     /* Exercise both later and earlier requested tabs while all tabs are visible. */
     for (int i=JFX_DESKTOP_WORKSPACE_COUNT-1;i>=0;--i) {

@@ -2,7 +2,7 @@
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Creative Programming**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
@@ -53,6 +53,20 @@ cmake --preset default
 cmake --build build --target jfx_desktop
 ./build/frontends/desktop/jfx_desktop
 ```
+
+## Creative Programming
+
+The **Creative Programming** tab is a Zoltan sketch pad: one
+`(defkernel [x y t ...] body)` program with `x`/`y` as normalized coords,
+`t` in seconds and optional `mx`/`my` pointer inputs. The code pad sits
+beside the result view; **Show code** / **Show preview** collapse either
+side. A read-only **Syntax colors** strip previews hand-rolled token colors
+(parens, keywords, numbers, comments). **Run** validates, **Animate**
+advances `t`, and object (minimal ELF64 `.jolt` section, `lief.parse`-able),
+standalone HTML Canvas, and WAT exports mirror the `zoltan export` commands.
+Opening a `.jolt` file loads it into the sketch buffer. Preview compiles with
+the Glue compiler and evaluates per pixel with the VM, bounded to 320x180.
+See [creative programming](../../docs/creative.md).
 
 ## Options
 

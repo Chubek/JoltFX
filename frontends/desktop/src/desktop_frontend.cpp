@@ -29,6 +29,8 @@
 #include <new>
 #include "imgui.h"
 #include "joltscript/effects.h"
+#include "joltscript/compiler.h"
+#include "joltscript/vm.h"
 #include "tilly/allocator.h"
 #include "tilly/memory.h"
 #include "tilly/logger.h"
@@ -42,6 +44,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
+#include <string>
+#include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -185,6 +189,7 @@ struct jfx_desktop_frontend {
     bool show_plugins, show_audio, show_daw, workspace_requested;
     bool show_animation;
     bool show_modeling3d;
+    bool show_creative;
     int scene_object,scene_vertex,scene_channel,scene_interpolation;
     int scene_bake_frames;
     int scene_primitive,scene_segments,scene_control,scene_ball,scene_gizmo_axis;
@@ -264,6 +269,24 @@ struct jfx_desktop_frontend {
     float effect_min;
     float effect_max;
     bool effect_has_parameter;
+
+    /* Creative-programming tab (Zoltan sketches). The source is one JBC1
+     * `(defkernel [x y t ...] body)` program; preview compiles with the Glue
+     * compiler and evaluates per pixel with the VM. Bounded so preview and
+     * export stay cheap: source < 8 KiB, raster <= 320x180. */
+    char creative_source[8192];
+    char creative_error[512];
+    char creative_export_path[512];
+    bool creative_show_code;
+    bool creative_show_preview;
+    bool creative_playing;
+    bool creative_dirty;
+    float creative_t;
+    float creative_mx;
+    float creative_my;
+    int creative_width;
+    int creative_height;
+    jfx_result_t creative_status;
 
     /* Preview buffers. Allocated once at the preview resolution and reused
      * every frame so playback does not churn the allocator. */
@@ -366,6 +389,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_daw = true;
     frontend->show_animation = true;
     frontend->show_modeling3d = true;
+    frontend->show_creative = true;
     frontend->scene_bake_frames=60;
     frontend->scene_segments=64;
     frontend->scene_clone_count=5;
@@ -375,6 +399,23 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     std::snprintf(frontend->scene_mesh_path,sizeof(frontend->scene_mesh_path),"mesh.ply");
     std::snprintf(frontend->scene_png_path,sizeof(frontend->scene_png_path),"scene.png");
     std::snprintf(frontend->audio_export_path,sizeof(frontend->audio_export_path),"mix.wav");
+    std::snprintf(frontend->creative_source, sizeof(frontend->creative_source),
+        ";; @kernel sketch_demo\n;; @category generative\n"
+        ";; @description Creative sketch scaffold.\n;; @complexity Low\n"
+        ";; @gpu Yes\n;; @since 0.3.0\n;; @canvas 320x180\n"
+        "(defkernel sketch_demo [x y t]\n"
+        "  (rgba x y (* 0.5 (+ 0.5 (* 0.5 t))) 1.0))");
+    frontend->creative_show_code = true;
+    frontend->creative_show_preview = true;
+    frontend->creative_playing = false;
+    frontend->creative_dirty = true;
+    frontend->creative_t = 0.0f;
+    frontend->creative_mx = 0.5f;
+    frontend->creative_my = 0.5f;
+    frontend->creative_width = 320;
+    frontend->creative_height = 180;
+    frontend->creative_status = JFX_SUCCESS;
+    std::snprintf(frontend->creative_export_path, sizeof(frontend->creative_export_path), "sketch.o");
     frontend->audio_import_frames = 90;
     frontend->recording_device=-1;
     std::snprintf(frontend->recording_path,sizeof(frontend->recording_path),"take.wav");
@@ -554,6 +595,20 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     }
     std::strcpy(frontend->project_path, path);
     std::snprintf(frontend->project_input, sizeof(frontend->project_input), "%s", path);
+    if (const char *dot = std::strrchr(path, '.'); dot && !std::strcmp(dot, ".jolt")) {
+        FILE *kernel = std::fopen(path, "rb");
+        if (kernel) {
+            size_t n = std::fread(frontend->creative_source, 1,
+                sizeof(frontend->creative_source) - 1, kernel);
+            bool failed = std::ferror(kernel) != 0;
+            std::fclose(kernel);
+            if (!failed && n < sizeof(frontend->creative_source) - 1) {
+                frontend->creative_source[n] = 0;
+                frontend->creative_error[0] = 0;
+                jfx_desktop_frontend_set_workspace(frontend, JFX_DESKTOP_WORKSPACE_CREATIVE);
+            }
+        }
+    }
     std::snprintf(frontend->status, sizeof(frontend->status), "opened %s", path);
     return JFX_SUCCESS;
 }
@@ -694,14 +749,114 @@ namespace {
 #include "audio_panel.inc"
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
-    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation"};
+    "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation",
+    "Creative Programming"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
-    JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION,JFX_DESKTOP_PANEL_MODELING3D};
+    JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION,JFX_DESKTOP_PANEL_MODELING3D,
+    JFX_DESKTOP_PANEL_CREATIVE};
 
 #include "animation_panel.inc"
 #include "modeling3d_panel.inc"
+
+/* Creative-sketch headless logic. Sketches run through the Glue compiler and
+ * the VM directly (per pixel, explicit bindings), which supports any input
+ * list including [x y t mx my]. The engine pipeline path is not used: it
+ * requires 4+N (RGBA + params) programs. Rasters are bounded to 320x180. */
+constexpr size_t kCreativeMax = 320u * 180u;
+
+size_t creative_parse_bindings(const char *source, char names[][64], size_t capacity) {
+    if (!source || !names || !capacity) {
+        return 0;
+    }
+    const char *kernel = strstr(source, "defkernel");
+    if (!kernel) {
+        return 0;
+    }
+    const char *open = strchr(kernel, '[');
+    const char *close = open ? strchr(open, ']') : nullptr;
+    if (!open || !close || close < open) {
+        return 0;
+    }
+    size_t count = 0;
+    const char *cursor = open + 1;
+    while (cursor < close && count < capacity) {
+        while (cursor < close && (*cursor == ' ' || *cursor == '\t' || *cursor == '\n' ||
+               *cursor == '\r')) {
+            ++cursor;
+        }
+        if (cursor >= close) {
+            break;
+        }
+        const char *end = cursor;
+        while (end < close && *end != ' ' && *end != '\t' && *end != '\n' && *end != '\r') {
+            ++end;
+        }
+        size_t len = (size_t)(end - cursor);
+        if (len && len < 64) {
+            memcpy(names[count], cursor, len);
+            names[count][len] = 0;
+            ++count;
+        }
+        cursor = end;
+    }
+    return count;
+}
+
+void creative_set_error(jfx_desktop_frontend_t *f, const char *message) {
+    if (!f) {
+        return;
+    }
+    std::snprintf(f->creative_error, sizeof(f->creative_error), "%s",
+        message && message[0] ? message : "creative sketch failed");
+}
+
+jfx_result_t creative_compile(jfx_desktop_frontend_t *f, jolt_program_t **out_program,
+    char bindings[][64], size_t *out_count) {
+    if (out_program) {
+        *out_program = nullptr;
+    }
+    size_t names = creative_parse_bindings(f->creative_source, bindings, 32);
+    if (out_count) {
+        *out_count = names;
+    }
+    jolt_program_t *program = nullptr;
+    jolt_diagnostic_t diagnostic{};
+    diagnostic.size = sizeof(diagnostic);
+    if (jolt_compile(f->creative_source, &program, &diagnostic) != JOLT_OK) {
+        char formatted[512];
+        jolt_diagnostic_format(&diagnostic, "sketch", formatted, sizeof(formatted));
+        creative_set_error(f, formatted);
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    if (!program) {
+        creative_set_error(f, "sketch: compilation produced no program");
+        return JFX_ERROR_BACKEND_FAILURE;
+    }
+    size_t size = 0;
+    const uint8_t *data = jolt_program_data(program, &size);
+    if (!data || size < JOLT_BYTECODE_HEADER_SIZE) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: invalid program");
+        return JFX_ERROR_BACKEND_FAILURE;
+    }
+    uint32_t declared = 0;
+    memcpy(&declared, data + 8, 4);
+    if (declared != names) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: input list changed during compilation");
+        return JFX_ERROR_BACKEND_FAILURE;
+    }
+    if (out_program) {
+        *out_program = program;
+    } else {
+        jolt_program_destroy(program);
+    }
+    return JFX_SUCCESS;
+}
+
+#include "creative_panel.inc"
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::TextUnformatted("Preview");
@@ -830,6 +985,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("DAW", nullptr, &frontend->show_daw);
             ImGui::MenuItem("2D Animation", nullptr, &frontend->show_animation);
             ImGui::MenuItem("3D Modeling & Animation", nullptr, &frontend->show_modeling3d);
+            ImGui::MenuItem("Creative Programming", nullptr, &frontend->show_creative);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -884,7 +1040,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
         jfx_desktop_frontend_set_zoom(frontend, next);
     }
-    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D) {
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE) {
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -930,7 +1086,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         ImGui::SameLine();
         if (ImGui::Button("Cancel export")) jfx_export_cancel(frontend->export_job);
     } else ImGui::TextDisabled("%s",frontend->status);
-    } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":"Vector animation",frontend->status);
+    } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":"Vector animation",frontend->status);
     ImGui::Separator();
     if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int i=0;i<JFX_DESKTOP_WORKSPACE_COUNT;++i) {
@@ -943,7 +1099,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     frontend->workspace_requested=false;
                 }
                 bool wide=ImGui::GetContentRegionAvail().x>=760;
-                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D;
+                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE;
                 bool columns=!animation && frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
                 if (columns) {
                     ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
@@ -967,6 +1123,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_DAW: daw_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_ANIMATION: animation_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_MODELING3D: modeling3d_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_CREATIVE: creative_panel(frontend); break;
                     default: break;
                     }
                 }
@@ -1040,6 +1197,12 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
                 if (!frontend->looping) frontend->playing = false;
             }
             frontend->preview_dirty = true;
+        }
+        if (frontend->creative_playing &&
+            frontend->workspace == JFX_DESKTOP_WORKSPACE_CREATIVE) {
+            const ImGuiIO &cio = ImGui::GetIO();
+            const double cdelta = cio.DeltaTime > 0.0f ? (double)cio.DeltaTime : 1.0 / 60.0;
+            frontend->creative_t = std::fmod(frontend->creative_t + (float)cdelta, 60.0f);
         }
 
         if (frontend->editing && jfx_editor_kind(frontend->editor) == JFX_PROJECT_KIND_SEQUENCE)
@@ -1246,13 +1409,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
@@ -1268,6 +1431,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
+    f->creative_dirty = true;
     f->nle_drag=f->node_drag=0; f->node_wiring=false;
     if (workspace==JFX_DESKTOP_WORKSPACE_MODELING3D) {
         jfx_editor_set_kind(f->editor,JFX_PROJECT_KIND_SCENE3D);
@@ -1433,6 +1597,426 @@ extern "C" jfx_result_t jfx_desktop_frontend_render_graph(jfx_desktop_frontend_t
 }
 extern "C" jfx_result_t jfx_desktop_frontend_write_graph(jfx_desktop_frontend_t *f,uint32_t node,double seconds,const char *path) {
     return f?jfx_editor_write_graph(f->editor,node,seconds,jfx_editor_graph_width(f->editor),jfx_editor_graph_height(f->editor),path):JFX_ERROR_INVALID_ARGUMENT;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_creative_set_source(jfx_desktop_frontend_t *f,
+    const char *source) {
+    if (!f || !source || !source[0] || std::strlen(source) >= sizeof(f->creative_source)) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    std::snprintf(f->creative_source, sizeof(f->creative_source), "%s", source);
+    f->creative_error[0] = 0;
+    f->creative_status = JFX_SUCCESS;
+    f->creative_dirty = true;
+    return JFX_SUCCESS;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_creative_source(const jfx_desktop_frontend_t *f,
+    char *out, size_t capacity) {
+    if (!f || !out || !capacity) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    size_t n = std::strlen(f->creative_source);
+    if (n + 1 > capacity) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    std::memcpy(out, f->creative_source, n + 1);
+    return JFX_SUCCESS;
+}
+extern "C" const char *jfx_desktop_frontend_creative_error(const jfx_desktop_frontend_t *f) {
+    if (!f || !f->creative_error[0]) {
+        return f ? f->creative_error : "";
+    }
+    return f->creative_error;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_creative_render(jfx_desktop_frontend_t *f,
+    uint32_t width, uint32_t height, uint8_t *out_rgba, size_t out_size) {
+    if (!f || !width || !height || width > 320 || height > 180) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    size_t pixels = (size_t)width * (size_t)height;
+    if (pixels > kCreativeMax || pixels > SIZE_MAX / 4u) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    char bindings[32][64];
+    size_t binding_count = 0;
+    jolt_program_t *program = nullptr;
+    jfx_result_t compiled = creative_compile(f, &program, bindings, &binding_count);
+    if (compiled != JFX_SUCCESS) {
+        return compiled;
+    }
+    // Validate-only call from the Run button / tests.
+    if (!out_rgba) {
+        jolt_program_destroy(program);
+        f->creative_error[0] = 0;
+        f->creative_status = JFX_SUCCESS;
+        return JFX_SUCCESS;
+    }
+    if (out_size < pixels * 4u) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: destination too small");
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    size_t program_size = 0;
+    const uint8_t *bytecode = jolt_program_data(program, &program_size);
+    uint32_t outputs = 0;
+    if (bytecode && program_size >= JOLT_BYTECODE_HEADER_SIZE) {
+        memcpy(&outputs, bytecode + 12, 4);
+    }
+    if (!bytecode || (outputs != 1 && outputs != 4)) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: invalid program outputs");
+        return JFX_ERROR_BACKEND_FAILURE;
+    }
+    jolt_vm_t *vm = jolt_vm_create();
+    if (!vm) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: cannot create the VM");
+        return JFX_ERROR_OUT_OF_MEMORY;
+    }
+    float args[32];
+    float result[4];
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            float nx = width > 1 ? (float)x / (float)(width - 1) : 0.0f;
+            float ny = height > 1 ? (float)y / (float)(height - 1) : 0.0f;
+            for (size_t i = 0; i < binding_count; ++i) {
+                if (!strcmp(bindings[i], "x")) {
+                    args[i] = nx;
+                } else if (!strcmp(bindings[i], "y")) {
+                    args[i] = ny;
+                } else if (!strcmp(bindings[i], "t")) {
+                    args[i] = f->creative_t;
+                } else if (!strcmp(bindings[i], "mx")) {
+                    args[i] = f->creative_mx;
+                } else if (!strcmp(bindings[i], "my")) {
+                    args[i] = f->creative_my;
+                } else {
+                    args[i] = 0.0f;
+                }
+            }
+            if (jolt_vm_run(vm, bytecode, program_size, args, binding_count, result,
+                    outputs) != JOLT_OK) {
+                jolt_vm_destroy(vm);
+                jolt_program_destroy(program);
+                creative_set_error(f, "sketch: runtime failure (non-finite input or budget)");
+                return JFX_ERROR_BACKEND_FAILURE;
+            }
+            size_t base = ((size_t)y * width + x) * 4u;
+            for (size_t c = 0; c < 4; ++c) {
+                float v = outputs == 1 ? (c < 3 ? result[0] : 1.0f) : result[c];
+                if (!(v > 0.0f)) {
+                    out_rgba[base + c] = 0;
+                } else if (v >= 1.0f) {
+                    out_rgba[base + c] = 255;
+                } else {
+                    out_rgba[base + c] = (uint8_t)(v * 255.0f + 0.5f);
+                }
+            }
+        }
+    }
+    jolt_vm_destroy(vm);
+    jolt_program_destroy(program);
+    f->creative_error[0] = 0;
+    f->creative_status = JFX_SUCCESS;
+    f->creative_dirty = false;
+    return JFX_SUCCESS;
+}
+static jfx_result_t creative_write_file(const char *path, const uint8_t *data, size_t size) {
+    if (!path || !path[0] || (!data && size)) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    FILE *file = std::fopen(path, "wb");
+    if (!file) {
+        return JFX_ERROR_NOT_FOUND;
+    }
+    bool ok = size == 0 || std::fwrite(data, 1, size, file) == size;
+    if (std::fclose(file) != 0) {
+        ok = false;
+    }
+    return ok ? JFX_SUCCESS : JFX_ERROR_INVALID_ARGUMENT;
+}
+static jfx_result_t creative_export_object(jfx_desktop_frontend_t *f, const char *path) {
+    char bindings[32][64];
+    jolt_program_t *program = nullptr;
+    jfx_result_t compiled = creative_compile(f, &program, bindings, nullptr);
+    if (compiled != JFX_SUCCESS) {
+        return compiled;
+    }
+    size_t size = 0;
+    const uint8_t *data = jolt_program_data(program, &size);
+    if (!data || !size) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: nothing to export");
+        return JFX_ERROR_BACKEND_FAILURE;
+    }
+    // Minimal ELF64 relocatable: header + `.jolt` payload section + 3 section
+    // headers. Mirrors `zoltan export --as obj` byte for byte in layout.
+    static const uint8_t names[] = "\0.shstrtab\0.jolt\0";
+    const uint64_t shstr_off = 64;
+    const uint64_t jolt_off = shstr_off + sizeof(names);
+    uint64_t sh_off = (jolt_off + size + 7) & ~(uint64_t)7;
+    size_t total = (size_t)(sh_off + 3 * 64);
+    if (total < sh_off) {
+        jolt_program_destroy(program);
+        creative_set_error(f, "sketch: program too large to wrap");
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    std::vector<uint8_t> elf(total, 0);
+    elf[0] = 0x7f;
+    elf[1] = 'E';
+    elf[2] = 'L';
+    elf[3] = 'F';
+    elf[4] = 2;
+    elf[5] = 1;
+    elf[6] = 1;
+    elf[16] = 1;
+    elf[18] = 62;
+    elf[20] = 1;
+    memcpy(&elf[40], &sh_off, 8);
+    elf[52] = 64;
+    elf[58] = 64;
+    elf[60] = 3;
+    elf[62] = 1;
+    memcpy(&elf[shstr_off], names, sizeof(names));
+    memcpy(&elf[jolt_off], data, size);
+    size_t at = (size_t)sh_off + 64;
+    // Section 1: .shstrtab.
+    elf[at + 0] = 1;
+    elf[at + 4] = 3;
+    memcpy(&elf[at + 24], &shstr_off, 8);
+    uint64_t names_size = sizeof(names);
+    memcpy(&elf[at + 32], &names_size, 8);
+    at += 64;
+    // Section 2: .jolt.
+    elf[at + 0] = 11;
+    elf[at + 4] = 1;
+    memcpy(&elf[at + 24], &jolt_off, 8);
+    uint64_t payload = size;
+    memcpy(&elf[at + 32], &payload, 8);
+    jfx_result_t written = creative_write_file(path, elf.data(), elf.size());
+    jolt_program_destroy(program);
+    if (written != JFX_SUCCESS) {
+        creative_set_error(f, "sketch: cannot write the object file");
+    } else {
+        f->creative_error[0] = 0;
+    }
+    return written;
+}
+static jfx_result_t creative_export_html(jfx_desktop_frontend_t *f, const char *path) {
+    char bindings[32][64];
+    size_t binding_count = 0;
+    jolt_program_t *program = nullptr;
+    jfx_result_t compiled = creative_compile(f, &program, bindings, &binding_count);
+    if (compiled != JFX_SUCCESS) {
+        return compiled;
+    }
+    size_t size = 0;
+    const uint8_t *data = jolt_program_data(program, &size);
+    // Lower the instruction stream to JS. Only the straight-line ops the CLI
+    // exporter supports are lowered; anything else is an honest error.
+    std::string js = "(x,y,t,mx,my)=>{const s=[];const inp=[x,y,t,mx,my];";
+    js += "while(inp.length<" + std::to_string(binding_count) + ")inp.push(0);";
+    size_t offset = JOLT_BYTECODE_HEADER_SIZE;
+    jfx_result_t status = JFX_SUCCESS;
+    while (offset + 8 <= size) {
+        uint32_t op = 0, operand = 0;
+        memcpy(&op, data + offset, 4);
+        memcpy(&operand, data + offset + 4, 4);
+        offset += 8;
+        switch (op) {
+        case 1: {
+            float v = 0;
+            memcpy(&v, &operand, 4);
+            char literal[64];
+            std::snprintf(literal, sizeof(literal), "s.push(%g);", (double)v);
+            js += literal;
+            break;
+        }
+        case 2:
+            js += "s.push(inp[" + std::to_string(operand) + "]);";
+            break;
+        case 3:
+            js += "s.push(s.pop()+s.pop());";
+            break;
+        case 4:
+            js += "{const b=s.pop(),a=s.pop();s.push(a-b);}";
+            break;
+        case 5:
+            js += "s.push(s.pop()*s.pop());";
+            break;
+        case 6:
+            js += "{const b=s.pop(),a=s.pop();s.push(a/b);}";
+            break;
+        case 7:
+            js += "s.push(Math.min(s.pop(),s.pop()));";
+            break;
+        case 8:
+            js += "s.push(Math.max(s.pop(),s.pop()));";
+            break;
+        case 9:
+            js += "s.push(Math.abs(s.pop()));";
+            break;
+        case 10:
+            js += "s.push(Math.floor(s.pop()));";
+            break;
+        case 11:
+            js += "{const b=s.pop(),a=s.pop();s.push(Math.pow(a,b));}";
+            break;
+        case 12:
+            js += "s.push(Math.sqrt(s.pop()));";
+            break;
+        case 13:
+            js += "{const b=s.pop(),a=s.pop();s.push(a<b?1:0);}";
+            break;
+        case 14:
+            js += "{const c=s.pop(),b=s.pop(),a=s.pop();s.push(a!==0?b:c);}";
+            break;
+        case 15:
+            js += "if(" + std::to_string(operand) + "===0)out0=s.pop();";
+            break;
+        default:
+            status = JFX_ERROR_NOT_IMPLEMENTED;
+            break;
+        }
+        if (status != JFX_SUCCESS) {
+            break;
+        }
+    }
+    jolt_program_destroy(program);
+    if (status != JFX_SUCCESS) {
+        creative_set_error(f, "sketch: HTML export supports the basic scalar ops only");
+        return status;
+    }
+    js += "return out0;}";
+    std::string html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">"
+        "<title>sketch</title></head>\n<body>\n<canvas id=\"c\" width=\"320\" height=\"180\"></canvas>\n"
+        "<script>\nconst pixel=" + js +
+        "\nconst canvas=document.getElementById('c');\nconst ctx=canvas.getContext('2d');\n"
+        "const img=ctx.createImageData(canvas.width,canvas.height);\nlet t=0;\nfunction frame(){\n"
+        " for(let y=0;y<canvas.height;++y)for(let x=0;x<canvas.width;++x){\n"
+        "  const nx=x/(canvas.width-1),ny=y/(canvas.height-1);\n"
+        "  const v=pixel(nx,ny,t,0.5,0.5);\n  const i=(y*canvas.width+x)*4;\n"
+        "  img.data[i]=nx*255;img.data[i+1]=ny*255;img.data[i+2]=v*255;img.data[i+3]=255;\n }\n"
+        " ctx.putImageData(img,0,0);t+=1/30;requestAnimationFrame(frame);}\nframe();\n</script>\n</body></html>\n";
+    jfx_result_t written =
+        creative_write_file(path, reinterpret_cast<const uint8_t *>(html.data()), html.size());
+    if (written != JFX_SUCCESS) {
+        creative_set_error(f, "sketch: cannot write the HTML file");
+    } else {
+        f->creative_error[0] = 0;
+    }
+    return written;
+}
+static jfx_result_t creative_export_wat(jfx_desktop_frontend_t *f, const char *path) {
+    char bindings[32][64];
+    jolt_program_t *program = nullptr;
+    jfx_result_t compiled = creative_compile(f, &program, bindings, nullptr);
+    if (compiled != JFX_SUCCESS) {
+        return compiled;
+    }
+    size_t size = 0;
+    const uint8_t *data = jolt_program_data(program, &size);
+    std::string wat =
+        "(module\n (func $pixel (param $x f32) (param $y f32) (param $t f32) (result f32)\n";
+    size_t offset = JOLT_BYTECODE_HEADER_SIZE;
+    jfx_result_t status = JFX_SUCCESS;
+    while (offset + 8 <= size) {
+        uint32_t op = 0, operand = 0;
+        memcpy(&op, data + offset, 4);
+        memcpy(&operand, data + offset + 4, 4);
+        offset += 8;
+        switch (op) {
+        case 1: {
+            float v = 0;
+            memcpy(&v, &operand, 4);
+            char literal[64];
+            std::snprintf(literal, sizeof(literal), "  f32.const %g\n", (double)v);
+            wat += literal;
+            break;
+        }
+        case 2:
+            wat += operand == 0 ? "  local.get $x\n"
+                : operand == 1  ? "  local.get $y\n"
+                : operand == 2  ? "  local.get $t\n"
+                                : "  f32.const 0\n";
+            break;
+        case 3:
+            wat += "  f32.add\n";
+            break;
+        case 4:
+            wat += "  f32.sub\n";
+            break;
+        case 5:
+            wat += "  f32.mul\n";
+            break;
+        case 6:
+            wat += "  f32.div\n";
+            break;
+        case 7:
+            wat += "  f32.min\n";
+            break;
+        case 8:
+            wat += "  f32.max\n";
+            break;
+        case 9:
+            wat += "  f32.abs\n";
+            break;
+        case 10:
+            wat += "  f32.floor\n";
+            break;
+        case 11:
+            wat += "  call $pow\n";
+            break;
+        case 12:
+            wat += "  f32.sqrt\n";
+            break;
+        case 13:
+            wat += "  f32.lt\n";
+            break;
+        case 14:
+            wat += "  select\n";
+            break;
+        case 15:
+            break;
+        default:
+            status = JFX_ERROR_NOT_IMPLEMENTED;
+            break;
+        }
+        if (status != JFX_SUCCESS) {
+            break;
+        }
+    }
+    jolt_program_destroy(program);
+    if (status != JFX_SUCCESS) {
+        creative_set_error(f, "sketch: WASM export supports the basic scalar ops only");
+        return status;
+    }
+    wat += " )\n (func $pow (param f32 f32) (result f32) f32.const 0)\n";
+    wat += " (export \"pixel\" (func $pixel)))\n";
+    jfx_result_t written =
+        creative_write_file(path, reinterpret_cast<const uint8_t *>(wat.data()), wat.size());
+    if (written != JFX_SUCCESS) {
+        creative_set_error(f, "sketch: cannot write the WAT file");
+    } else {
+        f->creative_error[0] = 0;
+    }
+    return written;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_creative_export(jfx_desktop_frontend_t *f,
+    const char *kind, const char *path) {
+    if (!f || !kind || !path || !path[0]) {
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
+    if (!strcmp(kind, "obj") || !strcmp(kind, "o") || !strcmp(kind, "elf")) {
+        return creative_export_object(f, path);
+    }
+    if (!strcmp(kind, "html") || !strcmp(kind, "canvas")) {
+        return creative_export_html(f, path);
+    }
+    if (!strcmp(kind, "wasm") || !strcmp(kind, "wat")) {
+        return creative_export_wat(f, path);
+    }
+    creative_set_error(f, "sketch: unknown export kind (obj, html, wasm)");
+    return JFX_ERROR_INVALID_ARGUMENT;
 }
 /* Grades live in the selected clip's effect stack, so project persistence,
  * keyframes and rendering all use the same operators. */

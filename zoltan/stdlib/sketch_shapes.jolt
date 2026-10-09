@@ -1,0 +1,16 @@
+;; @kernel sketch_shapes
+;; @category generative
+;; @description SDF-style disc + stripes using only JBC1 scalar ops.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.3.0
+;; @canvas 320x180
+;; @fps 30
+;; @duration 10
+;; circle: 1 inside the disc, 0 outside; stripes: animated bands.
+(defkernel sketch_shapes [x y t]
+  (rgba
+    (select (< (+ (* (- x 0.5) (- x 0.5)) (* (- y 0.5) (- y 0.5))) 0.04) 1.0 0.2)
+    (select (= (floor (+ (* x 8.0) t)) (* 2.0 (floor (* 0.5 (+ (* x 8.0) t))))) 0.9 0.3)
+    (* 0.5 (+ 0.5 (* 0.5 t)))
+    1.0))

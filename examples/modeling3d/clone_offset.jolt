@@ -1,3 +1,9 @@
+;; @kernel clone-offset
+;; @category 3d
+;; @description Stagger clones by index and lift them over time.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.5.0
 ;; Assign to Position Y (channel 1): stagger clones and lift them over time.
 (defkernel clone-offset [time frame index value]
   (+ value (+ (* index 0.3) (* time 0.5))))

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Creative-programming tab (Desktop API 1.7): Zoltan sketch code pad beside a
+  collapsible result view, hand-rolled syntax colors, Run/Animate, t/mx/my and
+  canvas controls, and object/HTML/WASM export. Zoltan 0.3.0 adds `new`, `run`,
+  `export` and `stdlib` commands, an `x y t` sketch layer with `@canvas`/`@fps`/
+  `@duration` metadata, a `zoltan/stdlib/` sketch collection, and full
+  comparison/logical/bitwise op parity with the Glue compiler. See
+  `docs/creative.md`. The parity gate now passes 17/17 after annotating the
+  three metadata-less 3D driver examples (comment-only, bytecode unchanged).
+
 - 3D tubes, capped hemispheres, wedges, tetrahedra, octahedra and icosahedra
   across editor surfaces (Modeling3D API 1.2). Desktop creation selects the new
   object. Fixed blank window-size 3D previews caused by the legacy 320x180

@@ -34,13 +34,14 @@ typedef enum {
     JFX_DESKTOP_PANEL_DAW,
     JFX_DESKTOP_PANEL_ANIMATION,
     JFX_DESKTOP_PANEL_MODELING3D,
+    JFX_DESKTOP_PANEL_CREATIVE,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 6
-#define JFX_DESKTOP_API_PATCH 1
+#define JFX_DESKTOP_API_MINOR 7
+#define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
     JFX_DESKTOP_WORKSPACE_EFFECTS,
@@ -54,6 +55,7 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_DAW,
     JFX_DESKTOP_WORKSPACE_ANIMATION,
     JFX_DESKTOP_WORKSPACE_MODELING3D,
+    JFX_DESKTOP_WORKSPACE_CREATIVE,
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
 
@@ -187,6 +189,26 @@ jfx_result_t jfx_desktop_frontend_write_graph(jfx_desktop_frontend_t *frontend,u
 /* Legacy effect preview (kept for compatibility) */
 jfx_result_t jfx_desktop_frontend_set_effect(jfx_desktop_frontend_t *frontend,
     const char *effect_name, float parameter);
+
+/* Creative-programming tab (Zoltan sketches).
+ *
+ * Sketches are single `(defkernel name [x y t ...] body)` JBC1 programs (see
+ * zoltan/src/sketch.rs). The preview compiles with the Glue `jolt_compile`
+ * and evaluates per pixel with `jolt_vm_run`, so it executes the same
+ * bytecode `zoltan compile` emits. Preview is bounded to 320x180. Object
+ * export writes a minimal ELF64 with a `.jolt` section (no LIEF build
+ * required; readable with `lief.parse`); HTML export writes a standalone
+ * Canvas page; WASM export writes WAT for `wat2wasm`. All bounds-checked;
+ * output is untouched on error. */
+jfx_result_t jfx_desktop_frontend_creative_set_source(jfx_desktop_frontend_t *frontend,
+    const char *source);
+jfx_result_t jfx_desktop_frontend_creative_source(const jfx_desktop_frontend_t *frontend,
+    char *out, size_t capacity);
+jfx_result_t jfx_desktop_frontend_creative_render(jfx_desktop_frontend_t *frontend,
+    uint32_t width, uint32_t height, uint8_t *out_rgba, size_t out_size);
+jfx_result_t jfx_desktop_frontend_creative_export(jfx_desktop_frontend_t *frontend,
+    const char *kind, const char *path);
+const char *jfx_desktop_frontend_creative_error(const jfx_desktop_frontend_t *frontend);
 
 /* Composes one UI frame and advances the engine by one tick. Works with or
  * without a host window, so it is the headless smoke path as well. */

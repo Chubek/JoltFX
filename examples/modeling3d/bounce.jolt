@@ -1,3 +1,9 @@
+;; @kernel bounce
+;; @category 3d
+;; @description Looping two-unit triangular bounce for Position Y.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.5.0
 ;; Assign to Position Y (channel 1): a one-second, two-unit triangular bounce.
 (defkernel bounce [time frame index value]
   (+ value (* 2 (- 1 (abs (- (* 2 (- time (floor time))) 1))))))

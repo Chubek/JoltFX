@@ -1,0 +1,11 @@
+;; @kernel sketch_pointer
+;; @category generative
+;; @description Pointer-reactive mix: declare mx/my to enable interaction.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.3.0
+;; @canvas 320x180
+;; @fps 30
+;; @duration 10
+(defkernel sketch_pointer [x y t mx my]
+  (rgba (select (< x mx) x y) (select (< y my) y x) t 1.0))

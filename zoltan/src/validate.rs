@@ -152,8 +152,9 @@ fn is_binding(name: &str) -> bool {
 
 fn arity(op: &str) -> Option<usize> {
     match op {
-        "+" | "-" | "*" | "/" | "min" | "max" | "pow" | "<" => Some(2),
-        "abs" | "floor" | "sqrt" => Some(1),
+        "+" | "-" | "*" | "/" | "min" | "max" | "pow" | "<" | ">" | "<=" | ">=" | "=" | "!="
+        | "and" | "or" | "bitwise-and" | "bitwise-or" | "bitwise-xor" | "shl" | "shr" => Some(2),
+        "abs" | "floor" | "sqrt" | "not" => Some(1),
         "select" => Some(3),
         _ => None,
     }

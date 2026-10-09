@@ -1,5 +1,47 @@
 # Progress
 
+## Creative Programming tab + Zoltan sketch layer (2026-10-09)
+
+- Corrected the user's toolchain assumptions first: Emscripten exists at
+  `/mnt/warble/emscripten` (6.0.13-git) but has no config/`wasm-opt`, so full
+  app bundling is not runnable; no Android SDK is present (`ANDROID_HOME`
+  empty); `third_party/novoparse` is a GLR parser generator, not a
+  highlighter; LIEF is vendored source, not a built library. Per user answers:
+  parity fix + sketch layer, object-file-first exports, side-by-side
+  collapsible panes, hand-rolled highlighting (no novoparse linkage).
+- Zoltan 0.2.0 -> 0.3.0: `validate.rs` now accepts every op the Glue C
+  compiler implements (`> <= >= = != and or not bitwise-and/or/xor shl shr`;
+  previously only `+ - * / min max pow < abs floor sqrt select`), closing a
+  silent divergence. New `src/sketch.rs` (`x y t` + optional `mx my`
+  convention, `@canvas`/`@fps`/`@duration` metadata, bounded CPU preview with
+  checksum) and `src/stdlib.rs` (6 paste-ready fragments). New commands: `new`
+  (scaffold), `run` (<=16 frames, <=320x180), `export --as obj|html|wasm`
+  (minimal ELF64 with `.jolt` section / standalone Canvas page / WAT for
+  `wat2wasm`), `stdlib list|show`. Added `zoltan/stdlib/` (3 valid sketches +
+  README) and `docs/creative.md`.
+- Fixed the bytecode-parity gate as a side effect: the 3 failing
+  `examples/modeling3d/*.jolt` drivers were rejected for missing `@kernel`
+  metadata (pre-existing, unrelated to ops). Added comment-only metadata
+  headers (bytecode unchanged); gate now passes **17/17, 0 failed** (298
+  image-profile sources correctly reported n/a).
+- Desktop API 1.6.1 -> 1.7.0: appended `JFX_DESKTOP_PANEL_CREATIVE` /
+  `JFX_DESKTOP_WORKSPACE_CREATIVE` (prior values untouched). New
+  `creative_panel.inc` (code pad + result view, each collapsible; read-only
+  syntax-color strip; Run/Animate; t/mx/my/canvas controls; obj/html/wat
+  export mirroring the CLI). Preview compiles via Glue `jolt_compile` and
+  evaluates per pixel with `jolt_vm_run` (the engine pipeline needs 4+N
+  RGBA+param programs, so it cannot run `[x y t]` sketches); rasters bounded
+  to 320x180 with dirty-flag caching. Opening a `.jolt` file loads the sketch
+  buffer and selects the tab. New `jfx_desktop_frontend_creative_*` C API.
+- Verification: `cargo test` 26/26, `cargo clippy -D warnings` clean,
+  `cargo fmt` clean; `creative_tab` + `desktop_frontend` + `workspace_ui_tests`
+  (extended with the 13th tab name) pass; `modeling3d` 5/5 pass after the
+  metadata annotations; `readelf` confirms `.shstrtab`/`.jolt` sections.
+  Full native/sanitizer suites and on-device/browser lanes not run in this
+  pass. Emscripten bundling and Android packaging remain documented
+  follow-ups; LIEF is used as a format convention (`lief.parse`-able),
+  not a linked dependency.
+
 ## 3D tab visibility and primitive additions (2026-10-09)
 
 - Reproduced the blank windowed viewport: the desktop render entry point rejected

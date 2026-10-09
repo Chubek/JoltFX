@@ -1,0 +1,12 @@
+;; @kernel sketch_basic
+;; @category generative
+;; @description Basic creative sketch: animated gradient drift.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.3.0
+;; @canvas 320x180
+;; @fps 30
+;; @duration 10
+;; Paste `zoltan stdlib show palette` fragments into the rgba body to vary it.
+(defkernel sketch_basic [x y t]
+  (rgba x y (* 0.5 (+ 0.5 (* 0.5 t))) 1.0))
