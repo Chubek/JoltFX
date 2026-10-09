@@ -1,4 +1,5 @@
 #include "jfx/jfx_audio.h"
+#include "cpu_numeric.h"
 #include "jfx/jfx_vst3.h"
 #include "jfx/jfx_midi.h"
 #include "jfx/jfx_automation.h"
@@ -347,7 +348,10 @@ jfx_result_t jfx_audio_mixer_render(jfx_audio_mixer_t *m,uint64_t start,size_t f
         }
         if (result==JFX_SUCCESS) result=render_track(m,t,start+track->latency,frames,channel,source);
         if (result==JFX_SUCCESS) result=process_track(track,start+track->latency,frames,channel);
-        if (result==JFX_SUCCESS) for (size_t i=0;i<frames;++i) {
+        bool automated=false;
+        for (size_t a=0;a<track->automation_count;++a) if (track->automation[a].target==JFX_AUTOMATION_TRACK_GAIN) automated=true;
+        if (result==JFX_SUCCESS && !automated) jfx_cpu_accumulate(mix,channel,frames*2,track->gain,m->master_gain);
+        else if (result==JFX_SUCCESS) for (size_t i=0;i<frames;++i) {
             double gain=track->gain;
             for (size_t a=0;a<track->automation_count;++a) if (track->automation[a].target==JFX_AUTOMATION_TRACK_GAIN) gain=automation_value(track->automation+a,start+i);
             for (unsigned c=0;c<2;++c) mix[i*2+c]+=channel[i*2+c]*(float)gain*m->master_gain;

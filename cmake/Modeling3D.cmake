@@ -66,6 +66,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(src/modeling3d.cpp PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-g1>")
 endif()
 target_include_directories(jfx_core SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/glm"
     ${Boost_INCLUDE_DIRS}
     "${JFX_3D_EIGEN_ROOT}"
     "${BULLET_PHYSICS_SOURCE_DIR}/src"

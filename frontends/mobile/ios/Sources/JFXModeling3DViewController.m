@@ -1,7 +1,7 @@
 #import "JFXModeling3DViewController.h"
 #include <math.h>
 #include <stdint.h>
-@interface JFXModeling3DViewController ()
+@interface JFXModeling3DViewController () <UIGestureRecognizerDelegate>
 @property(nonatomic,strong) JFXMobilePlayerBridge *player;
 @property(nonatomic,strong) UIStackView *content;
 @property(nonatomic,strong) UIImageView *preview;
@@ -11,6 +11,9 @@
 @property(nonatomic) NSUInteger selected;
 @property(nonatomic) double seconds;
 @property(nonatomic) CFTimeInterval previous;
+@property(nonatomic) BOOL navigating;
+@property(nonatomic) NSUInteger navigationGestures;
+@property(nonatomic) BOOL navigationCancelled;
 @end
 @implementation JFXModeling3DViewController
 - (instancetype)initWithPlayer:(JFXMobilePlayerBridge *)player {
@@ -35,7 +38,10 @@
     [self.player edit:@"3d" track:0 clip:0 target:0 value:0 text:@""]; [self refresh];
 }
 - (void)stop { [self.clock invalidate]; self.clock=nil; self.previous=0; }
-- (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; [self stop]; }
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated]; [self stop];
+    if (self.navigating) { [self.player edit:@"3d.navigation_cancel" track:0 clip:0 target:0 value:0 text:@""]; self.navigating=NO; self.navigationGestures=0; }
+}
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (UIButton *)button:(NSString *)title action:(void (^)(void))action {
     UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:title forState:UIControlStateNormal];
@@ -62,6 +68,44 @@
     CGImageRef image=CGImageCreate(320,180,8,32,1280,space,kCGBitmapByteOrderDefault|kCGImageAlphaLast,provider,NULL,NO,kCGRenderingIntentDefault);
     self.preview.image=[UIImage imageWithCGImage:image]; CGImageRelease(image); CGColorSpaceRelease(space); CGDataProviderRelease(provider);
 }
+- (BOOL)navigationGesture:(UIGestureRecognizer *)gesture {
+    if (gesture.state==UIGestureRecognizerStateBegan) {
+        if (!self.navigationGestures) { self.navigationCancelled=NO; self.navigating=[self.player edit:@"3d.navigation_begin" track:0 clip:0 target:0 value:0 text:@""]; }
+        ++self.navigationGestures;
+    }
+    if (gesture.state==UIGestureRecognizerStateEnded || gesture.state==UIGestureRecognizerStateCancelled || gesture.state==UIGestureRecognizerStateFailed) {
+        self.navigationCancelled|=gesture.state!=UIGestureRecognizerStateEnded;
+        if (self.navigationGestures) --self.navigationGestures;
+        if (!self.navigationGestures && self.navigating) {
+            [self.player edit:self.navigationCancelled?@"3d.navigation_cancel":@"3d.navigation_end" track:0 clip:0 target:0 value:0 text:@""];
+            self.navigating=NO; [self refresh];
+        }
+        return NO;
+    }
+    return self.navigating;
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    return gesture.view==self.preview && other.view==self.preview;
+}
+- (void)orbitGesture:(UIPanGestureRecognizer *)gesture {
+    if (![self navigationGesture:gesture]) return;
+    CGPoint delta=[gesture translationInView:self.preview]; [gesture setTranslation:CGPointZero inView:self.preview];
+    NSString *op=@"3d.orbit",*text=[NSString stringWithFormat:@"%.9g %.9g 0",-delta.x*.4,-delta.y*.4];
+    if (gesture.numberOfTouches>=2) {
+        NSArray *camera=[self.player scene3DState][@"camera"];
+        double scale=2*[camera[2] doubleValue]*tan([camera[6] doubleValue]*M_PI/360)/MAX(1,self.preview.bounds.size.height);
+        op=@"3d.pan"; text=[NSString stringWithFormat:@"%.9g %.9g 0",-delta.x*scale,delta.y*scale];
+    }
+    [self.player edit:op track:0 clip:0 target:0 value:0 text:text]; [self showPreview];
+}
+- (void)zoomGesture:(UIPinchGestureRecognizer *)gesture {
+    if (![self navigationGesture:gesture]) return;
+    [self.player edit:@"3d.dolly" track:0 clip:0 target:0 value:MAX(-10,MIN(10,log(MAX(.0001,gesture.scale)))) text:@""]; gesture.scale=1; [self showPreview];
+}
+- (void)rollGesture:(UIRotationGestureRecognizer *)gesture {
+    if (![self navigationGesture:gesture]) return;
+    [self.player edit:@"3d.orbit" track:0 clip:0 target:0 value:0 text:[NSString stringWithFormat:@"0 0 %.9g",gesture.rotation*180/M_PI]]; gesture.rotation=0; [self showPreview];
+}
 - (void)tick:(CADisplayLink *)link {
     NSDictionary *state=[self.player scene3DState]; double fps=[state[@"fps"] doubleValue],duration=[state[@"frames"] doubleValue]/MAX(1,fps);
     if (self.previous) self.seconds+=link.timestamp-self.previous; self.previous=link.timestamp;
@@ -75,6 +119,11 @@
     self.seconds=MIN(self.seconds,MAX(0,[state[@"frames"] doubleValue]-1)/fps);
     if (self.selected>=objects.count) self.selected=0;
     self.preview=[[UIImageView alloc] init]; self.preview.contentMode=UIViewContentModeScaleAspectFit;
+    self.preview.userInteractionEnabled=YES;
+    [self.preview addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(orbitGesture:)]];
+    [self.preview addGestureRecognizer:[[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(zoomGesture:)]];
+    [self.preview addGestureRecognizer:[[UIRotationGestureRecognizer alloc] initWithTarget:self action:@selector(rollGesture:)]];
+    for (UIGestureRecognizer *gesture in self.preview.gestureRecognizers) gesture.delegate=self;
     [self.preview.heightAnchor constraintEqualToConstant:180].active=YES; [self.content addArrangedSubview:self.preview];
     self.status=[[UILabel alloc] init]; self.status.numberOfLines=0; [self.content addArrangedSubview:self.status];
     __weak JFXModeling3DViewController *weak=self;
@@ -89,11 +138,46 @@
         if (isfinite(f) && f>=1 && f<=240 && floor(f)==f && isfinite(n) && n>=1 && n<=36000 && floor(n)==n)
             [weak apply:@"3d.clock" a:(NSUInteger)f b:(NSUInteger)n c:0 value:0 text:@""]; }];
     for (NSString *op in @[@"undo",@"redo",@"3d.new"]) [self button:op action:^{ [weak apply:op a:0 b:0 c:0 value:0 text:@""]; }];
-    for (NSString *primitive in @[@"cube",@"sphere",@"plane"]) [self button:[@"Add " stringByAppendingString:primitive] action:^{ [weak apply:@"3d.add" a:0 b:0 c:0 value:0 text:primitive]; }];
+    UITextField *segments=[self field:@"Primitive segments (8..128)" value:@"64"];
+    for (NSString *primitive in @[@"cube",@"sphere",@"plane",@"cylinder",@"cone",@"torus",@"capsule",@"pyramid",@"disk",@"nurbs",@"metaball"]) [self button:[@"Add " stringByAppendingString:primitive] action:^{
+        double n=[weak number:segments]; if (isfinite(n) && n>=8 && n<=128 && floor(n)==n) [weak apply:@"3d.add" a:(NSUInteger)n b:0 c:0 value:0 text:primitive]; }];
     [objects enumerateObjectsUsingBlock:^(NSDictionary *o,NSUInteger i,BOOL *stop) { (void)stop;
         [weak button:[NSString stringWithFormat:@"%lu: %@ (%@ vertices)",(unsigned long)i,o[@"name"],o[@"vertices"]] action:^{ weak.selected=i; [weak refresh]; }]; }];
     if (objects.count) {
         NSDictionary *o=objects[self.selected]; NSArray *transforms=o[@"transform"],*names=@[@"Position X",@"Position Y",@"Position Z",@"Rotation X",@"Rotation Y",@"Rotation Z",@"Scale X",@"Scale Y",@"Scale Z"];
+        [self button:[o[@"smooth"] boolValue]?@"Flat shading":@"Smooth shading" action:^{ [weak apply:@"3d.smooth" a:weak.selected b:0 c:0 value:[o[@"smooth"] boolValue]?0:1 text:@""]; }];
+        NSUInteger generator=[o[@"generator"] unsignedIntegerValue];
+        if (generator) {
+            NSArray *points=o[generator==1?@"controls":@"balls"];
+            [points enumerateObjectsUsingBlock:^(NSArray *point,NSUInteger i,BOOL *stop) { (void)stop;
+                for (NSUInteger ch=0;ch<4;++ch) {
+                    UITextField *value=[weak field:[NSString stringWithFormat:@"%@ %lu / %@",generator==1?@"Control":@"Ball",(unsigned long)i,@[@"X",@"Y",@"Z",generator==1?@"Weight":@"Radius"][ch]] value:[point[ch] stringValue]];
+                    [weak button:@"Apply generator component" action:^{ [weak apply:generator==1?@"3d.nurbs_point":@"3d.metaball_point" a:weak.selected b:i c:ch value:[weak number:value] text:@""]; }];
+                }
+                if (generator==2) [weak button:[NSString stringWithFormat:@"Remove ball %lu",(unsigned long)i] action:^{ [weak apply:@"3d.metaball_remove" a:weak.selected b:i c:0 value:0 text:@""]; }];
+            }];
+            UITextField *resolution=[self field:@"Surface resolution (8..64)" value:[o[@"resolution"] stringValue]];
+            [self button:@"Set surface resolution" action:^{ double n=[weak number:resolution]; if (isfinite(n) && n>=8 && n<=64 && floor(n)==n) [weak apply:@"3d.resolution" a:weak.selected b:(NSUInteger)n c:0 value:0 text:@""]; }];
+            if (generator==2) {
+                UITextField *ball=[self field:@"New metaball X Y Z radius" value:@"0 1 0 1"];
+                [self button:@"Add metaball" action:^{ [weak apply:@"3d.metaball_add" a:weak.selected b:0 c:0 value:0 text:ball.text ?: @""]; }];
+            }
+            [self button:@"Make generator editable" action:^{ [weak apply:@"3d.make_editable" a:weak.selected b:0 c:0 value:0 text:@""]; }];
+        }
+        NSDictionary *cloner=o[@"cloner"];
+        UITextField *cloneMode=[self field:@"Cloner (0 off, 1 linear, 2 radial, 3 grid)" value:[cloner[@"mode"] stringValue]],*cloneCount=[self field:@"Clone count (1..64)" value:[cloner[@"count"] stringValue]],*spacing=[self field:@"Clone spacing / radius" value:[cloner[@"spacing"] stringValue]];
+        [self button:@"Apply cloner" action:^{ double mode=[weak number:cloneMode],count=[weak number:cloneCount];
+            if (isfinite(mode) && mode>=0 && mode<=3 && floor(mode)==mode && isfinite(count) && count>=1 && count<=64 && floor(count)==count)
+                [weak apply:@"3d.cloner" a:weak.selected b:(NSUInteger)mode c:(NSUInteger)count value:[weak number:spacing] text:@""]; }];
+        [self button:@"Make clones real at playhead" action:^{ [weak apply:@"3d.cloner_make_real" a:weak.selected b:0 c:0 value:weak.seconds text:@""]; }];
+        UITextField *scriptChannel=[self field:@"Joltscript channel (0..8)" value:@"4"];
+        UITextField *script=[self field:@"Animation script: time frame index value" value:@"(defkernel spin [time frame index value] (+ value (* time 90)))"];
+        [self button:@"Load assigned animation script" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) script.text=o[@"scripts"][(NSUInteger)ch]; }];
+        [self button:@"Apply animation script" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) [weak apply:@"3d.script" a:weak.selected b:(NSUInteger)ch c:0 value:0 text:script.text ?: @""]; }];
+        [self button:@"Remove animation script" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) [weak apply:@"3d.script" a:weak.selected b:(NSUInteger)ch c:0 value:0 text:@""]; }];
+        NSString *scriptsDirectory=NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject;
+        UITextField *scriptPath=[self field:@"Animation .jolt path" value:[scriptsDirectory stringByAppendingPathComponent:@"spin.jolt"]];
+        [self button:@"Load animation .jolt" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) [weak apply:@"3d.script_file" a:weak.selected b:(NSUInteger)ch c:0 value:0 text:scriptPath.text ?: @""]; }];
         UITextField *name=[self field:@"3D object name" value:o[@"name"]];
         [self button:@"Rename 3D object" action:^{ [weak apply:@"3d.name" a:weak.selected b:0 c:0 value:0 text:name.text ?: @""]; }];
         [self button:[o[@"visible"] boolValue]?@"Hide mesh":@"Show mesh" action:^{ [weak apply:@"3d.visible" a:weak.selected b:0 c:0 value:[o[@"visible"] boolValue]?0:1 text:@""]; }];
@@ -120,6 +204,8 @@
     NSArray *camera=state[@"camera"],*cameraNames=@[@"Orbit yaw",@"Orbit pitch",@"Camera distance",@"Target X",@"Target Y",@"Target Z",@"Field of view"];
     for (NSUInteger i=0;i<camera.count;++i) { UITextField *input=[self field:cameraNames[i] value:[camera[i] stringValue]];
         [self button:[@"Apply " stringByAppendingString:cameraNames[i]] action:^{ [weak apply:@"3d.camera" a:i b:0 c:0 value:[weak number:input] text:@""]; }]; }
+    for (NSUInteger i=0;i<6;++i) [self button:[@"3D " stringByAppendingString:@[@"Front",@"Right",@"Top",@"Back",@"Left",@"Bottom"][i]] action:^{ [weak apply:@"3d.view" a:i b:0 c:0 value:0 text:@""]; }];
+    for (NSUInteger i=0;i<3;++i) [self button:[@"Gimbal " stringByAppendingString:@[@"X",@"Y",@"Z"][i]] action:^{ [weak apply:@"3d.orbit_axis" a:0 b:0 c:0 value:15 text:@[@"1 0 0",@"0 1 0",@"0 0 1"][i]]; }];
     UITextField *bake=[self field:@"Physics bake frames (1..600)" value:@"60"];
     [self button:@"Bake rigid bodies" action:^{ double n=[weak number:bake]; if (isfinite(n) && n>=1 && n<=600 && floor(n)==n) [weak apply:@"3d.bake" a:0 b:0 c:(NSUInteger)n value:0 text:@""]; }];
     NSString *directory=NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject;

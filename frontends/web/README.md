@@ -27,7 +27,11 @@ npm test
 
 The named **3D Modeling & Animation** section edits the shared scene with object
 selection, primitives, transforms, materials, vertex coordinates, subdivision,
-principal axes, keyframes, camera and physics controls. Preview/transport/save
+principal axes, keyframes, camera and physics controls. Expanded primitives,
+NURBS/metaball generator controls, cloners and Joltscript channel drivers are
+shared with desktop. Drag the preview to orbit; Shift/right-drag pans, Alt-drag
+rolls and the wheel zooms. Quaternion orientation supports pole traversal.
+Preview/transport/save
 switch to the scene document; playback uses its FPS and suppresses NLE audio.
 Imported PLY meshes live in the WASM filesystem; Export PLY downloads the native
 mesh output. Scene `.jfx` files embed geometry. See

@@ -1,5 +1,57 @@
 # Progress
 
+## Shared CPU performance work (2026-10-09)
+
+- Measuring 3D rendering and camera navigation before optimization. Adding a
+  private xsimd-backed C bridge for shared image/audio loops, scalar fallbacks,
+  reference/tail tests and a repeatable benchmark. Preserving prior 3D work.
+- Implemented xsimd exposure, constant-gain audio accumulation, recording finite
+  validation and optimized-build 3D raster batches. Byte widening stays in the
+  faster compiler-vectorizable loop. Added `JFX_CPU_SIMD=OFF` and scalar tails.
+- Cached immutable mesh normals with geometry/shading invalidation; camera-only
+  gestures avoid mesh copies and full-scene validation. Debug eight-sphere preview
+  improved from 187.35 to 168.35 ms/frame; camera updates from 1.053 to 0.002 ms.
+- Optimized renderer comparison: 23.13 ms scalar vs 15.69 ms xsimd (1.47x).
+  Exposure: 5.97 ms scalar vs 3.17 ms xsimd (1.88x). Both optimized renderer
+  variants passed 3D tool tests. See `docs/performance.md` for scope/methodology.
+- Targeted ASan/UBSan checks pass 5/5, including scalar/SIMD numeric reference
+  tests and cache invalidation. Allocation-policy and whitespace checks pass.
+  Full native build and suite pass **373/373**; logs are
+  `/tmp/opencode/jfx-simd-{full-build,native-tests,asan-tests}.log`.
+  Changes remain uncommitted. Removed the now-unused scalar exposure helper.
+
+## 3D workspace expansion (2026-10-09)
+
+- Implemented smooth curved primitives, four-sample antialiasing and near-plane
+  clipping, cylinders/cones/tori/capsules/pyramids/disks, GLM quaternion viewport
+  navigation and desktop gimbal rings. Desktop previews follow viewport size;
+  camera gestures commit as one undo step and support cancellation.
+- Added editable rational bicubic NURBS patches, welded marching-tetrahedra
+  metaballs, procedural linear/radial/grid cloners and make-real/editable tools.
+- Added per-channel embedded Joltscript source/compiled JBC1 drivers with
+  time/frame/index/keyed-value inputs, file loading and runnable examples.
+  Source, generator controls, layouts and quaternion orientation persist across
+  save/load/history and are shared by preview/export and all editor clients.
+- Added desktop/web/mobile controls and mouse/touch navigation; expanded native,
+  frontend, real ImGui, CLI and mounted web tests. Added real-WASM cases for a
+  future rebuilt module; Emscripten and Android/iOS toolchains remain unavailable.
+- Sanitizer verification found an Eigen temporary-expression lifetime issue in
+  clone placement. Replaced the calculation with GLM quaternion/vector math;
+  engine/CLI/frontend checks pass after the fix.
+- Final targeted Clang ASan/UBSan checks pass **6/6**, with leak detection and
+  halt-on-error enabled, including real ImGui navigation/one-step undo. Web tests
+  pass **13/13**; all three example animation kernels compile. Allocation-policy
+  and whitespace checks pass. Visually checked a sphere/torus PNG for smooth
+  shading and antialiased edges, plus edited NURBS/metaball output.
+- Full native build completed. Native suite: **370/371** passed on the first run;
+  `ext_conformance_resources` could not start because its executable was still
+  being linked (`text file is busy`). After the build completed, the sole failed
+  check passed on retry, so all **371** checks have passed. No test assertion or
+  sanitizer failure remains. Changes are uncommitted; nothing was pushed.
+- Evidence: `/tmp/opencode/jfx-3d-tools-sanitizer-tests.log`,
+  `jfx-3d-tools-web-tests.log`, `jfx-3d-tools-native-tests.log`,
+  `jfx-3d-tools-native-retry.log`, and `jfx-3d-tools-preview/{smooth,surfaces}.png`.
+
 ## Shared 3D modeling and animation workspace (2026-10-09)
 
 - Added an editor-owned 3D scene document, embedded mesh/key/camera persistence,

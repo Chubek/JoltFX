@@ -50,6 +50,22 @@ test("real WASM 3D scene keys, mesh processing, physics and persistence", () => 
     const before=bridge.saveDocument(); assert.throws(() => bridge.edit("3d.transform",0,6,0,0)); assert.equal(bridge.saveDocument(),before);
   } finally { bridge.dispose(); }
 });
+test("real WASM procedural surfaces, cloners, quaternion camera and Joltscript drivers", () => {
+  const bridge=new EmscriptenJoltBridge(module,128,128);
+  try {
+    bridge.edit("3d.add",64,0,0,0,"torus"); bridge.edit("3d.cloner",0,2,3,2);
+    bridge.edit("3d.script",0,1,0,0,"(defkernel lift [time frame index value] (+ value time))");
+    bridge.edit("3d.add",0,0,0,0,"nurbs"); bridge.edit("3d.nurbs_point",1,5,3,2);
+    bridge.edit("3d.add",0,0,0,0,"metaball"); bridge.edit("3d.metaball_add",2,0,0,0,"0 1 0 1");
+    bridge.edit("3d.orbit",0,0,0,0,"0 180 45");
+    const state=bridge.scene3dState(); assert.equal(state.objects[0].cloner.count,3);
+    assert.equal(state.objects[1].generator,1); assert.equal(state.objects[2].balls.length,3);
+    assert.ok(Math.abs(state.quaternion.reduce((sum,x) => sum+x*x,0)-1)<1e-5);
+    const text=bridge.saveDocument(),a=pixels(bridge.renderFrame(0)),b=pixels(bridge.renderFrame(1)); assert.notDeepEqual(a,b);
+    bridge.loadDocument(text); assert.deepEqual(pixels(bridge.renderFrame(1)),b);
+    const before=bridge.saveDocument(); assert.throws(() => bridge.edit("3d.script",0,1,0,0,"(bad)")); assert.equal(bridge.saveDocument(),before);
+  } finally { bridge.dispose(); }
+});
 
 test("real WASM graph edits, history and interior previews match native conformance", () => withBridge(bridge => {
   bridge.loadDocument(fixture("composition.jfx"));

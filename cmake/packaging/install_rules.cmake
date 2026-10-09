@@ -183,6 +183,11 @@ install(FILES third_party/cgal/Installation/LICENSE third_party/cgal/Installatio
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/cgal)
 install(FILES third_party/stb/LICENSE
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/stb)
+install(FILES third_party/glm/copying.txt
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/glm)
+install(FILES third_party/xsimd/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/xsimd)
+install(DIRECTORY examples/modeling3d DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/examples)
 install(FILES third_party/tinyply/source/tinyply.h
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/tinyply)
 if(JFX_VIDEO_FFMPEG AND JFX_MEDIA_FFMPEG_BUNDLED)

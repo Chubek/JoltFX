@@ -6,9 +6,12 @@
 #include <cmath>
 #include <cstring>
 #include <cfloat>
+#include <cstdio>
 static void draw(jfx_desktop_frontend_t *f) { assert(jfx_desktop_frontend_draw(f)==JFX_SUCCESS); }
 static ImGuiWindow *window(const char *part) {
     for (auto *w:ImGui::GetCurrentContext()->Windows) if (w->Active && std::strstr(w->Name,part)) return w;
+    std::fprintf(stderr,"Missing UI window: %s\n",part);
+    for (auto *w:ImGui::GetCurrentContext()->Windows) std::fprintf(stderr,"%s (active=%d)\n",w->Name,int(w->Active));
     assert(false); return nullptr;
 }
 static void click(jfx_desktop_frontend_t *f,const char *label) {
@@ -35,7 +38,21 @@ int main() {
     assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS); assert(std::memcmp(before,after,sizeof(before))!=0);
     click(f,"Redo 3D"); assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS); assert(std::strstr(state,"\"name\":\"cube\""));
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_NLE)==JFX_SUCCESS); draw(f);
-    assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_MODELING3D)==JFX_SUCCESS); draw(f);
+    assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_MODELING3D)==JFX_SUCCESS); draw(f); draw(f); draw(f);
     assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS); assert(std::memcmp(before,after,sizeof(before))==0);
+    // Navigate the actual headless viewport item: multiple mouse updates must
+    // change the camera but create only one history entry on release.
+    auto *viewport=window("3D viewport"); auto &io=ImGui::GetIO();
+    ImVec2 point(viewport->InnerRect.Min.x+70,viewport->InnerRect.Max.y-120);
+    io.AddMousePosEvent(point.x,point.y); draw(f);
+    io.AddMouseButtonEvent(0,true); draw(f);
+    for (int i=1;i<=4;++i) { io.AddMousePosEvent(point.x+float(i)*15,point.y+float(i)*5); draw(f); }
+    io.AddMouseButtonEvent(0,false); draw(f); draw(f);
+    assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS);
+    assert(std::memcmp(before,after,sizeof(before))!=0);
+    assert(jfx_desktop_frontend_edit(f,"undo",0,0,0,0,"")==JFX_SUCCESS);
+    assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS && std::memcmp(before,after,sizeof(before))==0);
+    assert(jfx_desktop_frontend_edit(f,"undo",0,0,0,0,"")==JFX_SUCCESS);
+    assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS && std::strstr(state,"\"objects\":[]"));
     jfx_desktop_frontend_destroy(f);
 }

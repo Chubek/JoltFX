@@ -34,12 +34,13 @@ int cmd_edit(int argc, char **argv) {
         "Color Calibration: calibration.add/param/path/enabled/reset/remove/move; 'calibration' lists operators.\n"
         "NLE: clip.split/move/trim/duplicate/slip/ripple_delete, track.move/solo/insert_gap.\n"
         "Composition: node.add/connect/disconnect/param/path/label/position/duplicate/reset/remove/output.\n"
-        "3D Modeling & Animation: 3d.add/transform/vertex/key/subdivide/align/mass/bake/import_ply/export_ply; scene3d (JSON).\n"
+        "3D: 3d.add/nurbs_point/metaball_point/cloner/script/script_file/orbit/pan/dolly; scene3d (JSON).\n"
         "Audio: clip.audio.enabled/gain/pan/fade_in/fade_out; track.audio.gain.\n"
         "Plugins: plugin.load PATH, plugin.unload ID, plugin.action NAME TRACK CLIP NODE, plugins.\n"
         "Commands: OP A B C VALUE TEXT (zero-based indices); undo, redo, timeline, composition, nodes, show, save, quit.\n");
-    char line[2048];
+    char line[8192];
     while (fgets(line,sizeof(line),stdin)) {
+        if (strlen(line)==sizeof(line)-1) { fprintf(stderr,"Editor command is too long.\n"); goto done; }
         line[strcspn(line,"\r\n")]=0;
         if (!*line || *line=='#') continue;
         if (!strncmp(line,"plugin.load ",12)) {
@@ -92,9 +93,9 @@ int cmd_edit(int argc, char **argv) {
             if (jfx_editor_save(e,doc,JFX_PROJECT_MAX_BYTES,&n)==JFX_SUCCESS) puts(doc);
             continue;
         }
-        char op[64],text[512]={0}; unsigned a,b,c; double value;
-        int count=sscanf(line,"%63s %u %u %u %lf %511[^\n]",op,&a,&b,&c,&value,text);
-        if (count<5 || jfx_editor_command(e,op,a,b,c,value,text)!=JFX_SUCCESS) {
+        char op[64]; unsigned a,b,c; double value; int consumed=0;
+        int count=sscanf(line,"%63s %u %u %u %lf %n",op,&a,&b,&c,&value,&consumed);
+        if (count<5 || jfx_editor_command(e,op,a,b,c,value,line+consumed)!=JFX_SUCCESS) {
             fprintf(stderr,"Edit rejected; document unchanged by this command.\n"); goto done;
         }
     }

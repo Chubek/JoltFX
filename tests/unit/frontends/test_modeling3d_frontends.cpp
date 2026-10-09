@@ -12,6 +12,12 @@ int main() {
     assert(jfx_editor_command(editor,"3d.add",0,0,0,0,"cube")==JFX_SUCCESS);
     assert(jfx_editor_command(editor,"3d.key",0,4,0,0,"")==JFX_SUCCESS);
     assert(jfx_editor_command(editor,"3d.key",0,4,30,90,"")==JFX_SUCCESS);
+    assert(jfx_editor_command(editor,"3d.cloner",0,2,3,2,"")==JFX_SUCCESS);
+    assert(jfx_editor_command(editor,"3d.script",0,1,0,0,"(defkernel lift [time frame index value] (+ (+ value time) (* index .25)))")==JFX_SUCCESS);
+    assert(jfx_editor_command(editor,"3d.add",0,0,0,0,"nurbs")==JFX_SUCCESS);
+    assert(jfx_editor_command(editor,"3d.nurbs_point",1,5,3,2,"")==JFX_SUCCESS);
+    assert(jfx_editor_command(editor,"3d.add",0,0,0,0,"metaball")==JFX_SUCCESS);
+    assert(jfx_editor_command(editor,"3d.orbit",0,0,0,0,"10 15 20")==JFX_SUCCESS);
     tilly::vector<char> text(8*1024*1024); size_t length=0;
     assert(jfx_editor_save(editor,text.data(),text.size(),&length)==JFX_SUCCESS);
     tilly::vector<uint8_t> expected(128*128*4),actual(expected.size());

@@ -38,6 +38,7 @@ export interface Scene3DState {
     fps: number;
     frames: number;
     camera: number[];
+    quaternion?: number[];
     undo: boolean;
     redo: boolean;
     objects: {
@@ -49,6 +50,17 @@ export interface Scene3DState {
         triangles: number;
         transform: number[];
         color: number[];
+        smooth?: boolean;
+        generator?: number;
+        resolution?: number;
+        controls?: number[][];
+        balls?: number[][];
+        cloner?: {
+            mode: number;
+            count: number;
+            spacing: number;
+        };
+        scripts?: string[];
         keys: {
             channel: number;
             frame: number;
@@ -76,6 +88,7 @@ export declare function colorLayers(document: string, selectedTrack: number, sel
 export declare class JoltEditor {
     private readonly root;
     private readonly bridge;
+    private cancelSceneNavigation;
     private time;
     private playing;
     private frameRequest;

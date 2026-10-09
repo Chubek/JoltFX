@@ -1,0 +1,3 @@
+;; Assign to Rotation Y (channel 4).
+(defkernel spin [time frame index value]
+  (+ value (* time 90)))

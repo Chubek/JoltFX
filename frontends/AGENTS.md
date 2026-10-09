@@ -1059,3 +1059,10 @@ belong to Core; frontend state owns selection and transport. See
 `docs/modeling3d.md`, `modeling3d_ui_tests`, `modeling3d_frontend_conformance`,
 and `modeling3d_cli`. Native scene libraries are linked through Core's C boundary;
 WASM exports must include `jfx_web_session_scene3d_state`.
+The 3D workspace now exposes the expanded primitive catalog, generator controls,
+cloners and per-channel Joltscript drivers. Desktop quaternion navigation uses
+draggable GLM gimbal rings and camera-only history grouping; render at the actual
+viewport size (bounded to 1280) to avoid magnifying the old 320-pixel preview.
+Finish/cancel navigation on release, Escape or workspace/lifecycle changes.
+Web and mobile route camera gestures and all generator/script operations through
+the same commands. Source/controls/layouts belong to Core, never UI-only state.

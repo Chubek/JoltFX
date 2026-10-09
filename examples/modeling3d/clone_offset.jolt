@@ -1,0 +1,3 @@
+;; Assign to Position Y (channel 1): stagger clones and lift them over time.
+(defkernel clone-offset [time frame index value]
+  (+ value (+ (* index 0.3) (* time 0.5))))

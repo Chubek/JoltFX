@@ -22,7 +22,13 @@ add_library(jfx_core STATIC
     src/plugin_host.c
     src/animation.cpp
     src/result.c
+    src/cpu_numeric.cpp
 )
+option(JFX_CPU_SIMD "Use vendored xsimd for shared CPU numeric kernels" ON)
+if(NOT JFX_CPU_SIMD)
+    target_compile_definitions(jfx_core PRIVATE JFX_CPU_SIMD_OFF=1)
+endif()
+target_include_directories(jfx_core SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/xsimd/include")
 
 target_include_directories(jfx_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

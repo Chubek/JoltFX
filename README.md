@@ -111,9 +111,16 @@ the embeddable iOS controller, host APIs and the shared command reference.
 
 ### 3D modeling and animation
 
+Shared CPU kernels use vendored xsimd where benchmarks show a benefit. Build
+with `Release` or `RelWithDebInfo` for interactive performance; see
+[CPU performance](docs/performance.md) for SIMD controls and measurements.
+
 The desktop **3D Modeling & Animation** tab provides a scene outliner, mesh
 primitives, vertex editing, subdivision, principal-axis alignment, transforms,
-materials, camera controls, keyframes and rigid-body animation baking. Web and
+materials, quaternion camera/gimbal controls, keyframes and rigid-body animation baking.
+Smooth antialiased rendering, expanded primitives, editable NURBS/metaballs,
+linear/radial/grid cloners and Joltscript transform drivers support procedural
+motion graphics. Web and
 Android have corresponding editor sections; iOS has a dedicated controller;
 CLI/terminal and host bridges use the same scene engine and `.jfx` documents.
 
@@ -124,8 +131,9 @@ build/frontends/cli/joltfx 3d render animated.jfx frame.png 1.0
 build/frontends/desktop/jfx_desktop --project animated.jfx
 ```
 
-CGAL, Bullet, tinyply, VTK, libigl and stb are integrated from `third_party`.
-Scenes include their mesh data and animate translation, Euler rotation and scale.
+CGAL, Bullet, tinyply, VTK, libigl, stb and GLM are integrated from `third_party`.
+Scenes include mesh/generator data, clone layouts and scripts, and animate
+translation, Euler rotation and scale.
 See [3D usage](docs/modeling3d.md) for library roles, command examples, CPU
 viewport/physics limits and the pinned Eigen dependency's offline build override.
 

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Shared xsimd CPU kernels for exposure, constant-gain audio summation, recording
+  validation and optimized 3D rasterization; scalar fallback and reference tests.
+  Cached mesh normals and camera-only gesture validation reduce repeated scene
+  work. Added reproducible numeric/viewport benchmarks and performance notes.
+
+- Expanded the 3D workspace with smooth shaded, four-sample antialiased rendering;
+  cylinders, cones, tori, capsules, pyramids and disks; GLM quaternion orbit/pan/
+  zoom/roll and desktop gimbal rings; editable rational NURBS patches and blending
+  metaballs; linear/radial/grid cloners; and persistent Joltscript transform
+  animation drivers. Shared commands and native/frontend/UI/CLI coverage support
+  preview, scene persistence and export. Modeling3D API 1.1.
+
 - Shared 3D modeling and animation: desktop workspace tab, web/Android sections,
   iOS controller, CLI/terminal and portable host APIs. Mesh primitives, vertex
   editing, libigl subdivision/normals, CGAL validation, VTK principal axes,

@@ -62,8 +62,16 @@ sphere or plane; select it in the outliner; enter numeric values and press Enter
 to commit. **Key** stores a transform channel at the current frame. Select a
 channel/frame to change interpolation or remove a key. Mesh editing exposes
 vertices, subdivision and principal-axis alignment; rigid-body controls set mass
-and bake motion into editable keys. Camera orbit/target/distance/FOV controls are
-numeric. PLY import/export and PNG/video output use explicit paths. File > Open/
+and bake motion into editable keys. **More primitives** adds cylinders, cones,
+tori, capsules, pyramids, disks, NURBS patches and metaballs. Generator inspectors
+edit control points/weights or ball centers/radii; cloners arrange instances in
+lines, rings or grids. **Joltscript animation** assigns a source or `.jolt` file
+to a transform channel, with time/frame/index/keyed-value inputs.
+The viewport uses smooth shading and four-sample antialiasing at its display size.
+Drag to orbit, Shift/middle/right-drag to pan, wheel to zoom and Alt-drag to roll.
+Drag the GLM quaternion gimbal rings to rotate individual world axes. Escape
+cancels; release commits one undo step. Numeric target/distance/FOV and axis-view
+buttons are also available. PLY import/export and PNG/video output use explicit paths. File > Open/
 Save handles embedded `.jfx` scenes. See [3D usage](../../docs/modeling3d.md).
 
 | Option | Meaning |

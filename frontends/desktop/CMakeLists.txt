@@ -55,6 +55,7 @@ target_include_directories(jfx_desktop_frontend PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_include_directories(jfx_desktop_frontend PRIVATE ${JFX_IMGUI_DIR})
+target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/glm")
 target_link_libraries(jfx_desktop_frontend PUBLIC jfx_core jolt_effects)
 set_project_warnings(jfx_desktop_frontend)
 

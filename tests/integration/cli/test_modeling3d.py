@@ -29,3 +29,19 @@ with tempfile.TemporaryDirectory(prefix="jfx-3d-") as directory:
     (root / "preserve.jfx").write_text("keep me")
     run("3d", "edit", "animated.jfx", "preserve.jfx", commands="3d.transform 0 6 0 0\nsave\n", success=False)
     assert (root / "preserve.jfx").read_text() == "keep me"
+    script="(defkernel lift [time frame index value] (+ (+ value (* time 2)) index))"
+    (root / "lift.jolt").write_text(script)
+    commands=("3d.new 0 0 0 0\n3d.add 64 0 0 0 torus\n"
+              "3d.cloner 0 2 4 2\n3d.script_file 0 1 0 0 lift.jolt\n"
+              "3d.add 0 0 0 0 nurbs\n3d.nurbs_point 1 5 1 1\n"
+              "3d.add 0 0 0 0 metaball\n3d.metaball_add 2 0 0 0 0 1 0 1\n"
+              "3d.orbit 0 0 0 0 0 180 45\nsave\n")
+    run("3d", "edit", "animated.jfx", "tools.jfx", commands=commands)
+    state=json.loads(run("3d", "info", "tools.jfx"))
+    assert state["objects"][0]["cloner"]["count"]==4 and state["objects"][0]["scripts"][1]==script
+    assert state["objects"][1]["generator"]==1 and state["objects"][2]["generator"]==2
+    run("3d", "render", "tools.jfx", "tools0.png", "0")
+    run("3d", "render", "tools.jfx", "tools1.png", "1")
+    assert (root / "tools0.png").read_bytes() != (root / "tools1.png").read_bytes()
+    run("3d", "edit", "tools.jfx", "preserve.jfx", commands="3d.script 0 1 0 0 (bad)\nsave\n", success=False)
+    assert (root / "preserve.jfx").read_text()=="keep me"

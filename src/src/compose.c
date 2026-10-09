@@ -6,6 +6,7 @@
  * the graph so that destroying it is sufficient. */
 
 #include "jfx/jfx_compose.h"
+#include "cpu_numeric.h"
 #include "jfx/jfx_color.h"
 #include "plugin_internal.h"
 #include "joltscript/video_io.h"
@@ -955,13 +956,6 @@ static const jfx_lut_t *node_lut(eval_ctx_t *ctx, uint32_t index, const node_t *
 }
 
 
-/* Applies a graded triple to a pixel, leaving alpha alone. */
-static void write_rgb(float *px, float r, float g, float b) {
-    px[0] = clamp01(r);
-    px[1] = clamp01(g);
-    px[2] = clamp01(b);
-}
-
 /* The per-kind pixel work. `in` is the primary image input, which for a
  * single-input node is port 0. */
 static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame_t *out) {
@@ -1065,7 +1059,7 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
         if (!pixels) { ctx->error=JFX_ERROR_OUT_OF_MEMORY; return; }
         int r=jolt_video_io_frame(node->value.strings[0],(double)ctx->time_seconds,ctx->width,ctx->height,pixels,count*4);
         if (r) { ctx->error=r==-2 ? JFX_ERROR_NOT_IMPLEMENTED : JFX_ERROR_NOT_FOUND; }
-        else for (size_t i=0;i<count*4;++i) out->pixels[i]=(float)pixels[i]/255.0f;
+        else jfx_cpu_decode_unorm(out->pixels,pixels,count*4);
         free_bytes(pixels); return;
     }
     if (strcmp(kind_name, "image") == 0) {
@@ -1116,12 +1110,7 @@ static void eval_node(eval_ctx_t *ctx, uint32_t index, const node_t *node, frame
     /* --- Colour grading --------------------------------------------------- */
     if (strcmp(kind_name, "exposure") == 0) {
         const float gain = powf(2.0f, node_param(node, 0));
-        for (size_t i = 0; i < count; ++i) {
-            const float *s = src + i * 4u;
-            float *o = out->pixels + i * 4u;
-            write_rgb(o, s[0] * gain, s[1] * gain, s[2] * gain);
-            o[3] = s[3];
-        }
+        jfx_cpu_exposure(out->pixels,src,count,gain);
         return;
     }
     if (strcmp(kind_name, "contrast") == 0) {

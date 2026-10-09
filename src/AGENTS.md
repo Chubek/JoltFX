@@ -94,6 +94,14 @@ ctest --test-dir build --output-on-failure
 
 ## Memory Model
 
+Shared CPU numeric kernels live in private `src/cpu_numeric.h/.cpp`, using
+vendored xsimd and portable scalar tails/fallbacks (`JFX_CPU_SIMD=OFF`). Preserve
+NaN/clamping semantics, unaligned buffers and exact in-place operations. Do not
+enable fast-math or require host-native ISA flags for distributable builds.
+`cpu_numeric`/`cpu_numeric_scalar` test reference behavior and tails; benchmarks
+live under `tests/perf`. Scene normals are lazy, immutable, engine-allocated
+caches shared across candidate documents; geometry/shading edits invalidate them.
+
 The engine owns all allocations. External callers and kernels never call `malloc`/`free` directly.
 
 | Allocator            | Header                       | Use When                                              |
@@ -148,7 +156,7 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
-Modeling3D API 1.0 (`jfx_modeling3d.h`) and editor 1.8 append a scene document
+Modeling3D API 1.1 (`jfx_modeling3d.h`) and editor 1.8 append a scene document
 kind. Scene `3d.*` commands validate and commit transactionally with independent
 32-step/32-MiB history. Embedded `scene3d 1` documents validate before load; keys
 are sorted by channel/frame and use the scene's clock. Render/export dispatch by
@@ -157,6 +165,14 @@ kind rather than treating every non-sequence as a graph. Keep vendor types insid
 VTK math, Bullet physics, tinyply and stb are configured by
 `cmake/Modeling3D.cmake`, with serial libigl and allocator hooks for Bullet/stb.
 See `docs/modeling3d.md` and the modeling3d engine/frontend/CLI/UI checks.
+GLM owns quaternion camera/object math. Smooth normals, four-sample AA and
+near-plane clipping are shared by preview/export. NURBS patches and metaballs
+persist controls and regenerate bounded tessellations; polygon edits require
+`3d.make_editable` first. Cloners store instance layouts over source geometry.
+Per-channel scripts embed source, compile through Glue and execute bounded JBC1
+with time/frame/index/keyed-value inputs. Keep runtime failure output atomic;
+`modeling3d_tools` covers generator/driver/camera/history contracts. Camera-only
+`3d.navigation_begin/end/cancel` coalesces a gesture into one scene history step.
 
 The implemented color API is `include/jfx/jfx_color.h` (1.0.0). Its immutable
 descriptors come from `cmake/ColorKernels.cmake` and `.jolt` parameter declarations.

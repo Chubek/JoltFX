@@ -1,4 +1,5 @@
 #include "jfx/jfx_recording.h"
+#include "cpu_numeric.h"
 #include "tilly/allocator.h"
 #include <stdio.h>
 #include <string.h>
@@ -46,7 +47,7 @@ jfx_result_t jfx_audio_recording_begin(const char *path,uint32_t rate,jfx_audio_
 }
 jfx_result_t jfx_audio_recording_push(jfx_audio_recording_t *r,const float *pcm,size_t frames) {
     if (!r || !r->file || r->failed || !pcm || !frames || frames>JFX_AUDIO_MAX_BLOCK_FRAMES || frames>(UINT32_MAX-36u)/8u-r->frames) return JFX_ERROR_INVALID_ARGUMENT;
-    for (size_t i=0;i<frames*2;++i) if (!isfinite(pcm[i])) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!jfx_cpu_finite(pcm,frames*2)) return JFX_ERROR_INVALID_ARGUMENT;
     unsigned char bytes[4096]; size_t cursor=0;
     while (cursor<frames*2) {
         size_t n=frames*2-cursor; if (n>1024) n=1024;

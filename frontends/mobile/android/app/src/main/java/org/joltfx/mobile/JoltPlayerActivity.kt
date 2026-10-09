@@ -31,6 +31,11 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
     private var nativeHandle = 0L
     private var lastFrameNanos = 0L
     private var touchStartX = 0f
+    private var sceneTouchX = 0f
+    private var sceneTouchY = 0f
+    private var sceneTouchSpan = 0f
+    private var sceneTouchAngle = 0.0
+    private var sceneNavigating = false
     private lateinit var preview: PreviewImageView
     private lateinit var status: TextView
     private lateinit var timeline: NLETimelineView
@@ -56,8 +61,40 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         preview = PreviewImageView(this)
         preview.contentDescription = getString(R.string.preview_description)
-        preview.setOnClickListener { nativeTap(nativeHandle) }
+        preview.setOnClickListener { if (!scene3DActive) nativeTap(nativeHandle) }
         preview.setOnTouchListener { view, event ->
+            if (scene3DActive && nativeHandle != 0L) {
+                view.parent?.requestDisallowInterceptTouchEvent(true)
+                val x = (0 until event.pointerCount).sumOf { event.getX(it).toDouble() }.toFloat() / event.pointerCount
+                val y = (0 until event.pointerCount).sumOf { event.getY(it).toDouble() }.toFloat() / event.pointerCount
+                val span = if (event.pointerCount >= 2) kotlin.math.hypot(event.getX(1) - event.getX(0), event.getY(1) - event.getY(0)) else 0f
+                val angle = if (event.pointerCount >= 2) kotlin.math.atan2((event.getY(1) - event.getY(0)).toDouble(), (event.getX(1) - event.getX(0)).toDouble()) else 0.0
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> sceneNavigating = nativeEdit(nativeHandle, "3d.navigation_begin", 0, 0, 0, 0.0, "") == 0
+                    MotionEvent.ACTION_MOVE -> if (sceneNavigating) {
+                        val dx = x - sceneTouchX; val dy = y - sceneTouchY
+                        if (span > 0 && sceneTouchSpan > 0) {
+                            val camera = JSONObject(nativeScene3DState(nativeHandle) ?: "{}").optJSONArray("camera")
+                            val scale = 2 * (camera?.optDouble(2, 7.0) ?: 7.0) * kotlin.math.tan((camera?.optDouble(6, 45.0) ?: 45.0) * Math.PI / 360) / view.height.coerceAtLeast(1)
+                            nativeEdit(nativeHandle, "3d.pan", 0, 0, 0, 0.0, "${-dx * scale} ${dy * scale} 0")
+                            nativeEdit(nativeHandle, "3d.dolly", 0, 0, 0, kotlin.math.ln((span / sceneTouchSpan).toDouble()).coerceIn(-10.0, 10.0), "")
+                            val roll = kotlin.math.atan2(kotlin.math.sin(angle-sceneTouchAngle), kotlin.math.cos(angle-sceneTouchAngle)) * 180 / Math.PI
+                            nativeEdit(nativeHandle, "3d.orbit", 0, 0, 0, 0.0, "0 0 $roll")
+                        } else if (span == 0f && sceneTouchSpan == 0f) nativeEdit(nativeHandle, "3d.orbit", 0, 0, 0, 0.0, "${-dx * .4} ${-dy * .4} 0")
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (sceneNavigating) {
+                        nativeEdit(nativeHandle, if (event.actionMasked == MotionEvent.ACTION_CANCEL) "3d.navigation_cancel" else "3d.navigation_end", 0, 0, 0, 0.0, "")
+                        sceneNavigating = false; refreshScene3D(); view.performClick()
+                    }
+                }
+                sceneTouchX=x; sceneTouchY=y; sceneTouchSpan=span; sceneTouchAngle=angle
+                if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) {
+                    sceneTouchSpan=0f
+                    val remaining=if (event.actionIndex==0) 1 else 0
+                    sceneTouchX=event.getX(remaining); sceneTouchY=event.getY(remaining)
+                }
+                true
+            } else {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> touchStartX = event.x
                 MotionEvent.ACTION_UP -> {
@@ -67,6 +104,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
                 }
             }
             true
+            }
         }
         status = TextView(this)
         content.addView(preview); content.addView(status)
@@ -325,12 +363,39 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         }
         action("Preview 3D workspace") { edit("3d") }
         action("New 3D scene") { edit("3d.new"); nativeSeek(nativeHandle, 0.0) }
-        for (primitive in listOf("cube", "sphere", "plane")) action("Add $primitive") { edit("3d.add", text = primitive) }
+        val segments3D = field("Primitive segments (8..128)", "64")
+        for (primitive in listOf("cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule", "pyramid", "disk", "nurbs", "metaball")) action("Add $primitive") { edit("3d.add", a = segments3D.text.toString().toInt(), text = primitive) }
         val object3D = field("3D object index", "0")
         val name3D = field("3D object name", "Mesh")
         action("Rename 3D object") { edit("3d.name", object3D.text.toString().toInt(), text = name3D.text.toString()) }
         action("Show 3D object") { edit("3d.visible", object3D.text.toString().toInt(), value = 1.0) }
         action("Hide 3D object") { edit("3d.visible", object3D.text.toString().toInt(), value = 0.0) }
+        action("Smooth shading") { edit("3d.smooth", object3D.text.toString().toInt(), value = 1.0) }
+        action("Flat shading") { edit("3d.smooth", object3D.text.toString().toInt(), value = 0.0) }
+        val generatorPoint = field("NURBS control / metaball index", "0")
+        val generatorAxis = field("Generator component (0 X, 1 Y, 2 Z, 3 weight/radius)", "1")
+        val generatorValue = field("Generator value", "1")
+        for (op in listOf("3d.nurbs_point", "3d.metaball_point")) action("Apply $op") { edit(op, object3D.text.toString().toInt(), generatorPoint.text.toString().toInt(), generatorAxis.text.toString().toInt(), generatorValue.text.toString().toDouble()) }
+        val generatorResolution = field("Surface resolution (8..64)", "32")
+        action("Set surface resolution") { edit("3d.resolution", object3D.text.toString().toInt(), generatorResolution.text.toString().toInt()) }
+        val newBall = field("New metaball X Y Z radius", "0 1 0 1")
+        action("Add metaball") { edit("3d.metaball_add", object3D.text.toString().toInt(), text = newBall.text.toString()) }
+        action("Remove metaball") { edit("3d.metaball_remove", object3D.text.toString().toInt(), generatorPoint.text.toString().toInt()) }
+        action("Make generator editable") { edit("3d.make_editable", object3D.text.toString().toInt()) }
+        val cloneMode = field("Cloner (0 off, 1 linear, 2 radial, 3 grid)", "1")
+        val cloneCount = field("Clone count (1..64)", "5"); val cloneSpacing = field("Clone spacing / radius", "3")
+        action("Apply cloner") { edit("3d.cloner", object3D.text.toString().toInt(), cloneMode.text.toString().toInt(), cloneCount.text.toString().toInt(), cloneSpacing.text.toString().toDouble()) }
+        action("Make clones real") { edit("3d.cloner_make_real", object3D.text.toString().toInt()) }
+        val scriptChannel = field("Joltscript channel (0..8)", "4")
+        val script3D = field("Animation script: inputs time frame index value", "(defkernel spin [time frame index value] (+ value (* time 90)))")
+        action("Load assigned animation script") {
+            val objects = JSONObject(nativeScene3DState(nativeHandle) ?: "{}").getJSONArray("objects")
+            script3D.setText(objects.getJSONObject(object3D.text.toString().toInt()).getJSONArray("scripts").getString(scriptChannel.text.toString().toInt()))
+        }
+        action("Apply animation script") { edit("3d.script", object3D.text.toString().toInt(), scriptChannel.text.toString().toInt(), text = script3D.text.toString()) }
+        action("Remove animation script") { edit("3d.script", object3D.text.toString().toInt(), scriptChannel.text.toString().toInt(), text = "") }
+        val scriptPath3D = field("Animation .jolt path", "${filesDir}/spin.jolt")
+        action("Load animation .jolt") { edit("3d.script_file", object3D.text.toString().toInt(), scriptChannel.text.toString().toInt(), text = scriptPath3D.text.toString()) }
         for ((channel, title) in listOf("Material R", "Material G", "Material B").withIndex()) {
             val input = field(title, listOf("0.32", "0.65", "0.9")[channel])
             action("Apply $title") { edit("3d.color", object3D.text.toString().toInt(), channel, value = input.text.toString().toDouble()) }
@@ -366,6 +431,9 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
             val input = field(title, listOf("35","22","7","0","0","0","45")[channel])
             action("Apply $title") { edit("3d.camera", channel, value = input.text.toString().toDouble()) }
         }
+        for ((axis, vector) in listOf("X" to "1 0 0", "Y" to "0 1 0", "Z" to "0 0 1")) action("Gimbal $axis") { edit("3d.orbit_axis", value = 15.0, text = vector) }
+        for ((index, title) in listOf("Front", "Right", "Top", "Back", "Left", "Bottom").withIndex()) action("3D $title") { edit("3d.view", index) }
+        action("Zoom 3D in") { edit("3d.dolly", value = .15) }; action("Zoom 3D out") { edit("3d.dolly", value = -.15) }
         action("Export 3D frame (PPM)") {
             if (edit("3d") && nativeWriteFrame(nativeHandle, frame3D.text.toString().toLong(), output.text.toString()) != 0) throw IllegalArgumentException("Unable to export 3D frame")
         }
@@ -383,6 +451,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
     }
 
     override fun onPause() {
+        if (sceneNavigating && nativeHandle != 0L) { nativeEdit(nativeHandle, "3d.navigation_cancel", 0, 0, 0, 0.0, ""); sceneNavigating=false }
         Choreographer.getInstance().removeFrameCallback(this)
         stopAudio()
         if (exportJob != 0L) nativeExportDestroy(exportJob)

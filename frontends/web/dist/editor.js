@@ -34,6 +34,7 @@ export function colorLayers(document, selectedTrack, selectedClip, operators) {
 export class JoltEditor {
     root;
     bridge;
+    cancelSceneNavigation = () => { };
     time = 0;
     playing = false;
     frameRequest = 0;
@@ -89,6 +90,10 @@ export class JoltEditor {
         }
     };
     shortcuts = (event) => {
+        if (event.key === "Escape") {
+            this.cancelSceneNavigation();
+            return;
+        }
         if (event.target.closest("input, select, textarea"))
             return;
         const modifier = event.ctrlKey || event.metaKey;
@@ -368,8 +373,71 @@ export class JoltEditor {
     modeling3dPanel() {
         const panel = this.panel("3D Modeling & Animation"), objects = this.select([]), inspector = document.createElement("div"), keys = document.createElement("pre");
         panel.append(this.button("Preview 3D workspace", () => { this.previewNode = null; this.bridge.edit("3d"); }), this.button("New 3D scene", () => { this.bridge.edit("3d.new"); this.time = 0; }));
-        for (const primitive of ["cube", "sphere", "plane"])
-            panel.append(this.button(`Add ${primitive}`, () => this.bridge.edit("3d.add", 0, 0, 0, 0, primitive)));
+        const segments = this.number(64, 8, 128);
+        this.field(panel, "Primitive segments", segments);
+        for (const primitive of ["cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule", "pyramid", "disk", "nurbs", "metaball"])
+            panel.append(this.button(`Add ${primitive}`, () => this.bridge.edit("3d.add", +segments.value, 0, 0, 0, primitive)));
+        let drag;
+        this.preview.style.touchAction = "none";
+        this.preview.oncontextmenu = event => { if (this.scene3d?.active)
+            event.preventDefault(); };
+        this.preview.onpointerdown = event => {
+            if (!this.scene3d?.active || drag)
+                return;
+            this.perform(() => this.bridge.edit("3d.navigation_begin"));
+            drag = { x: event.clientX, y: event.clientY, button: event.button, id: event.pointerId };
+            this.preview.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+        };
+        this.preview.onpointermove = event => {
+            if (!drag || drag.id !== event.pointerId)
+                return;
+            const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+            drag.x = event.clientX;
+            drag.y = event.clientY;
+            const pan = drag.button !== 0 || event.shiftKey;
+            const scale = 2 * (this.scene3d?.camera[2] ?? 7) * Math.tan((this.scene3d?.camera[6] ?? 45) * Math.PI / 360) / Math.max(1, this.preview.getBoundingClientRect().height);
+            this.perform(() => this.bridge.edit(pan ? "3d.pan" : "3d.orbit", 0, 0, 0, 0, pan ? `${-dx * scale} ${dy * scale} 0` : event.altKey ? `0 0 ${dx * .4}` : `${-dx * .4} ${-dy * .4} 0`));
+        };
+        this.preview.onpointerup = event => {
+            if (!drag || drag.id !== event.pointerId)
+                return;
+            drag = undefined;
+            this.perform(() => this.bridge.edit("3d.navigation_end"));
+        };
+        this.preview.onpointercancel = () => { if (drag) {
+            drag = undefined;
+            this.perform(() => this.bridge.edit("3d.navigation_cancel"));
+        } };
+        this.preview.onlostpointercapture = this.preview.onpointercancel;
+        this.cancelSceneNavigation = () => {
+            if (drag) {
+                drag = undefined;
+                this.perform(() => this.bridge.edit("3d.navigation_cancel"));
+            }
+        };
+        this.preview.onwheel = event => {
+            if (!this.scene3d?.active)
+                return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.perform(() => this.bridge.edit("3d.dolly", 0, 0, 0, Math.max(-10, Math.min(10, -event.deltaY * .002))));
+        };
+        const navigation = document.createElement("p");
+        navigation.textContent = "Viewport: drag to orbit, Shift/right-drag to pan, Alt-drag to roll, wheel to zoom. Quaternion rotation can pass through either pole.";
+        panel.append(navigation);
+        ["Front", "Right", "Top", "Back", "Left", "Bottom"].forEach((view, i) => panel.append(this.button(`3D ${view}`, () => this.bridge.edit("3d.view", i))));
+        for (const [axis, text] of [["X", "1 0 0"], ["Y", "0 1 0"], ["Z", "0 0 1"]])
+            panel.append(this.button(`Gimbal ${axis}`, () => this.bridge.edit("3d.orbit_axis", 0, 0, 0, 15, text)));
+        const scriptChannel = this.select(["Position X", "Position Y", "Position Z", "Rotation X", "Rotation Y", "Rotation Z", "Scale X", "Scale Y", "Scale Z"]), script = document.createElement("textarea");
+        script.value = "(defkernel spin [time frame index value] (+ value (* time 90)))";
+        this.field(panel, "Joltscript channel", scriptChannel);
+        this.field(panel, "Joltscript animation", script);
+        panel.append(this.button("Load assigned animation script", () => { script.value = this.scene3d?.objects[this.sceneObject]?.scripts?.[scriptChannel.selectedIndex] ?? ""; }), this.button("Apply animation script", () => this.bridge.edit("3d.script", this.sceneObject, scriptChannel.selectedIndex, 0, 0, script.value)), this.button("Remove animation script", () => this.bridge.edit("3d.script", this.sceneObject, scriptChannel.selectedIndex, 0, 0, "")));
+        const scriptPath = this.text("spin.jolt");
+        this.field(panel, "Animation .jolt path", scriptPath);
+        panel.append(this.assetPicker(scriptPath), this.button("Load animation .jolt", () => this.bridge.edit("3d.script_file", this.sceneObject, scriptChannel.selectedIndex, 0, 0, scriptPath.value)));
+        let generatorPoint = 0;
         this.field(panel, "Scene object", objects);
         panel.append(inspector, keys);
         objects.onchange = () => { this.sceneObject = objects.selectedIndex; this.refreshScene(); };
@@ -431,6 +499,31 @@ export class JoltEditor {
             this.field(inspector, "Mass (0 = static)", mass);
             mass.onchange = () => this.perform(() => this.bridge.edit("3d.mass", this.sceneObject, 0, 0, +mass.value));
             inspector.append(this.button(object.visible ? "Hide mesh" : "Show mesh", () => this.bridge.edit("3d.visible", this.sceneObject, 0, 0, object.visible ? 0 : 1)));
+            inspector.append(this.button(object.smooth ? "Flat shading" : "Smooth shading", () => this.bridge.edit("3d.smooth", this.sceneObject, 0, 0, object.smooth ? 0 : 1)));
+            if (object.generator) {
+                const resolution = this.number(object.resolution ?? 32, 8, 64), nurbs = object.generator === 1, points = (nurbs ? object.controls : object.balls) ?? [];
+                this.field(inspector, "Surface resolution", resolution);
+                resolution.onchange = () => this.perform(() => this.bridge.edit("3d.resolution", this.sceneObject, +resolution.value));
+                const point = this.select(points.map((_, i) => `${nurbs ? "Control" : "Ball"} ${i}`));
+                generatorPoint = Math.max(0, Math.min(generatorPoint, points.length - 1));
+                point.selectedIndex = generatorPoint;
+                this.field(inspector, nurbs ? "NURBS control point" : "Metaball index", point);
+                point.onchange = () => { generatorPoint = point.selectedIndex; this.refreshScene(); };
+                ["X", "Y", "Z", nurbs ? "Weight" : "Radius"].forEach((label, ch) => {
+                    const value = this.number(points[generatorPoint]?.[ch] ?? (ch === 3 ? 1 : 0));
+                    this.field(inspector, `Generator ${label}`, value);
+                    value.onchange = () => this.perform(() => this.bridge.edit(nurbs ? "3d.nurbs_point" : "3d.metaball_point", this.sceneObject, generatorPoint, ch, +value.value));
+                });
+                if (!nurbs)
+                    inspector.append(this.button("Add metaball", () => this.bridge.edit("3d.metaball_add", this.sceneObject, 0, 0, 0, "0 1 0 1")), this.button("Remove metaball", () => this.bridge.edit("3d.metaball_remove", this.sceneObject, generatorPoint)));
+                inspector.append(this.button("Make generator editable", () => this.bridge.edit("3d.make_editable", this.sceneObject)));
+            }
+            const cloner = this.select(["Off", "Linear", "Radial", "Grid"]), count = this.number(object.cloner?.count ?? 1, 1, 64), spacing = this.number(object.cloner?.spacing ?? 3, .01, 1000);
+            cloner.selectedIndex = object.cloner?.mode ?? 0;
+            this.field(inspector, "Cloner arrangement", cloner);
+            this.field(inspector, "Clone count", count);
+            this.field(inspector, "Clone spacing / radius", spacing);
+            inspector.append(this.button("Apply cloner", () => this.bridge.edit("3d.cloner", this.sceneObject, cloner.selectedIndex, +count.value, +spacing.value)), this.button("Make clones real at playhead", () => this.bridge.edit("3d.cloner_make_real", this.sceneObject, 0, 0, this.time)));
             ["Position X", "Position Y", "Position Z", "Rotation X", "Rotation Y", "Rotation Z", "Scale X", "Scale Y", "Scale Z"].forEach((name, ch) => {
                 const input = this.number(object.transform[ch]);
                 this.field(inspector, name, input);
@@ -696,6 +789,10 @@ export class JoltEditor {
         URL.revokeObjectURL(url);
     }
     dispose() {
+        this.cancelSceneNavigation();
+        this.preview.onpointerdown = this.preview.onpointermove = this.preview.onpointerup = this.preview.onpointercancel = this.preview.onlostpointercapture = null;
+        this.preview.onwheel = null;
+        this.preview.oncontextmenu = null;
         this.playing = false;
         this.stopAudio();
         void this.audioContext?.close();

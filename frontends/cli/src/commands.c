@@ -69,7 +69,10 @@ void print_command_help(const char *command) {
             "Terminal syntax: OP OBJECT CHANNEL FRAME VALUE TEXT (zero-based indices).\n"
             "Commands: 3d.add/transform/vertex/color/key/key_remove/interpolation,\n"
             "3d.subdivide/align/mass/bake/import_ply/export_ply/name/visible/remove/duplicate,\n"
-            "3d.camera/clock/new; undo, redo, scene3d (JSON), show, save.\n"
+            "3d.camera/orbit/orbit_axis/pan/dolly/view/clock/new,\n"
+            "3d.nurbs_point/metaball_add/metaball_point/metaball_remove/resolution,\n"
+            "3d.cloner/cloner_make_real/script/script_file/smooth/make_editable; undo, redo, scene3d, show, save.\n"
+            "Primitives: cube sphere plane cylinder cone torus capsule pyramid disk nurbs metaball.\n"
             "See docs/modeling3d.md for channel indices, physics and file limits.\n"); return;
     }
     if (command && !strcmp(command, "scripts")) {

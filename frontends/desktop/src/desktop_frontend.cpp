@@ -30,6 +30,7 @@
 #include "imgui.h"
 #include "joltscript/effects.h"
 #include "tilly/allocator.h"
+#include "tilly/memory.h"
 #include "tilly/logger.h"
 
 #include <algorithm>
@@ -41,6 +42,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace {
 
@@ -184,6 +187,12 @@ struct jfx_desktop_frontend {
     bool show_modeling3d;
     int scene_object,scene_vertex,scene_channel,scene_interpolation;
     int scene_bake_frames;
+    int scene_primitive,scene_segments,scene_control,scene_ball,scene_gizmo_axis;
+    int scene_clone_mode,scene_clone_count;
+    float scene_clone_spacing;
+    bool scene_navigation;
+    char scene_script[4097];
+    char scene_script_path[512];
     char scene_mesh_path[512],scene_png_path[512];
     jfx_desktop_workspace_t workspace;
     bool grading_edit;
@@ -261,6 +270,8 @@ struct jfx_desktop_frontend {
     float *preview_input;
     float *preview_float;
     uint8_t *preview_rgba;
+    uint8_t *scene_rgba;
+    uint32_t scene_width,scene_height;
     bool preview_dirty;
     void *preview_texture; /* host-owned handle for ImGui::Image */
     char status[160];
@@ -356,6 +367,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_animation = true;
     frontend->show_modeling3d = true;
     frontend->scene_bake_frames=60;
+    frontend->scene_segments=64;
+    frontend->scene_clone_count=5;
+    frontend->scene_clone_spacing=3;
+    std::snprintf(frontend->scene_script,sizeof(frontend->scene_script),"(defkernel spin [time frame index value] (+ value (* time 90)))");
+    std::snprintf(frontend->scene_script_path,sizeof(frontend->scene_script_path),"examples/modeling3d/spin.jolt");
     std::snprintf(frontend->scene_mesh_path,sizeof(frontend->scene_mesh_path),"mesh.ply");
     std::snprintf(frontend->scene_png_path,sizeof(frontend->scene_png_path),"scene.png");
     std::snprintf(frontend->audio_export_path,sizeof(frontend->audio_export_path),"mix.wav");
@@ -499,6 +515,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_input);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_float);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_rgba);
+    tilly_mem_free(frontend->scene_rgba);
     jfx_editor_destroy(frontend->editor);
     jfx_plugin_host_destroy(frontend->plugins);
     jfx_lut_destroy(frontend->grade_lut);
@@ -1180,6 +1197,10 @@ static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
     if (!f || !op) return JFX_ERROR_INVALID_ARGUMENT;
     if (f->recording) return JFX_ERROR_BUSY;
+    if (f->scene_navigation && std::strcmp(op,"3d.navigation_end") && std::strcmp(op,"3d.navigation_cancel") &&
+        std::strcmp(op,"3d.orbit") && std::strcmp(op,"3d.orbit_axis") && std::strcmp(op,"3d.pan") && std::strcmp(op,"3d.dolly")) {
+        auto r=jfx_editor_command(f->editor,"3d.navigation_end",0,0,0,0,""); if (r!=JFX_SUCCESS) return r; f->scene_navigation=false;
+    }
     if (f->native_session) {
         auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
         close_inspector(f);
@@ -1235,6 +1256,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     finish_grading(f);
     finish_audio(f);
+    if (f->scene_navigation) {
+        auto r=jfx_editor_command(f->editor,"3d.navigation_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        f->scene_navigation=false;
+    }
     if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; }
     if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;

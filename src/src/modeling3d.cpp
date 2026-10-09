@@ -2,6 +2,10 @@
 #include "jfx/jfx_project.h"
 #include "tilly/memory.hpp"
 #include "tilly/memory.h"
+#include "joltscript/compiler.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <xsimd/xsimd.hpp>
 #include <CGAL/Simple_cartesian.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -45,6 +49,7 @@ using Output = std::basic_ostringstream<char,std::char_traits<char>,tilly::alloc
 constexpr double pi=3.14159265358979323846;
 constexpr size_t history_limit=32u*1024u*1024u;
 struct Key { uint32_t channel,frame,interpolation; float value; };
+struct Script { tilly::string source; tilly::vector<uint8_t> code; };
 struct Object {
     tilly::string name="Mesh";
     tilly::vector<Vec> vertices;
@@ -54,21 +59,31 @@ struct Object {
     Vec color={.32f,.65f,.9f};
     float mass=0;
     bool visible=true;
+    bool smooth=false;
+    uint32_t generator=0,resolution=32;
+    tilly::vector<std::array<float,4>> controls,balls;
+    uint32_t cloner_mode=0,instances=1;
+    float spacing=3;
+    std::array<Script,9> scripts;
+    // Derived immutable geometry data is shared by document/history candidates.
+    using Normals=tilly::vector<std::array<glm::vec3,3>>;
+    mutable std::shared_ptr<const Normals> normals;
 };
 struct Document {
     tilly::vector<Object> objects;
     std::array<float,7> camera={35,22,7,0,0,0,45};
+    glm::quat orientation=glm::angleAxis(glm::radians(35.f),glm::vec3(0,1,0))*glm::angleAxis(glm::radians(-22.f),glm::vec3(1,0,0));
     uint32_t fps=30,frames=120;
 };
 void require(bool condition) { if (!condition) throw std::invalid_argument("Invalid 3D command or document"); }
 bool number(double v) { return std::isfinite(v) && std::abs(v)<=100000; }
 bool channel_value(uint32_t channel,double v) { return channel<9 && number(v) && (channel<6 || v>=.001); }
+#include "modeling3d_generators.inc"
 Eigen::Vector3f eigen(const Vec &v) { return {v[0],v[1],v[2]}; }
 Vec vec(const Eigen::Vector3f &v) { return {v.x(),v.y(),v.z()}; }
-Eigen::Matrix3f rotation(const Transform &t) {
-    return (Eigen::AngleAxisf(t[5]*float(pi/180),Eigen::Vector3f::UnitZ())*
-        Eigen::AngleAxisf(t[4]*float(pi/180),Eigen::Vector3f::UnitY())*
-        Eigen::AngleAxisf(t[3]*float(pi/180),Eigen::Vector3f::UnitX())).toRotationMatrix();
+glm::quat rotation(const Transform &t) {
+    return glm::angleAxis(glm::radians(t[5]),glm::vec3(0,0,1))*
+        glm::angleAxis(glm::radians(t[4]),glm::vec3(0,1,0))*glm::angleAxis(glm::radians(t[3]),glm::vec3(1,0,0));
 }
 void validate_mesh(const Object &o) {
     require(!o.vertices.empty() && o.vertices.size()<=JFX_3D_MAX_VERTICES &&
@@ -85,12 +100,24 @@ void validate(const Document &d) {
     require(d.objects.size()<=JFX_3D_MAX_OBJECTS && d.fps>=1 && d.fps<=240 && d.frames>=1 && d.frames<=36000);
     for (float f:d.camera) require(number(double(f)));
     require(d.camera[1]>=-89 && d.camera[1]<=89 && d.camera[2]>=.1f && d.camera[2]<=10000 && d.camera[6]>=10 && d.camera[6]<=120);
+    require(std::isfinite(glm::dot(d.orientation,d.orientation)) && std::abs(glm::dot(d.orientation,d.orientation)-1.f)<.0001f);
     size_t bytes=0;
+    size_t render_triangles=0;
     for (auto &o:d.objects) {
         validate_mesh(o); require(o.name.size()<=127 && o.mass>=0 && o.mass<=10000 && o.keys.size()<=JFX_3D_MAX_KEYS);
         for (char ch:o.name) require(static_cast<unsigned char>(ch)>=32);
         for (unsigned i=0;i<9;++i) require(channel_value(i,double(o.transform[i])));
         for (float f:o.color) require(f>=0 && f<=1);
+        require(o.generator<=2 && o.resolution>=8 && o.resolution<=64 && o.controls.size()<=16 && o.balls.size()<=16);
+        require(o.generator!=1 || o.controls.size()==16);
+        require(o.generator!=2 || !o.balls.empty());
+        for (auto &points:{&o.controls,&o.balls}) for (auto &p:*points) {
+            for (float f:p) require(number(double(f)));
+            require(p[3]>=.01f && p[3]<=100);
+        }
+        require(o.cloner_mode<=3 && o.instances>=1 && o.instances<=64 && (o.cloner_mode || o.instances==1) && o.spacing>=.01f && o.spacing<=1000);
+        render_triangles+=o.triangles.size()*o.instances; require(render_triangles<=2u*1024u*1024u);
+        for (auto &script:o.scripts) { require(script.source.size()<=4096); bytes+=script.source.size()+script.code.size(); }
         uint64_t last=0; bool first=true;
         for (auto &k:o.keys) {
             require(channel_value(k.channel,double(k.value)) && k.frame<d.frames && k.interpolation<=2);
@@ -121,6 +148,31 @@ Transform sample(const Object &o,double frame) {
     }
     return result;
 }
+Transform sample_instance(const Object &o,uint32_t instance,double seconds,uint32_t fps) {
+    require(instance<o.instances);
+    Transform t=sample(o,seconds*fps); glm::vec3 offset(0);
+    if (o.cloner_mode==1) offset.x=float(instance)*o.spacing;
+    else if (o.cloner_mode==2) {
+        float angle=float(2*pi*instance/o.instances); offset={o.spacing*std::cos(angle),0,o.spacing*std::sin(angle)};
+    } else if (o.cloner_mode==3) {
+        uint32_t columns=uint32_t(std::ceil(std::sqrt(double(o.instances))));
+        offset={float(instance%columns)*o.spacing,0,float(instance/columns)*o.spacing};
+    }
+    glm::vec3 world=rotation(t)*offset;
+    for (unsigned i=0;i<3;++i) t[i]+=world[int(i)];
+    bool scripted=false; for (auto &script:o.scripts) scripted|=!script.code.empty();
+    if (scripted) {
+        jolt_vm_t *vm=jolt_vm_create(); if (!vm) throw std::bad_alloc();
+        struct Owner { jolt_vm_t *vm; ~Owner() { jolt_vm_destroy(vm); } } owner{vm};
+        for (uint32_t ch=0;ch<9;++ch) if (!o.scripts[ch].code.empty()) {
+            auto &code=o.scripts[ch].code; float inputs[4]={float(seconds),float(seconds*fps),float(instance),t[ch]},value=0;
+            uint32_t count=0; for (unsigned i=0;i<4;++i) count|=uint32_t(code[8+i])<<(8*i);
+            require(jolt_vm_run(vm,code.data(),code.size(),inputs,count,&value,1)==JOLT_OK && channel_value(ch,double(value))); t[ch]=value;
+        }
+    }
+    for (unsigned i=0;i<9;++i) require(channel_value(i,double(t[i])));
+    return t;
+}
 void put_key(Object &o,uint32_t channel,uint32_t frame,float value,uint32_t interpolation) {
     require(channel_value(channel,double(value)) && interpolation<=2);
     auto at=std::lower_bound(o.keys.begin(),o.keys.end(),std::pair<uint32_t,uint32_t>{channel,frame},
@@ -128,7 +180,8 @@ void put_key(Object &o,uint32_t channel,uint32_t frame,float value,uint32_t inte
     if (at!=o.keys.end() && at->channel==channel && at->frame==frame) *at={channel,frame,interpolation,value};
     else { require(o.keys.size()<JFX_3D_MAX_KEYS); o.keys.insert(at,{channel,frame,interpolation,value}); }
 }
-Object primitive(const char *kind) {
+Object primitive(const char *kind,uint32_t segments=64) {
+    require(segments>=8 && segments<=128);
     Object o; o.name=kind;
     if (!std::strcmp(kind,"cube")) {
         o.vertices={{{-1,-1,-1}},{{1,-1,-1}},{{1,1,-1}},{{-1,1,-1}},{{-1,-1,1}},{{1,-1,1}},{{1,1,1}},{{-1,1,1}}};
@@ -137,7 +190,8 @@ Object primitive(const char *kind) {
         o.vertices={{{-2,0,-2}},{{2,0,-2}},{{2,0,2}},{{-2,0,2}}}; o.triangles={{{0,2,1}},{{0,3,2}}};
     } else if (!std::strcmp(kind,"sphere")) {
         o.vertices.push_back({0,1,0});
-        constexpr uint32_t slices=24,rings=12;
+        o.smooth=true;
+        const uint32_t slices=segments,rings=segments/2;
         for (uint32_t r=1;r<rings;++r) for (uint32_t s=0;s<slices;++s) {
             double theta=pi*r/rings,phi=2*pi*s/slices;
             o.vertices.push_back({float(std::sin(theta)*std::cos(phi)),float(std::cos(theta)),float(std::sin(theta)*std::sin(phi))});
@@ -152,7 +206,14 @@ Object primitive(const char *kind) {
                 o.triangles.push_back({a,b,c}); o.triangles.push_back({b,d,c});
             }
         }
-    } else require(false);
+    } else if (!std::strcmp(kind,"nurbs")) {
+        o.generator=1; o.smooth=true;
+        for (unsigned y=0;y<4;++y) for (unsigned x=0;x<4;++x)
+            o.controls.push_back({float(x)-1.5f,(x==1 || x==2) && (y==1 || y==2)?.6f:0.f,float(y)-1.5f,1});
+        regenerate(o);
+    } else if (!std::strcmp(kind,"metaball")) {
+        o.generator=2; o.smooth=true; o.balls={{{-.6f,0,0,1}},{{.6f,0,0,1}}}; regenerate(o);
+    } else extra_primitive(o,kind,segments);
     return o;
 }
 void matrices(const Object &o,Eigen::MatrixXd &v,Eigen::MatrixXi &f) {
@@ -195,15 +256,25 @@ tilly::string serialize(const Document &d) {
     Output out; out.exceptions(std::ios::badbit|std::ios::failbit); out.imbue(std::locale::classic()); out<<std::setprecision(9);
     out<<"scene3d 1\nclock "<<d.fps<<' '<<d.frames<<"\ncamera";
     for (float f:d.camera) out<<' '<<f;
-    out<<'\n';
+    out<<"\nquaternion "<<d.orientation.x<<' '<<d.orientation.y<<' '<<d.orientation.z<<' '<<d.orientation.w<<'\n';
     for (auto &o:d.objects) {
         out<<"object "<<std::quoted(o.name)<<' '<<o.visible<<' '<<o.mass<<'\n'<<"transform";
         for (float f:o.transform) out<<' '<<f;
         out<<"\ncolor";
         for (float f:o.color) out<<' '<<f;
-        out<<'\n';
-        for (auto &v:o.vertices) out<<"v "<<v[0]<<' '<<v[1]<<' '<<v[2]<<'\n';
-        for (auto &t:o.triangles) out<<"f "<<t[0]<<' '<<t[1]<<' '<<t[2]<<'\n';
+        out<<"\nsmooth "<<o.smooth<<"\ngenerator "<<o.generator<<' '<<o.resolution<<'\n';
+        for (auto &p:o.controls) out<<"control "<<p[0]<<' '<<p[1]<<' '<<p[2]<<' '<<p[3]<<'\n';
+        for (auto &p:o.balls) out<<"ball "<<p[0]<<' '<<p[1]<<' '<<p[2]<<' '<<p[3]<<'\n';
+        out<<"cloner "<<o.cloner_mode<<' '<<o.instances<<' '<<o.spacing<<'\n';
+        if (!o.generator) {
+            for (auto &v:o.vertices) out<<"v "<<v[0]<<' '<<v[1]<<' '<<v[2]<<'\n';
+            for (auto &t:o.triangles) out<<"f "<<t[0]<<' '<<t[1]<<' '<<t[2]<<'\n';
+        }
+        for (unsigned ch=0;ch<9;++ch) if (!o.scripts[ch].source.empty()) {
+            out<<"script "<<ch<<' '; const char *hex="0123456789abcdef";
+            for (char character:o.scripts[ch].source) { auto c=static_cast<unsigned char>(character); out<<hex[c>>4]<<hex[c&15]; }
+            out<<'\n';
+        }
         for (auto &k:o.keys) out<<"key "<<k.channel<<' '<<k.frame<<' '<<k.value<<' '<<k.interpolation<<'\n';
         out<<"end\n";
     }
@@ -212,21 +283,41 @@ tilly::string serialize(const Document &d) {
 Document parse(const char *text,size_t length) {
     require(length>0 && length<=JFX_PROJECT_MAX_BYTES && !std::memchr(text,0,length));
     Input input(tilly::string(text,length)); input.imbue(std::locale::classic());
-    tilly::string line,word; Document d; Object *object=nullptr; bool header=false,clock=false,camera=false;
+    tilly::string line,word; Document d; Object *object=nullptr; bool header=false,clock=false,camera=false,quaternion=false;
     while (std::getline(input,line)) {
-        require(line.size()<2048); Input in(line); in.imbue(std::locale::classic());
+        require(line.size()<16384); Input in(line); in.imbue(std::locale::classic());
         if (!(in>>word) || word[0]=='#') continue;
         if (!header) { unsigned version=0; require(word=="scene3d" && bool(in>>version) && version==1); header=true; }
         else if (word=="clock") { require(!clock && !object && bool(in>>d.fps>>d.frames)); clock=true; }
         else if (word=="camera") { require(!camera && !object); for (float &f:d.camera) require(bool(in>>f)); camera=true; }
+        else if (word=="quaternion") {
+            require(!quaternion && !object && bool(in>>d.orientation.x>>d.orientation.y>>d.orientation.z>>d.orientation.w)); quaternion=true;
+        }
         else if (word=="object") {
             require(!object && d.objects.size()<JFX_3D_MAX_OBJECTS); d.objects.emplace_back(); object=&d.objects.back();
             unsigned visible=0; require(bool(in>>std::quoted(object->name)>>visible>>object->mass) && visible<=1); object->visible=visible!=0;
-        } else if (word=="end") { require(object!=nullptr); validate_mesh(*object); object=nullptr; }
+        } else if (word=="end") {
+            require(object!=nullptr);
+            if (object->generator) { require(object->vertices.empty() && object->triangles.empty()); regenerate(*object); }
+            validate_mesh(*object); object=nullptr;
+        }
         else {
             require(object!=nullptr);
             if (word=="transform") { for (float &f:object->transform) require(bool(in>>f)); }
             else if (word=="color") { for (float &f:object->color) require(bool(in>>f)); }
+            else if (word=="smooth") { unsigned smooth=0; require(bool(in>>smooth) && smooth<=1); object->smooth=smooth!=0; }
+            else if (word=="generator") { require(bool(in>>object->generator>>object->resolution) && object->generator<=2); }
+            else if (word=="control" || word=="ball") {
+                auto &points=word=="control"?object->controls:object->balls; require(points.size()<16);
+                std::array<float,4> p; for (float &f:p) require(bool(in>>f) && number(double(f))); require(p[3]>=.01f && p[3]<=100); points.push_back(p);
+            }
+            else if (word=="cloner") { require(bool(in>>object->cloner_mode>>object->instances>>object->spacing)); }
+            else if (word=="script") {
+                unsigned ch=0; tilly::string hex,source; require(bool(in>>ch>>hex) && ch<9 && object->scripts[ch].source.empty() && hex.size()<=8192 && hex.size()%2==0);
+                auto digit=[](char c)->unsigned { require((c>='0' && c<='9') || (c>='a' && c<='f')); return unsigned(c<='9'?c-'0':c-'a'+10); };
+                for (size_t i=0;i<hex.size();i+=2) { char c=char(digit(hex[i])*16+digit(hex[i+1])); require(c!=0); source+=c; }
+                compile_script(object->scripts[ch],source.c_str());
+            }
             else if (word=="v") { Vec v; require(object->vertices.size()<JFX_3D_MAX_VERTICES); for (float &f:v) require(bool(in>>f)); object->vertices.push_back(v); }
             else if (word=="f") { Tri t; require(object->triangles.size()<JFX_3D_MAX_TRIANGLES); for (uint32_t &f:t) require(bool(in>>f)); object->triangles.push_back(t); }
             else if (word=="key") { Key k; require(object->keys.size()<JFX_3D_MAX_KEYS && bool(in>>k.channel>>k.frame>>k.value>>k.interpolation)); object->keys.push_back(k); }
@@ -234,7 +325,7 @@ Document parse(const char *text,size_t length) {
         }
         require(!(in>>word));
     }
-    require(header && !object && clock && camera); validate(d); return d;
+    require(header && !object && clock && camera); if (!quaternion) d.orientation=legacy_camera(d.camera); validate(d); return d;
 }
 Object import_ply(const char *path) {
     std::ifstream in(path,std::ios::binary); require(bool(in));
@@ -315,6 +406,7 @@ bool export_ply(const Object &o,const char *path) {
 }
 void bake(Document &d,uint32_t frames) {
     require(frames>=1 && frames<d.frames && frames<=600 && (frames+1)*6<=JFX_3D_MAX_KEYS);
+    for (auto &o:d.objects) require(o.instances==1);
     btDefaultCollisionConfiguration config; btCollisionDispatcher dispatcher(&config);
     btDbvtBroadphase broadphase; btSequentialImpulseConstraintSolver solver;
     btDiscreteDynamicsWorld world(&dispatcher,&broadphase,&solver,&config); world.setGravity({0,-9.81f,0});
@@ -334,7 +426,10 @@ void bake(Document &d,uint32_t frames) {
         body->setWorldTransform(btTransform(q,{o.transform[0],o.transform[1],o.transform[2]}));
         body->setFriction(.5f); world.addRigidBody(body.get());
         shapes.push_back(std::move(shape)); bodies.push_back(std::move(body));
-        if (o.mass>0) o.keys.erase(std::remove_if(o.keys.begin(),o.keys.end(),[](auto &k) { return k.channel<6; }),o.keys.end());
+        if (o.mass>0) {
+            o.keys.erase(std::remove_if(o.keys.begin(),o.keys.end(),[](auto &k) { return k.channel<6; }),o.keys.end());
+            for (unsigned ch=0;ch<6;++ch) o.scripts[ch]=Script{};
+        }
     }
     for (uint32_t frame=0;frame<=frames;++frame) {
         if (frame) world.stepSimulation(btScalar(1)/btScalar(d.fps),4,btScalar(1)/(btScalar(d.fps)*4));
@@ -351,9 +446,24 @@ jfx_result_t apply(Document &d,const char *op,uint32_t a,uint32_t b,uint32_t c,d
     if (!std::strcmp(op,"3d.new")) { d=Document{}; return JFX_SUCCESS; }
     if (!std::strcmp(op,"3d.add") || !std::strcmp(op,"3d.import_ply")) {
         require(d.objects.size()<JFX_3D_MAX_OBJECTS && text && *text);
-        d.objects.push_back(!std::strcmp(op,"3d.add")?primitive(text):import_ply(text)); return JFX_SUCCESS;
+        d.objects.push_back(!std::strcmp(op,"3d.add")?primitive(text,a?a:64):import_ply(text)); return JFX_SUCCESS;
     }
-    if (!std::strcmp(op,"3d.camera")) { require(a<7); d.camera[a]=float(value); return JFX_SUCCESS; }
+    if (!std::strcmp(op,"3d.camera")) { require(a<7); d.camera[a]=float(value); if (a<2) d.orientation=legacy_camera(d.camera); return JFX_SUCCESS; }
+    if (!std::strcmp(op,"3d.orbit")) {
+        auto v=glm::radians(read_xyz(text));
+        auto delta=glm::angleAxis(v.z,glm::vec3(0,0,1))*glm::angleAxis(v.x,glm::vec3(0,1,0))*glm::angleAxis(v.y,glm::vec3(1,0,0));
+        d.orientation=glm::normalize(d.orientation*delta); return JFX_SUCCESS;
+    }
+    if (!std::strcmp(op,"3d.orbit_axis")) {
+        auto axis=read_xyz(text); require(glm::length(axis)>.0001f);
+        d.orientation=glm::normalize(glm::angleAxis(glm::radians(float(value)),glm::normalize(axis))*d.orientation); return JFX_SUCCESS;
+    }
+    if (!std::strcmp(op,"3d.pan")) { auto v=d.orientation*read_xyz(text); for (unsigned i=0;i<3;++i) d.camera[3+i]+=v[int(i)]; return JFX_SUCCESS; }
+    if (!std::strcmp(op,"3d.dolly")) { require(std::abs(value)<=10); d.camera[2]=std::clamp(d.camera[2]*float(std::exp(-value)),.1f,10000.f); return JFX_SUCCESS; }
+    if (!std::strcmp(op,"3d.view")) {
+        require(a<6); static const float angles[6][2]={{0,0},{90,0},{0,90},{180,0},{-90,0},{0,-90}};
+        d.orientation=glm::angleAxis(glm::radians(angles[a][0]),glm::vec3(0,1,0))*glm::angleAxis(glm::radians(-angles[a][1]),glm::vec3(1,0,0)); return JFX_SUCCESS;
+    }
     if (!std::strcmp(op,"3d.clock")) { require(a>=1 && a<=240 && b>=1 && b<=36000); d.fps=a; d.frames=b; return JFX_SUCCESS; }
     if (!std::strcmp(op,"3d.bake")) { bake(d,c); return JFX_SUCCESS; }
     require(a<d.objects.size()); auto &o=d.objects[a];
@@ -361,18 +471,49 @@ jfx_result_t apply(Document &d,const char *op,uint32_t a,uint32_t b,uint32_t c,d
     else if (!std::strcmp(op,"3d.duplicate")) { require(d.objects.size()<JFX_3D_MAX_OBJECTS); Object copy=o; copy.name+=" copy"; d.objects.push_back(std::move(copy)); }
     else if (!std::strcmp(op,"3d.name")) { require(text && std::strlen(text)<=127); o.name=text; }
     else if (!std::strcmp(op,"3d.transform")) { require(channel_value(b,value)); o.transform[b]=float(value); }
-    else if (!std::strcmp(op,"3d.vertex")) { require(b<o.vertices.size() && c<3); o.vertices[b][c]=float(value); }
+    else if (!std::strcmp(op,"3d.vertex")) { require(!o.generator && b<o.vertices.size() && c<3); o.vertices[b][c]=float(value); }
     else if (!std::strcmp(op,"3d.color")) { require(b<3 && value>=0 && value<=1); o.color[b]=float(value); }
     else if (!std::strcmp(op,"3d.visible")) { require(value==0 || value==1); o.visible=value!=0; }
     else if (!std::strcmp(op,"3d.mass")) { require(value>=0 && value<=10000); o.mass=float(value); }
+    else if (!std::strcmp(op,"3d.smooth")) { require(value==0 || value==1); o.smooth=value!=0; }
+    else if (!std::strcmp(op,"3d.script") || !std::strcmp(op,"3d.script_file")) {
+        require(b<9 && text);
+        if (!std::strcmp(op,"3d.script_file")) {
+            std::ifstream file(text,std::ios::binary); require(bool(file)); file.seekg(0,std::ios::end); auto length=file.tellg();
+            require(length>0 && length<=4096); file.seekg(0); tilly::string source(size_t(length),'\0');
+            file.read(source.data(),length); require(bool(file) && !std::memchr(source.data(),0,source.size())); compile_script(o.scripts[b],source.c_str());
+        } else compile_script(o.scripts[b],text);
+    }
+    else if (!std::strcmp(op,"3d.cloner")) { require(b<=3 && c>=1 && c<=64 && value>=.01 && value<=1000); o.cloner_mode=b; o.instances=b?c:1; o.spacing=float(value); }
+    else if (!std::strcmp(op,"3d.cloner_make_real")) {
+        require(d.objects.size()+o.instances-1<=JFX_3D_MAX_OBJECTS && value>=0);
+        tilly::vector<Object> copies; copies.reserve(o.instances);
+        for (uint32_t i=0;i<o.instances;++i) {
+            Object copy=o; copy.transform=sample_instance(o,i,value,d.fps); copy.cloner_mode=0; copy.instances=1;
+            copy.keys.clear(); for (auto &script:copy.scripts) script=Script{}; copies.push_back(std::move(copy));
+        }
+        d.objects.erase(d.objects.begin()+a); d.objects.insert(d.objects.begin()+a,copies.begin(),copies.end());
+    }
+    else if (!std::strcmp(op,"3d.nurbs_point") || !std::strcmp(op,"3d.metaball_point")) {
+        bool nurbs=!std::strcmp(op,"3d.nurbs_point"); require(o.generator==(nurbs?1u:2u)); auto &points=nurbs?o.controls:o.balls;
+        require(b<points.size() && c<4 && (c<3 || (value>=.01 && value<=100))); points[b][c]=float(value); regenerate(o);
+    }
+    else if (!std::strcmp(op,"3d.resolution")) { require(o.generator && b>=8 && b<=64); o.resolution=b; regenerate(o); }
+    else if (!std::strcmp(op,"3d.metaball_add")) {
+        require(o.generator==2 && o.balls.size()<16 && text); Input in(text); in.imbue(std::locale::classic());
+        std::array<float,4> p; for (float &f:p) require(bool(in>>f) && number(double(f))); tilly::string extra; require(!(in>>extra) && p[3]>=.01f && p[3]<=100);
+        o.balls.push_back(p); regenerate(o);
+    }
+    else if (!std::strcmp(op,"3d.metaball_remove")) { require(o.generator==2 && b<o.balls.size() && o.balls.size()>1); o.balls.erase(o.balls.begin()+b); regenerate(o); }
+    else if (!std::strcmp(op,"3d.make_editable")) { o.generator=0; o.controls.clear(); o.balls.clear(); }
     else if (!std::strcmp(op,"3d.key")) { require(c<d.frames); put_key(o,b,c,float(value),1); }
     else if (!std::strcmp(op,"3d.key_remove") || !std::strcmp(op,"3d.interpolation")) {
         auto at=std::find_if(o.keys.begin(),o.keys.end(),[&](auto &k) { return k.channel==b && k.frame==c; }); require(at!=o.keys.end());
         if (!std::strcmp(op,"3d.key_remove")) o.keys.erase(at);
         else { require(value>=0 && value<=2 && std::floor(value)==value); at->interpolation=uint32_t(value); }
     }
-    else if (!std::strcmp(op,"3d.subdivide")) subdivide(o);
-    else if (!std::strcmp(op,"3d.align")) align_mesh(o);
+    else if (!std::strcmp(op,"3d.subdivide")) { require(!o.generator); subdivide(o); }
+    else if (!std::strcmp(op,"3d.align")) { require(!o.generator); align_mesh(o); }
     else if (!std::strcmp(op,"3d.export_ply")) { require(text && *text); return export_ply(o,text)?JFX_SUCCESS:JFX_ERROR_BACKEND_FAILURE; }
     else require(false);
     return JFX_SUCCESS;
@@ -395,12 +536,16 @@ template<class Fn> jfx_result_t boundary(Fn fn) {
     try { return fn(); } catch (const std::bad_alloc &) { return JFX_ERROR_OUT_OF_MEMORY; }
     catch (...) { return JFX_ERROR_INVALID_ARGUMENT; }
 }
+#include "modeling3d_renderer.inc"
 } // namespace
 
 struct jfx_scene3d {
     Document document;
     tilly::vector<tilly::string> undo,redo;
     size_t history_bytes=0;
+    bool navigating=false;
+    std::array<float,7> navigation_camera;
+    glm::quat navigation_orientation;
 };
 extern "C" jfx_scene3d_t *jfx_scene3d_create() {
     // Bullet is private to this engine; install its process-lifetime hooks once.
@@ -433,6 +578,22 @@ extern "C" jfx_result_t jfx_scene3d_camera(const jfx_scene3d_t *s,float out[7]) 
     if (!s || !out) return JFX_ERROR_INVALID_ARGUMENT;
     std::copy(s->document.camera.begin(),s->document.camera.end(),out); return JFX_SUCCESS;
 }
+extern "C" jfx_result_t jfx_scene3d_camera_quaternion(const jfx_scene3d_t *s,float out[4]) {
+    if (!s || !out) return JFX_ERROR_INVALID_ARGUMENT;
+    auto &q=s->document.orientation; out[0]=q.x; out[1]=q.y; out[2]=q.z; out[3]=q.w; return JFX_SUCCESS;
+}
+extern "C" jfx_result_t jfx_scene3d_script(const jfx_scene3d_t *s,uint32_t object,uint32_t channel,char *out,size_t capacity) {
+    if (!s || !out || object>=s->document.objects.size() || channel>=9) return JFX_ERROR_INVALID_ARGUMENT;
+    return copy_text(s->document.objects[object].scripts[channel].source,out,capacity);
+}
+extern "C" jfx_result_t jfx_scene3d_procedural_info(const jfx_scene3d_t *s,uint32_t index,jfx_procedural3d_info_t *out) {
+    if (!s || !out || out->size<sizeof(*out) || index>=s->document.objects.size()) return JFX_ERROR_INVALID_ARGUMENT;
+    auto &o=s->document.objects[index]; jfx_procedural3d_info_t info={}; info.size=sizeof(info);
+    info.generator=o.generator; info.resolution=o.resolution; info.control_count=uint32_t(o.controls.size()); info.ball_count=uint32_t(o.balls.size());
+    for (size_t i=0;i<o.controls.size();++i) std::copy(o.controls[i].begin(),o.controls[i].end(),info.controls[i]);
+    for (size_t i=0;i<o.balls.size();++i) std::copy(o.balls[i].begin(),o.balls[i].end(),info.balls[i]);
+    info.cloner_mode=o.cloner_mode; info.instances=o.instances; info.spacing=o.spacing; info.smooth=o.smooth; *out=info; return JFX_SUCCESS;
+}
 extern "C" bool jfx_scene3d_can_undo(const jfx_scene3d_t *s) { return s && !s->undo.empty(); }
 extern "C" bool jfx_scene3d_can_redo(const jfx_scene3d_t *s) { return s && !s->redo.empty(); }
 extern "C" void jfx_scene3d_clear_history(jfx_scene3d_t *s) {
@@ -441,6 +602,21 @@ extern "C" void jfx_scene3d_clear_history(jfx_scene3d_t *s) {
 extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint32_t a,uint32_t b,uint32_t c,double value,const char *text) {
     if (!s || !op || !number(value)) return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] {
+        if (!std::strcmp(op,"3d.navigation_begin")) {
+            require(!s->navigating); s->navigation_camera=s->document.camera; s->navigation_orientation=s->document.orientation; s->navigating=true; return JFX_SUCCESS;
+        }
+        if (!std::strcmp(op,"3d.navigation_cancel")) {
+            require(s->navigating); s->document.camera=s->navigation_camera; s->document.orientation=s->navigation_orientation; s->navigating=false; return JFX_SUCCESS;
+        }
+        bool finish=!std::strcmp(op,"3d.navigation_end");
+        if (s->navigating && !finish) {
+            require(!std::strcmp(op,"3d.orbit") || !std::strcmp(op,"3d.orbit_axis") || !std::strcmp(op,"3d.pan") || !std::strcmp(op,"3d.dolly") || !std::strcmp(op,"3d.view") || !std::strcmp(op,"3d.camera"));
+            // Camera gestures cannot change geometry: avoid copying/validating
+            // every mesh on each mouse event. Validate a camera-only candidate.
+            Document next; next.camera=s->document.camera; next.orientation=s->document.orientation;
+            auto r=apply(next,op,a,b,c,value,text); if (r!=JFX_SUCCESS) return r; validate(next);
+            s->document.camera=next.camera; s->document.orientation=next.orientation; return JFX_SUCCESS;
+        }
         bool undo=!std::strcmp(op,"undo"),redo=!std::strcmp(op,"redo");
         if (undo || redo) {
             auto &from=undo?s->undo:s->redo; auto &to=undo?s->redo:s->undo; require(!from.empty());
@@ -450,13 +626,21 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
             s->document=std::move(restored);
         } else {
             Document next=s->document;
-            auto r=apply(next,op,a,b,c,value,text); if (r!=JFX_SUCCESS) return r;
+            if (a<next.objects.size() && (!std::strcmp(op,"3d.vertex") || !std::strcmp(op,"3d.subdivide") ||
+                !std::strcmp(op,"3d.align") || !std::strcmp(op,"3d.smooth") || !std::strcmp(op,"3d.make_editable"))) next.objects[a].normals.reset();
+            auto r=finish?JFX_SUCCESS:apply(next,op,a,b,c,value,text); if (r!=JFX_SUCCESS) return r;
             if (!std::strcmp(op,"3d.export_ply")) return r;
-            validate(next); auto before=serialize(s->document); (void)serialize(next);
+            validate(next); tilly::string before;
+            if (finish) {
+                require(s->navigating); Document old=next; old.camera=s->navigation_camera; old.orientation=s->navigation_orientation; before=serialize(old);
+                if (before==serialize(next)) { s->navigating=false; return JFX_SUCCESS; }
+            } else before=serialize(s->document);
+            (void)serialize(next);
             s->undo.reserve(s->undo.size()+1);
             for (auto &entry:s->redo) s->history_bytes-=entry.size();
             s->redo.clear();
             s->history_bytes+=before.size(); s->undo.push_back(std::move(before)); s->document=std::move(next);
+            s->navigating=false;
         }
         while (s->undo.size()>32 || s->redo.size()>32 || s->history_bytes>history_limit) {
             auto &stack=s->undo.empty() || s->redo.size()>32?s->redo:s->undo;
@@ -468,7 +652,7 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
 }
 extern "C" jfx_result_t jfx_scene3d_load(jfx_scene3d_t *s,const char *text,size_t length,char *err,size_t cap) {
     if (!s || !text) return JFX_ERROR_INVALID_ARGUMENT;
-    auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; return JFX_SUCCESS; });
+    auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false; return JFX_SUCCESS; });
     if (err && cap) std::snprintf(err,cap,"%s",r==JFX_SUCCESS?"":"Invalid or oversized 3D scene (check mesh indices, keys and camera)");
     return r;
 }
@@ -483,7 +667,7 @@ extern "C" jfx_result_t jfx_scene3d_state(const jfx_scene3d_t *s,char *out,size_
         json<<"{\"fps\":"<<d.fps<<",\"frames\":"<<d.frames<<",\"undo\":"<<(s->undo.empty()?"false":"true")
             <<",\"redo\":"<<(s->redo.empty()?"false":"true")<<",\"camera\":[";
         for (size_t i=0;i<d.camera.size();++i) { if (i) json<<','; json<<d.camera[i]; }
-        json<<"],\"objects\":[";
+        json<<"],\"quaternion\":["<<d.orientation.x<<','<<d.orientation.y<<','<<d.orientation.z<<','<<d.orientation.w<<"],\"objects\":[";
         for (size_t i=0;i<d.objects.size();++i) {
             if (i) json<<',';
             auto &o=d.objects[i]; json<<"{\"id\":"<<i<<",\"name\":"<<json_string(o.name)
@@ -492,54 +676,29 @@ extern "C" jfx_result_t jfx_scene3d_state(const jfx_scene3d_t *s,char *out,size_
             for (size_t j=0;j<9;++j) { if (j) json<<','; json<<o.transform[j]; }
             json<<"],\"color\":["<<o.color[0]<<','<<o.color[1]<<','<<o.color[2]<<"],\"keys\":[";
             for (size_t j=0;j<o.keys.size();++j) { if (j) json<<','; auto &k=o.keys[j]; json<<"{\"channel\":"<<k.channel<<",\"frame\":"<<k.frame<<",\"value\":"<<k.value<<",\"interpolation\":"<<k.interpolation<<'}'; }
-            json<<"]}";
+            json<<"],\"smooth\":"<<(o.smooth?"true":"false")<<",\"generator\":"<<o.generator<<",\"resolution\":"<<o.resolution;
+            auto points=[&](const char *name,const auto &list) {
+                json<<",\""<<name<<"\":[";
+                for (size_t j=0;j<list.size();++j) { if (j) json<<','; auto &p=list[j]; json<<'['<<p[0]<<','<<p[1]<<','<<p[2]<<','<<p[3]<<']'; } json<<']';
+            };
+            points("controls",o.controls); points("balls",o.balls);
+            json<<",\"cloner\":{\"mode\":"<<o.cloner_mode<<",\"count\":"<<o.instances<<",\"spacing\":"<<o.spacing<<"},\"scripts\":[";
+            for (size_t ch=0;ch<9;++ch) { if (ch) json<<','; json<<json_string(o.scripts[ch].source); } json<<"]}";
         }
         json<<"]}"; return copy_text(json.str(),out,cap);
     });
 }
 extern "C" jfx_result_t jfx_scene3d_sample(const jfx_scene3d_t *s,uint32_t object,double seconds,float out[9]) {
+    return jfx_scene3d_sample_instance(s,object,0,seconds,out);
+}
+extern "C" jfx_result_t jfx_scene3d_sample_instance(const jfx_scene3d_t *s,uint32_t object,uint32_t instance,double seconds,float out[9]) {
     if (!s || !out || object>=s->document.objects.size() || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
-    auto t=sample(s->document.objects[object],seconds*s->document.fps); std::copy(t.begin(),t.end(),out); return JFX_SUCCESS;
+    return boundary([&] { auto t=sample_instance(s->document.objects[object],instance,seconds,s->document.fps); std::copy(t.begin(),t.end(),out); return JFX_SUCCESS; });
 }
 extern "C" jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
     if (!s || !out || !w || !h || w>2048 || h>2048 || cap<size_t(w)*h*4 || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] {
-        tilly::vector<uint8_t> pixels(size_t(w)*h*4); tilly::vector<float> depth(size_t(w)*h,std::numeric_limits<float>::infinity());
-        for (size_t i=0;i<depth.size();++i) { pixels[i*4]=22; pixels[i*4+1]=26; pixels[i*4+2]=34; pixels[i*4+3]=255; }
-        auto &d=s->document; auto &c=d.camera;
-        float yaw=c[0]*float(pi/180),pitch=c[1]*float(pi/180);
-        Eigen::Vector3f target(c[3],c[4],c[5]),eye=target+c[2]*Eigen::Vector3f(std::cos(pitch)*std::sin(yaw),std::sin(pitch),std::cos(pitch)*std::cos(yaw));
-        Eigen::Vector3f forward=(target-eye).normalized(),right=forward.cross(Eigen::Vector3f::UnitY()).normalized(),up=right.cross(forward);
-        float focal=float(h)*.5f/std::tan(c[6]*float(pi/360));
-        for (auto &o:d.objects) if (o.visible) {
-            Transform t=sample(o,seconds*d.fps); auto rot=rotation(t);
-            Eigen::MatrixXd v,n; Eigen::MatrixXi f; matrices(o,v,f); igl::per_face_normals(v,f,n);
-            tilly::vector<Eigen::Vector3f> projected; projected.reserve(o.vertices.size());
-            for (auto &vertex:o.vertices) {
-                Eigen::Vector3f p=rot*(eigen(vertex).cwiseProduct(Eigen::Vector3f(t[6],t[7],t[8])))+Eigen::Vector3f(t[0],t[1],t[2])-eye;
-                float z=p.dot(forward); projected.emplace_back(float(w)*.5f+focal*p.dot(right)/std::max(z,.01f),float(h)*.5f-focal*p.dot(up)/std::max(z,.01f),z);
-            }
-            for (size_t index=0;index<o.triangles.size();++index) {
-                auto &face=o.triangles[index]; auto a=projected[face[0]],b=projected[face[1]],cc=projected[face[2]];
-                if (a.z()<.05f || b.z()<.05f || cc.z()<.05f) continue;
-                auto edge=[](const Eigen::Vector3f &p,const Eigen::Vector3f &q,float x,float y) { return (x-p.x())*(q.y()-p.y())-(y-p.y())*(q.x()-p.x()); };
-                float area=edge(a,b,cc.x(),cc.y()); if (std::abs(area)<.0001f) continue;
-                float minx=std::min({a.x(),b.x(),cc.x()}),maxx=std::max({a.x(),b.x(),cc.x()}),miny=std::min({a.y(),b.y(),cc.y()}),maxy=std::max({a.y(),b.y(),cc.y()});
-                if (maxx<0 || maxy<0 || minx>=float(w) || miny>=float(h)) continue;
-                int x0=int(std::max(0.f,minx)),x1=int(std::min(float(w-1),maxx)),y0=int(std::max(0.f,miny)),y1=int(std::min(float(h-1),maxy));
-                Eigen::Vector3f normal=rot*(n.row(Eigen::Index(index)).cast<float>().transpose().cwiseQuotient(Eigen::Vector3f(t[6],t[7],t[8])));
-                float light=.25f+.75f*std::abs(normal.normalized().dot(Eigen::Vector3f(.4f,.8f,.3f).normalized()));
-                for (int y=y0;y<=y1;++y) for (int x=x0;x<=x1;++x) {
-                    float wa=edge(b,cc,float(x)+.5f,float(y)+.5f)/area,wb=edge(cc,a,float(x)+.5f,float(y)+.5f)/area,wc=1-wa-wb;
-                    if (wa<0 || wb<0 || wc<0) continue;
-                    float z=1/(wa/a.z()+wb/b.z()+wc/cc.z()); size_t pixel=size_t(y)*w+size_t(x);
-                    if (z>=depth[pixel]) continue;
-                    depth[pixel]=z;
-                    for (size_t ch=0;ch<3;++ch) pixels[pixel*4+ch]=uint8_t(std::clamp(o.color[ch]*light*255.f,0.f,255.f));
-                }
-            }
-        }
-        std::memcpy(out,pixels.data(),pixels.size()); return JFX_SUCCESS;
+        return render_document(s->document,seconds,w,h,out);
     });
 }
 extern "C" jfx_result_t jfx_scene3d_write_png(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,const char *path) {

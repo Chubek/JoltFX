@@ -21,6 +21,10 @@ portable library also builds and runs its conformance tests on Linux.
 Android exposes a **3D Modeling & Animation** section with scene/index controls,
 primitives, vertex editing, subdivision, transforms, keys, camera and physics
 baking. `JFXModeling3DViewController` provides the iOS screen, reached from NLE.
+Both expose the expanded primitive catalog, NURBS control points/weights,
+metaball centers/radii, cloners and Joltscript transform drivers. Android uses
+one-finger quaternion orbit and two-finger pan/pinch/roll. iOS supports pan,
+pinch and rotation gestures. Axis-view and gimbal controls are also available.
 Both reuse the mobile session's scene document, playback, history and frame
 export; 3D playback uses its own clock and does not mix NLE audio. See
 [3D usage](../../docs/modeling3d.md) and `jfx_mobile_player_scene3d_state`.

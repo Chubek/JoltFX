@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 0
+#define JFX_MODELING3D_API_MINOR 1
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
@@ -18,12 +18,30 @@ typedef struct {
     float transform[9],color[3],mass;
     bool visible;
 } jfx_object3d_info_t;
+/* Additive procedural inspector; existing object-info layout is unchanged.
+ * generator: 0 mesh, 1 bicubic NURBS patch, 2 metaball isosurface.
+ * cloner_mode: 0 off, 1 linear, 2 radial, 3 XZ grid. XYZW controls use W
+ * as rational weight for NURBS or radius for metaballs. */
+typedef struct {
+    size_t size;
+    uint32_t generator, resolution, control_count, ball_count;
+    float controls[16][4], balls[16][4];
+    uint32_t cloner_mode, instances;
+    float spacing;
+    bool smooth;
+} jfx_procedural3d_info_t;
+jfx_result_t jfx_scene3d_procedural_info(const jfx_scene3d_t *scene,uint32_t object,
+    jfx_procedural3d_info_t *out_info);
+jfx_result_t jfx_scene3d_script(const jfx_scene3d_t *scene,uint32_t object,uint32_t channel,
+    char *out_source,size_t capacity);
 uint32_t jfx_scene3d_object_count(const jfx_scene3d_t *scene);
 uint32_t jfx_scene3d_fps(const jfx_scene3d_t *scene);
 uint32_t jfx_scene3d_frames(const jfx_scene3d_t *scene);
 jfx_result_t jfx_scene3d_object_info(const jfx_scene3d_t *scene,uint32_t object,jfx_object3d_info_t *out_info);
 jfx_result_t jfx_scene3d_vertex(const jfx_scene3d_t *scene,uint32_t object,uint32_t vertex,float out_xyz[3]);
 jfx_result_t jfx_scene3d_camera(const jfx_scene3d_t *scene,float out_camera[7]);
+/* Normalized camera-local-to-world quaternion in XYZW order. */
+jfx_result_t jfx_scene3d_camera_quaternion(const jfx_scene3d_t *scene,float out_xyzw[4]);
 /* Single-owner-thread scene. Objects use zero-based indices. The editor owns a
  * scene; standalone clients may own one too. All C boundaries catch exceptions. */
 jfx_scene3d_t *jfx_scene3d_create(void);
@@ -44,8 +62,10 @@ jfx_result_t jfx_scene3d_state(const jfx_scene3d_t *scene,char *out_json,size_t 
  * Interpolation: 0 hold, 1 linear, 2 smoothstep. Values are sampled at frame/fps. */
 jfx_result_t jfx_scene3d_sample(const jfx_scene3d_t *scene,uint32_t object,double seconds,
     float out_transform[9]);
-/* CPU z-buffered shaded perspective viewport; near-plane-crossing triangles are
- * omitted. Output remains untouched on error. Dimensions are limited to 2048. */
+jfx_result_t jfx_scene3d_sample_instance(const jfx_scene3d_t *scene,uint32_t object,
+    uint32_t instance,double seconds,float out_transform[9]);
+/* CPU z-buffered 4-sample antialiased perspective viewport, smooth/flat normals
+ * and near-plane clipping. Output remains untouched on error. Max dimension 2048. */
 jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *scene,double seconds,uint32_t width,
     uint32_t height,uint8_t *out_rgba,size_t capacity);
 jfx_result_t jfx_scene3d_write_png(const jfx_scene3d_t *scene,double seconds,
