@@ -375,7 +375,8 @@ export class JoltEditor {
         panel.append(this.button("Preview 3D workspace", () => { this.previewNode = null; this.bridge.edit("3d"); }), this.button("New 3D scene", () => { this.bridge.edit("3d.new"); this.time = 0; }));
         const segments = this.number(64, 8, 128);
         this.field(panel, "Primitive segments", segments);
-        for (const primitive of ["cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule", "pyramid", "disk", "nurbs", "metaball"])
+        for (const primitive of ["cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule", "pyramid", "disk", "nurbs", "metaball",
+            "tube", "hemisphere", "wedge", "tetrahedron", "octahedron", "icosahedron"])
             panel.append(this.button(`Add ${primitive}`, () => this.bridge.edit("3d.add", +segments.value, 0, 0, 0, primitive)));
         let drag;
         this.preview.style.touchAction = "none";

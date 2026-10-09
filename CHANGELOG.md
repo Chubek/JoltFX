@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- 3D tubes, capped hemispheres, wedges, tetrahedra, octahedra and icosahedra
+  across editor surfaces (Modeling3D API 1.2). Desktop creation selects the new
+  object. Fixed blank window-size 3D previews caused by the legacy 320x180
+  effect-preview limit (Desktop 1.6.1).
+
 - Shared xsimd CPU kernels for exposure, constant-gain audio summation, recording
   validation and optimized 3D rasterization; scalar fallback and reference tests.
   Cached mesh normals and camera-only gesture validation reduce repeated scene

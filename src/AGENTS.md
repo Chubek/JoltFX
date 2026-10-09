@@ -156,7 +156,7 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
-Modeling3D API 1.1 (`jfx_modeling3d.h`) and editor 1.8 append a scene document
+Modeling3D API 1.2 (`jfx_modeling3d.h`) and editor 1.8 append a scene document
 kind. Scene `3d.*` commands validate and commit transactionally with independent
 32-step/32-MiB history. Embedded `scene3d 1` documents validate before load; keys
 are sorted by channel/frame and use the scene's clock. Render/export dispatch by
@@ -173,6 +173,9 @@ Per-channel scripts embed source, compile through Glue and execute bounded JBC1
 with time/frame/index/keyed-value inputs. Keep runtime failure output atomic;
 `modeling3d_tools` covers generator/driver/camera/history contracts. Camera-only
 `3d.navigation_begin/end/cancel` coalesces a gesture into one scene history step.
+The primitive catalog includes closed tubes, capped hemispheres, wedges and
+tetrahedra/octahedra/icosahedra. Preserve welded seams, outward winding and
+two-manifold topology; `modeling3d_tools` checks topology and enclosed volume.
 
 The implemented color API is `include/jfx/jfx_color.h` (1.0.0). Its immutable
 descriptors come from `cmake/ColorKernels.cmake` and `.jolt` parameter declarations.

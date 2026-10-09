@@ -45,3 +45,10 @@ with tempfile.TemporaryDirectory(prefix="jfx-3d-") as directory:
     assert (root / "tools0.png").read_bytes() != (root / "tools1.png").read_bytes()
     run("3d", "edit", "tools.jfx", "preserve.jfx", commands="3d.script 0 1 0 0 (bad)\nsave\n", success=False)
     assert (root / "preserve.jfx").read_text()=="keep me"
+    kinds = ["tube", "hemisphere", "wedge", "tetrahedron", "octahedron", "icosahedron"]
+    commands = "3d.new 0 0 0 0\n" + "".join(f"3d.add 16 0 0 0 {kind}\n" for kind in kinds) + "save\n"
+    run("3d", "edit", "tools.jfx", "primitives.jfx", commands=commands)
+    state = json.loads(run("3d", "info", "primitives.jfx"))
+    assert [obj["name"] for obj in state["objects"]] == kinds
+    run("3d", "render", "primitives.jfx", "primitives.png", "0")
+    assert (root / "primitives.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

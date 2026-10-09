@@ -364,7 +364,8 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         action("Preview 3D workspace") { edit("3d") }
         action("New 3D scene") { edit("3d.new"); nativeSeek(nativeHandle, 0.0) }
         val segments3D = field("Primitive segments (8..128)", "64")
-        for (primitive in listOf("cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule", "pyramid", "disk", "nurbs", "metaball")) action("Add $primitive") { edit("3d.add", a = segments3D.text.toString().toInt(), text = primitive) }
+        for (primitive in listOf("cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule", "pyramid", "disk", "nurbs", "metaball",
+            "tube", "hemisphere", "wedge", "tetrahedron", "octahedron", "icosahedron")) action("Add $primitive") { edit("3d.add", a = segments3D.text.toString().toInt(), text = primitive) }
         val object3D = field("3D object index", "0")
         val name3D = field("3D object name", "Mesh")
         action("Rename 3D object") { edit("3d.name", object3D.text.toString().toInt(), text = name3D.text.toString()) }

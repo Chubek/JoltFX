@@ -635,7 +635,6 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_effect(jfx_desktop_frontend_t *
 extern "C" jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t *frontend,
     uint32_t width, uint32_t height, uint8_t *out_rgba, size_t out_size) {
     if (!frontend || !width || !height || !out_rgba) return JFX_ERROR_INVALID_ARGUMENT;
-    if (width > kPreviewWidth || height > kPreviewHeight) return JFX_ERROR_INVALID_ARGUMENT;
     size_t pixels = (size_t)width * (size_t)height;
     if (pixels > SIZE_MAX / (4u * sizeof(float))) return JFX_ERROR_OUT_OF_MEMORY;
     if (out_size < pixels * 4u) return JFX_ERROR_INVALID_ARGUMENT;
@@ -645,6 +644,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t
             return jfx_editor_render_graph(frontend->editor,frontend->selected_node,frontend->time_seconds,width,height,out_rgba,out_size);
         return jfx_editor_render(frontend->editor, frontend->time_seconds, width, height, out_rgba, out_size);
     }
+
+    /* Only the legacy effect preview uses fixed-size scratch buffers. Shared
+     * documents allocate their own rasters and validate their own size limits. */
+    if (width > kPreviewWidth || height > kPreviewHeight) return JFX_ERROR_INVALID_ARGUMENT;
 
     /* An animated gradient: this is the input the effect is previewed on, and
      * it is what makes a moving blue channel visible while playing. */
@@ -927,7 +930,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         ImGui::SameLine();
         if (ImGui::Button("Cancel export")) jfx_export_cancel(frontend->export_job);
     } else ImGui::TextDisabled("%s",frontend->status);
-    } else ImGui::TextDisabled("Vector animation | %s",frontend->status);
+    } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":"Vector animation",frontend->status);
     ImGui::Separator();
     if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int i=0;i<JFX_DESKTOP_WORKSPACE_COUNT;++i) {

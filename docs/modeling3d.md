@@ -11,7 +11,9 @@ scene state and renderer.
 
 1. Open the 3D workspace and add a primitive or import a PLY mesh. **More
    primitives** includes cylinders, cones, tori, capsules, pyramids, disks,
-   NURBS surfaces and metaballs. Curved primitives default to 64 segments;
+   NURBS surfaces and metaballs, plus tubes, hemispheres, wedges, tetrahedra,
+   octahedra and icosahedra. Click **Add primitive** to create the chosen shape;
+   new desktop objects are selected automatically. Curved primitives default to 64 segments;
    **Smooth shading** and four-sample antialiasing smooth lighting and silhouettes.
 2. Select an object in the desktop/iOS outliner (zero-based object index in the
    terminal/Android controls). Edit position, rotation, scale and material color.
@@ -81,7 +83,7 @@ cmake -S . -B build -DJFX_3D_EIGEN_ROOT=/path/to/eigen-3.4.1
 cmake --build build --parallel
 ```
 
-The libraries are hidden behind `jfx_modeling3d.h` (API 1.1) and editor 1.8.
+The libraries are hidden behind `jfx_modeling3d.h` (API 1.2) and editor 1.8.
 Existing project-kind values and desktop identifiers retain their numeric values;
 scene kind and desktop identifiers are appended (desktop API 1.6).
 
@@ -104,7 +106,7 @@ and `undo`, `redo`, `show`, `save`, `quit` use the normal terminal editor.
 | Command | Arguments |
 |---|---|
 | `3d.new` | Empty default scene |
-| `3d.add` | TEXT = `cube`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `pyramid`, `disk`, `nurbs`, `metaball`; A = radial segments 8..128 (0 = 64) |
+| `3d.add` | TEXT = `cube`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `pyramid`, `disk`, `nurbs`, `metaball`, `tube`, `hemisphere`, `wedge`, `tetrahedron`, `octahedron`, `icosahedron`; A = radial segments 8..128 (0 = 64) |
 | `3d.import_ply` | TEXT = mesh path; appends object |
 | `3d.export_ply` | A = object, TEXT = destination path; no history entry |
 | `3d.name` | A = object, TEXT = name (max 127 bytes, no control characters) |
@@ -150,6 +152,15 @@ keys rather than only changing the base transform.
 Camera channels: **0 yaw**, **1 pitch** (-89..89), **2 distance** (0.1..10000),
 **3..5 target XYZ**, **6 FOV** (10..120). Positions/rotation values are finite
 and bounded to magnitude 100000. Shortening the clock past existing keys fails.
+
+## Solid primitive sizes
+
+Tubes have outer radius 1, inner radius 0.6 and height 2, with annular ends.
+Hemispheres have radius 1, sit above Y=0 and include a flat base. Wedges are
+triangular prisms spanning -1..1. Tetrahedra, octahedra and icosahedra have unit
+circumradius and flat shading. Tube/hemisphere curved surfaces use smooth shading;
+**Segments** controls their radial tessellation. All six are editable meshes
+that support transforms, keys, subdivision, PLY interchange and scene history.
 
 ## NURBS and metaballs
 

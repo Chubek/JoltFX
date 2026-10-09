@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 1
+#define JFX_MODELING3D_API_MINOR 2
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
@@ -46,7 +46,9 @@ jfx_result_t jfx_scene3d_camera_quaternion(const jfx_scene3d_t *scene,float out_
  * scene; standalone clients may own one too. All C boundaries catch exceptions. */
 jfx_scene3d_t *jfx_scene3d_create(void);
 void jfx_scene3d_destroy(jfx_scene3d_t *scene);
-/* Edits are failure-atomic and have bounded 32-step history. See docs/modeling3d.md. */
+/* Edits are failure-atomic and have bounded 32-step history. API 1.2 adds tube,
+ * hemisphere, wedge, tetrahedron, octahedron and icosahedron to 3d.add.
+ * See docs/modeling3d.md for the complete command/primitive catalog. */
 jfx_result_t jfx_scene3d_command(jfx_scene3d_t *scene,const char *op,
     uint32_t a,uint32_t b,uint32_t c,double value,const char *text);
 bool jfx_scene3d_can_undo(const jfx_scene3d_t *scene);

@@ -17,6 +17,9 @@ int main() {
     assert(jfx_editor_command(editor,"3d.add",0,0,0,0,"nurbs")==JFX_SUCCESS);
     assert(jfx_editor_command(editor,"3d.nurbs_point",1,5,3,2,"")==JFX_SUCCESS);
     assert(jfx_editor_command(editor,"3d.add",0,0,0,0,"metaball")==JFX_SUCCESS);
+    for (auto kind:{"tube","hemisphere","wedge","tetrahedron","octahedron","icosahedron"}) {
+        assert(jfx_editor_command(editor,"3d.add",16,0,0,0,kind)==JFX_SUCCESS);
+    }
     assert(jfx_editor_command(editor,"3d.orbit",0,0,0,0,"10 15 20")==JFX_SUCCESS);
     tilly::vector<char> text(8*1024*1024); size_t length=0;
     assert(jfx_editor_save(editor,text.data(),text.size(),&length)==JFX_SUCCESS);

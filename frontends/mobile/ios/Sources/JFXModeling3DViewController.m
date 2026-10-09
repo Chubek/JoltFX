@@ -139,7 +139,8 @@
             [weak apply:@"3d.clock" a:(NSUInteger)f b:(NSUInteger)n c:0 value:0 text:@""]; }];
     for (NSString *op in @[@"undo",@"redo",@"3d.new"]) [self button:op action:^{ [weak apply:op a:0 b:0 c:0 value:0 text:@""]; }];
     UITextField *segments=[self field:@"Primitive segments (8..128)" value:@"64"];
-    for (NSString *primitive in @[@"cube",@"sphere",@"plane",@"cylinder",@"cone",@"torus",@"capsule",@"pyramid",@"disk",@"nurbs",@"metaball"]) [self button:[@"Add " stringByAppendingString:primitive] action:^{
+    for (NSString *primitive in @[@"cube",@"sphere",@"plane",@"cylinder",@"cone",@"torus",@"capsule",@"pyramid",@"disk",@"nurbs",@"metaball",
+        @"tube",@"hemisphere",@"wedge",@"tetrahedron",@"octahedron",@"icosahedron"]) [self button:[@"Add " stringByAppendingString:primitive] action:^{
         double n=[weak number:segments]; if (isfinite(n) && n>=8 && n<=128 && floor(n)==n) [weak apply:@"3d.add" a:(NSUInteger)n b:0 c:0 value:0 text:primitive]; }];
     [objects enumerateObjectsUsingBlock:^(NSDictionary *o,NSUInteger i,BOOL *stop) { (void)stop;
         [weak button:[NSString stringWithFormat:@"%lu: %@ (%@ vertices)",(unsigned long)i,o[@"name"],o[@"vertices"]] action:^{ weak.selected=i; [weak refresh]; }]; }];

@@ -66,7 +66,10 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
 void modeling3d_panel(jfx_desktop_frontend_t *f) {
     auto *scene=jfx_editor_scene3d(f->editor);
     auto command=[&](const char *op,uint32_t a=0,uint32_t b=0,uint32_t c=0,double value=0,const char *text="") {
-        editor_result(f,jfx_desktop_frontend_edit(f,op,a,b,c,value,text));
+        auto result=jfx_desktop_frontend_edit(f,op,a,b,c,value,text); editor_result(f,result);
+        if (result==JFX_SUCCESS && (!std::strcmp(op,"3d.add") || !std::strcmp(op,"3d.duplicate") || !std::strcmp(op,"3d.import_ply"))) {
+            f->scene_object=int(jfx_scene3d_object_count(scene))-1; f->scene_vertex=0;
+        }
     };
     auto &io=ImGui::GetIO();
     if (f->scene_navigation && (ImGui::IsKeyPressed(ImGuiKey_Escape) || (!io.MouseDown[0] && !io.MouseDown[1] && !io.MouseDown[2]))) {
@@ -90,11 +93,14 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     ImGui::SameLine(); if (ImGui::Button("Add sphere") && f->scene_segments>=8 && f->scene_segments<=128) command("3d.add",uint32_t(f->scene_segments),0,0,0,"sphere");
     ImGui::SameLine(); if (ImGui::Button("Add plane")) command("3d.add",0,0,0,0,"plane");
     ImGui::SameLine(); if (ImGui::Button("New 3D scene")) { command("3d.new"); f->scene_object=0; jfx_desktop_frontend_seek(f,0); }
-    const char *primitives[]={"cylinder","cone","torus","capsule","pyramid","disk","nurbs","metaball"};
-    ImGui::SetNextItemWidth(150); ImGui::Combo("More primitives",&f->scene_primitive,primitives,8);
+    const char *primitives[]={"cylinder","cone","torus","capsule","pyramid","disk","nurbs","metaball",
+        "tube","hemisphere","wedge","tetrahedron","octahedron","icosahedron"};
+    ImGui::SetNextItemWidth(150); ImGui::Combo("More primitives",&f->scene_primitive,primitives,int(sizeof(primitives)/sizeof(primitives[0])),14);
     ImGui::SameLine(); ImGui::SetNextItemWidth(100); ImGui::InputInt("Segments",&f->scene_segments);
-    ImGui::SameLine(); if (ImGui::Button("Add primitive") && f->scene_segments>=8 && f->scene_segments<=128)
+    ImGui::SameLine(); ImGui::BeginDisabled(f->scene_segments<8 || f->scene_segments>128);
+    if (ImGui::Button("Add primitive"))
         command("3d.add",uint32_t(f->scene_segments),0,0,0,primitives[f->scene_primitive]);
+    ImGui::EndDisabled();
     bool table=ImGui::BeginTable("3D workspace",2,ImGuiTableFlags_Resizable);
     if (table) { ImGui::TableSetupColumn("Scene / inspector",ImGuiTableColumnFlags_WidthFixed,310); ImGui::TableSetupColumn("3D viewport"); ImGui::TableNextColumn(); }
     if (ImGui::BeginChild("3D inspector",ImVec2(0,0))) {

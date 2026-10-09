@@ -63,7 +63,9 @@ to commit. **Key** stores a transform channel at the current frame. Select a
 channel/frame to change interpolation or remove a key. Mesh editing exposes
 vertices, subdivision and principal-axis alignment; rigid-body controls set mass
 and bake motion into editable keys. **More primitives** adds cylinders, cones,
-tori, capsules, pyramids, disks, NURBS patches and metaballs. Generator inspectors
+tori, capsules, pyramids, disks, NURBS patches, metaballs, tubes, hemispheres,
+wedges, tetrahedra, octahedra and icosahedra. Select a shape and click **Add
+primitive**; the new object is selected automatically. Generator inspectors
 edit control points/weights or ball centers/radii; cloners arrange instances in
 lines, rings or grids. **Joltscript animation** assigns a source or `.jolt` file
 to a transform channel, with time/frame/index/keyed-value inputs.

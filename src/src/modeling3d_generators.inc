@@ -9,10 +9,48 @@ void grid_faces(Object &o,uint32_t rows,uint32_t columns,bool wrap_rows,bool wra
         o.triangles.push_back({a,d,b}); o.triangles.push_back({b,d,e});
     }
 }
+// Orient convex solids away from an interior point, including the asymmetric
+// wedge. Shared edge vertices keep subdivision and mesh interchange watertight.
+void orient_convex(Object &o) {
+    glm::vec3 center(0);
+    for (auto &v:o.vertices) center+=gvec(v);
+    center/=float(o.vertices.size());
+    for (auto &f:o.triangles) {
+        auto a=gvec(o.vertices[f[0]]),b=gvec(o.vertices[f[1]]),c=gvec(o.vertices[f[2]]);
+        if (glm::dot(glm::cross(b-a,c-a),(a+b+c)/3.f-center)<0) std::swap(f[1],f[2]);
+    }
+}
+void polyhedron(Object &o,const char *kind) {
+    if (!std::strcmp(kind,"wedge")) {
+        o.vertices={{{-1,-1,-1}},{{1,-1,-1}},{{-1,1,-1}},{{-1,-1,1}},{{1,-1,1}},{{-1,1,1}}};
+        o.triangles={{{0,2,1}},{{3,4,5}},{{0,1,4}},{{0,4,3}},{{0,3,5}},{{0,5,2}},{{1,2,5}},{{1,5,4}}};
+    } else if (!std::strcmp(kind,"tetrahedron")) {
+        o.vertices={{{1,1,1}},{{-1,-1,1}},{{-1,1,-1}},{{1,-1,-1}}};
+        o.triangles={{{0,1,2}},{{0,3,1}},{{0,2,3}},{{1,3,2}}};
+        for (auto &v:o.vertices) v=vvec(glm::normalize(gvec(v)));
+    } else if (!std::strcmp(kind,"octahedron")) {
+        o.vertices={{{1,0,0}},{{-1,0,0}},{{0,1,0}},{{0,-1,0}},{{0,0,1}},{{0,0,-1}}};
+        o.triangles={{{2,0,4}},{{2,4,1}},{{2,1,5}},{{2,5,0}},{{3,4,0}},{{3,1,4}},{{3,5,1}},{{3,0,5}}};
+    } else {
+        require(!std::strcmp(kind,"icosahedron"));
+        const float g=float((1+std::sqrt(5.))/2);
+        o.vertices={{{-1,g,0}},{{1,g,0}},{{-1,-g,0}},{{1,-g,0}},{{0,-1,g}},{{0,1,g}},
+            {{0,-1,-g}},{{0,1,-g}},{{g,0,-1}},{{g,0,1}},{{-g,0,-1}},{{-g,0,1}}};
+        o.triangles={{{0,11,5}},{{0,5,1}},{{0,1,7}},{{0,7,10}},{{0,10,11}},
+            {{1,5,9}},{{5,11,4}},{{11,10,2}},{{10,7,6}},{{7,1,8}},
+            {{3,9,4}},{{3,4,2}},{{3,2,6}},{{3,6,8}},{{3,8,9}},
+            {{4,9,5}},{{2,4,11}},{{6,2,10}},{{8,6,7}},{{9,8,1}}};
+        for (auto &v:o.vertices) v=vvec(glm::normalize(gvec(v)));
+    }
+    orient_convex(o);
+}
 void extra_primitive(Object &o,const char *kind,uint32_t n) {
     if (!std::strcmp(kind,"pyramid")) {
         o.vertices={{{-1,-1,-1}},{{1,-1,-1}},{{1,-1,1}},{{-1,-1,1}},{{0,1,0}}};
         o.triangles={{{0,1,2}},{{0,2,3}},{{0,4,1}},{{1,4,2}},{{2,4,3}},{{3,4,0}}};
+    } else if (!std::strcmp(kind,"wedge") || !std::strcmp(kind,"tetrahedron") ||
+        !std::strcmp(kind,"octahedron") || !std::strcmp(kind,"icosahedron")) {
+        polyhedron(o,kind);
     } else if (!std::strcmp(kind,"torus")) {
         o.smooth=true; uint32_t rings=n/2;
         for (uint32_t r=0;r<n;++r) for (uint32_t c=0;c<rings;++c) {
@@ -20,6 +58,34 @@ void extra_primitive(Object &o,const char *kind,uint32_t n) {
             o.vertices.push_back({float((1+.35*std::cos(v))*std::cos(u)),float(.35*std::sin(v)),float((1+.35*std::cos(v))*std::sin(u))});
         }
         grid_faces(o,n,rings,true,true);
+    } else if (!std::strcmp(kind,"tube")) {
+        o.smooth=true;
+        const float profile[4][2]={{1,1},{1,-1},{.6f,-1},{.6f,1}};
+        for (auto &p:profile) for (uint32_t s=0;s<n;++s)
+            o.vertices.push_back({p[0]*float(std::cos(2*pi*s/n)),p[1],p[0]*float(std::sin(2*pi*s/n))});
+        // Outer wall, bottom annulus, inner wall and top annulus. Weld both
+        // seams and preserve the opening instead of capping it with a disk.
+        for (uint32_t r=0;r<4;++r) for (uint32_t s=0;s<n;++s) {
+            uint32_t a=r*n+s,b=r*n+(s+1)%n,c=((r+1)%4)*n+s,d=((r+1)%4)*n+(s+1)%n;
+            o.triangles.push_back({a,b,c}); o.triangles.push_back({b,d,c});
+        }
+    } else if (!std::strcmp(kind,"hemisphere")) {
+        o.smooth=true; const uint32_t rings=n/4;
+        o.vertices.push_back({0,1,0});
+        for (uint32_t r=1;r<=rings;++r) for (uint32_t s=0;s<n;++s) {
+            double theta=pi*.5*r/rings,phi=2*pi*s/n;
+            o.vertices.push_back({float(std::sin(theta)*std::cos(phi)),r==rings?0.f:float(std::cos(theta)),float(std::sin(theta)*std::sin(phi))});
+        }
+        uint32_t bottom=uint32_t(o.vertices.size()),last=1+(rings-1)*n;
+        o.vertices.push_back({0,0,0});
+        for (uint32_t s=0;s<n;++s) {
+            uint32_t next=(s+1)%n;
+            o.triangles.push_back({0,1+next,1+s}); o.triangles.push_back({bottom,last+s,last+next});
+            for (uint32_t r=0;r+1<rings;++r) {
+                uint32_t a=1+r*n+s,b=1+r*n+next,c=a+n,d=b+n;
+                o.triangles.push_back({a,b,c}); o.triangles.push_back({b,d,c});
+            }
+        }
     } else if (!std::strcmp(kind,"disk")) {
         o.vertices.push_back({0,0,0});
         for (uint32_t s=0;s<n;++s) o.vertices.push_back({float(std::cos(2*pi*s/n)),0,float(std::sin(2*pi*s/n))});

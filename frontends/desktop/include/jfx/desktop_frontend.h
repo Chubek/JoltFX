@@ -40,7 +40,7 @@ typedef enum {
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
 #define JFX_DESKTOP_API_MINOR 6
-#define JFX_DESKTOP_API_PATCH 0
+#define JFX_DESKTOP_API_PATCH 1
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
     JFX_DESKTOP_WORKSPACE_EFFECTS,

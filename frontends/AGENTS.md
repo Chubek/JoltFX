@@ -1063,6 +1063,10 @@ The 3D workspace now exposes the expanded primitive catalog, generator controls,
 cloners and per-channel Joltscript drivers. Desktop quaternion navigation uses
 draggable GLM gimbal rings and camera-only history grouping; render at the actual
 viewport size (bounded to 1280) to avoid magnifying the old 320-pixel preview.
+Desktop document rendering must bypass the legacy effect-preview scratch-size
+limit; the scene renderer owns its raster allocation and 2048-pixel limit.
+Keep tube/hemisphere/wedge and tetrahedron/octahedron/icosahedron choices aligned
+across frontends. Successful desktop creation selects the appended object.
 Finish/cancel navigation on release, Escape or workspace/lifecycle changes.
 Web and mobile route camera gestures and all generator/script operations through
 the same commands. Source/controls/layouts belong to Core, never UI-only state.

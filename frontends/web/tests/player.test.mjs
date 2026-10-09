@@ -247,6 +247,10 @@ test("mounted 3D workspace uses scene FPS for keys and retains mode across refre
     sequence.children.find(e => e.textContent==="Preview sequence").onclick(); assert.equal(editor.fps,30);
     panel.children.find(e => e.textContent==="Preview 3D workspace").onclick(); assert.equal(editor.fps,24);
     panel.children.find(e => e.textContent==="Add torus").onclick(); assert.deepEqual(calls.at(-1),["3d.add",64,0,0,0,"torus"]);
+    for (const kind of ["tube","hemisphere","wedge","tetrahedron","octahedron","icosahedron"]) {
+      panel.children.find(e => e.textContent===`Add ${kind}`).onclick();
+      assert.deepEqual(calls.at(-1),["3d.add",64,0,0,0,kind]);
+    }
     const label=(section,name) => section.children.find(e => e.tag==="label" && e.children[0]?.textContent===`${name} `).children[1];
     const control=label(inspector(),"Generator Weight"); control.value="2"; control.onchange(); assert.deepEqual(calls.at(-1),["3d.nurbs_point",0,0,3,2,""]);
     inspector().children.find(e => e.textContent==="Apply cloner").onclick(); assert.deepEqual(calls.at(-1),["3d.cloner",0,2,4,3,""]);

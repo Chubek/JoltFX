@@ -1,5 +1,22 @@
 # Progress
 
+## 3D tab visibility and primitive additions (2026-10-09)
+
+- Reproduced the blank windowed viewport: the desktop render entry point rejected
+  scene rasters larger than the legacy 320x180 effect preview. Document rendering
+  now uses the shared renderer's allocation and dimension limits.
+- Added tubes, capped hemispheres, wedges, tetrahedra, octahedra and icosahedra
+  through shared commands and desktop/web/mobile controls. Desktop creation,
+  duplication and import select the new object. Updated API versions and docs.
+- Native 3D checks pass 6/6; all five ImGui UI suites, desktop frontend and real
+  window smoke pass. Web tests pass 13/13. Clang ASan/UBSan checks pass all six
+  selected cases, including the CLI retry after correcting its test syntax.
+- Regressions cover display-size/high-DPI/portrait rendering, failed output
+  preservation, menu creation/selection/history, narrow layout, welded manifold
+  geometry, outward winding/volume, segment limits and cross-client persistence.
+- Visually verified the real shaded workspace and expanded menu. Evidence lives
+  in `/tmp/opencode/jfx-3d-tab-*` logs and `{window,menu}.png` screenshots.
+
 ## Shared CPU performance work (2026-10-09)
 
 - Measuring 3D rendering and camera navigation before optimization. Adding a
