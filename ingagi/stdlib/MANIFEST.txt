@@ -1,0 +1,4 @@
+Ingagi Standard Library Catalog
+Proposed modules: 271
+Subsystem groups: 17
+Includes README.md, modules.tsv, profiles.toml, MANIFEST.txt, and one README.md per subsystem.

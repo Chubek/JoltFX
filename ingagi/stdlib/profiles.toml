@@ -1,0 +1,18 @@
+# Suggested standard-library profiles (module names are illustrative).
+[core]
+includes = ["std.core", "std.types", "std.option", "std.result", "std.math", "std.collections", "std.string", "std.memory", "std.json"]
+
+[runtime]
+includes = ["std.app", "std.ecs", "std.task", "std.async", "std.resource", "std.platform", "std.io"]
+
+[game]
+includes = ["std.render", "std.shader", "std.physics", "std.audio", "std.input", "std.animation", "std.navigation", "std.ui"]
+
+[shader]
+includes = ["std.shader", "std.shader.math", "std.shader.vector", "std.shader.matrix", "std.shader.sampling", "std.shader.lighting"]
+
+[net]
+includes = ["std.net", "std.net.transport", "std.net.serialization", "std.net.replication", "std.net.prediction", "std.net.rollback"]
+
+[tools]
+includes = ["std.log", "std.trace", "std.profile", "std.test", "std.diagnostics", "std.editor", "std.build"]

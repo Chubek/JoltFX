@@ -1,0 +1,763 @@
+CompilationUnit  = { ModuleDeclaration
+                   | ImportDeclaration
+                   | ExternalDeclaration } ;
+
+ModuleDeclaration = "module", QualifiedName, ";" ;
+
+ImportDeclaration = "import", QualifiedName,
+                    [ "as", Identifier ], ";" ;
+
+ExternalDeclaration
+    = AttributeList,
+      ( ConstantDeclaration
+      | TypeAliasDeclaration
+      | StructDeclaration
+      | EnumDeclaration
+      | FunctionDeclaration
+      | ComponentDeclaration
+      | EntityDeclaration
+      | SystemDeclaration
+      | EventDeclaration
+      | ResourceDeclaration
+      | ShaderDeclaration
+      | PipelineDeclaration
+      | InterfaceDeclaration
+      | ExtensionDeclaration
+      | ExternDeclaration ) ;
+
+AttributeList = { Attribute } ;
+
+Attribute = "@", Identifier,
+            [ "(", [ ArgumentList ], ")" ] ;
+
+ConstantDeclaration
+    = [ Visibility ], "const", Identifier,
+      [ ":", Type ], "=", Expression, ";" ;
+
+TypeAliasDeclaration
+    = [ Visibility ], "type", Identifier,
+      [ GenericParameters ], "=", Type, ";" ;
+
+Visibility = "public" | "private" | "internal" ;
+
+ExternDeclaration
+    = "extern", StringLiteral, "{",
+      { FunctionDeclaration | VariableDeclaration },
+      "}" ;
+
+ExtensionDeclaration
+    = "extend", Type, Block ;
+
+StructDeclaration
+    = [ Visibility ], "struct", Identifier,
+      [ GenericParameters ],
+      [ ":" , TypeList ],
+      "{", { StructMember }, "}" ;
+
+StructMember
+    = AttributeList,
+      ( VariableDeclaration | FunctionDeclaration ) ;
+
+EnumDeclaration
+    = [ Visibility ], "enum", Identifier,
+      [ ":" , Type ],
+      "{", EnumVariantList, [ "," ], "}" ;
+
+EnumVariantList
+    = EnumVariant, { ",", EnumVariant } ;
+
+EnumVariant
+    = Identifier, [ "(", TypeList, ")" ],
+      [ "=", Expression ] ;
+
+GenericParameters
+    = "<", Identifier, { ",", Identifier }, ">" ;
+
+TypeList = Type, { ",", Type } ;
+
+Type
+    = QualifiedType, [ "?" ]
+    | ArrayType
+    | TupleType
+    | FunctionType
+    | ReferenceType
+    | PointerType ;
+
+QualifiedType
+    = [ "::" ], Identifier,
+      { "::", Identifier },
+      [ GenericArguments ] ;
+
+GenericArguments
+    = "<", Type, { ",", Type }, ">" ;
+
+ArrayType
+    = "[", Type, ";", Expression, "]" ;
+
+TupleType
+    = "(", [ TypeList ], ")" ;
+
+FunctionType
+    = "fn", "(", [ ParameterTypeList ], ")",
+      [ "->", Type ] ;
+
+ParameterTypeList
+    = Type, { ",", Type } ;
+
+ReferenceType
+    = "&", [ "mut" ], Type ;
+
+PointerType
+    = "*", [ "mut" ], Type ;
+
+VariableDeclaration
+    = AttributeList, [ "let" | "var" ],
+      Identifier, [ ":", Type ],
+      [ "=", Expression ], ";" ;
+
+FunctionDeclaration
+    = [ Visibility ], [ "async" ],
+      "fn", Identifier,
+      [ GenericParameters ],
+      "(", [ ParameterList ], ")",
+      [ "->", Type ],
+      ( Block | ";" ) ;
+
+ParameterList
+    = Parameter, { ",", Parameter }, [ "," ] ;
+
+Parameter
+    = AttributeList,
+      [ "mut" ],
+      Identifier, ":", Type,
+      [ "=", Expression ] ;
+
+Block = "{", { Statement }, "}" ;
+
+Expression = AssignmentExpression ;
+
+AssignmentExpression
+    = ConditionalExpression,
+      [ AssignmentOperator, AssignmentExpression ] ;
+
+AssignmentOperator
+    = "=" | "+=" | "-=" | "*=" | "/="
+    | "%=" | "&=" | "|=" | "^="
+    | "<<=" | ">>=" ;
+
+ConditionalExpression
+    = LogicalOrExpression,
+      [ "?", Expression, ":", Expression ] ;
+
+LogicalOrExpression
+    = LogicalAndExpression,
+      { "||", LogicalAndExpression } ;
+
+LogicalAndExpression
+    = BitwiseOrExpression,
+      { "&&", BitwiseOrExpression } ;
+
+BitwiseOrExpression
+    = BitwiseXorExpression,
+      { "|", BitwiseXorExpression } ;
+
+BitwiseXorExpression
+    = BitwiseAndExpression,
+      { "^", BitwiseAndExpression } ;
+
+BitwiseAndExpression
+    = EqualityExpression,
+      { "&", EqualityExpression } ;
+
+EqualityExpression
+    = RelationalExpression,
+      { ( "==" | "!=" ), RelationalExpression } ;
+
+RelationalExpression
+    = ShiftExpression,
+      { ( "<" | "<=" | ">" | ">=" ), ShiftExpression } ;
+
+ShiftExpression
+    = AdditiveExpression,
+      { ( "<<" | ">>" ), AdditiveExpression } ;
+
+AdditiveExpression
+    = MultiplicativeExpression,
+      { ( "+" | "-" ), MultiplicativeExpression } ;
+
+MultiplicativeExpression
+    = UnaryExpression,
+      { ( "*" | "/" | "%" ), UnaryExpression } ;
+
+UnaryExpression
+    = { "!" | "~" | "-" | "+" | "*" | "&" | "await" },
+      PostfixExpression ;
+
+PostfixExpression
+    = PrimaryExpression,
+      { CallSuffix | MemberSuffix | IndexSuffix
+      | GenericCallSuffix | "?" } ;
+
+CallSuffix
+    = "(", [ ArgumentList ], ")" ;
+
+MemberSuffix
+    = ( "." | "->" ), Identifier ;
+
+IndexSuffix
+    = "[", Expression, "]" ;
+
+GenericCallSuffix
+    = "::", GenericArguments ;
+
+ArgumentList
+    = Argument, { ",", Argument }, [ "," ] ;
+
+Argument
+    = [ Identifier, ":" ], Expression ;
+
+PrimaryExpression
+    = Literal
+    | Identifier
+    | QualifiedName
+    | "self"
+    | "(", Expression, ")"
+    | TupleExpression
+    | ArrayExpression
+    | StructExpression
+    | LambdaExpression
+    | "if", Expression, Block, [ "else", ( Block | IfExpression ) ]
+    | "match", Expression, "{", MatchArms, "}" ;
+
+IfExpression
+    = "if", Expression, Block,
+      [ "else", ( Block | IfExpression ) ] ;
+
+TupleExpression
+    = "(", Expression, ",", [ ArgumentList ], ")" ;
+
+ArrayExpression
+    = "[", [ ArgumentList ], "]"
+    | "[", Expression, ";", Expression, "]" ;
+
+StructExpression
+    = QualifiedName, "{",
+      [ StructInitializerList ], "}" ;
+
+StructInitializerList
+    = StructInitializer, { ",", StructInitializer }, [ "," ] ;
+
+StructInitializer
+    = Identifier, ":", Expression
+    | Identifier ;
+
+LambdaExpression
+    = "|", [ ParameterList ], "|",
+      [ "->", Type ], ( Expression | Block ) ;
+
+MatchArms
+    = MatchArm, { ",", MatchArm }, [ "," ] ;
+
+MatchArm
+    = Pattern, [ "if", Expression ],
+      "=>", ( Expression | Block ) ;
+
+Statement
+    = Block
+    | VariableDeclaration
+    | ExpressionStatement
+    | ReturnStatement
+    | BreakStatement
+    | ContinueStatement
+    | IfStatement
+    | WhileStatement
+    | ForStatement
+    | LoopStatement
+    | MatchStatement
+    | DeferStatement
+    | UnsafeStatement ;
+
+ExpressionStatement = Expression, ";" ;
+
+ReturnStatement
+    = "return", [ Expression ], ";" ;
+
+BreakStatement
+    = "break", [ Identifier ], [ Expression ], ";" ;
+
+ContinueStatement
+    = "continue", [ Identifier ], ";" ;
+
+IfStatement
+    = "if", Expression, Block,
+      [ "else", ( Block | IfStatement ) ] ;
+
+WhileStatement
+    = "while", Expression, Block ;
+
+ForStatement
+    = "for", Pattern, "in", Expression, Block ;
+
+LoopStatement
+    = "loop", Block ;
+
+MatchStatement
+    = "match", Expression, "{", MatchArms, "}" ;
+
+DeferStatement = "defer", Block ;
+
+UnsafeStatement = "unsafe", Block ;
+
+Pattern
+    = "_"
+    | Identifier
+    | Literal
+    | QualifiedName
+    | TuplePattern
+    | StructPattern
+    | ArrayPattern
+    | Pattern, "|", Pattern ;
+
+TuplePattern
+    = "(", Pattern, { ",", Pattern }, [ "," ], ")" ;
+
+StructPattern
+    = QualifiedName, "{", [ PatternFieldList ], "}" ;
+
+PatternFieldList
+    = PatternField, { ",", PatternField }, [ "," ] ;
+
+PatternField
+    = Identifier, [ ":", Pattern ] ;
+
+ArrayPattern
+    = "[", [ Pattern, { ",", Pattern } ], [ "..", [ Identifier ] ], "]" ;
+
+QualifiedName
+    = [ "::" ], Identifier, { "::", Identifier } ;
+
+ComponentDeclaration
+    = [ Visibility ], "component", Identifier,
+      [ GenericParameters ],
+      [ ":", Type ],
+      "{", { ComponentMember }, "}" ;
+
+ComponentMember
+    = AttributeList,
+      ( ComponentField | FunctionDeclaration ) ;
+
+ComponentField
+    = Identifier, ":", Type,
+      [ "=", Expression ], ";" ;
+
+EntityDeclaration
+    = [ Visibility ], "entity", Identifier,
+      [ GenericParameters ],
+      "{", { EntityMember }, "}" ;
+
+EntityMember
+    = ComponentAttachment
+    | EntityChild
+    | EntityProperty ;
+
+ComponentAttachment
+    = QualifiedName,
+      [ "{", [ StructInitializerList ], "}" ],
+      ";" ;
+
+EntityChild
+    = "child", Identifier, ":", EntityExpression, ";" ;
+
+EntityProperty
+    = Identifier, ":", Type,
+      [ "=", Expression ], ";" ;
+
+EntityExpression
+    = QualifiedName
+    | StructExpression
+    | CallExpression ;
+
+CallExpression
+    = QualifiedName, "(", [ ArgumentList ], ")" ;
+
+SystemDeclaration
+    = [ Visibility ], "system", Identifier,
+      [ GenericParameters ],
+      "{", { SystemMember }, "}" ;
+
+SystemMember
+    = SystemQuery
+    | SystemHook
+    | SystemDependency
+    | FunctionDeclaration
+    | VariableDeclaration ;
+
+SystemQuery
+    = "query", Identifier,
+      [ QueryFilter ],
+      ";" ;
+
+QueryFilter
+    = "with", "(", [ QueryComponentList ], ")",
+      [ "without", "(", [ QueryComponentList ], ")" ],
+      [ "optional", "(", [ QueryComponentList ], ")" ]
+    | "without", "(", [ QueryComponentList ], ")",
+      [ "optional", "(", [ QueryComponentList ], ")" ]
+    | "optional", "(", [ QueryComponentList ], ")" ;
+
+QueryComponentList
+    = QueryComponent, { ",", QueryComponent } ;
+
+QueryComponent
+    = [ "&" | "&mut" ], QualifiedName,
+      [ "as", Identifier ] ;
+
+SystemHook
+    = SystemHookName,
+      "(", [ ParameterList ], ")",
+      Block ;
+
+SystemHookName
+    = "startup"
+    | "shutdown"
+    | "update"
+    | "fixed_update"
+    | "late_update"
+    | "pre_render"
+    | "post_render"
+    | "on_event" ;
+
+SystemDependency
+    = "before", QualifiedName, ";"
+    | "after", QualifiedName, ";"
+    | "parallel", ( "true" | "false" ), ";" ;
+
+ForEachStatement
+    = "for", "each",
+      "(", [ QueryBindingList ], ")",
+      "in", Identifier, Block ;
+
+QueryBindingList
+    = QueryBinding, { ",", QueryBinding } ;
+
+QueryBinding
+    = [ "&" | "&mut" ],
+      Identifier,
+      [ "as", Identifier ] ;
+
+EventDeclaration
+    = [ Visibility ], "event", Identifier,
+      [ GenericParameters ],
+      [ ":", Type ],
+      "{", { ComponentField }, "}" ;
+
+ShaderDeclaration
+    = [ Visibility ], "shader", Identifier,
+      [ ShaderOptions ],
+      "{", { ShaderMember }, "}" ;
+
+ShaderOptions
+    = "(", [ ShaderOptionList ], ")" ;
+
+ShaderOptionList
+    = ShaderOption, { ",", ShaderOption } ;
+
+ShaderOption
+    = Identifier, ":", Expression ;
+
+ShaderMember
+    = ShaderStructDeclaration
+    | ShaderConstantDeclaration
+    | ShaderResourceDeclaration
+    | ShaderInterfaceDeclaration
+    | ShaderFunctionDeclaration
+    | ShaderStageDeclaration
+    | ShaderSpecializationConstant ;
+
+ShaderStructDeclaration
+    = "struct", Identifier,
+      "{", { ShaderField }, "}" ;
+
+ShaderField
+    = AttributeList, Identifier, ":", ShaderType, ";" ;
+
+ShaderConstantDeclaration
+    = "const", Identifier, ":", ShaderType,
+      "=", ShaderExpression, ";" ;
+
+ShaderSpecializationConstant
+    = "specialize", Identifier, ":", ShaderType,
+      [ "=", ShaderExpression ], ";" ;
+
+ShaderInterfaceDeclaration
+    = "interface", Identifier,
+      "{", { ShaderInterfaceField }, "}" ;
+
+ShaderInterfaceField
+    = AttributeList, Identifier, ":", ShaderType, ";" ;
+
+ShaderResourceDeclaration
+    = AttributeList,
+      ( UniformBufferDeclaration
+      | StorageBufferDeclaration
+      | TextureDeclaration
+      | SamplerDeclaration
+      | StorageImageDeclaration ) ;
+
+UniformBufferDeclaration
+    = "uniform", Identifier,
+      "{", { ShaderField }, "}",
+      [ Identifier ], ";" ;
+
+StorageBufferDeclaration
+    = [ "read" | "write" | "read_write" ],
+      "storage", "buffer", Identifier,
+      "{", { ShaderField }, "}",
+      [ Identifier ], ";" ;
+
+TextureDeclaration
+    = TextureKind, Identifier,
+      [ ":", ShaderType ], ";" ;
+
+TextureKind
+    = "texture1d"
+    | "texture2d"
+    | "texture2d_array"
+    | "texture3d"
+    | "texture_cube"
+    | "texture_cube_array"
+    | "texture2d_ms" ;
+
+SamplerDeclaration
+    = [ "comparison" ], "sampler",
+      Identifier, ";" ;
+
+StorageImageDeclaration
+    = "storage_image", TextureKind,
+      Identifier, ":", ShaderAccess, ";" ;
+
+ShaderAccess = "read" | "write" | "read_write" ;
+
+ShaderStageDeclaration
+    = VertexStage
+    | FragmentStage
+    | ComputeStage
+    | GeometryStage
+    | TessellationControlStage
+    | TessellationEvaluationStage
+    | MeshStage
+    | TaskStage ;
+
+VertexStage
+    = "vertex", [ StageOptions ], Block ;
+
+FragmentStage
+    = "fragment", [ StageOptions ], Block ;
+
+ComputeStage
+    = "compute", [ StageOptions ], Block ;
+
+GeometryStage
+    = "geometry", [ StageOptions ], Block ;
+
+TessellationControlStage
+    = "tess_control", [ StageOptions ], Block ;
+
+TessellationEvaluationStage
+    = "tess_evaluation", [ StageOptions ], Block ;
+
+MeshStage
+    = "mesh", [ StageOptions ], Block ;
+
+TaskStage
+    = "task", [ StageOptions ], Block ;
+
+StageOptions
+    = "(", [ StageOptionList ], ")" ;
+
+StageOptionList
+    = StageOption, { ",", StageOption } ;
+
+StageOption
+    = Identifier, ":", Expression ;
+
+ShaderFunctionDeclaration
+    = [ "fn" ], Identifier,
+      "(", [ ShaderParameterList ], ")",
+      [ "->", ShaderType ],
+      Block ;
+
+ShaderParameterList
+    = ShaderParameter, { ",", ShaderParameter }, [ "," ] ;
+
+ShaderParameter
+    = AttributeList, Identifier, ":", ShaderType ;
+
+ShaderType
+    = ScalarShaderType
+    | VectorShaderType
+    | MatrixShaderType
+    | ShaderArrayType
+    | ShaderQualifiedType ;
+
+ScalarShaderType
+    = "bool" | "i32" | "u32" | "f16" | "f32" | "f64" ;
+
+VectorShaderType
+    = "vec2" | "vec3" | "vec4"
+    | "ivec2" | "ivec3" | "ivec4"
+    | "uvec2" | "uvec3" | "uvec4"
+    | "bvec2" | "bvec3" | "bvec4" ;
+
+MatrixShaderType
+    = "mat2" | "mat3" | "mat4"
+    | "mat2x2" | "mat2x3" | "mat2x4"
+    | "mat3x2" | "mat3x3" | "mat3x4"
+    | "mat4x2" | "mat4x3" | "mat4x4" ;
+
+ShaderArrayType
+    = "[", ShaderType, ";", Expression, "]" ;
+
+ShaderQualifiedType
+    = QualifiedName, [ GenericArguments ] ;
+
+ShaderExpression = Expression ;
+
+PipelineDeclaration
+    = [ Visibility ], "pipeline", Identifier,
+      "{", { PipelineMember }, "}" ;
+
+PipelineMember
+    = PipelineShaderStage
+    | PipelineLayout
+    | PipelineVertexLayout
+    | PipelineRasterState
+    | PipelineDepthState
+    | PipelineBlendState
+    | PipelineTarget
+    | PipelineComputeState ;
+
+PipelineShaderStage
+    = ( "vertex" | "fragment"
+      | "geometry" | "tess_control"
+      | "tess_evaluation" | "mesh" | "task" ),
+      ":", QualifiedName, ";" ;
+
+PipelineLayout
+    = "layout", ":", QualifiedName, ";" ;
+
+PipelineVertexLayout
+    = "vertex_layout", ":", QualifiedName, ";" ;
+
+PipelineRasterState
+    = "raster", "{", { StateAssignment }, "}" ;
+
+PipelineDepthState
+    = "depth", "{", { StateAssignment }, "}" ;
+
+PipelineBlendState
+    = "blend", "{", { StateAssignment }, "}" ;
+
+PipelineTarget
+    = "target", "{", { StateAssignment }, "}" ;
+
+PipelineComputeState
+    = "compute", "{", { StateAssignment }, "}" ;
+
+StateAssignment
+    = Identifier, ":", Expression, ";" ;
+
+ResourceDeclaration
+    = [ Visibility ], "resource", Identifier,
+      [ ":", Type ],
+      [ "=", Expression ], ";" ;
+
+InterfaceDeclaration
+    = [ Visibility ], "interface", Identifier,
+      "{", { InterfaceMember }, "}" ;
+
+InterfaceMember
+    = FunctionDeclaration
+    | VariableDeclaration ;
+
+Identifier
+    = IdentifierStart, { IdentifierContinue } ;
+
+IdentifierStart
+    = Letter | "_" ;
+
+IdentifierContinue
+    = IdentifierStart | Digit ;
+
+QualifiedName
+    = [ "::" ], Identifier, { "::", Identifier } ;
+
+IntegerLiteral
+    = DecimalInteger
+    | HexInteger
+    | BinaryInteger
+    | OctalInteger ;
+
+DecimalInteger
+    = Digit, { Digit | "_" } ;
+
+HexInteger
+    = "0x", HexDigit, { HexDigit | "_" } ;
+
+BinaryInteger
+    = "0b", ( "0" | "1" ), { "0" | "1" | "_" } ;
+
+OctalInteger
+    = "0o", OctalDigit, { OctalDigit | "_" } ;
+
+FloatLiteral
+    = Digit, { Digit | "_" }, ".",
+      Digit, { Digit | "_" }, [ Exponent ]
+    | Digit, { Digit | "_" }, Exponent ;
+
+Exponent
+    = ( "e" | "E" ), [ "+" | "-" ],
+      Digit, { Digit | "_" } ;
+
+BooleanLiteral = "true" | "false" ;
+
+StringLiteral
+    = '"', { StringCharacter | EscapeSequence }, '"' ;
+
+CharacterLiteral
+    = "'", ( StringCharacter | EscapeSequence ), "'" ;
+
+EscapeSequence
+    = "\\", ( "n" | "r" | "t" | "0"
+            | "\\" | '"' | "'" )
+    | "\\x", HexDigit, HexDigit
+    | "\\u{", HexDigit, { HexDigit }, "}" ;
+
+Literal
+    = IntegerLiteral
+    | FloatLiteral
+    | BooleanLiteral
+    | StringLiteral
+    | CharacterLiteral
+    | "null" ;
+
+LineComment
+    = "//", { ? any character except newline ? } ;
+
+BlockComment
+    = "/*", { BlockComment | ? any character ? }, "*/" ;
+
+Whitespace = " " | "\t" | "\r" | "\n" ;
+
+Digit = "0" | "1" | "2" | "3" | "4"
+      | "5" | "6" | "7" | "8" | "9" ;
+
+HexDigit = Digit | "a" | "b" | "c" | "d" | "e" | "f"
+                  | "A" | "B" | "C" | "D" | "E" | "F" ;
+
+OctalDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" ;
+
+Letter = "a" | "b" | ... | "z"
+       | "A" | "B" | ... | "Z" ;
+
+

@@ -1,0 +1,272 @@
+group	module	description
+core-runtime	std.core	Fundamental types, built-ins, common traits, and language intrinsics.
+core-runtime	std.types	Fixed-width integers, floating-point types, and numeric aliases.
+core-runtime	std.convert	Explicit conversions and parsing/formatting conversions.
+core-runtime	std.option	Optional values and absent-value handling.
+core-runtime	std.result	Fallible operations, Result<T, E>, and error propagation.
+core-runtime	std.error	Error types, error chains, and diagnostics.
+core-runtime	std.assert	Assertions, invariants, preconditions, and postconditions.
+core-runtime	std.panic	Panic handling and runtime failure.
+core-runtime	std.debug	Debug output, assertions, and inspection helpers.
+core-runtime	std.reflect	Type metadata, runtime reflection, field and component introspection.
+core-runtime	std.any	Type-erased values and dynamic type handling.
+core-runtime	std.version	Engine, language, module, and API version information.
+collections	std.collections	Common collection interfaces.
+collections	std.array	Fixed-size arrays.
+collections	std.slice	Non-owning contiguous views.
+collections	std.vector	Dynamic arrays.
+collections	std.list	Linked lists.
+collections	std.deque	Double-ended queues.
+collections	std.stack	Stack data structure.
+collections	std.queue	FIFO queues.
+collections	std.heap	Priority queues and heap operations.
+collections	std.hashmap	Hash maps.
+collections	std.hashset	Hash sets.
+collections	std.btree	Ordered trees and maps.
+collections	std.bitset	Dense bit sets.
+collections	std.sparse_set	Sparse sets, useful for ECS storage.
+collections	std.ringbuffer	Ring buffers for audio, streaming, and event queues.
+collections	std.graph	Graphs and graph traversal.
+collections	std.pool	Object and resource pools.
+collections	std.intern	String and symbol interning.
+text-serialization	std.string	Owned strings and string manipulation.
+text-serialization	std.string_view	Non-owning string views.
+text-serialization	std.text	Text processing and Unicode utilities.
+text-serialization	std.utf8	UTF-8 encoding and decoding.
+text-serialization	std.unicode	Unicode normalization and character properties.
+text-serialization	std.regex	Regular expressions.
+text-serialization	std.format	Structured string formatting.
+text-serialization	std.scan	Token scanning and parsing helpers.
+text-serialization	std.json	JSON serialization and deserialization.
+text-serialization	std.yaml	YAML support.
+text-serialization	std.toml	TOML configuration.
+text-serialization	std.xml	XML parsing and writing.
+text-serialization	std.cbor	Compact binary object representation.
+text-serialization	std.msgpack	MessagePack serialization.
+text-serialization	std.archive	Archive containers and packaging.
+text-serialization	std.codec	Common encoding and decoding utilities.
+math-geometry	std.math	Constants, elementary functions, and numeric utilities.
+math-geometry	std.math.scalar	Scalar operations and numeric predicates.
+math-geometry	std.math.vector	2D, 3D, and 4D vectors.
+math-geometry	std.math.matrix	Matrices and matrix operations.
+math-geometry	std.math.quaternion	Quaternion rotations and interpolation.
+math-geometry	std.math.transform	Translation, rotation, scale, and transforms.
+math-geometry	std.math.complex	Complex numbers.
+math-geometry	std.math.dual	Dual numbers and automatic differentiation support.
+math-geometry	std.math.interval	Interval arithmetic.
+math-geometry	std.math.random	Random number generators and distributions.
+math-geometry	std.math.noise	Perlin, Simplex, and other procedural noise.
+math-geometry	std.geometry	Geometric primitives and algorithms.
+math-geometry	std.geometry.ray	Rays and ray intersections.
+math-geometry	std.geometry.plane	Planes and plane intersections.
+math-geometry	std.geometry.bounds	AABB, OBB, bounding spheres, and bounds tests.
+math-geometry	std.geometry.frustum	Frustum extraction and culling.
+math-geometry	std.geometry.intersection	Intersection and overlap algorithms.
+math-geometry	std.geometry.triangulation	Polygon triangulation.
+math-geometry	std.geometry.spatial	Spatial partitioning utilities.
+math-geometry	std.math.curve	Bézier curves, splines, and interpolation.
+math-geometry	std.math.color	Color spaces, conversions, and color operations.
+ecs	std.ecs	Core ECS types and APIs.
+ecs	std.ecs.entity	Entity IDs, generations, and lifecycle.
+ecs	std.ecs.component	Component definitions, registration, and metadata.
+ecs	std.ecs.world	World creation, ownership, and lifecycle.
+ecs	std.ecs.query	Typed component queries and query filters.
+ecs	std.ecs.system	System declarations and execution.
+ecs	std.ecs.schedule	System ordering, stages, and dependencies.
+ecs	std.ecs.command	Deferred world mutations and command buffers.
+ecs	std.ecs.events	Typed events and event dispatch.
+ecs	std.ecs.resources	World-scoped singleton resources.
+ecs	std.ecs.relationship	Entity relationships and hierarchies.
+ecs	std.ecs.change	Change detection and dirty tracking.
+ecs	std.ecs.observer	Reactive observers for world changes.
+ecs	std.ecs.parallel	Parallel system execution.
+ecs	std.ecs.serialization	World and entity serialization.
+ecs	std.ecs.snapshot	Snapshots, restoration, and rollback.
+ecs	std.ecs.replication	Replication metadata and synchronization.
+rendering	std.render	Rendering abstractions and frame orchestration.
+rendering	std.render.device	GPU device and capability discovery.
+rendering	std.render.resource	GPU resources and resource lifetime.
+rendering	std.render.buffer	Vertex, index, uniform, and storage buffers.
+rendering	std.render.texture	Textures, formats, views, and samplers.
+rendering	std.render.shader	Shader modules, compilation, and reflection.
+rendering	std.render.pipeline	Graphics and compute pipelines.
+rendering	std.render.material	Materials, parameters, and material instances.
+rendering	std.render.mesh	Mesh data and GPU mesh resources.
+rendering	std.render.model	Model instances and renderable assets.
+rendering	std.render.camera	Camera projections and view state.
+rendering	std.render.lighting	Light sources and lighting abstractions.
+rendering	std.render.shadow	Shadow maps and shadow configuration.
+rendering	std.render.postprocess	Post-processing effects.
+rendering	std.render.pass	Render passes and render graphs.
+rendering	std.render.graph	Render-graph resource dependencies and scheduling.
+rendering	std.render.compute	GPU compute dispatch.
+rendering	std.render.indirect	Indirect drawing and dispatch.
+rendering	std.render.bindless	Bindless resource abstractions where supported.
+rendering	std.render.sync	GPU fences, synchronization, and barriers.
+rendering	std.render.readback	GPU-to-CPU readback.
+rendering	std.render.debug	Debug drawing, GPU markers, and profiling integration.
+shader	std.shader	Shader-language prelude and common declarations.
+shader	std.shader.math	Shader-safe math operations.
+shader	std.shader.vector	Vector operations.
+shader	std.shader.matrix	Matrix operations.
+shader	std.shader.transform	Coordinate-space transforms.
+shader	std.shader.color	Color conversion and color-space utilities.
+shader	std.shader.sampling	Texture sampling helpers.
+shader	std.shader.lighting	BRDFs and lighting models.
+shader	std.shader.pbr	Physically based rendering utilities.
+shader	std.shader.shadow	Shadowing algorithms.
+shader	std.shader.noise	Procedural noise.
+shader	std.shader.derivative	Derivatives and gradient operations.
+shader	std.shader.atomic	Shader atomic operations.
+shader	std.shader.subgroup	Subgroup and wave operations where supported.
+shader	std.shader.encoding	Packing and unpacking GPU data.
+shader	std.shader.compute	Compute-shader utilities.
+shader	std.shader.debug	Shader diagnostics and debug visualization.
+physics-simulation	std.physics	Physics-world interfaces.
+physics-simulation	std.physics.collision	Collision queries and collision filtering.
+physics-simulation	std.physics.rigidbody	Rigid bodies and mass properties.
+physics-simulation	std.physics.collider	Collider shapes and materials.
+physics-simulation	std.physics.constraint	Joint and constraint abstractions.
+physics-simulation	std.physics.character	Character-controller interfaces.
+physics-simulation	std.physics.query	Raycasts, shape casts, and overlap tests.
+physics-simulation	std.physics.vehicle	Vehicle dynamics abstractions.
+physics-simulation	std.physics.softbody	Soft-body simulation interfaces.
+physics-simulation	std.physics.fluid	Fluid simulation interfaces.
+physics-simulation	std.physics.particle	Particle simulation.
+physics-simulation	std.physics.field	Force fields and environmental forces.
+physics-simulation	std.simulation	Fixed-step simulation and deterministic stepping.
+physics-simulation	std.simulation.clock	Simulation clocks and time-step management.
+application-input	std.app	Application lifecycle.
+application-input	std.app.plugin	Engine plugins and lifecycle hooks.
+application-input	std.app.config	Application and engine configuration.
+application-input	std.window	Windows, surfaces, and display modes.
+application-input	std.input	Unified input abstraction.
+application-input	std.input.keyboard	Keyboard input.
+application-input	std.input.pointer	Mouse and pointer input.
+application-input	std.input.gamepad	Gamepads and controllers.
+application-input	std.input.touch	Touch and multitouch input.
+application-input	std.input.action	Action maps and semantic input bindings.
+application-input	std.input.gesture	Gesture recognition.
+application-input	std.display	Display enumeration and display properties.
+application-input	std.cursor	Cursor control.
+application-input	std.lifecycle	Focus, suspend/resume, and shutdown.
+audio	std.audio	Audio subsystem interfaces.
+audio	std.audio.device	Audio devices and output configuration.
+audio	std.audio.source	Audio sources and playback.
+audio	std.audio.buffer	PCM and decoded audio buffers.
+audio	std.audio.stream	Streaming audio.
+audio	std.audio.spatial	3D audio positioning.
+audio	std.audio.listener	Listener configuration.
+audio	std.audio.mixer	Mixing and buses.
+audio	std.audio.effect	Audio effects.
+audio	std.audio.music	Music playback and transitions.
+audio	std.audio.spatialize	Spatialization and attenuation.
+audio	std.audio.analysis	Spectrum analysis and metering.
+assets-resources	std.asset	Asset handles, metadata, and lifecycle.
+assets-resources	std.asset.server	Central asset loading and caching.
+assets-resources	std.asset.loader	Format-specific loading interfaces.
+assets-resources	std.asset.import	Import pipeline interfaces.
+assets-resources	std.asset.watch	Asset change detection.
+assets-resources	std.asset.bundle	Bundling and packaging.
+assets-resources	std.asset.handle	Typed asset references.
+assets-resources	std.asset.dependency	Asset dependency tracking.
+assets-resources	std.asset.hot_reload	Development-time reload.
+assets-resources	std.resource	General resource management.
+assets-resources	std.resource.cache	Resource caches.
+assets-resources	std.resource.arena	Arena-based allocation.
+assets-resources	std.resource.lifetime	Resource lifetime policies.
+assets-resources	std.asset.gltf	Optional glTF asset support.
+assets-resources	std.asset.png	Optional PNG asset support.
+assets-resources	std.asset.jpeg	Optional JPEG asset support.
+assets-resources	std.asset.ktx	Optional KTX texture support.
+assets-resources	std.asset.ogg	Optional Ogg audio support.
+assets-resources	std.asset.wav	Optional WAV audio support.
+assets-resources	std.asset.font	Optional font asset support.
+system-io-concurrency	std.io	I/O abstractions.
+system-io-concurrency	std.io.file	File operations.
+system-io-concurrency	std.io.buffered	Buffered readers and writers.
+system-io-concurrency	std.io.stream	Stream abstractions.
+system-io-concurrency	std.fs	Filesystem paths, directories, and metadata.
+system-io-concurrency	std.path	Path manipulation.
+system-io-concurrency	std.env	Environment variables.
+system-io-concurrency	std.process	Process creation and management.
+system-io-concurrency	std.platform	Platform identification and capabilities.
+system-io-concurrency	std.system	System information.
+system-io-concurrency	std.library	Dynamic library loading.
+system-io-concurrency	std.memory	Allocation interfaces and memory utilities.
+system-io-concurrency	std.alloc	Allocator interfaces.
+system-io-concurrency	std.time	Clocks, durations, and timestamps.
+system-io-concurrency	std.clock	Monotonic and wall-clock interfaces.
+system-io-concurrency	std.thread	Threads and thread lifecycle.
+system-io-concurrency	std.sync	Mutexes, condition variables, and atomics.
+system-io-concurrency	std.task	Tasks and task execution.
+system-io-concurrency	std.async	Asynchronous operations.
+system-io-concurrency	std.channel	Message-passing channels.
+networking	std.net	Network abstractions.
+networking	std.net.ip	IP addresses and endpoint types.
+networking	std.net.tcp	TCP connections.
+networking	std.net.udp	UDP sockets.
+networking	std.net.websocket	WebSocket client/server support.
+networking	std.net.http	HTTP client and server APIs.
+networking	std.net.tls	TLS integration.
+networking	std.net.dns	Name resolution.
+networking	std.net.packet	Packet construction and parsing.
+networking	std.net.transport	Transport abstraction.
+networking	std.net.session	Session management.
+networking	std.net.replication	Network state replication.
+networking	std.net.prediction	Client-side prediction.
+networking	std.net.rollback	Rollback and resimulation support.
+networking	std.net.interpolation	Remote-state interpolation.
+networking	std.net.serialization	Network-oriented serialization.
+gameplay-animation-ui	std.animation	Animation clips and playback.
+gameplay-animation-ui	std.animation.skeleton	Skeletons and bone hierarchies.
+gameplay-animation-ui	std.animation.blend	Blend trees and blending.
+gameplay-animation-ui	std.animation.ik	Inverse kinematics.
+gameplay-animation-ui	std.animation.morph	Morph targets and blend shapes.
+gameplay-animation-ui	std.animation.curve	Animation curves.
+gameplay-animation-ui	std.navigation	Navigation queries and pathfinding interfaces.
+gameplay-animation-ui	std.navigation.navmesh	Navigation meshes.
+gameplay-animation-ui	std.ai	General gameplay AI utilities.
+gameplay-animation-ui	std.ai.behavior	Behavior trees.
+gameplay-animation-ui	std.ai.state_machine	Finite-state machines.
+gameplay-animation-ui	std.ai.planning	Planning and decision-making.
+gameplay-animation-ui	std.ui	Retained or immediate-mode UI abstractions.
+gameplay-animation-ui	std.ui.layout	Layout systems.
+gameplay-animation-ui	std.ui.widget	UI widgets.
+gameplay-animation-ui	std.ui.text	Text layout and rendering.
+gameplay-animation-ui	std.ui.input	UI input routing.
+gameplay-animation-ui	std.localization	Localized text and resource lookup.
+gameplay-animation-ui	std.accessibility	Accessibility interfaces and metadata.
+diagnostics-testing	std.log	Structured logging.
+diagnostics-testing	std.trace	Tracing and spans.
+diagnostics-testing	std.profile	CPU profiling.
+diagnostics-testing	std.gpu.profile	GPU timing and profiling.
+diagnostics-testing	std.metrics	Counters, gauges, and telemetry.
+diagnostics-testing	std.test	Unit and integration testing.
+diagnostics-testing	std.test.property	Property-based testing.
+diagnostics-testing	std.test.benchmark	Benchmarking.
+diagnostics-testing	std.validate	Runtime validation.
+diagnostics-testing	std.diagnostics	Structured diagnostic reports.
+diagnostics-testing	std.console	Developer console.
+diagnostics-testing	std.inspector	Runtime inspection.
+diagnostics-testing	std.gizmo	Editor and debug gizmos.
+diagnostics-testing	std.capture	Frame, image, and trace capture.
+security-crypto	std.crypto	Cryptographic interfaces.
+security-crypto	std.crypto.hash	Hashing algorithms.
+security-crypto	std.crypto.digest	Cryptographic digests.
+security-crypto	std.crypto.random	Cryptographically secure random generation.
+security-crypto	std.crypto.signature	Digital signatures.
+security-crypto	std.crypto.kdf	Key derivation.
+security-crypto	std.crypto.aead	Authenticated encryption.
+security-crypto	std.security	Security-related primitives and policies.
+editor-tools	std.editor	Editor integration APIs.
+editor-tools	std.editor.scene	Scene editing and hierarchy.
+editor-tools	std.editor.property	Property inspection and editing.
+editor-tools	std.editor.asset	Asset browser integration.
+editor-tools	std.editor.gizmo	Transform and editing gizmos.
+editor-tools	std.editor.undo	Undo/redo commands.
+editor-tools	std.editor.plugin	Editor extensions.
+editor-tools	std.tool	General developer-tool APIs.
+editor-tools	std.build	Build metadata and build integrations.
+editor-tools	std.shader.compiler	Shader compilation and validation APIs.
+editor-tools	std.reflect.schema	Schema generation and metadata export.
