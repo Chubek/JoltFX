@@ -225,6 +225,30 @@ func TestExprPrecedence(t *testing.T) {
 	}
 }
 
+func TestTernaryAndPropagation(t *testing.T) {
+	for _, src := range []string{
+		`flag ? 41 + 1 : 0`,
+		`flag ? yes ? 1 : 2 : 3`,
+		`flag ? value? : fallback`,
+		`flag ? f(a: 1) : g()`,
+		`flag ? +1 : -1`,
+		strings.Repeat("true ? ", 40) + "1" + strings.Repeat(" : 0", 40),
+	} {
+		e, errs := ParseExpression(src)
+		if len(errs) != 0 {
+			t.Fatalf("%s: %v", src, errs)
+		}
+		if _, ok := e.(*TernaryExpr); !ok {
+			t.Fatalf("%s: got %T", src, e)
+		}
+	}
+	for _, src := range []string{`f()? + 1`, `f()?.x`, `f()?`, `f()? + g(a: 1)`} {
+		if _, errs := ParseExpression(src); len(errs) != 0 {
+			t.Fatalf("%s: %v", src, errs)
+		}
+	}
+}
+
 // TestControlFlowBraces guards the struct-literal vs block disambiguation:
 // `Path {` after an expression opens a block for control flow unless it is
 // an adjacent brace or an uppercase type with field syntax. Regression test
@@ -268,6 +292,6 @@ type counter struct {
 	decls, exprs, stmts int
 }
 
-func (c *counter) VisitDecl(Decl) bool  { c.decls++; return true }
-func (c *counter) VisitExpr(Expr) bool  { c.exprs++; return true }
-func (c *counter) VisitStmt(Stmt) bool  { c.stmts++; return true }
+func (c *counter) VisitDecl(Decl) bool { c.decls++; return true }
+func (c *counter) VisitExpr(Expr) bool { c.exprs++; return true }
+func (c *counter) VisitStmt(Stmt) bool { c.stmts++; return true }

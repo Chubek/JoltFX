@@ -3,11 +3,35 @@
 package ingagi
 
 import (
+	"context"
 	"errors"
 
+	"github.com/Chubek/JoltFX/ingagi/compiler"
 	"github.com/Chubek/JoltFX/ingagi/frontend"
 	"github.com/Chubek/JoltFX/ingagi/runtime"
 )
+
+// NativeOptions selects QBE IL, target assembly, an ELF object or machine code.
+type NativeOptions = compiler.NativeOptions
+
+// CompileNative compiles the typed native subset through QBE and, for machine
+// code/object output, Keystone. It never executes the result. The caller's
+// context bounds the QBE process; Keystone assembly is synchronous.
+func CompileNative(ctx context.Context, source string, options NativeOptions) ([]byte, error) {
+	parsed := frontend.Parse(source)
+	var diagnostics []error
+	for _, d := range parsed.Errors {
+		diagnostics = append(diagnostics, d)
+	}
+	if len(diagnostics) != 0 {
+		return nil, errors.Join(diagnostics...)
+	}
+	p, err := compiler.EmitQBE(parsed.File)
+	if err != nil {
+		return nil, err
+	}
+	return p.Build(ctx, options)
+}
 
 // Compile parses source, lowers it to bytecode and optimizes the resulting
 // module. It does not execute initializers or perform the planned static type

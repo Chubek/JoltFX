@@ -59,14 +59,31 @@ func (p *ConstPool) InternString(v string) int32 {
 	return i
 }
 
-// Int resolves an int constant.
-func (p *ConstPool) Int(i int) int64 { return p.Ints[i] }
+// Int resolves an int constant. Out-of-range indices yield zero for tooling.
+// Validate and the dispatch loop reject invalid indices before executing them.
+func (p *ConstPool) Int(i int) int64 {
+	if i < 0 || i >= len(p.Ints) {
+		return 0
+	}
+	return p.Ints[i]
+}
 
-// Float resolves a float constant.
-func (p *ConstPool) Float(i int) float64 { return p.Floats[i] }
+// Float resolves a float constant (see Int for out-of-range behavior).
+func (p *ConstPool) Float(i int) float64 {
+	if i < 0 || i >= len(p.Floats) {
+		return 0
+	}
+	return p.Floats[i]
+}
 
-// String resolves a string constant.
-func (p *ConstPool) String(i int) string { return p.Strings[i] }
+// String resolves a string constant (see Int for out-of-range behavior).
+// The interned empty name is used as the "callee on stack" sentinel by OpCall.
+func (p *ConstPool) String(i int) string {
+	if i < 0 || i >= len(p.Strings) {
+		return ""
+	}
+	return p.Strings[i]
+}
 
 // Tape is a compiled instruction stream with its entry points.
 type Tape struct {

@@ -72,8 +72,8 @@ const (
 	OpBind  // A: with-count, B: without-count, C: pipeline index triple
 	OpDefer // A: target (registers deferred call frame)
 	OpEndDefer
-	OpObserve   // A: 0 add, 1 remove, 2 set; C: component name index (pops closure)
-	OpTryField  // C: field name index (missing field -> nil, never errors)
+	OpObserve     // A: 0 add, 1 remove, 2 set; C: component name index (pops closure)
+	OpTryField    // C: field name index (missing field -> nil, never errors)
 	OpMakeClosure // A: upvalue count, C: entry name index (pops A values)
 	OpLoadUp      // A: upvalue index
 	OpStoreUp     // A: upvalue index

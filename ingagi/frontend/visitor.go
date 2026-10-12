@@ -17,11 +17,11 @@ type Visitor interface {
 // BaseVisitor prunes nothing; embed it to implement partial visitors.
 type BaseVisitor struct{}
 
-func (BaseVisitor) VisitDecl(Decl) bool     { return true }
-func (BaseVisitor) VisitStmt(Stmt) bool     { return true }
-func (BaseVisitor) VisitExpr(Expr) bool     { return true }
+func (BaseVisitor) VisitDecl(Decl) bool       { return true }
+func (BaseVisitor) VisitStmt(Stmt) bool       { return true }
+func (BaseVisitor) VisitExpr(Expr) bool       { return true }
 func (BaseVisitor) VisitPattern(Pattern) bool { return true }
-func (BaseVisitor) VisitType(Type) bool     { return true }
+func (BaseVisitor) VisitType(Type) bool       { return true }
 
 // Walk traverses f depth-first.
 func Walk(v Visitor, f *File) {

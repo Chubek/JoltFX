@@ -1,17 +1,13 @@
 // Package frontend implements Ingagi's scannerless parser, abstract syntax
 // tree, and tree visitor.
 //
-// Grammar authority
+// # Grammar authority
 //
-// The normative grammar is ingagi.ng, written for NovoParse
-// (third_party/novoparse), a scannerless GLR parser generator. The Go parser
-// in this package is a hand-written deterministic counterpart: every parse
-// function maps 1:1 to a rule in ingagi.ng, terminals are matched directly
-// against the byte buffer with trivia (whitespace and comments) skipped
-// between every token — i.e. there is no separate lexer stage, exactly the
-// scannerless model NovoParse uses. Run `novoparse check ingagi.ng` with the
-// vendored tool to validate the grammar, and see TestNGRuleCoverage which
-// asserts every .ng rule has a matching Go parse function.
+// Ingagi.ebnf is the language foundation. ingagi.ng is the draft NovoParse
+// scannerless grammar; the novoparse build tag requires native recognition
+// before the Go parser builds the typed AST. Without that tag, the handwritten
+// Go parser is used directly. The rule-name coverage test is bookkeeping, not
+// a proof of syntax equivalence; native tests exercise actual recognition.
 //
 // Positions are zero-based, end-exclusive byte spans over the original
 // source; Line/Col are 1-based for diagnostics.
@@ -267,11 +263,11 @@ type LambdaExpr struct {
 	Span   Span
 }
 type IfExpr struct {
-	Cond Expr
-	Then *Block
-	Else *Block
+	Cond   Expr
+	Then   *Block
+	Else   *Block
 	ElseIf Expr // chained `else if` as expression
-	Span Span
+	Span   Span
 }
 type MatchArm struct {
 	Pat   Pattern
@@ -379,11 +375,11 @@ type ContinueStmt struct {
 	Span  Span
 }
 type IfStmt struct {
-	Cond Expr
-	Then *Block
-	Else *Block
+	Cond   Expr
+	Then   *Block
+	Else   *Block
 	ElseIf Stmt // chained `else if`
-	Span Span
+	Span   Span
 }
 type WhileStmt struct {
 	Cond Expr
@@ -434,10 +430,10 @@ type ForEachStmt struct {
 type BindStmt struct {
 	Pipeline string // pipeline or shader name
 	Stage    string // "" (whole pipeline) or stage name
-	With    []QueryComp
-	Without []QueryComp
-	Iter    Expr
-	Span    Span
+	With     []QueryComp
+	Without  []QueryComp
+	Iter     Expr
+	Span     Span
 }
 
 // EmitStmt publishes a typed event: `emit Damage{ amount: 10 };`
@@ -540,10 +536,10 @@ type StructPat struct {
 	Span   Span
 }
 type ArrayPat struct {
-	Elems []Pattern
-	Rest  string // `..rest` name, "" when absent
+	Elems   []Pattern
+	Rest    string // `..rest` name, "" when absent
 	HasRest bool
-	Span  Span
+	Span    Span
 }
 type OrPat struct {
 	Alts []Pattern
@@ -608,20 +604,20 @@ type StructField struct {
 	Span  Span
 }
 type StructDecl struct {
-	Attrs  []Attr
-	Vis    Visibility
-	Name   string
-	Params []string
-	Bases  []Type
-	Fields []StructField
+	Attrs   []Attr
+	Vis     Visibility
+	Name    string
+	Params  []string
+	Bases   []Type
+	Fields  []StructField
 	Methods []*FnDecl
-	Span   Span
+	Span    Span
 }
 type EnumVariant struct {
-	Name   string
-	Types  []Type
-	Value  Expr
-	Span   Span
+	Name  string
+	Types []Type
+	Value Expr
+	Span  Span
 }
 type EnumDecl struct {
 	Attrs    []Attr
@@ -728,11 +724,11 @@ type QueryBinding struct {
 	Span  Span
 }
 type SystemQuery struct {
-	Binding string // `query Name with (...) ...;`
-	With    []QueryComp
-	Without []QueryComp
+	Binding  string // `query Name with (...) ...;`
+	With     []QueryComp
+	Without  []QueryComp
 	Optional []QueryComp
-	Span    Span
+	Span     Span
 }
 type SystemHook struct {
 	Kind   string // startup/shutdown/update/fixed_update/...
@@ -782,17 +778,17 @@ type ResourceDecl struct {
 // ShaderDecl is a first-class shader: resource bindings, helper functions,
 // specialization constants and per-stage bodies in one unit.
 type ShaderDecl struct {
-	Attrs    []Attr
-	Vis      Visibility
-	Name     string
-	Options  []ShaderOption
-	Structs  []ShaderStruct
-	Consts   []ShaderConst
+	Attrs     []Attr
+	Vis       Visibility
+	Name      string
+	Options   []ShaderOption
+	Structs   []ShaderStruct
+	Consts    []ShaderConst
 	Resources []ShaderResource
-	Funcs    []ShaderFunc
-	Stages   []ShaderStage
-	Specs    []ShaderSpecConst
-	Span     Span
+	Funcs     []ShaderFunc
+	Stages    []ShaderStage
+	Specs     []ShaderSpecConst
+	Span      Span
 }
 
 type ShaderOption struct {
@@ -860,18 +856,18 @@ type ShaderStage struct {
 // PipelineDecl wires shader stages plus fixed-function state into a
 // backend-agnostic descriptor the engine tab can instantiate directly.
 type PipelineDecl struct {
-	Attrs  []Attr
-	Vis    Visibility
-	Name   string
-	Stages map[string]Path // vertex: Shader::stage ...
-	Layout Path
+	Attrs        []Attr
+	Vis          Visibility
+	Name         string
+	Stages       map[string]Path // vertex: Shader::stage ...
+	Layout       Path
 	VertexLayout Path
-	Raster map[string]Expr
-	Depth  map[string]Expr
-	Blend  map[string]Expr
-	Target map[string]Expr
-	Compute map[string]Expr
-	Span   Span
+	Raster       map[string]Expr
+	Depth        map[string]Expr
+	Blend        map[string]Expr
+	Target       map[string]Expr
+	Compute      map[string]Expr
+	Span         Span
 }
 
 func (*ImportDecl) decl()    {}

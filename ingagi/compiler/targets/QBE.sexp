@@ -1,0 +1,6 @@
+(target (schema 1) (id QBE) (kind native) (status implemented)
+ (driver qbe) (artifacts qbe asm obj bin)
+ (platforms amd64_sysv amd64_apple arm64 arm64_apple rv64)
+ (requires qbe keystone-for-obj-bin linux-cgo-for-assembly)
+ (features i64 bool direct-calls control-flow c-abi)
+ (description "Scalar native subset; obj/bin are AMD64 SysV only. Other platforms support assembly output."))

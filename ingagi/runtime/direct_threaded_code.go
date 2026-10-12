@@ -122,19 +122,23 @@ func hPushString(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 }
 
 func hLoadLocal(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
-	fr.ensure(int(in.A))
+	if !fr.ensure(int(in.A)) {
+		return pc, vm.fail("local slot %d exceeds frame limit", in.A)
+	}
 	vm.stack.push(fr.locals[in.A])
 	return pc + 1, nil
 }
 
 func hStoreLocal(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
-	fr.ensure(int(in.A))
+	if !fr.ensure(int(in.A)) {
+		return pc, vm.fail("local slot %d exceeds frame limit", in.A)
+	}
 	fr.locals[in.A] = vm.stack.pop()
 	return pc + 1, nil
 }
 
 func hLoadUp(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
-	if int(in.A) >= len(fr.up) {
+	if in.A < 0 || int(in.A) >= len(fr.up) {
 		return pc, vm.fail("upvalue %d out of range", in.A)
 	}
 	vm.stack.push(fr.up[in.A])
@@ -142,7 +146,7 @@ func hLoadUp(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 }
 
 func hStoreUp(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
-	if int(in.A) >= len(fr.up) {
+	if in.A < 0 || int(in.A) >= len(fr.up) {
 		return pc, vm.fail("upvalue %d out of range", in.A)
 	}
 	fr.up[in.A] = vm.stack.pop()
@@ -415,6 +419,9 @@ func hDefer(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hCall(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	if err := vm.checkCount(pc, n, int64(n)); err != nil {
+		return pc, err
+	}
 	args := make([]Value, n)
 	for i := n - 1; i >= 0; i-- {
 		args[i] = vm.stack.pop()
@@ -439,6 +446,10 @@ func hCall(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hCallMethod(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	// One operand per argument, plus the receiver.
+	if err := vm.checkCount(pc, n, int64(n)+1); err != nil {
+		return pc, err
+	}
 	args := make([]Value, n)
 	for i := n - 1; i >= 0; i-- {
 		args[i] = vm.stack.pop()
@@ -455,8 +466,31 @@ func hCallMethod(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	return pc + 1, nil
 }
 
+// checkCount bounds an allocation-count operand by the values actually
+// available on the operand stack. Aggregate constructors consume stack values
+// in proportion to A, so a count larger than the stack depth is a malformed
+// tape (or a corrupt image) and must not reach make(). Without this, a count of
+// 2^31-1 allocates gigabytes before any element is read.
+func (vm *VM) checkCount(pc int, count int, needed int64) *RuntimeError {
+	available := vm.stack.depth()
+	if fr := vm.frames.top(); fr != nil {
+		available -= fr.base
+	}
+	if count < 0 || needed < 0 || needed > int64(available) {
+		return vm.fail("pc %d: count %d needs %d operands but %d are available", pc, count, needed, available)
+	}
+	return nil
+}
+
+// maxRepeatedElements bounds `[x; n]`-style repetition, whose size does not
+// correspond to a stack depth.
+const maxRepeatedElements = 1 << 16
+
 func hMakeArray(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	if err := vm.checkCount(pc, n, int64(n)); err != nil {
+		return pc, err
+	}
 	elems := make([]Value, n)
 	for i := n - 1; i >= 0; i-- {
 		elems[i] = vm.stack.pop()
@@ -473,6 +507,9 @@ func hMakeArrayRepeat(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) 
 		return pc, vm.fail("array repeat count must be a non-negative int")
 	}
 	n := int(nf)
+	if n > maxRepeatedElements {
+		return pc, vm.fail("array repeat count %d exceeds %d", n, maxRepeatedElements)
+	}
 	elems := make([]Value, n)
 	for i := range elems {
 		elems[i] = elem
@@ -483,6 +520,10 @@ func hMakeArrayRepeat(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) 
 
 func hMakeMap(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	// Two operands per entry: value then key.
+	if err := vm.checkCount(pc, n, 2*int64(n)); err != nil {
+		return pc, err
+	}
 	fields := make(map[string]Value, n)
 	for i := 0; i < n; i++ {
 		v := vm.stack.pop()
@@ -498,6 +539,10 @@ func hMakeMap(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hMakeStruct(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	// A name and a value per field.
+	if err := vm.checkCount(pc, n, 2*int64(n)); err != nil {
+		return pc, err
+	}
 	pairs := make([]Value, 2*n)
 	for i := 2*n - 1; i >= 0; i-- {
 		pairs[i] = vm.stack.pop()
@@ -512,6 +557,9 @@ func hMakeStruct(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hMakeEnum(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	if err := vm.checkCount(pc, n, int64(n)); err != nil {
+		return pc, err
+	}
 	payload := make([]Value, n)
 	for i := n - 1; i >= 0; i-- {
 		payload[i] = vm.stack.pop()
@@ -533,12 +581,20 @@ func hLen(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hForEachBegin(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	// Four operands per binding (component, mutability, alias, slot) plus the
+	// world.
+	if err := vm.checkCount(pc, n, 4*int64(n)+1); err != nil {
+		return pc, err
+	}
 	comps := make([]string, n)
 	muts := make([]bool, n)
 	aliases := make([]string, n)
 	slots := make([]int32, n)
 	for i := n - 1; i >= 0; i-- {
 		slots[i] = int32(mustInt(vm.stack.pop()))
+		if slots[i] < 0 || slots[i] >= maxFrameSlots {
+			return pc, vm.fail("invalid foreach slot %d", slots[i])
+		}
 		aliases[i] = mustString(vm.stack.pop())
 		muts[i] = vm.stack.pop().Truthy()
 		comps[i] = mustString(vm.stack.pop())
@@ -596,6 +652,13 @@ func hEmit(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hBind(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	nw, nwo := int(in.A), int(in.B)
+	if nwo < 0 {
+		return pc, vm.fail("negative bind count %d", nwo)
+	}
+	// One name per component, plus pipeline, stage and the iterated value.
+	if err := vm.checkCount(pc, nw, int64(nw)+int64(nwo)+3); err != nil {
+		return pc, err
+	}
 	without := make([]string, nwo)
 	for i := nwo - 1; i >= 0; i-- {
 		without[i] = mustString(vm.stack.pop())
@@ -630,6 +693,9 @@ func hObserve(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 
 func hMakeClosure(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	n := int(in.A)
+	if err := vm.checkCount(pc, n, int64(n)); err != nil {
+		return pc, err
+	}
 	up := make([]Value, n)
 	for i := n - 1; i >= 0; i-- {
 		up[i] = vm.stack.pop()

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"sort"
+
+	fe "github.com/Chubek/JoltFX/ingagi/frontend"
 )
 
 // AOT: ahead-of-time serialization of compiled modules.
@@ -16,6 +19,9 @@ import (
 // needing the compiler, which is the deployment path for shipped game
 // scripts. Entity prefabs need no special casing: they compiled to
 // `prefab::` entries like everything else.
+//
+// Decode bounds collection lengths and value nesting and checks structural
+// tape invariants. This is not a full bytecode verifier or a sandbox.
 
 const (
 	aotMagic   = "IGBC1\x00"
@@ -23,8 +29,9 @@ const (
 )
 
 type aotWriter struct {
-	b   bytes.Buffer
-	err error
+	b     bytes.Buffer
+	err   error
+	depth int
 }
 
 func (w *aotWriter) u64(v uint64) {
@@ -81,7 +88,8 @@ func (vm *VM) Encode() ([]byte, error) {
 	}
 	// Entries + arities.
 	w.u64(uint64(len(vm.funcs)))
-	for k, v := range vm.funcs {
+	for _, k := range sortedKeys(vm.funcs) {
+		v := vm.funcs[k]
 		w.str(k)
 		w.u64(uint64(v))
 		w.u64(uint64(vm.params[k]))
@@ -92,7 +100,8 @@ func (vm *VM) Encode() ([]byte, error) {
 	}
 	// Types: kinds, fields, variants, methods, materialized defaults.
 	w.u64(uint64(len(vm.types)))
-	for name, ti := range vm.types {
+	for _, name := range sortedKeys(vm.types) {
+		ti := vm.types[name]
 		w.strs([]string{name, ti.Kind})
 		fields := make([]string, len(ti.Fields))
 		for i, f := range ti.Fields {
@@ -101,7 +110,8 @@ func (vm *VM) Encode() ([]byte, error) {
 		w.strs(fields)
 		w.strs(ti.Variants)
 		w.u64(uint64(len(ti.Methods)))
-		for k, v := range ti.Methods {
+		for _, k := range sortedKeys(ti.Methods) {
+			v := ti.Methods[k]
 			w.strs([]string{k, v})
 		}
 		if err := w.writeValueMap(vm.defs[name]); err != nil {
@@ -130,9 +140,9 @@ func (vm *VM) Encode() ([]byte, error) {
 
 // moduleHooks/systems/prefabs/strings are filled by LoadModule/LoadDecoded
 // into small side tables so Encode need not reach back into Modules.
-func (vm *VM) moduleHooks() []HookInfo      { return vm.aotHooks }
-func (vm *VM) moduleSystems() []string      { return vm.aotSystems }
-func (vm *VM) modulePrefabs() []string      { return vm.aotPrefabs }
+func (vm *VM) moduleHooks() []HookInfo { return vm.aotHooks }
+func (vm *VM) moduleSystems() []string { return vm.aotSystems }
+func (vm *VM) modulePrefabs() []string { return vm.aotPrefabs }
 func (vm *VM) moduleStrings(k string) []string {
 	if vm.aotStrings == nil {
 		return nil
@@ -162,6 +172,11 @@ const (
 )
 
 func (w *aotWriter) writeValue(v Value) error {
+	if w.depth >= aotMaxDepth {
+		return fmt.Errorf("ingagi: cannot serialize cyclic or deeply nested value")
+	}
+	w.depth++
+	defer func() { w.depth-- }()
 	w.b.WriteByte(byte(vTag(v)))
 	switch v.K {
 	case KNil:
@@ -234,7 +249,11 @@ func (w *aotWriter) writeValue(v Value) error {
 			}
 		}
 	case KClosure:
-		w.str(v.O.(*ClosureObj).Name)
+		cl := v.O.(*ClosureObj)
+		if len(cl.Up) != 0 {
+			return fmt.Errorf("ingagi: image v1 cannot serialize captured closure %q", cl.Name)
+		}
+		w.str(cl.Name)
 	case KBuiltin:
 		w.str(v.O.(*BuiltinObj).Name)
 	case KEntity:
@@ -307,46 +326,116 @@ func (w *aotWriter) writeValueMap(m map[string]Value) error {
 // Decode
 // ---------------------------------------------------------------------------
 
+// Reader limits bound amplification of image input into Go allocations.
+const (
+	aotMaxString  = 1 << 24 // bytes in one string
+	aotMaxItems   = 1 << 16 // elements in one collection
+	aotMaxEntries = 1 << 16 // functions, globals and types
+	aotMaxCode    = 1 << 24 // instructions
+	aotMaxDepth   = 64      // nested value depth
+)
+
 type aotReader struct {
-	b   *bytes.Reader
-	err error
+	b     *bytes.Reader
+	err   error
+	depth int
+}
+
+// remaining reports how many bytes are still unread.
+func (r *aotReader) remaining() int64 { return int64(r.b.Len()) }
+
+// need reports whether n more bytes are available.
+func (r *aotReader) need(n int) error {
+	if r.err != nil {
+		return r.err
+	}
+	if int64(n) > r.remaining() {
+		r.err = io.ErrUnexpectedEOF
+		return r.err
+	}
+	return nil
 }
 
 func (r *aotReader) u64() uint64 {
 	var v uint64
-	if r.err == nil {
-		r.err = binary.Read(r.b, binary.LittleEndian, &v)
+	if r.need(8) != nil {
+		return 0
+	}
+	if err := binary.Read(r.b, binary.LittleEndian, &v); err != nil {
+		r.err = err
 	}
 	return v
 }
 
 func (r *aotReader) i64() int64 {
 	var v int64
-	if r.err == nil {
-		r.err = binary.Read(r.b, binary.LittleEndian, &v)
+	if r.need(8) != nil {
+		return 0
+	}
+	if err := binary.Read(r.b, binary.LittleEndian, &v); err != nil {
+		r.err = err
 	}
 	return v
 }
 
-func (r *aotReader) str() string {
-	n := r.u64()
-	if r.err != nil {
-		return ""
+func (r *aotReader) byte() byte {
+	b, err := r.b.ReadByte()
+	if err != nil && r.err == nil {
+		r.err = err
 	}
-	buf := make([]byte, n)
-	if _, r.err = r.b.Read(buf); r.err != nil {
-		return ""
-	}
-	return string(buf)
+	return b
 }
 
-func (r *aotReader) strs() []string {
+// count validates an element count against a format limit and against the
+// bytes left in the image. Every element occupies at least one byte, so a
+// count larger than the remaining input is corrupt.
+func (r *aotReader) count(limit uint64, what string) (uint64, error) {
 	n := r.u64()
+	if r.err != nil {
+		return 0, r.err
+	}
+	if n > limit {
+		return 0, fmt.Errorf("ingagi: image %s count %d exceeds limit %d", what, n, limit)
+	}
+	if n > uint64(r.remaining()) {
+		return 0, fmt.Errorf("ingagi: image %s count %d exceeds %d remaining bytes", what, n, r.remaining())
+	}
+	return n, nil
+}
+
+func (r *aotReader) str() (string, error) {
+	n, err := r.count(aotMaxString, "string")
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", nil
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r.b, buf); err != nil {
+		r.err = err
+		return "", err
+	}
+	return string(buf), nil
+}
+
+func (r *aotReader) strs() ([]string, error) {
+	n, err := r.count(aotMaxItems, "string list")
+	if err != nil {
+		return nil, err
+	}
+	if n > uint64(r.remaining()/8) {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]string, 0, n)
 	for i := uint64(0); i < n; i++ {
-		out = append(out, r.str())
+		s, err := r.str()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
 	}
-	return out
+	return out, nil
 }
 
 // Decoded is an AOT image ready to load without the compiler.
@@ -358,22 +447,41 @@ type Decoded struct {
 
 // Decode parses an image produced by Encode.
 func Decode(data []byte) (*Decoded, error) {
-	r := &aotReader{b: bytes.NewReader(data)}
-	magic := make([]byte, len(aotMagic))
-	if _, err := r.b.Read(magic); err != nil || string(magic) != aotMagic {
+	if len(data) < len(aotMagic) {
+		return nil, fmt.Errorf("ingagi: image is %d bytes, too short for a header", len(data))
+	}
+	if string(data[:len(aotMagic)]) != aotMagic {
 		return nil, fmt.Errorf("ingagi: bad image magic")
 	}
+	// The reader starts after the magic so remaining() always means "bytes left".
+	r := &aotReader{b: bytes.NewReader(data[len(aotMagic):])}
 	if v := r.u64(); v != aotVersion {
 		return nil, fmt.Errorf("ingagi: image version %d, want %d", v, aotVersion)
 	}
 	pool := NewConstPool()
-	for n, i := r.u64(), uint64(0); i < n; i++ {
+	nInts, err := r.count(aotMaxItems, "int pool")
+	if err != nil {
+		return nil, err
+	}
+	if nInts > uint64(r.remaining()/8) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	for i := uint64(0); i < nInts; i++ {
 		pool.Ints = append(pool.Ints, r.i64())
 	}
-	for n, i := r.u64(), uint64(0); i < n; i++ {
+	nFloats, err := r.count(aotMaxItems, "float pool")
+	if err != nil {
+		return nil, err
+	}
+	if nFloats > uint64(r.remaining()/8) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	for i := uint64(0); i < nFloats; i++ {
 		pool.Floats = append(pool.Floats, math.Float64frombits(r.u64()))
 	}
-	pool.Strings = r.strs()
+	if pool.Strings, err = r.strs(); err != nil {
+		return nil, err
+	}
 	// Rebuild interning maps.
 	for i, v := range pool.Ints {
 		pool.intIdx[v] = int32(i)
@@ -384,21 +492,48 @@ func Decode(data []byte) (*Decoded, error) {
 	for i, v := range pool.Strings {
 		pool.strIdx[v] = int32(i)
 	}
-	var code []Instr
-	for n, i := r.u64(), uint64(0); i < n; i++ {
-		op, _ := r.b.ReadByte()
-		code = append(code, Instr{Op: Op(op), A: int32(r.i64()), B: int32(r.i64()), C: int32(r.i64())})
+	nCode, err := r.count(aotMaxCode, "code")
+	if err != nil {
+		return nil, err
+	}
+	// Each instruction is one opcode byte plus three 8-byte operands.
+	if nCode > uint64(r.remaining()/25) {
+		return nil, fmt.Errorf("ingagi: image declares %d instructions but %d bytes remain", nCode, r.remaining())
+	}
+	code := make([]Instr, 0, nCode)
+	for i := uint64(0); i < nCode; i++ {
+		op := r.byte()
+		a, b, c := r.i64(), r.i64(), r.i64()
+		for _, operand := range []int64{a, b, c} {
+			if operand < math.MinInt32 || operand > math.MaxInt32 {
+				return nil, fmt.Errorf("ingagi: instruction operand outside int32")
+			}
+		}
+		code = append(code, Instr{Op: Op(op), A: int32(a), B: int32(b), C: int32(c)})
 	}
 	m := &Module{
-		Tape:    &Tape{Code: code, Pool: pool, Entry: map[string]int{}},
-		Types:   map[string]*TypeInfo{},
-		Params:  map[string]int{},
+		Tape:      &Tape{Code: code, Pool: pool, Entry: map[string]int{}},
+		Types:     map[string]*TypeInfo{},
+		Entities:  map[string]*fe.EntityDecl{},
+		Params:    map[string]int{},
 		Resources: map[string]Value{},
 	}
-	for n, i := r.u64(), uint64(0); i < n; i++ {
-		k := r.str()
-		v := r.u64()
-		a := r.u64()
+	nEntries, err := r.count(aotMaxEntries, "entry")
+	if err != nil {
+		return nil, err
+	}
+	for i := uint64(0); i < nEntries; i++ {
+		k, err := r.str()
+		if err != nil {
+			return nil, err
+		}
+		v, a := r.u64(), r.u64()
+		if v >= uint64(len(code)) || a > maxFrameSlots {
+			return nil, fmt.Errorf("ingagi: entry %q pc or arity out of range", k)
+		}
+		if _, exists := m.Tape.Entry[k]; exists {
+			return nil, fmt.Errorf("ingagi: duplicate entry %q", k)
+		}
 		m.Tape.Entry[k] = int(v)
 		m.Params[k] = int(a)
 	}
@@ -406,68 +541,131 @@ func Decode(data []byte) (*Decoded, error) {
 	if err != nil {
 		return nil, err
 	}
+	nTypes, err := r.count(aotMaxEntries, "type")
+	if err != nil {
+		return nil, err
+	}
 	defs := map[string]map[string]Value{}
-	for n, i := r.u64(), uint64(0); i < n; i++ {
-		head := r.strs() // name, kind
-		fields := r.strs()
-		variants := r.strs()
-		nm := r.u64()
+	for i := uint64(0); i < nTypes; i++ {
+		head, err := r.strs()
+		if err != nil {
+			return nil, err
+		}
+		if len(head) != 2 {
+			return nil, fmt.Errorf("ingagi: image type record %d has %d fields, want 2 (name, kind)", i, len(head))
+		}
+		if _, exists := m.Types[head[0]]; exists {
+			return nil, fmt.Errorf("ingagi: duplicate type %q", head[0])
+		}
+		fields, err := r.strs()
+		if err != nil {
+			return nil, err
+		}
+		variants, err := r.strs()
+		if err != nil {
+			return nil, err
+		}
+		nm, err := r.count(aotMaxItems, "method")
+		if err != nil {
+			return nil, err
+		}
 		methods := map[string]string{}
 		for j := uint64(0); j < nm; j++ {
-			kv := r.strs()
-			if len(kv) == 2 {
-				methods[kv[0]] = kv[1]
+			kv, err := r.strs()
+			if err != nil {
+				return nil, err
 			}
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("ingagi: image method record %d has %d fields, want 2", j, len(kv))
+			}
+			if _, exists := methods[kv[0]]; exists {
+				return nil, fmt.Errorf("ingagi: duplicate method %q", kv[0])
+			}
+			methods[kv[0]] = kv[1]
 		}
 		ti := &TypeInfo{Kind: head[1], Defaults: map[string]Value{}, Methods: methods, Variants: variants}
 		for _, f := range fields {
 			ti.Fields = append(ti.Fields, TypeField{Name: f})
 		}
 		m.Types[head[0]] = ti
-		d, err := r.readValueMap()
-		if err != nil {
+		if defs[head[0]], err = r.readValueMap(); err != nil {
 			return nil, err
 		}
-		defs[head[0]] = d
 	}
-	nh := r.u64()
-	for i := uint64(0); i < nh; i++ {
-		sys, kind, entry, ev := r.str(), r.str(), r.str(), r.str()
-		m.Hooks = append(m.Hooks, HookInfo{System: sys, Kind: kind, Entry: entry, Event: ev})
+	nHooks, err := r.count(aotMaxEntries, "hook")
+	if err != nil {
+		return nil, err
 	}
-	m.SystemNames = r.strs()
-	prefabs := r.strs()
+	for i := uint64(0); i < nHooks; i++ {
+		fields := make([]string, 4)
+		for j := range fields {
+			if fields[j], err = r.str(); err != nil {
+				return nil, err
+			}
+		}
+		m.Hooks = append(m.Hooks, HookInfo{System: fields[0], Kind: fields[1], Entry: fields[2], Event: fields[3]})
+	}
+	if m.SystemNames, err = r.strs(); err != nil {
+		return nil, err
+	}
+	prefabs, err := r.strs()
+	if err != nil {
+		return nil, err
+	}
 	for _, p := range prefabs {
 		m.Entities[p] = nil // marker: prefab entry exists on tape
 	}
-	m.Shaders = r.strs()
-	m.Pipelines = r.strs()
-	m.Events = r.strs()
+	if m.Shaders, err = r.strs(); err != nil {
+		return nil, err
+	}
+	if m.Pipelines, err = r.strs(); err != nil {
+		return nil, err
+	}
+	if m.Events, err = r.strs(); err != nil {
+		return nil, err
+	}
 	if r.err != nil {
 		return nil, r.err
+	}
+	if r.remaining() != 0 {
+		return nil, fmt.Errorf("ingagi: image has %d trailing bytes", r.remaining())
+	}
+	// Reject a tape the VM could not execute before anything is installed.
+	if err := Validate(m); err != nil {
+		return nil, fmt.Errorf("ingagi: invalid image: %w", err)
 	}
 	return &Decoded{Module: m, Globals: globals, Defs: defs}, nil
 }
 
+// readValue reads one tagged value, bounding nesting depth.
 func (r *aotReader) readValue() (Value, error) {
-	tag := vNil
-	if b, err := r.b.ReadByte(); err != nil {
-		return NilValue, err
-	} else {
-		tag = int(b)
+	if r.err != nil {
+		return NilValue, r.err
 	}
-	switch tag {
+	if r.depth >= aotMaxDepth {
+		return NilValue, fmt.Errorf("ingagi: image value nests deeper than %d", aotMaxDepth)
+	}
+	r.depth++
+	defer func() { r.depth-- }()
+	switch tag := int(r.byte()); tag {
 	case vNil:
 		return NilValue, nil
 	case vBool:
-		b, _ := r.b.ReadByte()
-		return BoolValue(b != 0), nil
+		b := r.byte()
+		if b > 1 {
+			return NilValue, fmt.Errorf("ingagi: invalid boolean byte %d", b)
+		}
+		return BoolValue(b != 0), r.err
 	case vInt:
 		return IntValue(r.i64()), nil
 	case vFloat:
 		return FloatValue(math.Float64frombits(r.u64())), nil
 	case vString:
-		return StringValue(r.str()), nil
+		s, err := r.str()
+		if err != nil {
+			return NilValue, err
+		}
+		return StringValue(s), nil
 	case vVec2, vVec3, vVec4, vQuat:
 		var v [4]float64
 		for i := range v {
@@ -490,7 +688,10 @@ func (r *aotReader) readValue() (Value, error) {
 		}
 		return Value{K: KMat4, O: m}, nil
 	case vArray:
-		n := r.u64()
+		n, err := r.count(aotMaxItems, "array")
+		if err != nil {
+			return NilValue, err
+		}
 		elems := make([]Value, 0, n)
 		for i := uint64(0); i < n; i++ {
 			e, err := r.readValue()
@@ -501,10 +702,16 @@ func (r *aotReader) readValue() (Value, error) {
 		}
 		return Value{K: KArray, O: &ArrayObj{Elems: elems}}, nil
 	case vMap:
-		n := r.u64()
-		m := map[string]Value{}
+		n, err := r.count(aotMaxItems, "map")
+		if err != nil {
+			return NilValue, err
+		}
+		m := make(map[string]Value, n)
 		for i := uint64(0); i < n; i++ {
-			k := r.str()
+			k, err := r.str()
+			if err != nil {
+				return NilValue, err
+			}
 			e, err := r.readValue()
 			if err != nil {
 				return NilValue, err
@@ -513,11 +720,20 @@ func (r *aotReader) readValue() (Value, error) {
 		}
 		return Value{K: KMap, O: &MapObj{Fields: m}}, nil
 	case vStruct:
-		tn := r.str()
-		n := r.u64()
-		m := map[string]Value{}
+		tn, err := r.str()
+		if err != nil {
+			return NilValue, err
+		}
+		n, err := r.count(aotMaxItems, "struct")
+		if err != nil {
+			return NilValue, err
+		}
+		m := make(map[string]Value, n)
 		for i := uint64(0); i < n; i++ {
-			k := r.str()
+			k, err := r.str()
+			if err != nil {
+				return NilValue, err
+			}
 			e, err := r.readValue()
 			if err != nil {
 				return NilValue, err
@@ -526,8 +742,18 @@ func (r *aotReader) readValue() (Value, error) {
 		}
 		return Value{K: KStruct, O: &StructObj{Type: tn, Fields: m}}, nil
 	case vEnum:
-		tn, vn := r.str(), r.str()
-		n := r.u64()
+		tn, err := r.str()
+		if err != nil {
+			return NilValue, err
+		}
+		vn, err := r.str()
+		if err != nil {
+			return NilValue, err
+		}
+		n, err := r.count(aotMaxItems, "enum payload")
+		if err != nil {
+			return NilValue, err
+		}
 		var p []Value
 		for i := uint64(0); i < n; i++ {
 			e, err := r.readValue()
@@ -538,20 +764,42 @@ func (r *aotReader) readValue() (Value, error) {
 		}
 		return Value{K: KEnum, O: &EnumObj{Type: tn, Variant: vn, Payload: p}}, nil
 	case vClosure:
-		return Value{K: KClosure, O: &ClosureObj{Name: r.str()}}, nil
+		s, err := r.str()
+		if err != nil {
+			return NilValue, err
+		}
+		return Value{K: KClosure, O: &ClosureObj{Name: s}}, nil
 	case vBuiltin:
-		return Value{K: KBuiltin, O: &BuiltinObj{Name: r.str()}}, nil
+		s, err := r.str()
+		if err != nil {
+			return NilValue, err
+		}
+		return Value{K: KBuiltin, O: &BuiltinObj{Name: s}}, nil
 	case vEntity:
-		return Value{K: KEntity, O: EntityRef{Index: uint32(r.u64()), Gen: uint32(r.u64())}}, nil
+		index, gen := r.u64(), r.u64()
+		if index > 0xffffffff || gen > 0xffffffff {
+			return NilValue, fmt.Errorf("ingagi: image entity reference is out of range")
+		}
+		return Value{K: KEntity, O: EntityRef{Index: uint32(index), Gen: uint32(gen)}}, nil
+	default:
+		return NilValue, fmt.Errorf("ingagi: bad value tag %d", tag)
 	}
-	return NilValue, fmt.Errorf("ingagi: bad value tag %d", tag)
 }
 
 func (r *aotReader) readValueMap() (map[string]Value, error) {
-	n := r.u64()
-	m := map[string]Value{}
+	n, err := r.count(aotMaxEntries, "value map")
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]Value, n)
 	for i := uint64(0); i < n; i++ {
-		k := r.str()
+		k, err := r.str()
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := m[k]; exists {
+			return nil, fmt.Errorf("ingagi: duplicate value key %q", k)
+		}
 		v, err := r.readValue()
 		if err != nil {
 			return nil, err
@@ -563,9 +811,20 @@ func (r *aotReader) readValueMap() (map[string]Value, error) {
 
 // LoadDecoded installs a decoded image without running <init>.
 func (vm *VM) LoadDecoded(d *Decoded) error {
+	if d == nil {
+		return fmt.Errorf("ingagi: nil image")
+	}
+	// Decode already validated; re-check so hand-built Decoded values cannot
+	// install an unexecutable tape.
+	if err := Validate(d.Module); err != nil {
+		return err
+	}
 	m := d.Module
 	vm.tape = m.Tape
 	vm.funcs = map[string]int{}
+	vm.params = map[string]int{}
+	vm.caches = map[int]*inlineCache{}
+	vm.profiles = map[int]*opProfile{}
 	vm.methods = map[string]string{}
 	vm.types = m.Types
 	vm.defs = d.Defs
@@ -626,4 +885,13 @@ func (vm *VM) rememberModule(m *Module) {
 		"pipelines": m.Pipelines,
 		"events":    m.Events,
 	}
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

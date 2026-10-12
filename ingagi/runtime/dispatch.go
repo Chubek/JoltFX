@@ -33,7 +33,32 @@ func (vm *VM) run(pc int, b Budget) (Value, error) {
 		if fr == nil {
 			return NilValue, vm.fail("empty call stack")
 		}
-		npc, rerr := threadedTable[vm.tape.Code[pc].Op](vm, fr, vm.tape.Code[pc], pc)
+		in := code[pc]
+		pool := vm.tape.Pool
+		if pool == nil {
+			return NilValue, vm.fail("missing constant pool")
+		}
+		var poolSize int
+		switch opOperands[in.Op] {
+		case strC, obsC:
+			poolSize = len(pool.Strings)
+		case intC:
+			poolSize = len(pool.Ints)
+		case fltC:
+			poolSize = len(pool.Floats)
+		default:
+			poolSize = -1
+		}
+		if poolSize >= 0 && (in.C < 0 || int(in.C) >= poolSize) {
+			return NilValue, vm.fail("constant index %d out of range at pc %d", in.C, pc)
+		}
+		h := threadedTable[in.Op]
+		if h == nil {
+			// Validation rejects these at load time; this guard keeps a future
+			// mutation of the tape from turning into a nil handler panic.
+			return NilValue, vm.fail("unknown opcode %d at pc %d", in.Op, pc)
+		}
+		npc, rerr := h(vm, fr, in, pc)
 		if rerr != nil {
 			if len(rerr.Trace) == 0 {
 				rerr.Trace = vm.trace()
@@ -74,6 +99,9 @@ func (vm *VM) callEntry(pc int, name string, up []Value, args []Value, b Budget)
 		vm.iters = vm.iters[:iterBase]
 	}()
 	if want, ok := vm.params[name]; ok {
+		if want < 0 || want > maxFrameSlots {
+			return NilValue, vm.fail("arity %d exceeds frame limit", want)
+		}
 		if len(args) < want {
 			for len(args) < want {
 				args = append(args, NilValue)
@@ -91,10 +119,14 @@ func (vm *VM) callEntry(pc int, name string, up []Value, args []Value, b Budget)
 }
 
 // ensure grows frame locals to cover slot.
-func (fr *frame) ensure(slot int) {
+func (fr *frame) ensure(slot int) bool {
+	if slot < 0 || slot >= maxFrameSlots {
+		return false
+	}
 	for len(fr.locals) <= slot {
 		fr.locals = append(fr.locals, NilValue)
 	}
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -777,7 +809,9 @@ func (vm *VM) foreachNext(fr *frame) (bool, error) {
 		return false, nil
 	}
 	for j, v := range it.rows[it.idx] {
-		fr.ensure(int(it.slots[j]))
+		if !fr.ensure(int(it.slots[j])) {
+			return false, vm.fail("invalid foreach local slot %d", it.slots[j])
+		}
 		fr.locals[it.slots[j]] = v
 	}
 	return true, nil
@@ -793,7 +827,9 @@ func (vm *VM) flushRow(fr *frame, it *foreachIter) {
 		if !isMut {
 			continue
 		}
-		fr.ensure(int(it.slots[j]))
+		if !fr.ensure(int(it.slots[j])) {
+			continue
+		}
 		if s, ok := fr.locals[it.slots[j]].O.(*StructObj); ok {
 			it.world.Set(e, it.comp[j], flatten(s.Fields))
 			it.rows[it.idx][j] = fr.locals[it.slots[j]]

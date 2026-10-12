@@ -50,14 +50,17 @@ func ParseExpression(src string) (Expr, []Error) {
 // skipped between every token, mirroring NovoParse's scannerless model where
 // overlapping terminals resolve by grammar context (longest viable match).
 type Parser struct {
-	src  string
-	pos  int
-	line int // 1-based
-	col  int // 1-based, in bytes
-	errs []Error
+	src              string
+	pos              int
+	line             int // 1-based
+	col              int // 1-based, in bytes
+	errs             []Error
+	ternaryQuestions map[int]bool // memoized lookahead shared by speculative cursors
 }
 
-func NewParser(src string) *Parser { return &Parser{src: src, line: 1, col: 1} }
+func NewParser(src string) *Parser {
+	return &Parser{src: src, line: 1, col: 1, ternaryQuestions: map[int]bool{}}
+}
 
 func (p *Parser) eof() bool { return p.pos >= len(p.src) }
 

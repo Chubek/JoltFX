@@ -105,9 +105,10 @@ func ParseOne(src string) (*Sexp, error) {
 }
 
 type parser struct {
-	s string
-	i int
-	l int // current line, 1-based
+	s     string
+	i     int
+	l     int // current line, 1-based
+	depth int
 }
 
 func (p *parser) eof() bool { return p.i >= len(p.s) }
@@ -133,11 +134,18 @@ func (p *parser) skipTrivia() {
 }
 
 func (p *parser) parseOne() (*Sexp, error) {
+	if p.depth >= 128 {
+		return nil, fmt.Errorf("sexp: nesting exceeds 128")
+	}
+	p.depth++
+	defer func() { p.depth-- }()
 	if p.eof() {
 		return nil, fmt.Errorf("sexp: unexpected end of input")
 	}
 	c := p.s[p.i]
 	switch {
+	case c == ')':
+		return nil, fmt.Errorf("sexp: unexpected ')' at line %d", p.l+1)
 	case c == '(':
 		return p.parseList()
 	case c == '"':
@@ -161,7 +169,7 @@ func (p *parser) parseList() (*Sexp, error) {
 	_ = line
 	startLine := p.l + 1
 	p.i++ // consume '('
-	var list []*Sexp
+	list := make([]*Sexp, 0)
 	for {
 		p.skipTrivia()
 		if p.eof() {

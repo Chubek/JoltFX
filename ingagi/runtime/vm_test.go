@@ -220,9 +220,9 @@ func TestStackBudget(t *testing.T) {
 
 func TestMatchProbes(t *testing.T) {
 	cases := map[string]int64{
-		`fn main() { return match 1 { 1 => 10, _ => 20 }; }`:                      10,
+		`fn main() { return match 1 { 1 => 10, _ => 20 }; }`:                     10,
 		`enum D { A, B } fn main() { return match D::B { D::A => 1, _ => 2 }; }`: 2,
-		`fn main() { return match [1, 2] { [a, b] => a + b, _ => 0 }; }`:        3,
+		`fn main() { return match [1, 2] { [a, b] => a + b, _ => 0 }; }`:         3,
 		`fn main() { let x = 5; return match x { 1 | 2 => 100, _ => 200 }; }`:    200,
 	}
 	for src, want := range cases {

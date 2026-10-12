@@ -1,11 +1,20 @@
 package ingagi_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/Chubek/JoltFX/ingagi"
 	rt "github.com/Chubek/JoltFX/ingagi/runtime"
 )
+
+func TestNativeEmbedding(t *testing.T) {
+	data, err := ingagi.CompileNative(context.Background(), `fn main() -> i64 { return 42; }`, ingagi.NativeOptions{Emit: "qbe"})
+	if err != nil || !strings.Contains(string(data), "export function l $ingagi_entry") {
+		t.Fatalf("got %s, %v", data, err)
+	}
+}
 
 func TestEmbeddingHostFunction(t *testing.T) {
 	m, err := ingagi.Compile(`fn main() { return host_double(21); }`)

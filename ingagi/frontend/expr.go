@@ -167,12 +167,32 @@ func (p *Parser) parsePostfix() Expr {
 			if !p.lit(">") {
 				p.fail("expected `>`", p.spanAt(p.pos, p.pos))
 			}
-		case p.lit("?"):
+		case p.peekLit("?"):
+			if p.ternaryQuestion() {
+				return x
+			}
+			p.lit("?")
 			x = &QuestionExpr{X: x, Span: p.spanFrom(pos, line, col)}
 		default:
 			return x
 		}
 	}
+}
+
+// ternaryQuestion distinguishes `cond ? then : else` from postfix propagation.
+// Speculation is isolated from the real cursor/diagnostics. Memoizing each
+// question avoids exponential repeated work on nested conditional expressions.
+func (p *Parser) ternaryQuestion() bool {
+	if result, ok := p.ternaryQuestions[p.pos]; ok {
+		return result
+	}
+	probe := *p
+	probe.errs = nil
+	probe.lit("?")
+	probe.parseExpr()
+	result := len(probe.errs) == 0 && probe.peekLit(":")
+	p.ternaryQuestions[p.pos] = result
+	return result
 }
 
 // parseArg implements arg.

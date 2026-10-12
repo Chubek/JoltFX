@@ -141,9 +141,18 @@ func (vm *VM) RegisterHostFn(name string, fn func(*VM, []Value) (Value, error)) 
 
 // LoadModule links a compiled module: entries, types, systems, hooks.
 // The world's entities survive reloads; code and globals are replaced.
+// A structurally invalid module is rejected before any script state changes,
+// so a failed load leaves the previously loaded module untouched.
 func (vm *VM) LoadModule(m *Module) error {
+	if err := Validate(m); err != nil {
+		return err
+	}
 	vm.tape = m.Tape
 	vm.funcs = map[string]int{}
+	vm.params = map[string]int{}
+	vm.globals = map[string]Value{}
+	vm.caches = map[int]*inlineCache{}
+	vm.profiles = map[int]*opProfile{}
 	vm.methods = map[string]string{}
 	vm.types = m.Types
 	vm.defs = map[string]map[string]Value{}
