@@ -495,6 +495,28 @@ static bool cache_paths(char *comp, size_t comp_size, char *spv,
     return true;
 }
 
+/* Fallback scratch paths for when the cache directory cannot be written.
+ *
+ * The cache is an optimization, not a requirement: glslc still needs a real
+ * file to read and a real file to write, so a full or read-only cache root
+ * must not turn into a dispatch failure. These live in TMPDIR and are removed
+ * once the SPIR-V has been read back, so nothing accumulates. mkstemps is
+ * unavailable on some supported platforms, so the pid and hash stand in for
+ * uniqueness; the pair is stable within a process and cannot collide with a
+ * concurrently running instance. */
+static bool scratch_paths(char *comp, size_t comp_size, char *spv,
+    size_t spv_size, uint64_t hash) {
+    const char *base = getenv("TMPDIR");
+    if (!base || !base[0]) {
+        base = "/tmp";
+    }
+    int a = snprintf(comp, comp_size, "%s/jfx-%d-%016llx.comp", base,
+        (int)getpid(), (unsigned long long)hash);
+    int b = snprintf(spv, spv_size, "%s/jfx-%d-%016llx.spv", base,
+        (int)getpid(), (unsigned long long)hash);
+    return a > 0 && b > 0 && (size_t)a < comp_size && (size_t)b < spv_size;
+}
+
 static bool run_glslc(const char *comp, const char *spv) {
     pid_t pid = fork();
     if (pid < 0) {
@@ -520,28 +542,56 @@ static uint32_t *load_spv(const char *glsl, size_t *out_size) {
     return NULL;
 #else
     char comp[4096] = { 0 }, spv[4096] = { 0 };
-    if (!cache_paths(comp, sizeof(comp), spv, sizeof(spv), fnv1a(glsl, strlen(glsl)))) {
+    const uint64_t hash = fnv1a(glsl, strlen(glsl));
+    bool scratch = false;
+    if (!cache_paths(comp, sizeof(comp), spv, sizeof(spv), hash)) {
         tilly_log_simple(TILLY_LOG_ERROR,
             "Vulkan shader cache path does not fit; set XDG_CACHE_HOME or TMPDIR to a shorter path");
         return NULL;
     }
     FILE *hit = fopen(spv, "rb");
     if (!hit) {
+        /* glslc cannot read or write through a directory it cannot access, so
+         * an unwritable cache root degrades to scratch files in TMPDIR rather
+         * than failing the dispatch outright. */
         FILE *src = fopen(comp, "wb");
+        if (!src && scratch_paths(comp, sizeof(comp), spv, sizeof(spv), hash)) {
+            scratch = true;
+            src = fopen(comp, "wb");
+        }
         if (!src) {
+            tilly_log_simple(TILLY_LOG_ERROR,
+                "Vulkan backend cannot write shader sources; check free space and permissions on "
+                "XDG_CACHE_HOME and TMPDIR");
             return NULL;
         }
         size_t length = strlen(glsl);
         bool ok = fwrite(glsl, 1, length, src) == length && !fclose(src);
         if (!ok) {
+            tilly_log_simple(TILLY_LOG_ERROR,
+                "Vulkan backend cannot write shader sources; check free space and permissions on "
+                "XDG_CACHE_HOME and TMPDIR");
+            if (scratch) {
+                unlink(comp);
+            }
             return NULL;
         }
         if (!run_glslc(comp, spv)) {
             tilly_log_simple(TILLY_LOG_ERROR, "Vulkan backend shader compile failed");
+            if (scratch) {
+                unlink(comp);
+                unlink(spv);
+            }
             return NULL;
+        }
+        if (scratch) {
+            unlink(comp);
         }
         hit = fopen(spv, "rb");
         if (!hit) {
+            if (scratch) {
+                unlink(spv);
+            }
             return NULL;
         }
     }
@@ -550,11 +600,17 @@ static uint32_t *load_spv(const char *glsl, size_t *out_size) {
     fseek(hit, 0, SEEK_SET);
     if (bytes <= 0 || (bytes % 4) != 0 || (size_t)bytes > 16 * 1024 * 1024) {
         fclose(hit);
+        if (scratch) {
+            unlink(spv);
+        }
         return NULL;
     }
     uint32_t *words = vk_alloc((size_t)bytes);
     bool ok = words && fread(words, 1, (size_t)bytes, hit) == (size_t)bytes;
     fclose(hit);
+    if (scratch) {
+        unlink(spv);
+    }
     if (!ok) {
         vk_free(words);
         return NULL;

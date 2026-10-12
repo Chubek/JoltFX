@@ -1,7 +1,12 @@
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "jfx/vk_backend.h"
 
@@ -97,6 +102,51 @@ int main(void) {
         ops->query_caps(backend, &hal_caps);
         assert(hal_caps.gpu_available && hal_caps.used_gpu);
         assert(strcmp(hal_caps.device_name, caps.device_name) == 0);
+
+        /* An unwritable shader cache is not a dispatch failure. A full or
+         * read-only XDG_CACHE_HOME must degrade to scratch files in TMPDIR and
+         * still produce the same pixels on the GPU path. */
+        char ro[] = "/tmp/joltfx-ro-cache-XXXXXX";
+        /* mkdtemp needs _GNU_SOURCE/_DEFAULT_SOURCE; declare it locally to keep
+         * the test self-contained regardless of the project's feature macros. */
+        extern char *mkdtemp(char *);
+        char *ro_made = mkdtemp(ro);
+        if (ro_made) {
+            const char *saved_cache = getenv("XDG_CACHE_HOME");
+            const char *saved_tmp = getenv("TMPDIR");
+            char saved_tmp_buf[4096];
+            bool had_tmp = saved_tmp != NULL;
+            if (had_tmp) {
+                snprintf(saved_tmp_buf, sizeof(saved_tmp_buf), "%s", saved_tmp);
+            }
+            assert(chmod(ro, 0500) == 0);
+            setenv("XDG_CACHE_HOME", ro, 1);
+            /* glslc writes its output next to the source, so the scratch
+             * directory must stay usable for the fallback to work. */
+            if (had_tmp) {
+                setenv("TMPDIR", saved_tmp_buf, 1);
+            } else {
+                unsetenv("TMPDIR");
+            }
+            float ro_out[8] = {0};
+            assert(jfx_vk_execute(backend, kBrightness, input, 2, &amount, 1,
+                       ro_out) == JFX_SUCCESS);
+            near(ro_out[0], 0.2f);
+            near(ro_out[4], 0.8f);
+            near(ro_out[7], 1.0f);
+            if (had_tmp) {
+                setenv("TMPDIR", saved_tmp_buf, 1);
+            } else {
+                unsetenv("TMPDIR");
+            }
+            if (saved_cache) {
+                setenv("XDG_CACHE_HOME", saved_cache, 1);
+            } else {
+                unsetenv("XDG_CACHE_HOME");
+            }
+            assert(chmod(ro, 0700) == 0);
+            rmdir(ro);
+        }
     } else {
         assert(!jfx_vk_used_gpu(backend));
     }

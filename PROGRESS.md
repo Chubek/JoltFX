@@ -1,5 +1,180 @@
 # Progress
 
+## Vulkan shader cache no longer fails dispatch (2026-10-12)
+
+- Fixed "Vulkan backend execution failed". The GPU path compiles generated GLSL
+  to SPIR-V through glslc using files under `XDG_CACHE_HOME/joltfx` (falling back
+  to `$HOME/.cache/joltfx`). `load_spv` treated that cache as a hard requirement:
+  when the directory was unwritable or the filesystem was full, `fopen` failed
+  and the function returned NULL with no diagnostic, so `jvk_compute_run` reported
+  a generic backend failure for what was really a disk/permission condition.
+- The cache is now an optimization rather than a precondition. When the cache
+  root cannot be written, shader compilation degrades to scratch files under
+  `TMPDIR` (default `/tmp`), keyed by pid and content hash, and those files are
+  unlinked on every exit path so nothing accumulates. The two silent
+  `return NULL` paths now log the actual cause and name `XDG_CACHE_HOME` and
+  `TMPDIR`, per the backend rule against swallowing errors.
+- Added a regression case to `test_vulkan_backend` that points `XDG_CACHE_HOME`
+  at a read-only directory, asserts the GPU path still returns the same pixels,
+  and restores the environment. Verified it fails with the fix reverted. The
+  normal caching path is unchanged and still hits `XDG_CACHE_HOME` first.
+- `vk_compute.c` and the test compile warning-free under the project's strict
+  flags. Full suite: 373/374 pass; `memory_allocation_policy` fails identically
+  with these changes stashed and is unrelated.
+
+## Ingagi extension ABI, target catalog and embedding build (2026-10-09)
+
+- Implemented all six requested language files against native-module ABI 1.0.0:
+  C declarations, C++ RAII, D imports, Rust owning/raw interfaces, Python ctypes,
+  and Java 22+ FFM. The Go Session and c-shared bridge implement source loading,
+  scalar calls, callback registration, instruction budgets, diagnostics and
+  opaque handle lifecycle. Reentrant/concurrent calls return Busy.
+- Reload installs a replacement VM only after successful initialization; native
+  registrations/world persist, and external initializer side effects cannot be
+  rolled back. Callback buffers are synchronous borrows; Go shared libraries
+  remain loaded for the process lifetime. Python/Java ownership gates protect
+  callback and handle lifetime operations.
+- Added twelve validated, embedded target descriptors, catalog APIs and the
+  `ingagi targets` CLI. VM/QBE are implemented; ten adapters/shader emitters are
+  explicitly planned. QBE artifact selection uses the catalog capability gate.
+  Fixed S-expression unmatched-close handling, empty lists and nesting bounds.
+- Added standalone CMake CLI/shared-library build, installation and optional
+  language smoke tests; root integration is opt-in via JFX_INGAGI. Current CMake
+  host support is Linux/macOS; cross builds/Windows import libraries are pending.
+- After restart, all worktree sources survived; temporary builds were lost.
+  Rebuilt only to verify the remaining changes. Standard and CGO-disabled suites,
+  race suite, go vet and all six available CTest tests passed (C ABI, C++, Python,
+  Rust, D and Go). Install was verified before restart. Java smoke test is wired
+  into CMake but cannot run here because Java 22+ is absent.
+- NovoParse artifacts regenerated identically. All tagged packages passed after
+  correcting the new concurrency test to enter its callback through a loaded
+  script (the first background run had compiled the earlier test fixture).
+  The corrected native-extension package passed its targeted tagged retry.
+- Clang ASAN plus UBSan Go suite passed, as did the independently instrumented
+  c-shared library and C ABI callback/reentry/reload/error executable. Java
+  compilation and macOS execution remain unverified in this Linux environment.
+  Documentation and subsystem instructions describe ABI and target boundaries.
+  Changes remain uncommitted; no commands are pending for this implementation.
+
+## Ingagi hardening pass (2026-10-09)
+
+- Resumed across server restarts without discarding the saved fuzz corpus.
+- Added structural module validation before LoadModule/LoadDecoded installation,
+  covering opcode dispatch, constant indices, branch/entry targets, negative
+  counts, boolean/observer flags, nil types and bounded frame slots/arities.
+  The dispatch loop also checks unknown opcodes and constant indices at runtime.
+- Hardened image decoding with checked lengths/full reads, bounded collections
+  and nesting, exact type/method record lengths, int32 operand checks, bounded
+  entry arities, duplicate-record checks and trailing-byte rejection. Initialized
+  decoded prefab maps to fix a fuzz-discovered nil-map panic.
+- Aggregate/call/closure/query allocations now require enough operands in the
+  current activation. Repeated arrays and local/argument storage have explicit
+  bounds. A saved fuzz image previously allocated gigabytes from an aggregate
+  count; another carried an enormous arity. Both now reject safely.
+- Encoding uses deterministic function/type/method ordering and rejects cyclic
+  or deeply nested values and captured closures that image v1 cannot preserve.
+- Reload clears old globals, arities and optimization caches/profiles. Added
+  regressions for reload, roundtrips, truncation, allocation failures and dispatch
+  errors; saved fuzz findings remain checked in as reproducible inputs.
+- Retained the grammar's required return/break/continue semicolons; corrected
+  test fixtures instead of expanding handwritten-only accepted syntax. Added
+  parser truncation/junk tests and parser/expression fuzz targets.
+- Native Build now rejects nil/cancelled contexts, missing signatures, invalid
+  entry symbols and unsupported ABI types before constructing artifacts.
+- Verification: full standard, CGO-disabled and race-enabled suites passed;
+  ASan/UBSan runtime/compiler/bridge checks and `go vet ./...` passed. Decoder
+  fuzzing completed 520,098 executions, expression fuzzing 163,711 and source
+  fuzzing 10,831, without failures in the short foreground runs.
+- Full NovoParse script regenerated matching grammar artifacts and passed other
+  packages, but the initial prefix sweep timed out after exercising native GLR
+  recognition on every byte prefix. Changed prefix/junk recovery tests to target
+  the recursive-descent AST builder directly; the full tagged frontend/runtime/
+  compiler retry passed. Normal fixtures and fuzz seeds still use tagged Parse.
+  Native malformed-prefix recognition cost remains a known follow-up.
+- QBE generation checks passed for all five targets. Tool-dependent Keystone
+  execution tests were skipped in this pass because restart removed its external
+  build library; its machine-code backend was verified in the prior native-target
+  work. Runtime allocation/frame/corpus regressions also passed with GOARCH=386
+  and CGO disabled after widening count arithmetic to int64.
+- Structural decoding fuzzing does not execute arbitrary accepted tapes.
+  Validation is not full stack/type verification or a memory sandbox. Added
+  support/limits/test documentation to README and subsystem instructions.
+
+## Ingagi QBE + Keystone native target (2026-10-09)
+
+- Implemented typed scalar QBE lowering in `ingagi/compiler/qbe.go`: `i64`/`bool`
+  signatures, initialized lexical locals, direct/recursive calls, arithmetic,
+  comparisons, short-circuit expressions, ternaries, assignments and structured
+  control flow. Unsupported constructs receive source-positioned diagnostics.
+- Added QBE subprocess code generation, a private Keystone C-ABI bridge, and an
+  ELF64 object writer. CLI `build` and embedding `CompileNative` export QBE IL,
+  target assembly, AMD64 objects or raw machine code with an `ingagi_entry` ABI.
+  Keystone handles all generated-code assembly; the C compiler only builds test
+  drivers and links objects. Object/bin output currently requires Linux + CGO and
+  targets AMD64 SysV; QBE assembly generation covers all five vendored targets.
+- Fixed QBE/Keystone compatibility: explicitly encode decimal operands as hex
+  for Keystone's AT&T parser, and retain CET ENDBR64 using exact instruction bytes.
+- Fixed ternary/postfix-`?` ambiguity in handwritten AST construction using
+  memoized speculative parsing; nested ternaries and propagation are covered.
+- Using vendored `third_party/qbe` and `third_party/keystone`; tool builds and
+  verification artifacts live outside the source tree under `/tmp/opencode`.
+- Keystone's vendor tree lacks `llvm/lib` and `llvm/utils`. Added a reproducible
+  build script using a hash-verified 0.9.2 archive to supplement only missing
+  directories in the external build tree. Provenance is recorded in
+  `ingagi/DEPENDENCIES.md` (the repository ignores the `third_party/` directory).
+- Verification: standard full-module suite with native tools enabled, portable
+  CGO-disabled suite, full NovoParse-tagged suite and grammar regeneration check
+  pass. Native C-ABI execution agrees with VM results for recursion, loops,
+  short-circuiting, signed arithmetic, ternaries and stack arguments. Deliberate
+  arithmetic traps and Keystone failure paths are exercised. Newly added trap
+  and nested-ternary tests also pass under NovoParse in a targeted retry.
+- ASan/UBSan bridge/compiler tests, `go vet ./...`, C bridge warning checks and
+  `git diff --check` pass. The native example builds through the CLI and prints
+  `33`; readelf confirms its relocatable AMD64 object and exported entry symbol.
+- Updated implementation/build documentation and subsystem instructions. Full
+  native ECS/shaders, floating-point/aggregate lowering, JIT loading and desktop
+  integration remain future work. All Go commands used `GOROOT=/usr/lib/go`.
+
+## Ingagi runtime recovery (2026-10-09)
+
+- Resumed the existing Ingagi draft. Baseline `go test ./... -timeout 20s`
+  reproduces closure and struct-pattern failures; `sema` does not build because
+  nine referenced passes are absent. Frontend and ECS tests pass.
+- Fixed inline lambda skip jumps, transitive captures (including postfix `?`),
+  function-owned slots/propagation fixups/loop contexts, and the inverted
+  struct-field pattern condition. Added raw/optimized nested-function regressions.
+- Reworked optimizer compaction to relocate function entries and all branch and
+  deferred-block targets. Jump cycles terminate during optimization; code after
+  a halt is retained because it can contain independently callable entries.
+- Fixed VM instruction budgets across nested calls and reset counts per external
+  invocation. Errors now unwind execution stacks while retaining their traces.
+  Early returns flush mutable ECS rows; failed iterations discard unfinished
+  snapshots. Added budget, recovery and nested-iterator regressions.
+- Restored the whole-module build: semantic defaults run the implemented draft
+  scope pass; requests for the nine absent analyses return explicit E0001 errors.
+  Their placeholder files remain unfinished.
+- Added a real NovoParse C-runtime bridge behind `-tags novoparse`. `Parse` then
+  requires scannerless recognition and `ParseConcrete` returns native syntax-tree
+  JSON. Grammar regeneration is checked by `ingagi/scripts/test-native.sh`.
+  Typed AST construction still uses the Go parser after recognition; the untagged
+  frontend and expression parser remain handwritten. Direct CST lowering and
+  complete grammar parity are pending.
+- Added synchronous CGO math calls into vendored GLM and simdette. GLM handles
+  matrix multiplication/projection/view/point transforms; simdette's scalar
+  `vec3<double>` handles batch addition/scaling. No hardware SIMD is claimed:
+  this vendor's hardware batches do not implement double precision. Portable Go
+  fallbacks remain available; randomized reference/in-place/tail tests cover both.
+- Added `ingagi.Compile`, a working `run/check/dump` CLI, a closure example,
+  embedding/host-callback tests and `ingagi/README.md` / `ingagi/AGENTS.md` with
+  accurate support boundaries. Shader codegen, full static analyses, validated
+  serialization, native targets and desktop wiring are still unfinished.
+- Verification: standard and CGO-disabled full-module suites pass; NovoParse
+  tagged suites pass after correcting a CLI test that assumed handwritten error
+  wording (targeted CLI/iterator retry passed). Generated artifacts match the
+  grammar. Runtime ASan + native UBSan checks pass, including the new iterator
+  test; `go vet ./...` and `git diff --check` pass. Running the CLI closure example
+  prints `42`. All Go commands used `GOROOT=/usr/lib/go`; no commits were made.
+
 ## Creative Programming tab + Zoltan sketch layer (2026-10-09)
 
 - Corrected the user's toolchain assumptions first: Emscripten exists at

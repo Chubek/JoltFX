@@ -20,6 +20,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 option(JOLTFX_BUILD_TESTS "Build tests" ON)
 option(JOLTFX_BUILD_EXAMPLES "Build examples" ON)
 option(JOLTFX_BUILD_DOCS "Build documentation" OFF)
+option(JFX_INGAGI "Build Ingagi CLI and native embedding library" OFF)
 
 option(JFX_ASAN "Enable AddressSanitizer" OFF)
 option(JFX_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
@@ -80,6 +81,10 @@ add_subdirectory(frontends)
 if(JOLTFX_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(JFX_INGAGI)
+    add_subdirectory(ingagi)
 endif()
 
 if(JOLTFX_BUILD_EXAMPLES)
