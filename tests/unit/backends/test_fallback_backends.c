@@ -5,6 +5,9 @@
 
 #include "jfx/d3d12_backend.h"
 #include "jfx/mtl_backend.h"
+#if defined(JFX_TEST_BACKEND_NOVOGFX) && JFX_TEST_BACKEND_NOVOGFX
+#include "jfx/novogfx_backend.h"
+#endif
 #include "jfx/software_backend.h"
 #include "jfx/wgpu_backend.h"
 
@@ -78,6 +81,11 @@ int main(void) {
 #endif
 #if defined(JFX_TEST_BACKEND_WEBGPU) && JFX_TEST_BACKEND_WEBGPU
     CHECK_BACKEND(jfx_wgpu, jfx_wgpu_backend_t, jfx_wgpu_backend_config_t, jfx_wgpu_caps_t);
+    ++checked;
+#endif
+#if defined(JFX_TEST_BACKEND_NOVOGFX) && JFX_TEST_BACKEND_NOVOGFX
+    CHECK_BACKEND(jfx_novogfx, jfx_novogfx_backend_t, jfx_novogfx_backend_config_t,
+        jfx_novogfx_caps_t);
     ++checked;
 #endif
     /* A build with no adapter adapters has nothing to check here; the CMake

@@ -35,6 +35,17 @@ option(JFX_BACKEND_VULKAN "Build the Vulkan backend" ON)
 option(JFX_BACKEND_METAL "Build the Metal backend (macOS/iOS)" ON)
 option(JFX_BACKEND_D3D12 "Build the D3D12 backend (Windows)" ON)
 option(JFX_BACKEND_WEBGPU "Build the WebGPU backend" ON)
+# NovoGFX drives Linux DRM/KMS directly, so the option only exists there; on
+# every other platform it is forced off, even if passed on the command line.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    option(JFX_BACKEND_NOVOGFX "Build the NovoGFX DRM/KMS backend (Linux only)" ON)
+else()
+    if(JFX_BACKEND_NOVOGFX)
+        message(WARNING "JFX_BACKEND_NOVOGFX is only supported on Linux; disabling it")
+    endif()
+    set(JFX_BACKEND_NOVOGFX OFF CACHE BOOL
+        "Build the NovoGFX DRM/KMS backend (Linux only)" FORCE)
+endif()
 
 # Extension runtimes.
 option(JFX_EXT_LUA "Build the Lua extension runtime" ON)

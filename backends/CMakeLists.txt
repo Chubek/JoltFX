@@ -26,11 +26,29 @@ if(JFX_BACKEND_WEBGPU)
     list(APPEND JFX_ENABLED_BACKENDS webgpu)
     add_subdirectory(webgpu)
 endif()
+if(JFX_BACKEND_NOVOGFX)
+    # The Rust half builds through cargo; without a toolchain the backend is
+    # dropped with a warning rather than failing a configure that never
+    # asked for it. The option only exists on Linux (see the root listfile).
+    find_program(CARGO_EXECUTABLE cargo)
+    if(NOT CARGO_EXECUTABLE)
+        message(WARNING
+            "JFX_BACKEND_NOVOGFX is ON but cargo was not found; disabling "
+            "the NovoGFX backend. Install a Rust toolchain (1.82+) to "
+            "enable it.")
+        set(JFX_BACKEND_NOVOGFX OFF CACHE BOOL
+            "Build the NovoGFX DRM/KMS backend (Linux only)" FORCE)
+    else()
+        list(APPEND JFX_ENABLED_BACKENDS novogfx)
+        add_subdirectory(novogfx)
+    endif()
+endif()
 
 if(NOT JFX_ENABLED_BACKENDS)
     message(FATAL_ERROR
         "No backend enabled. Turn on at least one of JFX_BACKEND_VULKAN, "
-        "JFX_BACKEND_METAL, JFX_BACKEND_D3D12, JFX_BACKEND_WEBGPU.")
+        "JFX_BACKEND_METAL, JFX_BACKEND_D3D12, JFX_BACKEND_WEBGPU, "
+        "JFX_BACKEND_NOVOGFX.")
 endif()
 
 # core/ is a sibling directory and cannot see this scope's variable, so publish

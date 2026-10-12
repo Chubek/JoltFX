@@ -63,11 +63,20 @@ set_target_properties(jfx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # test - can tell which backends this build actually contains instead of
 # hardcoding a name that may have been switched off.
 get_property(JFX_ENABLED_BACKENDS GLOBAL PROPERTY JFX_ENABLED_BACKENDS)
+set(JFX_BACKEND_NAMES "")
 foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
     string(TOUPPER "${backend}" backend_upper)
     target_link_libraries(jfx_core PRIVATE jfx_backend_${backend})
     target_compile_definitions(jfx_core PUBLIC JFX_BACKEND_${backend_upper}=1)
+    if(JFX_BACKEND_NAMES STREQUAL "")
+        set(JFX_BACKEND_NAMES "${backend}")
+    else()
+        string(APPEND JFX_BACKEND_NAMES ", ${backend}")
+    endif()
 endforeach()
+string(APPEND JFX_BACKEND_NAMES " or auto")
+# PRIVATE: engine.c is the only consumer (the registry diagnostic string).
+target_compile_definitions(jfx_core PRIVATE JFX_BACKEND_NAMES="${JFX_BACKEND_NAMES}")
 
 set_project_warnings(jfx_core)
 include(${CMAKE_SOURCE_DIR}/cmake/VST3.cmake)

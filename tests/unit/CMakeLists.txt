@@ -82,9 +82,12 @@ if(JFX_BACKEND_VULKAN)
 endif()
 
 # The portable CPU-path adapters. One conformance run covers whichever built.
+# The options are uppercase (JFX_BACKEND_METAL); the target suffix is
+# lowercase (jfx_backend_metal), so the loop carries both spellings.
 set(JFX_FALLBACK_BACKEND_TARGETS "")
-foreach(backend IN ITEMS metal d3d12 webgpu)
-    if(JFX_BACKEND_${backend})
+foreach(backend IN ITEMS metal d3d12 webgpu novogfx)
+    string(TOUPPER "${backend}" backend_upper)
+    if(JFX_BACKEND_${backend_upper})
         list(APPEND JFX_FALLBACK_BACKEND_TARGETS jfx_backend_${backend})
     endif()
 endforeach()
@@ -95,7 +98,14 @@ if(JFX_FALLBACK_BACKEND_TARGETS)
         JFX_TEST_BACKEND_METAL=$<BOOL:${JFX_BACKEND_METAL}>
         JFX_TEST_BACKEND_D3D12=$<BOOL:${JFX_BACKEND_D3D12}>
         JFX_TEST_BACKEND_WEBGPU=$<BOOL:${JFX_BACKEND_WEBGPU}>
+        JFX_TEST_BACKEND_NOVOGFX=$<BOOL:${JFX_BACKEND_NOVOGFX}>
     )
+endif()
+
+# The Linux DRM/KMS backend, exercised with and without a probed device.
+if(JFX_BACKEND_NOVOGFX)
+    jfx_test_target(test_novogfx_backend SOURCES backends/test_novogfx_backend.c
+        LIBRARIES jfx_backend_novogfx)
 endif()
 
 if(JFX_EXT_LUA AND JFX_EXT_MRUBY)
@@ -217,6 +227,9 @@ endif()
 if(JFX_FALLBACK_BACKEND_TARGETS)
     jfx_register_test(backend_fallback_conformance test_fallback_backends)
     set_property(TEST backend_fallback_conformance APPEND PROPERTY LABELS conformance)
+endif()
+if(JFX_BACKEND_NOVOGFX)
+    jfx_register_test(test_novogfx_backend test_novogfx_backend)
 endif()
 if(JFX_EXT_LUA AND JFX_EXT_MRUBY)
     jfx_register_test(ext_conformance test_extensions)

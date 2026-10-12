@@ -18,6 +18,9 @@
 #if defined(JFX_BACKEND_WEBGPU)
 #include "jfx/wgpu_backend.h"
 #endif
+#if defined(JFX_BACKEND_NOVOGFX)
+#include "jfx/novogfx_backend.h"
+#endif
 #include "joltscript/compiler.h"
 #include "engine_internal.h"
 #include "tilly/tilly.h"
@@ -106,6 +109,21 @@ static jfx_result_t create_webgpu(const jfx_backend_config_t *config,
 }
 #endif
 
+#if defined(JFX_BACKEND_NOVOGFX)
+static jfx_result_t create_novogfx(const jfx_backend_config_t *config,
+    jfx_backend_handle_t *out_backend) {
+    jfx_novogfx_backend_t *backend = NULL;
+    jfx_result_t status = jfx_novogfx_backend_create(config, &backend);
+    *out_backend = backend;
+    return status;
+}
+#endif
+
+/* Registry order is "auto" priority order. NovoGFX is deliberately last: it
+ * owns a DRM/KMS display device, not a compute device, and executes on the
+ * CPU path, so every compute-capable backend must win probing ahead of it.
+ * It is selected explicitly by name, or by "auto" when nothing else reports
+ * a device. */
 static const jfx_backend_entry_t kBackendRegistry[] = {
 #if defined(JFX_BACKEND_VULKAN)
     { "vulkan", jfx_vk_backend_ops, create_vulkan },
@@ -119,42 +137,20 @@ static const jfx_backend_entry_t kBackendRegistry[] = {
 #if defined(JFX_BACKEND_WEBGPU)
     { "webgpu", jfx_wgpu_backend_ops, create_webgpu },
 #endif
+#if defined(JFX_BACKEND_NOVOGFX)
+    { "novogfx", jfx_novogfx_backend_ops, create_novogfx },
+#endif
 };
 
 #define JFX_BACKEND_COUNT (sizeof(kBackendRegistry) / sizeof(kBackendRegistry[0]))
 
-/* NUL-terminated list of the backends this build contains, for diagnostics. */
-static const char *kBackendNames =
-#if defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_METAL) && \
-    defined(JFX_BACKEND_D3D12) && defined(JFX_BACKEND_WEBGPU)
-    "vulkan, metal, d3d12, webgpu or auto";
-#elif defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_METAL) && \
-    defined(JFX_BACKEND_D3D12)
-    "vulkan, metal, d3d12 or auto";
-#elif defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_METAL) && \
-    defined(JFX_BACKEND_WEBGPU)
-    "vulkan, metal, webgpu or auto";
-#elif defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_D3D12) && \
-    defined(JFX_BACKEND_WEBGPU)
-    "vulkan, d3d12, webgpu or auto";
-#elif defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_METAL)
-    "vulkan, metal or auto";
-#elif defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_D3D12)
-    "vulkan, d3d12 or auto";
-#elif defined(JFX_BACKEND_VULKAN) && defined(JFX_BACKEND_WEBGPU)
-    "vulkan, webgpu or auto";
-#elif defined(JFX_BACKEND_METAL) && defined(JFX_BACKEND_D3D12) && \
-    defined(JFX_BACKEND_WEBGPU)
-    "metal, d3d12, webgpu or auto";
-#elif defined(JFX_BACKEND_VULKAN)
-    "vulkan or auto";
-#elif defined(JFX_BACKEND_METAL)
-    "metal or auto";
-#elif defined(JFX_BACKEND_D3D12)
-    "d3d12 or auto";
-#else
-    "webgpu or auto";
+/* NUL-terminated list of the backends this build contains, for diagnostics.
+ * The build system generates JFX_BACKEND_NAMES from the enabled-backend list
+ * so this string can never drift from the registry above. */
+#ifndef JFX_BACKEND_NAMES
+#define JFX_BACKEND_NAMES "auto"
 #endif
+static const char *kBackendNames = JFX_BACKEND_NAMES;
 
 static const jfx_backend_entry_t *find_backend(const char *name) {
     for (size_t i = 0; i < JFX_BACKEND_COUNT; ++i) {
