@@ -1,0 +1,12 @@
+[package]
+name = "novogfx-event"
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+description = "DRM event reading: vblank, page flip, hotplug."
+repository = "https://github.com/joltfx/novogfx"
+
+[dependencies]
+novogfx-sys = { workspace = true }
+novogfx-core = { workspace = true }

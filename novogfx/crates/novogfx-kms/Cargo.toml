@@ -1,0 +1,12 @@
+[package]
+name = "novogfx-kms"
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+description = "Typed KMS wrappers: connectors, CRTCs, encoders, planes, modes, properties, EDID."
+repository = "https://github.com/joltfx/novogfx"
+
+[dependencies]
+novogfx-sys = { workspace = true }
+novogfx-core = { workspace = true }

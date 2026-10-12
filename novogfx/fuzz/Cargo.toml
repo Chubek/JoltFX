@@ -1,0 +1,32 @@
+[package]
+name = "novogfx-fuzz"
+version = "0.0.0"
+publish = false
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Isolate libFuzzer/nightly dependencies from the offline production workspace.
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+novogfx-kms = { path = "../crates/novogfx-kms" }
+novogfx-event = { path = "../crates/novogfx-event" }
+
+[[bin]]
+name = "edid"
+path = "fuzz_targets/edid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "events"
+path = "fuzz_targets/events.rs"
+test = false
+doc = false
+bench = false

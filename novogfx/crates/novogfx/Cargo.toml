@@ -1,0 +1,42 @@
+[package]
+name = "novogfx"
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+description = "Safe, idiomatic DRM/KMS backend: user-facing facade re-exporting novogfx crates."
+repository = "https://github.com/joltfx/novogfx"
+keywords = ["drm", "kms", "graphics", "modesetting"]
+categories = ["graphics", "hardware-support"]
+
+[features]
+vkms = []
+
+[dependencies]
+novogfx-sys = { workspace = true }
+novogfx-core = { workspace = true }
+novogfx-kms = { workspace = true }
+novogfx-atomic = { workspace = true }
+novogfx-buffer = { workspace = true }
+novogfx-event = { workspace = true }
+
+[[example]]
+name = "enumerate"
+path = "../../examples/enumerate.rs"
+
+[[example]]
+name = "dumb_buffer"
+path = "../../examples/dumb_buffer.rs"
+
+[[example]]
+name = "atomic_modeset"
+path = "../../examples/atomic_modeset.rs"
+
+[[example]]
+name = "page_flip"
+path = "../../examples/page_flip.rs"
+
+[[test]]
+name = "vkms_smoke"
+path = "../../tests/integration/vkms_smoke.rs"
+required-features = ["vkms"]

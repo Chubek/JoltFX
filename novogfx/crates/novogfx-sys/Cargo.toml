@@ -1,0 +1,15 @@
+[package]
+name = "novogfx-sys"
+version = "0.1.0+libdrm-2.4.134"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+description = "Raw, unsafe FFI bindings to libdrm for novogfx. No safe abstractions."
+repository = "https://github.com/joltfx/novogfx"
+keywords = ["drm", "kms", "ffi", "libdrm"]
+categories = ["graphics", "hardware-support", "external-ffi-bindings"]
+
+[dependencies]
+
+[features]
+default = []

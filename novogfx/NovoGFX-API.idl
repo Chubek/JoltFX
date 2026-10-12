@@ -1,0 +1,564 @@
+// novogfx.idl — Public C API for NovoGFX
+// Version: 0.3.0
+// License: MIT OR Apache-2.0
+//
+// This IDL describes the stable C ABI exposed by libnovogfx.
+// The Rust implementation lives in `novogfx-c` and re-exports
+// the safe Rust API from the `novogfx` facade crate.
+//
+// Design notes:
+//   - All handles are opaque pointers. Never dereference them directly.
+//   - All functions return `novogfx_status_t` unless otherwise noted.
+//   - Strings are NUL-terminated UTF-8.
+//   - Callbacks are invoked synchronously unless documented otherwise.
+//   - Every object with a `create`/`open` constructor has a matching
+//     `destroy`/`close` destructor. Objects are NOT reference counted
+//     unless explicitly documented.
+//   - Thread safety: a single novogfx_device_t may be used from one
+//     thread at a time. Use one device per thread for concurrency.
+
+// ---------------------------------------------------------------------------
+// Versioning
+// ---------------------------------------------------------------------------
+
+interface NovoGFX {
+    // Returns the ABI version as MAJOR*10000 + MINOR*100 + PATCH.
+    // Callers should check this matches what they were compiled against.
+    [Static] unsigned long abi_version();
+
+    // Human-readable library version string, e.g. "0.3.0".
+    [Static] DOMString version_string();
+};
+
+// ---------------------------------------------------------------------------
+// Status / error codes
+// ---------------------------------------------------------------------------
+
+enum novogfx_status_t {
+    "NOVOGFX_OK"                    = 0,
+    "NOVOGFX_ERR_INVALID_ARGUMENT"  = 1,
+    "NOVOGFX_ERR_IO"                = 2,
+    "NOVOGFX_ERR_NOT_FOUND"         = 3,
+    "NOVOGFX_ERR_NOT_SUPPORTED"     = 4,
+    "NOVOGFX_ERR_PERMISSION_DENIED" = 5,
+    "NOVOGFX_ERR_BUSY"              = 6,
+    "NOVOGFX_ERR_AGAIN"             = 7,
+    "NOVOGFX_ERR_OUT_OF_MEMORY"     = 8,
+    "NOVOGFX_ERR_DEVICE_LOST"       = 9,
+    "NOVOGFX_ERR_CANCELLED"         = 10,
+    "NOVOGFX_ERR_INTERNAL"          = 11
+};
+
+// Returns a static, human-readable string for a status code.
+// The returned pointer is valid for the lifetime of the process.
+[Static] DOMString novogfx_status_string(novogfx_status_t status);
+
+// ---------------------------------------------------------------------------
+// Opaque handles
+// ---------------------------------------------------------------------------
+
+// Forward-declared opaque types. The C header uses `typedef struct
+// novogfx_<name> novogfx_<name>_t;` for each.
+interface novogfx_device_t;          // opened DRM device
+interface novogfx_connector_t;       // KMS connector (HDMI, DP, ...)
+interface novogfx_crtc_t;            // KMS CRTC (display pipeline)
+interface novogfx_encoder_t;         // KMS encoder
+interface novogfx_plane_t;           // KMS plane (primary, overlay, cursor)
+interface novogfx_framebuffer_t;     // KMS framebuffer object
+interface novogfx_dumb_buffer_t;     // CPU-mappable buffer
+interface novogfx_atomic_request_t;  // pending atomic commit
+interface novogfx_event_reader_t;    // reads DRM events from the device
+interface novogfx_blob_t;            // DRM property blob
+interface novogfx_property_t;        // DRM property handle
+
+// ---------------------------------------------------------------------------
+// Device
+// ---------------------------------------------------------------------------
+
+// Device capability flags, returned by novogfx_device_caps().
+enum novogfx_device_caps_t : unsigned long {
+    "NOVOGFX_CAP_ATOMIC"        = 1 << 0,  // atomic modesetting supported
+    "NOVOGFX_CAP_UNIVERSAL_PLANES" = 1 << 1,
+    "NOVOGFX_CAP_DUMB_BUFFER"   = 1 << 2,
+    "NOVOGFX_CAP_PRIME"         = 1 << 3,  // dma-buf import/export
+    "NOVOGFX_CAP_ASYNC_PAGE_FLIP" = 1 << 4
+};
+
+interface novogfx_device_info_t {
+    // Driver name, e.g. "i915", "amdgpu", "vkms". Caller must free with
+    // novogfx_string_free().
+    DOMString driver_name;
+    DOMString driver_date;      // e.g. "20240115"
+    DOMString driver_desc;      // free-form, may be empty
+    unsigned long driver_major;
+    unsigned long driver_minor;
+    unsigned long driver_patch;
+    unsigned long bus_type;     // 0 = PCI, 1 = USB, 2 = platform, ...
+    unsigned long device_id;
+    unsigned long vendor_id;
+};
+
+// Opens a DRM device at `path` (e.g. "/dev/dri/card0").
+// On success, *out_device receives a non-NULL handle that must be released
+// with novogfx_device_destroy().
+novogfx_status_t novogfx_device_open(
+    [Const] DOMString path,
+    [Out] novogfx_device_t* out_device
+);
+
+// Returns device info. The strings in `out_info` are owned by the caller
+// and must be freed with novogfx_string_free().
+novogfx_status_t novogfx_device_get_info(
+    novogfx_device_t device,
+    [Out] novogfx_device_info_t* out_info
+);
+
+// Returns the capability bitmask. Never fails.
+unsigned long novogfx_device_caps([Const] novogfx_device_t device);
+
+// Enables atomic modesetting on the device. Must be called before any
+// novogfx_atomic_* function. Idempotent.
+novogfx_status_t novogfx_device_enable_atomic([Const] novogfx_device_t device);
+
+// Returns the underlying file descriptor. The caller must NOT close it.
+// Useful for integrating with poll/epoll/select event loops.
+int novogfx_device_fd([Const] novogfx_device_t device);
+
+// Closes the device and frees all resources associated with it.
+// Any outstanding handles (connectors, framebuffers, ...) become invalid.
+void novogfx_device_destroy(novogfx_device_t device);
+
+// ---------------------------------------------------------------------------
+// Resource enumeration
+// ---------------------------------------------------------------------------
+
+interface novogfx_resources_t {
+    // Arrays are valid until novogfx_resources_destroy() is called.
+    // Each array is NULL if its count is 0.
+    readonly attribute unsigned long num_connectors;
+    readonly attribute unsigned long num_crtcs;
+    readonly attribute unsigned long num_encoders;
+    readonly attribute unsigned long num_planes;
+    readonly attribute unsigned long num_framebuffers;
+
+    readonly attribute novogfx_connector_t*   connectors;
+    readonly attribute novogfx_crtc_t*        crtcs;
+    readonly attribute novogfx_encoder_t*     encoders;
+    readonly attribute novogfx_plane_t*       planes;
+    readonly attribute novogfx_framebuffer_t* framebuffers;
+};
+
+// Enumerates all KMS resources. The returned object owns the handles it
+// exposes; destroying it releases its ownership. A handle shared with another
+// live resource list remains valid until its last owner is destroyed. Handles
+// are cached internally and re-used across overlapping calls, so pointer
+// equality is meaningful. Individual destructors must not free these handles.
+novogfx_status_t novogfx_device_get_resources(
+    [Const] novogfx_device_t device,
+    [Out] novogfx_resources_t* out_resources
+);
+
+void novogfx_resources_destroy(novogfx_resources_t resources);
+
+// ---------------------------------------------------------------------------
+// Connectors
+// ---------------------------------------------------------------------------
+
+enum novogfx_connector_status_t {
+    "NOVOGFX_CONNECTOR_CONNECTED"    = 0,
+    "NOVOGFX_CONNECTOR_DISCONNECTED" = 1,
+    "NOVOGFX_CONNECTOR_UNKNOWN"      = 2
+};
+
+enum novogfx_connector_type_t {
+    "NOVOGFX_CONNECTOR_UNKNOWN"      = 0,
+    "NOVOGFX_CONNECTOR_VGA"          = 1,
+    "NOVOGFX_CONNECTOR_DVI_I"        = 2,
+    "NOVOGFX_CONNECTOR_DVI_D"        = 3,
+    "NOVOGFX_CONNECTOR_DVI_A"        = 4,
+    "NOVOGFX_CONNECTOR_COMPOSITE"    = 5,
+    "NOVOGFX_CONNECTOR_SVIDEO"       = 6,
+    "NOVOGFX_CONNECTOR_LVDS"         = 7,
+    "NOVOGFX_CONNECTOR_COMPONENT"    = 8,
+    "NOVOGFX_CONNECTOR_9PIN_DIN"     = 9,
+    "NOVOGFX_CONNECTOR_DISPLAYPORT"  = 10,
+    "NOVOGFX_CONNECTOR_HDMI_A"       = 11,
+    "NOVOGFX_CONNECTOR_HDMI_B"       = 12,
+    "NOVOGFX_CONNECTOR_TV"           = 13,
+    "NOVOGFX_CONNECTOR_EDP"          = 14,
+    "NOVOGFX_CONNECTOR_VIRTUAL"      = 15,
+    "NOVOGFX_CONNECTOR_DSI"          = 16,
+    "NOVOGFX_CONNECTOR_DPI"          = 17
+};
+
+interface novogfx_mode_t {
+    // All fields are read-only snapshots taken at enumeration time.
+    readonly attribute unsigned long clock_khz;
+    readonly attribute unsigned short hdisplay;
+    readonly attribute unsigned short hsync_start;
+    readonly attribute unsigned short hsync_end;
+    readonly attribute unsigned short htotal;
+    readonly attribute unsigned short hskew;
+    readonly attribute unsigned short vdisplay;
+    readonly attribute unsigned short vsync_start;
+    readonly attribute unsigned short vsync_end;
+    readonly attribute unsigned short vtotal;
+    readonly attribute unsigned short vscan;
+    readonly attribute unsigned long flags;   // DRM_MODE_FLAG_*
+    readonly attribute unsigned long type;    // DRM_MODE_TYPE_*
+    readonly attribute DOMString name;        // e.g. "1920x1080"
+};
+
+novogfx_status_t novogfx_connector_status(
+    [Const] novogfx_connector_t connector,
+    [Out] novogfx_connector_status_t* out_status
+);
+
+novogfx_connector_type_t novogfx_connector_type(
+    [Const] novogfx_connector_t connector
+);
+
+// Returns the number of modes. Never fails.
+unsigned long novogfx_connector_num_modes(
+    [Const] novogfx_connector_t connector
+);
+
+// Returns the mode at `index`. Returns NULL if index is out of range.
+// The returned pointer is owned by the connector and remains valid until
+// the connector is invalidated by a hotplug event or device destruction.
+[Const] novogfx_mode_t* novogfx_connector_mode(
+    [Const] novogfx_connector_t connector,
+    unsigned long index
+);
+
+// Returns the preferred mode, or NULL if none is marked preferred.
+[Const] novogfx_mode_t* novogfx_connector_preferred_mode(
+    [Const] novogfx_connector_t connector
+);
+
+// Returns the CRTC currently driving this connector, or NULL if unbound.
+novogfx_crtc_t novogfx_connector_current_crtc(
+    [Const] novogfx_connector_t connector
+);
+
+// Returns the raw EDID bytes, or NULL if unavailable. *out_len receives
+// the length. The buffer is owned by the connector.
+[Const] octet* novogfx_connector_edid(
+    [Const] novogfx_connector_t connector,
+    [Out] unsigned long* out_len
+);
+
+// Returns the connector's unique ID. Stable for the device's lifetime.
+unsigned long novogfx_connector_id([Const] novogfx_connector_t connector);
+
+// Finds the first connector whose status is CONNECTED. Returns NULL if
+// none are connected.
+novogfx_connector_t novogfx_device_find_connected_connector(
+    [Const] novogfx_device_t device
+);
+
+// ---------------------------------------------------------------------------
+// CRTCs
+// ---------------------------------------------------------------------------
+
+unsigned long novogfx_crtc_id([Const] novogfx_crtc_t crtc);
+
+// Returns the framebuffer currently bound to this CRTC, or NULL.
+novogfx_framebuffer_t novogfx_crtc_current_framebuffer(
+    [Const] novogfx_crtc_t crtc
+);
+
+// Returns the current mode, or NULL if the CRTC is disabled.
+[Const] novogfx_mode_t* novogfx_crtc_current_mode([Const] novogfx_crtc_t crtc);
+
+// ---------------------------------------------------------------------------
+// Planes
+// ---------------------------------------------------------------------------
+
+enum novogfx_plane_type_t {
+    "NOVOGFX_PLANE_PRIMARY" = 0,
+    "NOVOGFX_PLANE_CURSOR"  = 1,
+    "NOVOGFX_PLANE_OVERLAY" = 2
+};
+
+unsigned long novogfx_plane_id([Const] novogfx_plane_t plane);
+
+novogfx_plane_type_t novogfx_plane_type([Const] novogfx_plane_t plane);
+
+// Returns the CRTC this plane is currently bound to, or NULL.
+novogfx_crtc_t novogfx_plane_current_crtc([Const] novogfx_plane_t plane);
+
+// Returns non-zero if the plane supports the given format (DRM_FORMAT_*).
+int novogfx_plane_supports_format(
+    [Const] novogfx_plane_t plane,
+    unsigned long drm_format
+);
+
+// ---------------------------------------------------------------------------
+// Formats
+// ---------------------------------------------------------------------------
+
+// DRM fourcc format codes. Only a useful subset is enumerated here;
+// the full set follows the DRM_FORMAT_* macros.
+enum novogfx_format_t : unsigned long {
+    "NOVOGFX_FORMAT_C8"        = 0x20203843,
+    "NOVOGFX_FORMAT_RGB332"    = 0x38424752,
+    "NOVOGFX_FORMAT_BGR233"    = 0x38524742,
+    "NOVOGFX_FORMAT_XRGB4444"  = 0x32315258,
+    "NOVOGFX_FORMAT_XBGR4444"  = 0x32314258,
+    "NOVOGFX_FORMAT_RGBX4444"  = 0x32315852,
+    "NOVOGFX_FORMAT_BGRX4444"  = 0x32315842,
+    "NOVOGFX_FORMAT_ARGB4444"  = 0x32315241,
+    "NOVOGFX_FORMAT_ABGR4444"  = 0x32314241,
+    "NOVOGFX_FORMAT_RGBA4444"  = 0x32314152,
+    "NOVOGFX_FORMAT_BGRA4444"  = 0x32314142,
+    "NOVOGFX_FORMAT_XRGB1555"  = 0x35315258,
+    "NOVOGFX_FORMAT_XBGR1555"  = 0x35314258,
+    "NOVOGFX_FORMAT_RGBX5551"  = 0x35315852,
+    "NOVOGFX_FORMAT_BGRX5551"  = 0x35315842,
+    "NOVOGFX_FORMAT_ARGB1555"  = 0x35315241,
+    "NOVOGFX_FORMAT_ABGR1555"  = 0x35314241,
+    "NOVOGFX_FORMAT_RGBA5551"  = 0x35314152,
+    "NOVOGFX_FORMAT_BGRA5551"  = 0x35314142,
+    "NOVOGFX_FORMAT_RGB565"    = 0x36314752,
+    "NOVOGFX_FORMAT_BGR565"    = 0x36314742,
+    "NOVOGFX_FORMAT_RGB888"    = 0x34324752,
+    "NOVOGFX_FORMAT_BGR888"    = 0x34324742,
+    "NOVOGFX_FORMAT_XRGB8888"  = 0x34325258,
+    "NOVOGFX_FORMAT_XBGR8888"  = 0x34324258,
+    "NOVOGFX_FORMAT_RGBX8888"  = 0x34325852,
+    "NOVOGFX_FORMAT_BGRX8888"  = 0x34325842,
+    "NOVOGFX_FORMAT_ARGB8888"  = 0x34325241,
+    "NOVOGFX_FORMAT_ABGR8888"  = 0x34324241,
+    "NOVOGFX_FORMAT_RGBA8888"  = 0x34324152,
+    "NOVOGFX_FORMAT_BGRA8888"  = 0x34324142,
+    "NOVOGFX_FORMAT_XRGB2101010" = 0x30335258,
+    "NOVOGFX_FORMAT_XBGR2101010" = 0x30334258,
+    "NOVOGFX_FORMAT_RGBX1010102" = 0x30335852,
+    "NOVOGFX_FORMAT_BGRX1010102" = 0x30335842,
+    "NOVOGFX_FORMAT_ARGB2101010" = 0x30335241,
+    "NOVOGFX_FORMAT_ABGR2101010" = 0x30334241,
+    "NOVOGFX_FORMAT_RGBA1010102" = 0x30334152,
+    "NOVOGFX_FORMAT_BGRA1010102" = 0x30334142,
+    "NOVOGFX_FORMAT_YUYV"      = 0x56595559,
+    "NOVOGFX_FORMAT_YVYU"      = 0x55595659,
+    "NOVOGFX_FORMAT_UYVY"      = 0x59565955,
+    "NOVOGFX_FORMAT_VYUY"      = 0x59555956,
+    "NOVOGFX_FORMAT_NV12"      = 0x3231564e,
+    "NOVOGFX_FORMAT_NV21"      = 0x3132564e,
+    "NOVOGFX_FORMAT_NV16"      = 0x3631564e,
+    "NOVOGFX_FORMAT_NV61"      = 0x3136564e,
+    "NOVOGFX_FORMAT_YUV420"    = 0x32315559,
+    "NOVOGFX_FORMAT_YUV422"    = 0x36315559,
+    "NOVOGFX_FORMAT_YUV444"    = 0x34325559
+};
+
+// Returns a human-readable name for a format, or "UNKNOWN".
+[Static] DOMString novogfx_format_name(novogfx_format_t format);
+
+// ---------------------------------------------------------------------------
+// Dumb buffers (CPU-mappable framebuffers)
+// ---------------------------------------------------------------------------
+
+interface novogfx_dumb_buffer_desc_t {
+    unsigned long width;
+    unsigned long height;
+    unsigned long bpp;        // bits per pixel, e.g. 32
+    unsigned long flags;      // reserved, must be 0
+};
+
+interface novogfx_dumb_buffer_info_t {
+    unsigned long width;
+    unsigned long height;
+    unsigned long pitch;      // bytes per row
+    unsigned long size;       // total size in bytes
+    unsigned long handle;     // DRM buffer handle (informational)
+};
+
+// Creates a dumb buffer and registers it as a framebuffer.
+// On success, *out_buffer is a handle to the dumb buffer and
+// *out_fb is the associated framebuffer.
+novogfx_status_t novogfx_dumb_buffer_create(
+    novogfx_device_t device,
+    [Const] novogfx_dumb_buffer_desc_t* desc,
+    [Out] novogfx_dumb_buffer_t* out_buffer,
+    [Out] novogfx_framebuffer_t* out_fb
+);
+
+novogfx_status_t novogfx_dumb_buffer_get_info(
+    [Const] novogfx_dumb_buffer_t buffer,
+    [Out] novogfx_dumb_buffer_info_t* out_info
+);
+
+// Maps the buffer into the caller's address space. The returned pointer
+// is valid until novogfx_dumb_buffer_unmap() is called. Writes to the
+// mapped region are visible to the display after the next commit.
+//
+// The caller must respect `pitch` when writing rows.
+novogfx_status_t novogfx_dumb_buffer_map(
+    novogfx_dumb_buffer_t buffer,
+    [Out] octet** out_ptr
+);
+
+void novogfx_dumb_buffer_unmap(novogfx_dumb_buffer_t buffer);
+
+// Returns the framebuffer associated with this dumb buffer.
+novogfx_framebuffer_t novogfx_dumb_buffer_framebuffer(
+    [Const] novogfx_dumb_buffer_t buffer
+);
+
+// Destroys the framebuffer, unmaps, and frees the dumb buffer.
+// The framebuffer handle becomes invalid.
+void novogfx_dumb_buffer_destroy(novogfx_dumb_buffer_t buffer);
+
+// ---------------------------------------------------------------------------
+// Framebuffers
+// ---------------------------------------------------------------------------
+
+unsigned long novogfx_framebuffer_id([Const] novogfx_framebuffer_t fb);
+
+// ---------------------------------------------------------------------------
+// Atomic modesetting
+// ---------------------------------------------------------------------------
+
+interface novogfx_plane_update_t {
+    novogfx_plane_t plane;
+    novogfx_framebuffer_t fb;   // may be NULL to disable the plane
+    novogfx_crtc_t crtc;        // may be NULL to disable the plane
+    unsigned long src_x;        // 16.16 fixed-point, source crop
+    unsigned long src_y;
+    unsigned long src_w;
+    unsigned long src_h;
+    long crtc_x;                // destination position, signed
+    long crtc_y;
+    unsigned long crtc_w;
+    unsigned long crtc_h;
+    unsigned long zpos;         // stacking order
+    unsigned long flags;        // NOVOGFX_PLANE_UPDATE_*
+};
+
+enum novogfx_plane_update_flags_t : unsigned long {
+    "NOVOGFX_PLANE_UPDATE_NONE"    = 0,
+    "NOVOGFX_PLANE_UPDATE_FB"      = 1 << 0,
+    "NOVOGFX_PLANE_UPDATE_CRTC"    = 1 << 1,
+    "NOVOGFX_PLANE_UPDATE_SRC"     = 1 << 2,
+    "NOVOGFX_PLANE_UPDATE_DST"     = 1 << 3,
+    "NOVOGFX_PLANE_UPDATE_ZPOS"    = 1 << 4,
+    "NOVOGFX_PLANE_UPDATE_ALL"     = 0xFFFFFFFF
+};
+
+enum novogfx_commit_flags_t : unsigned long {
+    "NOVOGFX_COMMIT_NONE"          = 0,
+    "NOVOGFX_COMMIT_ALLOW_MODESET" = 1 << 0,
+    "NOVOGFX_COMMIT_NONBLOCK"      = 1 << 1,
+    "NOVOGFX_COMMIT_PAGE_FLIP_EVENT" = 1 << 2,
+    "NOVOGFX_COMMIT_TEST_ONLY"     = 1 << 3
+};
+
+novogfx_status_t novogfx_atomic_request_create(
+    novogfx_device_t device,
+    [Out] novogfx_atomic_request_t* out_request
+);
+
+// Sets the connector + mode + framebuffer for a CRTC. Pass fb = NULL to
+// disable the CRTC. Pass mode = NULL to keep the current mode.
+novogfx_status_t novogfx_atomic_request_set_crtc(
+    novogfx_atomic_request_t request,
+    novogfx_crtc_t crtc,
+    novogfx_framebuffer_t fb,
+    [Const] novogfx_mode_t* mode,
+    novogfx_connector_t connector  // may be NULL
+);
+
+novogfx_status_t novogfx_atomic_request_add_plane(
+    novogfx_atomic_request_t request,
+    [Const] novogfx_plane_update_t* update
+);
+
+// Sets a connector's CRTC binding without touching the mode.
+novogfx_status_t novogfx_atomic_request_set_connector_crtc(
+    novogfx_atomic_request_t request,
+    novogfx_connector_t connector,
+    novogfx_crtc_t crtc  // may be NULL to unbind
+);
+
+// Commits the request. If NOVOGFX_COMMIT_TEST_ONLY is set, the kernel
+// validates the state but does not apply it.
+novogfx_status_t novogfx_atomic_request_commit(
+    novogfx_atomic_request_t request,
+    unsigned long flags
+);
+
+// Resets the request to an empty state, discarding any pending changes.
+void novogfx_atomic_request_reset(novogfx_atomic_request_t request);
+
+void novogfx_atomic_request_destroy(novogfx_atomic_request_t request);
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+enum novogfx_event_type_t {
+    "NOVOGFX_EVENT_VBLANK"    = 0,
+    "NOVOGFX_EVENT_PAGE_FLIP" = 1,
+    "NOVOGFX_EVENT_HOTPLUG"   = 2
+};
+
+interface novogfx_event_t {
+    novogfx_event_type_t type;
+    unsigned long sequence;   // monotonically increasing per device
+    unsigned long tv_sec;
+    unsigned long tv_usec;
+
+    // Valid for VBLANK and PAGE_FLIP.
+    unsigned long crtc_id;
+    unsigned long user_data;
+
+    // Valid for PAGE_FLIP only. 0 = success, otherwise an errno.
+    int flip_status;
+
+    // Valid for HOTPLUG only.
+    unsigned long connector_id;
+};
+
+novogfx_status_t novogfx_event_reader_create(
+    novogfx_device_t device,
+    [Out] novogfx_event_reader_t* out_reader
+);
+
+// Reads zero or more events from the device fd. This function never blocks.
+// On success, *out_events points to an array of *out_count events. The
+// array is owned by the reader and is valid until the next call to
+// novogfx_event_reader_poll() or until the reader is destroyed.
+//
+// Returns NOVOGFX_ERR_AGAIN if no events are pending.
+novogfx_status_t novogfx_event_reader_poll(
+    novogfx_event_reader_t reader,
+    [Out] novogfx_event_t** out_events,
+    [Out] unsigned long* out_count
+);
+
+void novogfx_event_reader_destroy(novogfx_event_reader_t reader);
+
+// ---------------------------------------------------------------------------
+// Page flip (legacy, non-atomic path)
+// ---------------------------------------------------------------------------
+
+// Requests a page flip on the given CRTC. Equivalent to an atomic commit
+// with only the framebuffer changed and NOVOGFX_COMMIT_PAGE_FLIP_EVENT set.
+novogfx_status_t novogfx_crtc_page_flip(
+    novogfx_crtc_t crtc,
+    novogfx_framebuffer_t fb,
+    unsigned long flags,
+    unsigned long user_data
+);
+
+// ---------------------------------------------------------------------------
+// Memory helpers
+// ---------------------------------------------------------------------------
+
+// Frees a string returned by an API function (e.g. driver_name).
+void novogfx_string_free(DOMString s);
+
+// Frees a buffer returned by an API function.
+void novogfx_buffer_free(void* ptr);

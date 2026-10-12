@@ -1,0 +1,14 @@
+[licenses]
+allow = ["MIT", "Apache-2.0"]
+# libFuzzer's bundled LLVM code uses the NCSA license. This exception is
+# confined to the isolated fuzz harness and its pinned audited version.
+exceptions = [
+    { crate = "libfuzzer-sys@0.4.13", allow = ["MIT", "Apache-2.0", "NCSA"] },
+]
+
+[bans]
+multiple-versions = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

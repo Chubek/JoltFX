@@ -1,5 +1,166 @@
 # Progress
 
+## novogfx third implementation regiment (2026-10-12)
+
+- Completed device-local weak handle interning: overlapping C resource lists
+  share pointer identity and own strong references; the last owner releases
+  the handle. Partial enumeration failures clean up automatically. Fresh owned
+  Device::resource_snapshot queries avoid retaining reference-cache generations.
+- Dumb-buffer unmap now releases mmap, and remap preserves GEM/framebuffer
+  identity and contents. Rust map/unmap APIs retain ownership, fill_solid
+  remaps when necessary, and lifecycle tests cover repeated unmap/remap.
+- Reject cross-device atomic/page-flip handles and C integer narrowing overflow
+  before queuing. Selected plane fields are validated; unselected fields are
+  ignored. Atomic request creation requires enabled atomic capability.
+- Corrected CRTC-sequence parsing: Rust retains the full 64-bit sequence and
+  nanosecond timestamp in a distinct CrtcSequence event. C exposes it as VBLANK
+  rather than a page-flip completion. Both readers use the shared checked
+  parser, discard corrupt records, and clear stale event views on failures.
+- Connector status/current routing and framebuffer getters query live state;
+  owned getter-created CRTC snapshots include modes. C++ batch stages own
+  copied mode names across source destruction and batch copy/move.
+- Versioned high-level crates/CMake/IDL to 0.3.0 (ABI 300), retaining the
+  independent sys version. Added migration notes, C ownership documentation,
+  connector type constants, and a C++ runtime test/Makefile target.
+- Verification completed via proxychains: 67 Rust library tests passed under
+  AddressSanitizer; formatting, all-target/all-feature Clippy with -D warnings,
+  no-default-features build, rustdoc, and production/fuzz dependency audits
+  passed. The updated ASan/coverage event fuzz target processed approximately
+  7.36 million inputs in a 30-second campaign without crashes.
+- C/C++ runtime clients passed on amdgpu /dev/dri/card1, including resource
+  pointer identity, partial-owner destruction, actual mapping residency,
+  remap data preservation, overflow, and foreign-device rejection. Both clients
+  also passed with ASan/UBSan and the linked Rust library ASan-instrumented
+  (Rust itself is not UBSan-instrumented). All five hardware smoke tests passed.
+- CMake release static build/install passed using a proxied Cargo wrapper;
+  a client compiled against installed headers/static library linked and ran.
+- Remaining verification limits: the nonempty C++ TEST_ONLY request reaches
+  the driver but returns PERMISSION_DENIED. Applied modesets, flip completion,
+  and vkms conformance remain unverified. Exact Rust 1.82 mirror installation
+  failed after component download timeouts; exact-MSRV testing remains blocked.
+  Full IDL conformance (including generic buffer ownership), broader typed-ID
+  migration, and privileged modeset coverage remain follow-up work. All changes
+  remain uncommitted and unpushed.
+
+## novogfx second implementation regiment (2026-10-12)
+
+### Proxied verification follow-up
+
+- Retrying toolchain and Cargo tooling downloads with proxychains at the
+  user's request. A temporary config uses SOCKS5 127.0.0.1:30301 because
+  the default 0.0.0.0 endpoint initially refused connections; an HTTPS probe
+  to static.rust-lang.org succeeded through the loopback endpoint.
+- Added novogfx/deny.toml with MIT/Apache-2.0 licenses, duplicate-version
+  rejection, and unknown registry/Git source rejection.
+- Proxied Cargo fetch succeeded for the isolated fuzz workspace, and both
+  targets built. To avoid the tooling install's package-cache lock, build-only
+  checks use a temporary CARGO_HOME with access to the downloaded registry.
+- Built coverage-instrumented ASan libFuzzer binaries using the installed
+  stable compiler with RUSTC_BOOTSTRAP=1. Seeded 30-second smoke campaigns
+  completed without crashes: EDID 4,045,521 executions; events 3,675,122.
+  These are real libFuzzer runs with sancov instrumentation, not corpus-only
+  unit checks. Proxied workspace tests also passed (60 tests).
+- Installed cargo-deny 0.20.2 via proxied Cargo; `cargo deny --all-features
+  check` passed advisories, bans, licenses, and sources with the new policy.
+- Exact Rust 1.82/nightly component downloads stalled on static.rust-lang.org.
+  Retrying 1.82 components from rsproxy.cn, still validating each archive
+  against the hashes in the official Rust distribution manifest. Cargo-fuzz
+  tooling installation continued independently of the completed fuzz runs.
+- Installed cargo-fuzz 0.13.2 via proxied Cargo. Its normal `cargo fuzz run`
+  workflow passed for both EDID and events with 10,000 inputs each, using
+  RUSTC_BOOTSTRAP=1 on the existing stable compiler and the seeded corpus.
+  The targets run with the tool's standard ASan/coverage instrumentation.
+- Audited the isolated fuzz workspace as well. libfuzzer-sys requires NCSA
+  for bundled LLVM code, so fuzz/deny.toml has a version-scoped exception for
+  libfuzzer-sys@0.4.13 and the manifest pins that version. Its advisories,
+  bans, licenses, and sources checks all pass; production policy is unchanged.
+
+- Audited the first implementation against ownership and IDL contracts.
+- Fixed resource-cache dangling borrows after eight hotplug generations;
+  retained snapshots now survive until Device destruction, and invalidation
+  serializes with cache fills. Added a 32-generation allocation-liveness test.
+- Dumb buffers now own a duplicated fd, unwind through Drop exactly once,
+  validate kernel pitch/size/offset before mmap, and enforce fill pixel depth.
+  Added mock lifecycle failure-injection checks for create/map/ADDFB2.
+- Corrected C commit flag translation, invalid flag combinations, atomic
+  property index zero handling, primary-plane FB routing, missing-property
+  errors, disabled MODE_ID, plane update masks/zpos, and enabled atomic caps.
+- Corrected C mode-name representation and current-mode snapshots, marked
+  pointer-taking Rust exports unsafe, retained C reader fds independently,
+  bounded malformed event buffering, and preserved legacy page-flip cookies.
+- Corrected ABI version encoding; moving high-level crates to 0.2.0 for the
+  breaking mode layout and PlaneUpdate field change. MSRV is now honestly
+  declared as 1.82 (unsafe extern blocks); installing that toolchain failed
+  because static.rust-lang.org timed out. Exact-MSRV verification is pending.
+- CMake now links libdrm and installs DSLtk and both library build variants;
+  C++ atomic requests use RAII on error paths.
+- Added all IDL format constants/names, NULL empty resource arrays, the vkms
+  feature gate, isolated EDID/event libFuzzer targets, and full Apache-2.0 text.
+- Verification: 60 Rust library tests passed; the same 60 passed with Rust
+  AddressSanitizer using RUSTC_BOOTSTRAP=1. Formatting, all-target/all-feature
+  Clippy with -D warnings, no-default-features build, and rustdoc passed.
+- C runtime smoke checks passed both without hardware and against amdgpu
+  /dev/dri/card1; the C client also passed with ASan/UBSan instrumentation
+  (the linked Rust shared library was not UBSan-instrumented). C++20 DSLtk
+  instantiation passed. CMake release static build/install passed, and an
+  installed-header/static-library C++ client linked and ran successfully.
+- All five hardware smoke tests passed on /dev/dri/card1. Default card0 is
+  absent, so its five checks skipped. This is amdgpu coverage, not vkms.
+  A nonempty atomic TEST_ONLY modeset reached drmModeAtomicCommit but returned
+  permission denied; actual modesetting and flip completion remain unverified.
+- Blocked checks: cargo-deny is absent; exact Rust 1.82 installation timed out;
+  libFuzzer targets were added but not built/run (nightly/cargo-fuzz unavailable).
+- Remaining conformance work: C resource handles are allocated per snapshot
+  rather than reused across calls; unmap releases the borrowed view while the
+  owner retains its mmap; generic buffer_free is reserved with no owning-buffer
+  producer. Full C ABI conformance, typed IDs throughout high-level APIs, and
+  vkms modeset/flip verification remain follow-up work. README now states these
+  limits instead of claiming exact IDL conformance. Changes remain uncommitted.
+
+## novogfx initial implementation regiment (2026-10-12)
+
+- Scaffolded the full `novogfx/` workspace from `AGENTS.md` §2 (previously only
+  `AGENTS.md`, `DSLtk.hpp`, `NovoGFX-API.idl` existed): `Cargo.toml` workspace,
+  `crates/novogfx-sys` (raw `-ldrm` FFI, `drm`/`drm_mode`/`xf86drm` with no safe
+  abstractions), `novogfx-core` (`Device` with `OwnedFd` + hotplug-invalidated
+  resource cache, `DriverInfo`, `DeviceCaps`, typed `Error`), `novogfx-kms`
+  (`Connector`/`Crtc`/`Encoder`/`Plane`/`Mode`/`Property`/`Edid` with `*Id`
+  newtypes and `&Device` lifetimes), `novogfx-atomic` (`AtomicRequest` builder
+  holding `&mut Device`, `CommitFlags`, `AtomicState`, blobs created/destroyed
+  per-commit), `novogfx-buffer` (`DumbBuffer` CREATE→MAP→mmap→ADDFB2 with unwind
+  and RMFB→munmap→DESTROY Drop, `Framebuffer`, PRIME import/export),
+  `novogfx-event` (non-blocking `EventReader` with partial-read buffering,
+  `Vblank`/`PageFlip`/`Hotplug`), and the `novogfx` facade (`prelude`, pinned
+  versions).
+- Implemented the C ABI in `capi/novogfx-c` (`src/lib.rs`, shim `novogfx-c.rs`)
+  following `NovoGFX-API.idl`: `novogfx.h`, DSLtk-based `novogfx.hpp`
+  (RAII + `operator|` batch DSL), `CMakeLists.txt` (Cargo-built staticlib
+  import). Added `Makefile` (`build`/`test`/`test-all`/`lint`/`fmt`/`doc`/
+  `c-headers`), `examples/` (`enumerate`, `dumb_buffer`, `atomic_modeset`,
+  `page_flip`), `tests/integration/` (`vkms_smoke` + `common`, skips without a
+  device), `README.md`, `CHANGELOG.md`, `LICENSE-MIT`/`LICENSE-APACHE`,
+  `docs/properties.md`.
+- crates.io was throttled (~1 KB/s), so the workspace is intentionally
+  dependency-free (`std` only; hand-rolled flag/error types mirroring
+  `bitflags`/`thiserror` APIs, `OwnedFd`/`AsFd` from `std` instead of `rustix`,
+  direct `-ldrm` link instead of `pkg-config` crate). Documented in
+  `Cargo.toml`; migrating to the external crates later is drop-in.
+- Found and fixed a segfault on real hardware: `xf86drm::drmVersion` used
+  `usize` for `name_len`/`date_len`/`desc_len`, but `xf86drm.h` declares them
+  `int`. The oversized struct shifted every pointer field and crashed
+  `drmGetVersion` on `/dev/dri/card1` (amdgpu 3.64). Fixed to `c_int` and added
+  a layout regression test (`size 56`, `name` offset 16).
+- Verification (offline, Linux x86-64, system libdrm 2.4.134): `cargo test
+  --workspace --lib` **55/55** pass; `vkms_smoke` **5/5** pass by skip without a
+  device and **5/5** pass against `/dev/dri/card1` (amdgpu: 6 CRTCs, 5
+  connectors, 3 connected, 12 planes after `enable_atomic`); `cargo build
+  --workspace --no-default-features` clean; `cargo fmt --check` clean; `cargo
+  clippy --all-targets -- -D warnings` clean; `cargo doc --no-deps` zero
+  warnings; `gcc -fsyntax-only` and `g++ -std=c++20 -fsyntax-only` accept
+  `novogfx.h`/`novogfx.hpp`; `make c-headers` passes. `cargo deny` not run (tool
+  absent; zero dependencies so licenses/advisories/bans are trivially clean).
+  Every `unsafe` block carries a `// SAFETY:` comment.
+
 ## Vulkan shader cache no longer fails dispatch (2026-10-12)
 
 - Fixed "Vulkan backend execution failed". The GPU path compiles generated GLSL

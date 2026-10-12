@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "crates/novogfx-sys",
+    "crates/novogfx-core",
+    "crates/novogfx-kms",
+    "crates/novogfx-atomic",
+    "crates/novogfx-buffer",
+    "crates/novogfx-event",
+    "crates/novogfx",
+    "capi/novogfx-c",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+
+[workspace.dependencies]
+novogfx-sys = { path = "crates/novogfx-sys", version = "=0.1.0" }
+novogfx-core = { path = "crates/novogfx-core", version = "=0.3.0" }
+novogfx-kms = { path = "crates/novogfx-kms", version = "=0.3.0" }
+novogfx-atomic = { path = "crates/novogfx-atomic", version = "=0.3.0" }
+novogfx-buffer = { path = "crates/novogfx-buffer", version = "=0.3.0" }
+novogfx-event = { path = "crates/novogfx-event", version = "=0.3.0" }
+novogfx = { path = "crates/novogfx", version = "=0.3.0" }
+# NOTE: core workspace is intentionally dependency-free (std only) so it
+# builds offline. Error and flag types are currently hand-written; migrating
+# to external crates requires its own API compatibility review.

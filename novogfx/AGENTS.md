@@ -31,6 +31,12 @@ need direct DRM access without a full graphics stack.
 - **Minimal dependencies.** Core crates must not pull in `udev`, `gbm`,
   `wayland`, or `egl`. Those belong in optional integration crates.
 
+
+### The NovoGFX API
+
+The API that we desire for NovoGFX is demonstrated in `NovoGFX-API.idl`. Even if this is not
+going to be how Rust exposes NovoGFX, the C API *must* follow this interface.
+
 ---
 
 ## 2. Repository Layout
@@ -42,9 +48,11 @@ novogfx/
 ├── README.md
 ├── LICENSE-MIT
 ├── LICENSE-APACHE
+├── Makefile                   # the Makefile for the system, especially the C API that follows `NovoGFX-API.idl`
 ├── capi
 │   ├── novogfx-c/            # the C wrapper
-│   │   ├── novogfx.h
+│   │   ├── novogfx.h        # based on `NovoGFX-API.idl`
+│   │   ├── novogfx.hpp      # a convinience C++ API wich implements a C++-native DSL using `DSLtk.hpp`
 │   │   ├── novogfx-c.rs
 │   │   ├── CMakeLists.txt           # build system for C wrapper
 ├── crates/
@@ -136,7 +144,7 @@ cargo run --example dumb_buffer
 
 # Run integration tests against vkms (requires root or a vkms device)
 sudo modprobe vkms
-cargo test --workspace --test integration -- --test-threads=1
+cargo test -p novogfx --features vkms --test vkms_smoke -- --test-threads=1
 
 # Lints and formatting (must pass before merge)
 cargo fmt --all -- --check
@@ -148,8 +156,8 @@ cargo doc --workspace --no-deps --open
 
 ### Minimum Supported Rust Version (MSRV)
 
-`novogfx` targets **Rust 1.76** or newer (required for `AsFd` ergonomics and
-`OnceCell` in `std`). Bumping MSRV requires a note in `CHANGELOG.md`.
+`novogfx` targets **Rust 1.82** or newer (including unsafe extern blocks).
+Bumping MSRV requires a note in `CHANGELOG.md`.
 
 ---
 
@@ -253,6 +261,8 @@ impl AsFd for Device { /* ... */ }
   `ADDFB2` in that order, and unwinds each step on failure.
 - `Drop` for `DumbBuffer` reverses the order: `RMFB` → `munmap` →
   `DESTROY_DUMB`.
+- `map`/`unmap` retain the framebuffer and GEM handle. `as_mut_slice` is empty
+  while unmapped; `fill_solid` remaps before writing.
 - `DumbBuffer::as_mut_slice()` returns the full mapped region; callers are
   responsible for respecting `pitch` when writing.
 
@@ -262,6 +272,18 @@ impl AsFd for Device { /* ... */ }
   device fd, then parses zero or more `drm_event` structs from the buffer.
 - Partial reads must be buffered and completed on the next call.
 - The reader must never block; callers use `poll`/`epoll` on `Device::as_fd`.
+- Use `parse_events_checked` in readers, reset corrupt pending data, and keep
+  64-bit CRTC-sequence events distinct from page-flip completions.
+
+### C wrapper ownership
+
+- A device-local weak cache interns handles across overlapping resource lists.
+  Each list owns its shared handles; drop the list, not individual borrowed
+  handles. Independent getter-created handles use their documented destructor.
+- Enumeration uses fresh owned `Device::resource_snapshot` lists. Kernel-state
+  getters query live state; mode/string views are immutable handle snapshots.
+- Reject cross-device updates and narrowing overflow before queueing. Only
+  selected plane-update fields may be inspected or converted.
 
 ---
 

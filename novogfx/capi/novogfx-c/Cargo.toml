@@ -1,0 +1,20 @@
+[package]
+name = "novogfx-c"
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+description = "C ABI wrapper for novogfx, following NovoGFX-API.idl."
+repository = "https://github.com/joltfx/novogfx"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+novogfx-sys = { workspace = true }
+novogfx-core = { workspace = true }
+novogfx-kms = { workspace = true }
+novogfx-atomic = { workspace = true }
+novogfx-buffer = { workspace = true }
+novogfx-event = { workspace = true }
+novogfx = { workspace = true }
