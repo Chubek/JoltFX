@@ -1,0 +1,16 @@
+shader Scale {
+    @set(0) @binding(0)
+    storage buffer Data {
+        value: vec4;
+    } data;
+
+    const Factor: float = 2.0;
+
+    fn scale(x: vec4) -> vec4 {
+        return x * Factor;
+    }
+
+    compute(local_size: 1) {
+        data.value = scale(data.value);
+    }
+}

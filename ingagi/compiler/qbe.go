@@ -435,6 +435,9 @@ func (c *qbeFunction) expr(e fe.Expr) qbeValue {
 		return v
 	case *fe.CallExpr:
 		id, ok := e.Fn.(*fe.IdentExpr)
+		if p, qualified := e.Fn.(*fe.PathExpr); qualified {
+			id, ok = &fe.IdentExpr{Name: p.Path.String(), Span: p.Span}, true
+		}
 		if !ok {
 			c.fail(e.Span, "native calls require a function name")
 			return bad

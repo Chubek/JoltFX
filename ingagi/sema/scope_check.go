@@ -50,8 +50,10 @@ func CheckScope(f *fe.File, r *Registry) []Diagnostic {
 			dup("event", d.Name, d.Span)
 		case *fe.ConstDecl:
 			dup("const", d.Name, d.Span)
+			checkExprScope(d.Value, newScope(nil), r, &out)
 		case *fe.ResourceDecl:
 			dup("resource", d.Name, d.Span)
+			checkExprScope(d.Value, newScope(nil), r, &out)
 		case *fe.ShaderDecl:
 			dup("shader", d.Name, d.Span)
 		case *fe.PipelineDecl:
@@ -91,9 +93,23 @@ func checkBlockScope(b *fe.Block, s *scope, r *Registry, out *[]Diagnostic) {
 	if b == nil {
 		return
 	}
+	s = s.child()
+	for _, st := range b.Stmts {
+		if d, ok := st.(*fe.DeclStmt); ok {
+			s.bound[d.Decl.DeclName()] = true
+		}
+	}
 	for _, st := range b.Stmts {
 		checkStmtScope(st, s, r, out)
 	}
+}
+
+func (s *scope) child() *scope {
+	inner := newScope(nil)
+	for k, v := range s.bound {
+		inner.bound[k] = v
+	}
+	return inner
 }
 
 func checkStmtScope(st fe.Stmt, s *scope, r *Registry, out *[]Diagnostic) {
@@ -127,6 +143,7 @@ func checkStmtScope(st fe.Stmt, s *scope, r *Registry, out *[]Diagnostic) {
 		checkBlockScope(st.Body, s, r, out)
 	case *fe.ForStmt:
 		checkExprScope(st.Iter, s, r, out)
+		s = s.child()
 		bindPattern(st.Pat, s)
 		checkBlockScope(st.Body, s, r, out)
 	case *fe.LoopStmt:
@@ -134,17 +151,19 @@ func checkStmtScope(st fe.Stmt, s *scope, r *Registry, out *[]Diagnostic) {
 	case *fe.MatchStmt:
 		checkExprScope(st.X, s, r, out)
 		for _, a := range st.Arms {
-			bindPattern(a.Pat, s)
+			inner := s.child()
+			bindPattern(a.Pat, inner)
 			if a.Guard != nil {
-				checkExprScope(a.Guard, s, r, out)
+				checkExprScope(a.Guard, inner, r, out)
 			}
 			if a.Value != nil {
-				checkExprScope(a.Value, s, r, out)
+				checkExprScope(a.Value, inner, r, out)
 			}
-			checkBlockScope(a.Body, s, r, out)
+			checkBlockScope(a.Body, inner, r, out)
 		}
 	case *fe.ForEachStmt:
 		checkExprScope(st.Iter, s, r, out)
+		s = s.child()
 		for _, b := range st.Bindings {
 			name := b.Alias
 			if name == "" {
@@ -156,7 +175,15 @@ func checkStmtScope(st fe.Stmt, s *scope, r *Registry, out *[]Diagnostic) {
 	case *fe.EmitStmt:
 		checkExprScope(st.Event, s, r, out)
 	case *fe.OnStmt:
+		inner := s.child()
+		inner.bound["entity"] = true
+		checkBlockScope(st.Body, inner, r, out)
+	case *fe.DeferStmt:
 		checkBlockScope(st.Body, s, r, out)
+	case *fe.UnsafeStmt:
+		checkBlockScope(st.Body, s, r, out)
+	case *fe.BreakStmt:
+		checkExprScope(st.Value, s, r, out)
 	case *fe.BindStmt:
 		checkExprScope(st.Iter, s, r, out)
 	case *fe.DeclStmt:
@@ -206,6 +233,9 @@ func checkExprScope(e fe.Expr, s *scope, r *Registry, out *[]Diagnostic) {
 			*out = append(*out, Diagnostic{Sev: Error, Code: "E0102", Msg: "undefined name " + e.Name, Span: e.Span})
 		}
 	case *fe.PathExpr:
+		if len(e.Path.Parts) == 0 {
+			return
+		}
 		head := e.Path.Parts[0].Name
 		if len(e.Path.Parts) == 1 && !s.bound[head] && !globalKnown(head, r) {
 			*out = append(*out, Diagnostic{Sev: Error, Code: "E0102", Msg: "undefined name " + head, Span: e.Span})
@@ -288,17 +318,22 @@ func checkExprScope(e fe.Expr, s *scope, r *Registry, out *[]Diagnostic) {
 	case *fe.MatchExpr:
 		checkExprScope(e.X, s, r, out)
 		for _, a := range e.Arms {
-			bindPattern(a.Pat, s)
+			inner := s.child()
+			bindPattern(a.Pat, inner)
+			checkExprScope(a.Guard, inner, r, out)
 			if a.Value != nil {
-				checkExprScope(a.Value, s, r, out)
+				checkExprScope(a.Value, inner, r, out)
 			}
-			checkBlockScope(a.Body, s, r, out)
+			checkBlockScope(a.Body, inner, r, out)
 		}
 	}
 }
 
 // globalKnown reports module-level names (types, consts, resources…).
 func globalKnown(name string, r *Registry) bool {
+	if isBuiltin(name) {
+		return true
+	}
 	if _, ok := r.Types[name]; ok {
 		return true
 	}

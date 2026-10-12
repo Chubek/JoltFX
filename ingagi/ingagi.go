@@ -5,9 +5,12 @@ package ingagi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 
 	"github.com/Chubek/JoltFX/ingagi/compiler"
 	"github.com/Chubek/JoltFX/ingagi/frontend"
+	"github.com/Chubek/JoltFX/ingagi/module_system"
 	"github.com/Chubek/JoltFX/ingagi/runtime"
 )
 
@@ -33,6 +36,20 @@ func CompileNative(ctx context.Context, source string, options NativeOptions) ([
 	return p.Build(ctx, options)
 }
 
+// CompileNativeFile resolves the source graph before lowering the scalar native
+// subset. Each imported declaration must itself be supported by the backend.
+func CompileNativeFile(ctx context.Context, sources fs.FS, filename string, options NativeOptions) ([]byte, error) {
+	f, err := (&module_system.Loader{FS: sources}).Load(filename)
+	if err != nil {
+		return nil, err
+	}
+	p, err := compiler.EmitQBE(f)
+	if err != nil {
+		return nil, err
+	}
+	return p.Build(ctx, options)
+}
+
 // Compile parses source, lowers it to bytecode and optimizes the resulting
 // module. It does not execute initializers or perform the planned static type
 // analyses. Dynamic names are resolved by the VM, allowing host-function calls.
@@ -46,7 +63,26 @@ func Compile(source string) (*runtime.Module, error) {
 	if len(diagnostics) != 0 {
 		return nil, errors.Join(diagnostics...)
 	}
-	m, errs := runtime.Compile(parsed.File)
+	if len(parsed.File.Imports) > 0 {
+		return nil, fmt.Errorf("ingagi: imports require CompileFile with a module filesystem")
+	}
+	return compileFile(parsed.File)
+}
+
+// CompileFile resolves imports below sources and compiles the dependency graph.
+// filename is an fs.ValidPath, relative to sources. Imported modules initialize
+// once in dependency order and expose their public declarations by namespace.
+func CompileFile(sources fs.FS, filename string) (*runtime.Module, error) {
+	f, err := (&module_system.Loader{FS: sources}).Load(filename)
+	if err != nil {
+		return nil, err
+	}
+	return compileFile(f)
+}
+
+func compileFile(f *frontend.File) (*runtime.Module, error) {
+	var diagnostics []error
+	m, errs := runtime.Compile(f)
 	for _, d := range errs {
 		diagnostics = append(diagnostics, errors.New(d))
 	}

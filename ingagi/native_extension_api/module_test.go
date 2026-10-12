@@ -60,6 +60,16 @@ func TestReentryAndScalarValidation(t *testing.T) {
 	}
 }
 
+func TestRegisterRejectsBuiltinCollision(t *testing.T) {
+	s := New(100)
+	err := s.Register([]Function{{Name: "print", Arity: 0, Call: func([]Value) (Value, error) {
+		return Value{}, nil
+	}}})
+	if ErrorCode(err) != InvalidArgument {
+		t.Fatalf("builtin collision status = %v, err = %v", ErrorCode(err), err)
+	}
+}
+
 func TestConcurrentCloseAndCall(t *testing.T) {
 	s := New(100)
 	defer s.Close()

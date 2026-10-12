@@ -16,7 +16,9 @@
   scopes own slots, nil-propagation fixups and loop contexts. Optimizations must
   relocate all entries, branches and deferred-block targets and handle cycles.
 - VM budgets span nested calls; runtime failures must unwind call/operand/iterator
-  stacks. These limits are not a sandbox. Structural module/image validation is
+  stacks. These limits are not a sandbox. Failed module initializers restore the
+  prior VM script state; host/output/world side effects are not rolled back.
+  Reject source/image reload during active execution. Structural validation is
   in `runtime/validate.go` and `runtime/aot.go`; full stack/type verification is
   pending. Check counts before allocating, relative to the activation's stack
   base. Enforce frame limits before growing locals or padding missing arguments.
@@ -44,7 +46,17 @@
   gate and test failed reloads and callback lifetimes.
 - `compiler/targets/*.sexp` are schema-v1 metadata, embedded and validated by
   the compiler. Only IngagiVM/QBE are implemented; a planned descriptor is not
-  a working emitter. Most semantic passes and shader emitters remain unfinished.
+  a working emitter. Sema implements scope, syntax, gradual types, ECS, shader,
+  import, logic and constant-overflow checks; security/taint remain unavailable.
+- `module_system.Loader` resolves imports below an explicit fs.FS, deduplicates
+  dependency units and qualifies an owned AST while preserving lexical bindings.
+  Keep qualified names through struct/ECS lowering. CLI file commands share this
+  resolver; source-only embedding must reject unresolved imports.
+- `shader.CompileGLSL` lowers an explicit GPU subset to GLSL 450;
+  `CompileSPIRV` uses a context-bounded glslangValidator process. Test the emitted
+  vertex/fragment/compute binaries with spirv-val when available. GPU execution
+  and other shader emitters remain unfinished; don't mark renderer adapters as
+  implemented solely because shader artifacts can be generated.
 - Standalone embedding checks: configure/build `ingagi/CMakeLists.txt`, then run
   CTest. Optional D/Rust/Python/Java smoke tests run when compilers are available.
   Read `README.md` and `native_extension_api/README.md` before describing support.

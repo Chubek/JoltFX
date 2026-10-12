@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/Chubek/JoltFX/ingagi"
 	rt "github.com/Chubek/JoltFX/ingagi/runtime"
@@ -13,6 +14,17 @@ func TestNativeEmbedding(t *testing.T) {
 	data, err := ingagi.CompileNative(context.Background(), `fn main() -> i64 { return 42; }`, ingagi.NativeOptions{Emit: "qbe"})
 	if err != nil || !strings.Contains(string(data), "export function l $ingagi_entry") {
 		t.Fatalf("got %s, %v", data, err)
+	}
+}
+
+func TestNativeImports(t *testing.T) {
+	fs := fstest.MapFS{
+		"main.ing": {Data: []byte(`import lib; fn main() -> i64 { return lib::twice(21); }`)},
+		"lib.ing":  {Data: []byte(`public fn twice(x: i64) -> i64 { return x * 2; }`)},
+	}
+	data, err := ingagi.CompileNativeFile(context.Background(), fs, "main.ing", ingagi.NativeOptions{Emit: "qbe"})
+	if err != nil || !strings.Contains(string(data), "call $ig_fn_0(l 21)") {
+		t.Fatalf("%s: %v", data, err)
 	}
 }
 

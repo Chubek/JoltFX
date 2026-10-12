@@ -1,5 +1,4 @@
-// Package sema provides Ingagi's draft scope analysis and symbol registry.
-// Other planned analyses are explicitly reported as unavailable when requested.
+// Package sema provides Ingagi's static analyses and symbol registry.
 // Passes never mutate the tree.
 package sema
 
@@ -132,7 +131,11 @@ func BuildRegistry(f *fe.File) *Registry {
 			r.Types[d.Name] = td
 			r.Events[d.Name] = d.Span
 		case *fe.FnDecl:
-			r.Funcs[d.Name] = &FuncSig{Params: len(d.Args), Span: d.Span}
+			r.Funcs[d.Name] = &FuncSig{Params: len(d.Args), Ret: typeName(d.Ret), Span: d.Span}
+		case *fe.ExternDecl:
+			for _, fn := range d.Funcs {
+				r.Funcs[fn.Name] = &FuncSig{Params: len(fn.Args), Ret: typeName(fn.Ret), Span: fn.Span}
+			}
 		case *fe.ConstDecl:
 			r.Consts[d.Name] = d.Span
 		case *fe.ResourceDecl:
@@ -162,7 +165,11 @@ func BuildRegistry(f *fe.File) *Registry {
 func typeName(t fe.Type) string {
 	switch t := t.(type) {
 	case *fe.TypeName:
-		return t.Path.Last()
+		name := t.Path.String()
+		if t.Optional {
+			name += "?"
+		}
+		return name
 	case *fe.ArrayType:
 		return "[" + typeName(t.Elem) + "]"
 	case *fe.RefType:
@@ -185,11 +192,10 @@ type Options struct {
 	NoSyntax, NoLogic, NoOverflow, NoSecurity, NoTaint bool
 }
 
-// DefaultOptions enables implemented passes. The zero Options value also
-// requests planned passes; Check reports those as unavailable, not successful.
+// DefaultOptions enables every built-in analysis. Security and taint findings
+// are intentionally advisory/error diagnostics rather than a sandbox claim.
 func DefaultOptions() Options {
-	return Options{NoImport: true, NoType: true, NoECS: true, NoShader: true,
-		NoSyntax: true, NoLogic: true, NoOverflow: true, NoSecurity: true, NoTaint: true}
+	return Options{}
 }
 
 // Check runs the selected passes and returns merged diagnostics.
@@ -202,14 +208,14 @@ func Check(f *fe.File, o Options) []Diagnostic {
 	for _, pass := range []struct {
 		name     string
 		disabled bool
+		check    func(*fe.File, *Registry) []Diagnostic
 	}{
-		{"syntax", o.NoSyntax}, {"type", o.NoType}, {"ECS", o.NoECS},
-		{"shader", o.NoShader}, {"imports", o.NoImport}, {"logic", o.NoLogic},
-		{"overflow", o.NoOverflow}, {"security", o.NoSecurity}, {"taint", o.NoTaint},
+		{"syntax", o.NoSyntax, CheckSyntax}, {"type", o.NoType, CheckType}, {"ECS", o.NoECS, CheckECS},
+		{"shader", o.NoShader, CheckShader}, {"imports", o.NoImport, CheckImport}, {"logic", o.NoLogic, CheckLogic},
+		{"overflow", o.NoOverflow, CheckOverflow}, {"security", o.NoSecurity, CheckSecurity}, {"taint", o.NoTaint, CheckTaint},
 	} {
 		if !pass.disabled {
-			out = append(out, Diagnostic{Sev: Error, Code: "E0001",
-				Msg: pass.name + " analysis is not implemented"})
+			out = append(out, pass.check(f, r)...)
 		}
 	}
 	return out

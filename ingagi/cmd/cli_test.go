@@ -17,6 +17,8 @@ func TestCLI(t *testing.T) {
 	}{
 		{"run", `fn main() { print("hello"); return 42; }`, []string{"run"}, 0, "hello\n42\n", ""},
 		{"check does not execute", `fn main() { print("unexpected"); }`, []string{"check"}, 0, "", ""},
+		{"check types", `fn main() -> i64 { return "wrong"; }`, []string{"check"}, 1, "", "E0201"},
+		{"check names", `fn main() { return missing; }`, []string{"check"}, 1, "", "E0102"},
 		{"dump", `fn main() { return 42; }`, []string{"dump"}, 0, "push_int 42", ""},
 		{"parse error", `fn main( {`, []string{"run"}, 1, "", "sample.ing: 1:"},
 		{"compile error", `fn main() { break; }`, []string{"run"}, 1, "", "break outside loop"},
@@ -41,6 +43,53 @@ func TestCLI(t *testing.T) {
 				t.Fatalf("unexpected diagnostic %q", diag.String())
 			}
 		})
+	}
+}
+
+func TestCLIImports(t *testing.T) {
+	dir := t.TempDir()
+	main, dep := filepath.Join(dir, "main.ing"), filepath.Join(dir, "dep.ing")
+	if err := os.WriteFile(main, []byte(`import dep; fn main() -> i64 { return dep::value(); }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dep, []byte(`public fn value() -> i64 { return 42; }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range []string{"check", "run"} {
+		var out, diag bytes.Buffer
+		if code := runCLI([]string{cmd, main}, &out, &diag); code != 0 || diag.Len() != 0 {
+			t.Fatalf("%s: %d, %s", cmd, code, &diag)
+		}
+		if cmd == "run" && out.String() != "42\n" {
+			t.Fatal(out.String())
+		}
+	}
+}
+
+func TestShaderCLI(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "shader.ing"), filepath.Join(dir, "shader.comp")
+	if err := os.WriteFile(src, []byte(`shader S { compute(local_size: 1) {} }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	args := []string{"shader", "-emit", "glsl", "-o", dst, src}
+	if code := runCLI(args, &out, &diag); code != 0 {
+		t.Fatalf("%d: %s", code, &diag)
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil || !bytes.Contains(data, []byte("void main()")) {
+		t.Fatalf("%s: %v", data, err)
+	}
+	if err := os.WriteFile(src, []byte(`shader S { compute { defer {} } }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if code := runCLI(args, &out, &diag); code != 1 {
+		t.Fatalf("%d: %s", code, &diag)
+	}
+	after, err := os.ReadFile(dst)
+	if err != nil || !bytes.Equal(data, after) {
+		t.Fatal("failed shader build replaced artifact")
 	}
 }
 

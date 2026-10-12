@@ -811,6 +811,9 @@ func (r *aotReader) readValueMap() (map[string]Value, error) {
 
 // LoadDecoded installs a decoded image without running <init>.
 func (vm *VM) LoadDecoded(d *Decoded) error {
+	if vm.frames.depth() != 0 {
+		return runtimeErrorf("cannot reload during execution")
+	}
 	if d == nil {
 		return fmt.Errorf("ingagi: nil image")
 	}

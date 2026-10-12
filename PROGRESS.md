@@ -1,5 +1,40 @@
 # Progress
 
+## Ingagi full implementation effort (2026-10-12)
+
+- Confirmed requested scope: all documented features, including language/module
+  tooling, analyses, native/shader targets and engine integration.
+- Audited current implementation: imports and shader packages contain empty
+  stubs; nine semantic passes are unavailable; ten target descriptors are planned.
+- Baseline Go suite passes with GOROOT=/usr/lib/go and build cache/temp files
+  under /tmp/opencode (the system partition has no free space).
+- Implementing module resolution/linkage first, with executable regression tests.
+- Added filesystem-backed module resolution, dependency deduplication/cycle checks,
+  public exports, namespace qualification and lexical binding preservation.
+  CompileFile/CompileNativeFile and CLI file commands share the resolver.
+- Fixed qualified expressions in call arguments and namespace loss in struct,
+  event and ECS lowering; QBE now accepts resolved qualified scalar calls.
+- Implemented seven formerly unavailable passes: gradual types, syntax, imports,
+  ECS/query/system-order checks, shader/pipeline checks, control flow and constant
+  integer overflow. Fixed scope leaks across branches/loops/match arms and added
+  missing deferred/unsafe block traversal. CLI check runs available passes.
+- Made source reload transactional for VM script state on initializer failure;
+  source/image reload during execution is rejected. World/output/callback effects
+  remain externally visible.
+- Added GLSL 450 lowering and context-bounded glslang SPIR-V compilation, exposed
+  through CLI shader artifacts. Real vertex/fragment/compute binaries pass
+  spirv-val --target-env vulkan1.1. Unsupported syntax is diagnosed.
+- Full requested scope is still in progress: security/taint analysis, full image
+  stack/type verification, remaining shader languages/stages, renderer/native/JIT
+  adapters, aggregate C marshalling and desktop integration remain unimplemented.
+- Verification: portable CGO_ENABLED=0, race-detector and AddressSanitizer Go
+  suites passed; go vet and git diff --check passed. Native NovoParse suite and
+  deterministic grammar regeneration checks passed. Standalone CMake build and
+  all six available CTest checks passed (C, C++, Go, Python, Rust, D); Java's
+  optional compiler was unavailable. QBE/Keystone machine-execution tests remain
+  skipped without their required environment/library; imported native calls are
+  covered at QBE IL lowering. No C ABI layouts or statuses were changed.
+
 ## novogfx third implementation regiment (2026-10-12)
 
 - Completed device-local weak handle interning: overlapping C resource lists

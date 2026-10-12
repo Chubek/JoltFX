@@ -62,7 +62,7 @@ func (c *Compiler) compileExpr(e fe.Expr) {
 		c.compileExpr(e.Count)
 		c.b.Emit(OpMakeArrayRepeat, 0, 0)
 	case *fe.StructExpr:
-		tn := e.Type.Last()
+		tn := e.Type.String()
 		for _, f := range e.Fields {
 			c.b.Emit(OpPushString, 0, c.pool.InternString(f.Field))
 			if f.Value != nil {

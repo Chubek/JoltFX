@@ -133,6 +133,24 @@ func validName(name string) bool {
 	return true
 }
 
+// The VM resolves builtins before registered host functions. Rejecting these
+// names during registration prevents a native callback from being silently
+// shadowed and keeps ABI behavior independent of load order.
+func reservedName(name string) bool {
+	switch name {
+	case "print", "len", "type", "keys", "push", "pop", "range", "str",
+		"int", "float", "assert", "sin", "cos", "tan", "sqrt", "exp", "log",
+		"floor", "ceil", "abs", "min", "max", "pow", "vec2", "vec3", "vec4",
+		"quat", "mat4_identity", "mat4_translate", "mat4_scale", "mat4_rotate",
+		"mat4_perspective", "mat4_lookat", "dot", "cross", "normalize", "lerp",
+		"spawn", "despawn", "add_component", "remove_component", "has_component",
+		"get_component", "set_resource", "get_resource", "set_parent", "get_parent":
+		return true
+	default:
+		return false
+	}
+}
+
 // Register copies a module's descriptors and validates the entire batch before
 // installing anything. Closures/callback code must remain alive until Close.
 func (s *Session) Register(functions []Function) error {
@@ -146,7 +164,7 @@ func (s *Session) Register(functions []Function) error {
 	seen := map[string]bool{}
 	for _, fn := range functions {
 		_, exists := s.functions[fn.Name]
-		if !validName(fn.Name) || fn.Call == nil || fn.Arity > MaxArgs || exists || seen[fn.Name] {
+		if !validName(fn.Name) || reservedName(fn.Name) || fn.Call == nil || fn.Arity > MaxArgs || exists || seen[fn.Name] {
 			return fail(InvalidArgument, "invalid or duplicate function: "+fn.Name)
 		}
 		seen[fn.Name] = true

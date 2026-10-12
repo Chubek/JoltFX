@@ -38,7 +38,7 @@ func (c *Compiler) compilePrefab(e *fe.EntityDecl) {
 	for _, a := range e.Attachments {
 		c.b.Emit(OpLoadLocal, int32(wslot), 0)
 		c.b.Emit(OpLoadLocal, int32(eslot), 0)
-		c.b.Emit(OpPushString, 0, c.pool.InternString(a.Type.Last()))
+		c.b.Emit(OpPushString, 0, c.pool.InternString(a.Type.String()))
 		for _, in := range a.Inits {
 			c.b.Emit(OpPushString, 0, c.pool.InternString(in.Field))
 			if in.Value != nil {
@@ -47,7 +47,7 @@ func (c *Compiler) compilePrefab(e *fe.EntityDecl) {
 				c.compileIdentLoad(in.Field, in.Span)
 			}
 		}
-		c.b.Emit(OpMakeStruct, int32(len(a.Inits)), c.pool.InternString(a.Type.Last()))
+		c.b.Emit(OpMakeStruct, int32(len(a.Inits)), c.pool.InternString(a.Type.String()))
 		c.b.Emit(OpCall, 4, c.pool.InternString("add_component"))
 		c.b.Emit(OpPop, 0, 0)
 	}

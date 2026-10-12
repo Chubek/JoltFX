@@ -457,10 +457,10 @@ func (c *Compiler) compileBind(s *fe.BindStmt) {
 	c.b.Emit(OpPushString, 0, c.pool.InternString(s.Pipeline))
 	c.b.Emit(OpPushString, 0, c.pool.InternString(s.Stage))
 	for _, q := range s.With {
-		c.b.Emit(OpPushString, 0, c.pool.InternString(q.Type.Last()))
+		c.b.Emit(OpPushString, 0, c.pool.InternString(q.Type.String()))
 	}
 	for _, q := range s.Without {
-		c.b.Emit(OpPushString, 0, c.pool.InternString(q.Type.Last()))
+		c.b.Emit(OpPushString, 0, c.pool.InternString(q.Type.String()))
 	}
 	c.b.EmitB(OpBind, int32(len(s.With)), int32(len(s.Without)), 0)
 }
@@ -496,7 +496,7 @@ func (c *Compiler) compileOn(s *fe.OnStmt) {
 	case "set":
 		kind = 2
 	}
-	c.b.Emit(OpObserve, kind, c.pool.InternString(s.Comp.Last()))
+	c.b.Emit(OpObserve, kind, c.pool.InternString(s.Comp.String()))
 }
 
 func boolToI(b bool) int32 {

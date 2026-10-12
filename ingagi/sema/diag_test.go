@@ -14,14 +14,8 @@ func TestAvailablePasses(t *testing.T) {
 	if ds := Check(r.File, DefaultOptions()); len(ds) != 0 {
 		t.Fatal(ds)
 	}
-	ds := Check(r.File, Options{})
-	if len(ds) != 9 || !HasErrors(ds) {
-		t.Fatalf("missing unavailable-pass errors: %v", ds)
-	}
-	for _, d := range ds {
-		if d.Code != "E0001" {
-			t.Fatalf("unexpected diagnostic: %v", d)
-		}
+	if ds := Check(r.File, Options{}); len(ds) != 0 {
+		t.Fatalf("unexpected diagnostics from complete pass set: %v", ds)
 	}
 }
 

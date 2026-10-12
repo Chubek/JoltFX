@@ -2,8 +2,9 @@
 
 Ingagi is a Go-hosted scripting-language prototype for JoltFX's game-engine
 workspace. Its language foundation is `frontend/Ingagi.ebnf`. This snapshot has
-a parser/AST, bytecode compiler and VM, a typed scalar QBE native backend, an ECS
-package, native math bridges, and a CLI. It is not yet connected to the desktop
+a parser/AST, bytecode compiler and VM, module loader, gradual static analyses,
+a typed scalar QBE native backend, GLSL/SPIR-V shader lowering, an ECS package,
+native math bridges, and a CLI. It is not yet connected to the desktop
 game-engine tab.
 
 ## Build and run
@@ -20,8 +21,11 @@ GOROOT=/usr/lib/go go run ./cmd dump examples/closures.ing
 `run` prints script output and then a non-null return value. Options precede the
 file: `run -entry main -budget 1000000 FILE`. The budget applies separately to
 initialization and the entry call, including their nested calls. Zero disables
-the instruction limit. `check` checks parsing and bytecode lowering; it is not
-a full static type checker and does not execute the module. `dump` prints
+the instruction limit. `check` resolves imports and checks scope, statically
+known types, declaration constraints, control flow, constant integer arithmetic,
+ECS queries/system ordering and shader/pipeline references, then checks bytecode
+lowering. Dynamic values and unknown host signatures aren't fully type-verified.
+It does not execute the module. `dump` prints
 optimized bytecode. Exit codes are 0 for success, 1 for input/compilation/runtime
 errors, and 2 for CLI usage errors.
 
@@ -41,8 +45,11 @@ Native `i64` uses signed 64-bit two's-complement arithmetic; add/subtract/multip
 wrap. Division by zero, division/remainder of INT64_MIN by -1, and shifts outside
 0–63 trap. `bool` uses a normalized 32-bit C ABI integer. Native code has no VM
 instruction budget or runtime-error object. Closures, floating-point types,
-aggregates, ECS/shader operations, globals, imports and external host calls are
+aggregates, ECS/shader operations, globals and external host calls are
 not yet lowered by this backend.
+
+The CLI and `CompileNativeFile` resolve imported scalar functions before native
+lowering. Every declaration in the dependency graph must fit the native subset.
 
 Artifacts:
 
@@ -151,6 +158,32 @@ reserved-word handling and complete grammar parity remain follow-up work.
 
 ## Embed in Go
 
+### Source modules
+
+`ingagi.CompileFile(sources fs.FS, filename string)` resolves imports and compiles
+an owned, namespaced source graph. `a::b` resolves to `a/b.ing` below the supplied
+filesystem. An explicit `module` declaration must match the imported path.
+Imported modules expose `public` declarations; root declarations retain their
+original names. Cycles, missing files, duplicate aliases, symbol conflicts and
+references to private declarations produce diagnostics. Dependencies are included
+once in dependency order, including diamond imports. Imports can be aliased:
+
+```ingagi
+import math as m;
+fn main() { return m::twice(21); }
+```
+
+```go
+module, err := ingagi.CompileFile(os.DirFS("scripts"), "main.ing")
+```
+
+CLI `run`, `check`, `dump`, `build` and `shader` use the input file's directory as
+the module filesystem root. `Compile(source)` requires import-free source and
+reports unresolved imports rather than silently ignoring them. The C embedding
+ABI still accepts source strings only and provides no filesystem resolver.
+
+### VM embedding
+
 ```go
 import (
     "github.com/Chubek/JoltFX/ingagi"
@@ -198,8 +231,10 @@ environments. Named function closures remain supported. Object alias identity,
 world state and dynamic observer registrations are not preserved by v1.
 
 Reload replaces globals, arities and optimization profiles/caches while retaining
-host registrations and the injected ECS world. An initializer failure is still
-non-transactional; structural rejection happens before installation.
+host registrations and the injected ECS world. Validation or initializer failure
+restores the previous module and script state. Output, host callback effects and
+ECS world mutations aren't rolled back. Module/image reload during an active
+invocation is rejected.
 
 Robustness tests include saved fuzz inputs plus decoder, parser and expression
 fuzz targets. Short development checks from `ingagi/`:
@@ -249,14 +284,51 @@ uses this gate; its architecture-specific checks remain in the native builder.
   so this bridge uses scalar linear algebra, not hardware SIMD. Go implements
   the remaining scalar vector/quaternion operations. Native and portable math
   are compared against reference results, including tails and in-place buffers.
-- `sema.DefaultOptions()` enables the draft scope pass. Requesting any of the
-  nine unimplemented passes returns `E0001`; none silently reports success.
-- Shader and pipeline syntax/metadata exist; shader code generation and GPU
-  execution remain placeholders. QBE is the implemented scalar native backend;
-   other target descriptors describe planned implementations.
+- `sema.DefaultOptions()` enables scope, syntax, gradual type, ECS, shader,
+  import, control-flow and constant-overflow checks. Checks use known annotations
+  and inferred scalar/aggregate types; they don't implement generic
+  monomorphization, complete nominal/width checking or dynamic host signatures.
+  Security and taint passes still return `E0001` when explicitly requested.
+- Standalone GLSL/SPIR-V shader lowering supports the subset described below.
+  GPU dispatch, additional shader languages and renderer adapters remain pending.
+  QBE is the implemented scalar native backend; other target descriptors still
+  describe planned adapters rather than claiming GPU integration.
 - Bytecode image serialization is experimental. Full bytecode stack/type verification,
-  transactional reload, comprehensive static analysis, module imports, broader native/JIT targets,
-   aggregate/resource C ABI marshalling and desktop wiring remain unfinished.
+  comprehensive static analysis, broader native/JIT targets,
+    aggregate/resource C ABI marshalling and desktop wiring remain unfinished.
+
+## Shader artifacts
+
+`shader.CompileGLSL` emits Vulkan-compatible GLSL 450 for vertex, fragment and
+compute stages. `shader.CompileSPIRV(ctx, declaration, stage, executable)` invokes
+`glslangValidator -V --target-env vulkan1.1` and returns SPIR-V bytes. An empty
+executable selects PATH; the caller's context bounds the compiler process.
+
+```sh
+GOROOT=/usr/lib/go go run ./cmd shader -shader Scale -stage compute \
+  -emit glsl -o /tmp/opencode/scale.comp examples/compute.ing
+GOROOT=/usr/lib/go go run ./cmd shader -shader Scale -stage compute \
+  -emit spirv -o /tmp/opencode/scale.spv examples/compute.ing
+spirv-val --target-env vulkan1.1 /tmp/opencode/scale.spv
+```
+
+The supported subset includes 32-bit scalar/vector/matrix types, structs,
+constants, specialization constants with defaults, helper functions, explicit
+typed locals, arithmetic, calls, indexing/member access, conditionals and loops.
+Uniform/storage buffers and separate texture/sampler resources accept literal
+`@set(N)` and `@binding(N)` attributes. Bindings default to set zero and the
+resource's declaration index; duplicate bindings are rejected. Compute options
+are `local_size` (x), `local_size_x`, `local_size_y`, `local_size_z`, defaulting to
+one. Stage builtins use their GLSL names, such as `gl_GlobalInvocationID` and
+`gl_Position`.
+
+Unsupported host statements, inferred local types, resource/field attributes,
+stage options and shader types fail with source-positioned errors. GLSL emission
+is source lowering; SPIR-V compilation performs downstream GPU type/link checks.
+Geometry/tessellation/mesh/task lowering, stage-interface declarations, storage
+images, GPU execution and WGSL/HLSL/Cg/DXIL/DXBC/SLang emitters remain pending.
+Tests compile vertex/fragment/compute examples and validate their binaries with
+`spirv-val` when both tools are installed.
 
 ## Regenerating the grammar
 

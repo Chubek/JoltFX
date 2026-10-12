@@ -202,7 +202,7 @@ func (p *Parser) parseArg() CallArg {
 		save := p.pos
 		sline, scol := p.line, p.col
 		p.parseIdent()
-		if p.lit(":") {
+		if !p.peekLit("::") && p.lit(":") {
 			v := p.parseExpr()
 			return CallArg{Name: name, Value: v, Span: p.spanFrom(pos, line, col)}
 		}
