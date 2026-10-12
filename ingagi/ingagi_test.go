@@ -2,11 +2,13 @@ package ingagi_test
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/Chubek/JoltFX/ingagi"
+	"github.com/Chubek/JoltFX/ingagi/compiler"
 	rt "github.com/Chubek/JoltFX/ingagi/runtime"
 )
 
@@ -14,6 +16,30 @@ func TestNativeEmbedding(t *testing.T) {
 	data, err := ingagi.CompileNative(context.Background(), `fn main() -> i64 { return 42; }`, ingagi.NativeOptions{Emit: "qbe"})
 	if err != nil || !strings.Contains(string(data), "export function l $ingagi_entry") {
 		t.Fatalf("got %s, %v", data, err)
+	}
+}
+
+func TestJITEmbeddingImports(t *testing.T) {
+	if _, err := ingagi.CompileJIT(context.Background(), "fn broken(", ingagi.NativeOptions{}); err == nil {
+		t.Fatal("accepted malformed source")
+	}
+	if _, err := ingagi.CompileJITFile(context.Background(), fstest.MapFS{}, "missing.ing", ingagi.NativeOptions{}); err == nil {
+		t.Fatal("accepted missing source")
+	}
+	if !compiler.JITAvailable() || os.Getenv("INGAGI_QBE") == "" || os.Getenv("INGAGI_KEYSTONE_LIBRARY") == "" {
+		t.Skip("requires native JIT tools/platform")
+	}
+	sources := fstest.MapFS{
+		"main.ing": {Data: []byte(`import lib; fn main() -> i64 { return lib::twice(21); }`)},
+		"lib.ing":  {Data: []byte(`public fn twice(x:i64) -> i64 { return x*2; }`)},
+	}
+	fn, err := ingagi.CompileJITFile(context.Background(), sources, "main.ing", ingagi.NativeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fn.Close()
+	if got, err := fn.Call(); err != nil || got != 42 {
+		t.Fatalf("%d: %v", got, err)
 	}
 }
 

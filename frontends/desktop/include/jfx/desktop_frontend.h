@@ -35,12 +35,13 @@ typedef enum {
     JFX_DESKTOP_PANEL_ANIMATION,
     JFX_DESKTOP_PANEL_MODELING3D,
     JFX_DESKTOP_PANEL_CREATIVE,
+    JFX_DESKTOP_PANEL_GAME,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 7
+#define JFX_DESKTOP_API_MINOR 8
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -56,8 +57,22 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_ANIMATION,
     JFX_DESKTOP_WORKSPACE_MODELING3D,
     JFX_DESKTOP_WORKSPACE_CREATIVE,
+    JFX_DESKTOP_WORKSPACE_GAME,
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
+
+/* Ingagi workspace, available when built with JFX_INGAGI. Source is bounded to
+ * 16 KiB and import-free. Load is transactional for script state; call invokes
+ * a zero-argument function with a 100,000-instruction/256-frame budget. Each
+ * frontend owns its session/world. Use these APIs on the frontend owner thread.
+ * Output/error strings are borrowed until the next load/call or destruction.
+ * Script print output is discarded by the native embedding ABI. */
+bool jfx_desktop_frontend_game_available(void);
+jfx_result_t jfx_desktop_frontend_game_set_source(jfx_desktop_frontend_t *frontend, const char *source);
+jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *frontend);
+jfx_result_t jfx_desktop_frontend_game_call(jfx_desktop_frontend_t *frontend, const char *entry);
+const char *jfx_desktop_frontend_game_output(const jfx_desktop_frontend_t *frontend);
+const char *jfx_desktop_frontend_game_error(const jfx_desktop_frontend_t *frontend);
 
 jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *frontend,
     jfx_desktop_workspace_t workspace);

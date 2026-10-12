@@ -1,5 +1,92 @@
 # Progress
 
+## Ingagi image descriptors and callable restoration (2026-10-12)
+
+- Continued the existing uncommitted implementation. Added AST-independent
+  descriptor checks for type kinds, duplicate fields/variants, defaults, methods,
+  hook/system/entry references, events and prefab constructor arities.
+- Decode rejects duplicate prefab records and map/struct keys. Both decoded and
+  hand-built snapshots validate object representations, enum variants, closure
+  entries, defaults and cyclic/deep aggregate values before installation.
+- Fixed decoded builtin values retaining nil callable pointers. Image loading
+  resolves standard/registered host callbacks recursively and copies aggregate
+  storage with alias preservation; separate VM loads cannot overwrite each other's
+  callback bindings. Binding failures preserve the previous VM script state.
+- Added regressions for malformed descriptors/values, nested builtin round trips,
+  per-VM host callbacks, cyclic snapshots, invalid defaults and duplicate keys.
+- Standard and CGO-disabled full Go suites pass. Runtime race and ASan suites,
+  go vet, full NovoParse-tagged suite with native/shader tools enabled and
+  deterministic grammar regeneration pass.
+- Full documented scope remains in progress: opcode-level type and enum payload
+  signature verification, GPU execution/resource adapters, wider native types,
+  aggregate C marshalling, additional shader targets/stages, automatic VM tiering
+  and automatic scene-resource associations remain unfinished.
+
+## Ingagi completion continuation (2026-10-12)
+
+- User reconfirmed full documented scope, including planned targets and desktop
+  integration. Baseline Go tests pass; implementation exceeds some stale notes.
+- Added failing verifier regressions and fixed missing conditional target traversal,
+  missing-argument compatibility and deferred operand-stack isolation. Full Go
+  suite passes with these fixes. Dispatch also checks all handler operand reads
+  against the activation base. Fixed distinct-depth '?' sites to use separate
+  return epilogues, with raw/optimized closure/defer regression coverage.
+- Fixed taint declaration-order dependence, lost branch/loop flows, expression
+  short-circuit traversal, aggregate writes and lexical shadow leakage. Expanded
+  security traversal into defaults, extern signatures, entities and shader bodies.
+- Added deterministic standalone WebAssembly binary emission for the QBE scalar
+  subset; exported ingagi_entry, no implicit imports/WASI. Node executes loops,
+  recursion, short-circuit booleans, scopes, arithmetic and deliberate trap tests.
+  CLI/native embedding share the backend selector and filesystem import resolver.
+- Added context-bounded SPIRV-Cross artifact compilation for HLSL, OpenGL/ES GLSL
+  and MSL. HLSL/OpenGL round trips pass glslang/spirv-val; ES syntax validates.
+  Added Naga-based WGSL emission (29.0.4, matching wgpu-native's lockfile); real
+  vertex/fragment/compute WGSL round trips pass Naga and spirv-val. Readable storage
+  images now emit the required rgba32f qualifier, verified with glslang.
+- Desktop API 1.8 adds a Game Engine workspace, bounded .ing source editing/I/O,
+  owned native-ABI sessions, transactional reloads, budgeted entry calls and an
+  engine_time callback. ingagi_tab, creative_tab and workspace_ui_tests pass with
+  JFX_INGAGI=ON. Recovered zero-byte generated objects in the existing build and
+  switched its local linker cache from crashing gold to bfd. mruby was disabled
+  in this local build because its vendor checkout lacks mrb_open_allocf.
+- Before server restart: portable, race and native NovoParse suites and grammar
+  regeneration passed. Sources survived; /tmp/opencode tool builds were lost.
+  Restored tools only for remaining/new checks. Updated support documentation.
+- Full scope remains in progress: full image type/descriptor verification, GPU
+  resource execution/renderer adapters, automatic VM native tiering, broader
+  native types, aggregate C marshalling, remaining shader stages/formats and
+  automatic ECS/scene-resource associations.
+- Resumed verification: expanded source-I/O checks pass with Ingagi disabled and
+  enabled; enabled creative/workspace checks pass. Target-selected WASM CLI output
+  is now covered for wasm32/WASM and the full Go suite passes.
+- Desktop executable smoke exposed Go c-shared's missing SONAME: correcting the
+  imported Linux target to link by name, allowing RUNPATH lookup from any cwd.
+- Added validated scalar engine_scene_* callbacks for shared 3D creation/removal,
+  transform reads/writes, keyframes and sampling. Edits use the shared editor's
+  failure-atomic commands/history; the Game Engine tab previews the shared scene.
+- Scene callback integration, animation sampling, validation and shared undo pass;
+  enabled ingagi/creative/workspace/headless CTests and root-cwd executable smoke
+  pass after correcting the no-SONAME imported-library linkage.
+- Added explicit QBE/Keystone scalar JIT with owned RW-to-RX mappings, a typed
+  eight-i64 trampoline, boolean normalization and serialized Call/Close lifecycle.
+  Real recursion/stack-argument/boolean/lifetime checks pass with restored native
+  tools; all existing QBE/Keystone execution tests pass too. Portable full suite
+  passes. Automatic VM tiering and wider native types remain unfinished.
+- Latest full Go suite passes with QBE/Keystone/SPIRV-Cross/Naga execution enabled;
+  full portable and ASan suites, JIT/compiler race checks and go vet pass. All six
+  standalone embedding checks pass after the Linux library-linkage correction.
+  Expanded desktop integration also covers ECS components carrying scene indices
+  and real Game Engine viewport drawing. Optional-off tests/headless smoke pass;
+  root build restored to Ingagi enabled; its four relevant CTests pass. Added
+  game_scene.ing example; CLI dump verifies its bytecode lowering.
+- The example check exposed zero-progress recovery in entity/system/pipeline
+  bodies, causing unbounded diagnostics on declaration keywords. Added bounded
+  subprocess regressions (four failed before the fix) and guaranteed recovery
+  progress. Corrected a keyword variable in the example. Full standard/portable
+  suites, native NovoParse frontend and ASan frontend checks pass after the fix.
+- Full tagged NovoParse suite and deterministic grammar regeneration passed with
+  native execution enabled before this recovery fix; no grammar artifacts changed.
+
 ## Ingagi full implementation effort (2026-10-12)
 
 - Confirmed requested scope: all documented features, including language/module

@@ -160,12 +160,7 @@ func (c *Compiler) compileHook(sys string, h *fe.SystemHook) {
 	}
 	c.b.Emit(OpPushNil, 0, 0)
 	c.b.Emit(OpReturn, 0, 0)
-	for _, at := range c.nilFix {
-		c.b.Patch(at, c.b.Pos())
-	}
-	c.b.Emit(OpPushNil, 0, 0)
-	c.b.Emit(OpReturn, 0, 0)
-	c.nilFix = nil
+	c.finishNilReturns()
 	c.popScope()
 }
 
@@ -361,13 +356,7 @@ func (c *Compiler) compileFn(d *fe.FnDecl, qual string) {
 		c.b.Emit(OpPushNil, 0, 0)
 	}
 	c.b.Emit(OpReturn, 0, 0)
-	// `?` propagation epilogue.
-	for _, at := range c.nilFix {
-		c.b.Patch(at, c.b.Pos())
-	}
-	c.b.Emit(OpPushNil, 0, 0)
-	c.b.Emit(OpReturn, 0, 0)
-	c.nilFix = nil
+	c.finishNilReturns()
 	c.popScope()
 }
 
@@ -398,12 +387,7 @@ func (c *Compiler) compileLambda(e *fe.LambdaExpr) {
 		c.b.Emit(OpPushNil, 0, 0)
 	}
 	c.b.Emit(OpReturn, 0, 0)
-	for _, at := range c.nilFix {
-		c.b.Patch(at, c.b.Pos())
-	}
-	c.b.Emit(OpPushNil, 0, 0)
-	c.b.Emit(OpReturn, 0, 0)
-	c.nilFix = nil
+	c.finishNilReturns()
 	c.popScope()
 	c.b.Patch(end, c.b.Pos())
 	// Capture in the enclosing frame, including its own captured values.
@@ -411,6 +395,18 @@ func (c *Compiler) compileLambda(e *fe.LambdaExpr) {
 		c.compileIdentLoad(fv, e.Span)
 	}
 	c.b.Emit(OpMakeClosure, int32(len(free)), c.pool.InternString(name))
+}
+
+// finishNilReturns gives each propagation site its own epilogue: '?' can occur
+// at different temporary operand depths, which cannot join at a shared PC.
+// Return discards those temporaries before invoking any deferred blocks.
+func (c *Compiler) finishNilReturns() {
+	for _, at := range c.nilFix {
+		c.b.Patch(at, c.b.Pos())
+		c.b.Emit(OpPushNil, 0, 0)
+		c.b.Emit(OpReturn, 0, 0)
+	}
+	c.nilFix = nil
 }
 
 // freeVars collects identifiers used in e that are declared in enclosing

@@ -21,7 +21,7 @@ import (
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
-		fmt.Fprintln(stderr, "usage: ingagi {run|check|dump} [-entry main] [-budget 1000000] FILE\n       ingagi build [-emit obj|bin|asm|qbe] [-target amd64_sysv] [-entry main] -o OUTPUT FILE\n       ingagi shader [-shader NAME] [-stage compute] [-emit glsl|spirv] -o OUTPUT FILE\n       ingagi targets")
+		fmt.Fprintln(stderr, "usage: ingagi {run|check|dump} [-entry main] [-budget 1000000] FILE\n       ingagi build [-emit obj|bin|asm|qbe|wasm] [-target amd64_sysv|wasm32] [-entry main] -o OUTPUT FILE\n       ingagi shader [-shader NAME] [-stage compute] [-emit glsl|spirv] -o OUTPUT FILE\n       ingagi targets")
 	}
 	if len(args) == 0 {
 		usage()
@@ -52,19 +52,21 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	entry := flags.String("entry", "main", "function to invoke or export")
 	budget := flags.Uint64("budget", 1000000, "instruction limit per VM invocation; 0 means unlimited")
 	var emit, target, output, qbe, keystone string
-	var shaderName, stage, glslang string
+	var shaderName, stage, glslang, spirvCross, naga string
 	if command == "build" {
-		flags.StringVar(&emit, "emit", "obj", "output format: obj, bin, asm, qbe")
-		flags.StringVar(&target, "target", "amd64_sysv", "QBE target")
+		flags.StringVar(&emit, "emit", "", "output format: obj (default), bin, asm, qbe, wasm; wasm32 defaults to wasm")
+		flags.StringVar(&target, "target", "", "QBE architecture (default amd64_sysv), or wasm32")
 		flags.StringVar(&output, "o", "", "output path (required)")
 		flags.StringVar(&qbe, "qbe", "", "QBE executable (default INGAGI_QBE or PATH)")
 		flags.StringVar(&keystone, "keystone", "", "libkeystone.so path (default INGAGI_KEYSTONE_LIBRARY)")
 	}
 	if command == "shader" {
-		flags.StringVar(&emit, "emit", "spirv", "output format: glsl, spirv")
+		flags.StringVar(&emit, "emit", "spirv", "output format: glsl, spirv, hlsl, glsl-opengl, glsl-es, msl, wgsl")
 		flags.StringVar(&shaderName, "shader", "", "shader declaration (required when more than one exists)")
 		flags.StringVar(&stage, "stage", "compute", "shader stage: vertex, fragment, compute")
 		flags.StringVar(&glslang, "glslang", "", "glslangValidator executable")
+		flags.StringVar(&spirvCross, "spirv-cross", "", "SPIRV-Cross executable")
+		flags.StringVar(&naga, "naga", "", "Naga shader compiler executable")
 		flags.StringVar(&output, "o", "", "output path (required)")
 	}
 	if err := flags.Parse(args[1:]); err != nil {
@@ -94,9 +96,6 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	}
 	fail := func(err error) int { fmt.Fprintf(stderr, "%s: %v\n", path, err); return 1 }
 	if command == "shader" {
-		if emit != "glsl" && emit != "spirv" {
-			return fail(fmt.Errorf("unsupported shader artifact %q", emit))
-		}
 		f, err := (&module_system.Loader{FS: os.DirFS(filepath.Dir(path))}).Load(filepath.Base(path))
 		if err != nil {
 			return fail(err)
@@ -113,20 +112,11 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		if selected == nil {
 			return fail(fmt.Errorf("shader %q not found", shaderName))
 		}
-		var data []byte
-		if emit == "glsl" {
-			text, err := shader.CompileGLSL(selected, stage)
-			if err != nil {
-				return fail(err)
-			}
-			data = []byte(text)
-		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			data, err = shader.CompileSPIRV(ctx, selected, stage, glslang)
-			if err != nil {
-				return fail(err)
-			}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		data, err := shader.CompileArtifact(ctx, selected, stage, emit, shader.ToolOptions{GLSLang: glslang, SPIRVCross: spirvCross, Naga: naga})
+		if err != nil {
+			return fail(err)
 		}
 		if err := writeArtifact(output, data); err != nil {
 			return fail(err)

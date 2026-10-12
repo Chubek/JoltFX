@@ -96,5 +96,6 @@ descriptors as well as scalar calls. The package-private `IngagiModule` source
 may be placed in the host's package. CMake runs available language smoke tests;
 absent optional compilers are not downloaded.
 
-This is a functional VM embedding surface. Desktop game-engine tab wiring and
-full engine API/resource marshalling are separate work.
+The desktop Game Engine tab uses this surface with `JFX_INGAGI=ON`, per-frontend
+session ownership and a synchronous `engine_time()` callback. Full engine
+API/resource marshalling remains separate work.

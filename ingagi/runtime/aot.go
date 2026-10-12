@@ -613,6 +613,9 @@ func Decode(data []byte) (*Decoded, error) {
 		return nil, err
 	}
 	for _, p := range prefabs {
+		if _, exists := m.Entities[p]; exists {
+			return nil, fmt.Errorf("ingagi: duplicate prefab %q", p)
+		}
 		m.Entities[p] = nil // marker: prefab entry exists on tape
 	}
 	if m.Shaders, err = r.strs(); err != nil {
@@ -634,7 +637,11 @@ func Decode(data []byte) (*Decoded, error) {
 	if err := Validate(m); err != nil {
 		return nil, fmt.Errorf("ingagi: invalid image: %w", err)
 	}
-	return &Decoded{Module: m, Globals: globals, Defs: defs}, nil
+	d := &Decoded{Module: m, Globals: globals, Defs: defs}
+	if _, _, err := prepareImageValues(d, nil); err != nil {
+		return nil, fmt.Errorf("ingagi: invalid image: %w", err)
+	}
+	return d, nil
 }
 
 // readValue reads one tagged value, bounding nesting depth.
@@ -712,6 +719,9 @@ func (r *aotReader) readValue() (Value, error) {
 			if err != nil {
 				return NilValue, err
 			}
+			if _, exists := m[k]; exists {
+				return NilValue, fmt.Errorf("ingagi: duplicate map key %q", k)
+			}
 			e, err := r.readValue()
 			if err != nil {
 				return NilValue, err
@@ -733,6 +743,9 @@ func (r *aotReader) readValue() (Value, error) {
 			k, err := r.str()
 			if err != nil {
 				return NilValue, err
+			}
+			if _, exists := m[k]; exists {
+				return NilValue, fmt.Errorf("ingagi: duplicate struct field %q", k)
 			}
 			e, err := r.readValue()
 			if err != nil {
@@ -822,6 +835,10 @@ func (vm *VM) LoadDecoded(d *Decoded) error {
 	if err := Validate(d.Module); err != nil {
 		return err
 	}
+	globals, defs, err := prepareImageValues(d, vm)
+	if err != nil {
+		return err
+	}
 	m := d.Module
 	vm.tape = m.Tape
 	vm.funcs = map[string]int{}
@@ -830,7 +847,7 @@ func (vm *VM) LoadDecoded(d *Decoded) error {
 	vm.profiles = map[int]*opProfile{}
 	vm.methods = map[string]string{}
 	vm.types = m.Types
-	vm.defs = d.Defs
+	vm.defs = defs
 	vm.systems = map[string]map[string]int{}
 	vm.evHooks = map[string][]int{}
 	vm.hooksArg = map[int]string{}
@@ -839,7 +856,7 @@ func (vm *VM) LoadDecoded(d *Decoded) error {
 	vm.bindings = nil
 	vm.prefabs = map[string]bool{}
 	vm.globals = map[string]Value{}
-	for k, v := range d.Globals {
+	for k, v := range globals {
 		vm.globals[k] = v
 	}
 	for name, pc := range m.Tape.Entry {

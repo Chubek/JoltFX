@@ -410,6 +410,7 @@ func (p *Parser) parsePipelineDecl(attrs []Attr, vis Visibility, pos, line, col 
 		if p.eof() || p.peekLit("}") {
 			break
 		}
+		memberStart := p.pos
 		w, _ := p.peekIdent()
 		switch {
 		case shaderStages[w]:
@@ -477,6 +478,9 @@ func (p *Parser) parsePipelineDecl(attrs []Attr, vis Visibility, pos, line, col 
 		default:
 			p.fail("expected pipeline member", p.spanAt(p.pos, p.pos))
 			p.skipToBoundary()
+			if p.pos == memberStart && !p.eof() {
+				p.advance(1)
+			}
 		}
 	}
 	if !p.lit("}") {

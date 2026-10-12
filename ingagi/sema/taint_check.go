@@ -19,8 +19,36 @@ import fe "github.com/Chubek/JoltFX/ingagi/frontend"
 //
 // This pass does not claim to be a security boundary; it flags review points.
 func CheckTaint(f *fe.File, r *Registry) []Diagnostic {
+	if r == nil {
+		r = BuildRegistry(f)
+	}
 	a := &taintAnalyzer{reg: r, out: []Diagnostic{}, functionTaints: map[string]bool{}}
 	a.known = taintKnownFunctions(f)
+	// Solve return summaries to a fixed point before reporting. This handles
+	// forward declarations and recursive call graphs without declaration-order
+	// dependence. Summaries only grow, so at most one change per function is needed.
+	for i := 0; i <= len(a.known); i++ {
+		before := 0
+		for _, t := range a.functionTaints {
+			if t {
+				before++
+			}
+		}
+		a.seenFn = nil
+		a.decls(f)
+		a.out = nil
+		a.warned = nil
+		after := 0
+		for _, t := range a.functionTaints {
+			if t {
+				after++
+			}
+		}
+		if before == after {
+			break
+		}
+	}
+	a.seenFn = nil
 	a.decls(f)
 	return a.out
 }
@@ -50,9 +78,18 @@ type taintAnalyzer struct {
 	out            []Diagnostic
 	seenFn         map[string]bool
 	functionTaints map[string]bool
+	warned         map[string]bool
 }
 
 func (a *taintAnalyzer) warn(sp fe.Span, msg string) {
+	if a.warned == nil {
+		a.warned = map[string]bool{}
+	}
+	key := sp.String() + msg
+	if a.warned[key] {
+		return
+	}
+	a.warned[key] = true
 	a.out = append(a.out, Diagnostic{Sev: Warning, Code: "W1001", Msg: "tainted data reaches " + msg, Span: sp})
 }
 
@@ -100,8 +137,17 @@ func taintKnownFunctions(f *fe.File) map[string]*taintFn {
 }
 
 func (a *taintAnalyzer) decls(f *fe.File) {
+	globals := map[string]bool{}
 	for _, d := range f.Decls {
-		a.decl(d, map[string]bool{})
+		switch d := d.(type) {
+		case *fe.ConstDecl:
+			globals[d.Name] = a.expr(d.Value, globals)
+		case *fe.ResourceDecl:
+			globals[d.Name] = a.expr(d.Value, globals)
+		}
+	}
+	for _, d := range f.Decls {
+		a.decl(d, copyTaints(globals))
 	}
 }
 
@@ -171,12 +217,63 @@ func (a *taintAnalyzer) blockHook(h *fe.SystemHook, sys string, outer map[string
 	a.block(h.Body, env)
 }
 
+func copyTaints(env map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(env))
+	for k, v := range env {
+		out[k] = v
+	}
+	return out
+}
+
+func joinTaints(env map[string]bool, branches ...map[string]bool) bool {
+	changed := false
+	for k := range env {
+		for _, b := range branches {
+			if b[k] && !env[k] {
+				env[k] = true
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+func (a *taintAnalyzer) loop(body *fe.Block, cond fe.Expr, env map[string]bool) bool {
+	ret := false
+	for {
+		inner := copyTaints(env)
+		a.expr(cond, inner)
+		ret = a.block(body, inner) || ret
+		if !joinTaints(env, inner) {
+			return ret
+		}
+	}
+}
+
 func (a *taintAnalyzer) block(b *fe.Block, env map[string]bool) bool {
 	if b == nil {
 		return false
 	}
 	ret := false
+	// Restore block-local declarations, including shadowed outer bindings;
+	// assignments to outer locals remain visible to the caller.
+	saved, declared := map[string]bool{}, map[string]bool{}
+	defer func() {
+		for name, existed := range declared {
+			if existed {
+				env[name] = saved[name]
+			} else {
+				delete(env, name)
+			}
+		}
+	}()
 	for _, st := range b.Stmts {
+		if d, ok := st.(*fe.VarDeclStmt); ok {
+			if _, seen := declared[d.Name]; !seen {
+				saved[d.Name], declared[d.Name] = env[d.Name], false
+				_, declared[d.Name] = env[d.Name]
+			}
+		}
 		ret = a.stmt(st, env) || ret
 	}
 	return ret
@@ -195,41 +292,63 @@ func (a *taintAnalyzer) stmt(st fe.Stmt, env map[string]bool) bool {
 		return a.expr(st.Value, env)
 	case *fe.IfStmt:
 		a.expr(st.Cond, env)
-		a.block(st.Then, env)
-		a.block(st.Else, env)
+		x, y := copyTaints(env), copyTaints(env)
+		ret := a.block(st.Then, x)
+		ret = a.block(st.Else, y) || ret
 		if st.ElseIf != nil {
-			return a.stmt(st.ElseIf, env)
+			ret = a.stmt(st.ElseIf, y) || ret
 		}
+		joinTaints(env, x, y)
+		return ret
 	case *fe.WhileStmt:
-		a.expr(st.Cond, env)
-		a.block(st.Body, env)
+		return a.loop(st.Body, st.Cond, env)
 	case *fe.ForStmt:
-		env["__iter_tainted"] = a.expr(st.Iter, env)
-		a.block(st.Body, env)
-		delete(env, "__iter_tainted")
+		t := a.expr(st.Iter, env)
+		inner := copyTaints(env)
+		bindTaintPattern(st.Pat, t, inner)
+		ret := a.loop(st.Body, nil, inner)
+		restorePattern(st.Pat, env, inner)
+		joinTaints(env, inner)
+		return ret
 	case *fe.LoopStmt:
-		a.block(st.Body, env)
+		return a.loop(st.Body, nil, env)
 	case *fe.MatchStmt:
-		a.expr(st.X, env)
+		t := a.expr(st.X, env)
+		ret := false
 		for _, arm := range st.Arms {
-			a.expr(arm.Guard, env)
-			a.expr(arm.Value, env)
-			a.block(arm.Body, env)
+			inner := copyTaints(env)
+			bindTaintPattern(arm.Pat, t, inner)
+			a.expr(arm.Guard, inner)
+			a.expr(arm.Value, inner)
+			ret = a.block(arm.Body, inner) || ret
+			restorePattern(arm.Pat, env, inner)
+			joinTaints(env, inner)
 		}
+		return ret
 	case *fe.DeferStmt:
 		a.block(st.Body, env)
 	case *fe.UnsafeStmt:
-		a.block(st.Body, env)
+		return a.block(st.Body, env)
 	case *fe.ForEachStmt:
 		a.expr(st.Iter, env)
+		inner := copyTaints(env)
 		for _, b := range st.Bindings {
 			name := b.Alias
 			if name == "" {
 				name = b.Name
 			}
-			env[name] = true // world component rows are host data
+			inner[name] = true // world component rows are host data
 		}
-		a.block(st.Body, env)
+		ret := a.loop(st.Body, nil, inner)
+		for _, b := range st.Bindings {
+			name := b.Alias
+			if name == "" {
+				name = b.Name
+			}
+			inner[name] = env[name]
+		}
+		joinTaints(env, inner)
+		return ret
 	case *fe.BindStmt:
 		a.expr(st.Iter, env)
 	case *fe.EmitStmt:
@@ -237,9 +356,9 @@ func (a *taintAnalyzer) stmt(st fe.Stmt, env map[string]bool) bool {
 			a.warn(st.Span, "emit event payload")
 		}
 	case *fe.OnStmt:
-		env["it"] = true // observer receives a component snapshot from the world
-		a.block(st.Body, env)
-		delete(env, "it")
+		inner := copyTaints(env)
+		inner["it"] = true // observer receives a component snapshot from the world
+		a.block(st.Body, inner)
 	case *fe.BreakStmt:
 		a.expr(st.Value, env)
 	case *fe.DeclStmt:
@@ -254,47 +373,69 @@ func (a *taintAnalyzer) expr(e fe.Expr, env map[string]bool) bool {
 		return false
 	}
 	switch e := e.(type) {
-	case *fe.Lit, *fe.PathExpr, *fe.SelfExpr:
+	case *fe.Lit:
 		return false
+	case *fe.PathExpr:
+		return env[e.Path.String()]
+	case *fe.SelfExpr:
+		return env["self"]
 	case *fe.IdentExpr:
 		return env[e.Name]
 	case *fe.UnaryExpr:
 		return a.expr(e.X, env)
 	case *fe.BinaryExpr:
-		return a.expr(e.X, env) || a.expr(e.Y, env)
+		x := a.expr(e.X, env)
+		if e.Op == "&&" || e.Op == "||" {
+			inner := copyTaints(env)
+			y := a.expr(e.Y, inner)
+			joinTaints(env, inner)
+			return x || y
+		}
+		y := a.expr(e.Y, env)
+		return x || y
 	case *fe.AssignExpr:
+		old := false
+		if e.Op != "=" {
+			old = a.expr(e.X, env)
+		}
 		t := a.expr(e.Y, env)
+		t = old || t
 		a.assign(e.X, t, env)
 		return t
 	case *fe.TernaryExpr:
 		a.expr(e.Cond, env)
-		return a.expr(e.Then, env) || a.expr(e.Else, env)
+		x, y := copyTaints(env), copyTaints(env)
+		t, u := a.expr(e.Then, x), a.expr(e.Else, y)
+		joinTaints(env, x, y)
+		return t || u
 	case *fe.CallExpr:
 		return a.call(e, env)
 	case *fe.MemberExpr:
 		return a.expr(e.X, env)
 	case *fe.IndexExpr:
-		return a.expr(e.X, env) || a.expr(e.Index, env)
+		x, y := a.expr(e.X, env), a.expr(e.Index, env)
+		return x || y
 	case *fe.QuestionExpr:
 		return a.expr(e.X, env)
 	case *fe.TupleExpr:
 		t := false
 		for _, x := range e.Elems {
-			t = t || a.expr(x, env)
+			t = a.expr(x, env) || t
 		}
 		return t
 	case *fe.ArrayExpr:
 		t := false
 		for _, x := range e.Elems {
-			t = t || a.expr(x, env)
+			t = a.expr(x, env) || t
 		}
 		return t
 	case *fe.ArrayRepeatExpr:
-		return a.expr(e.Elem, env) || a.expr(e.Count, env)
+		x, y := a.expr(e.Elem, env), a.expr(e.Count, env)
+		return x || y
 	case *fe.StructExpr:
 		t := false
 		for _, f := range e.Fields {
-			t = t || a.expr(f.Value, env)
+			t = a.expr(f.Value, env) || t
 		}
 		return t
 	case *fe.LambdaExpr:
@@ -305,26 +446,71 @@ func (a *taintAnalyzer) expr(e fe.Expr, env map[string]bool) bool {
 		for _, p := range e.Params {
 			inner[p.Name] = false
 		}
-		return a.expr(e.Single, inner) || a.block(e.Body, inner)
+		x, y := a.expr(e.Single, inner), a.block(e.Body, inner)
+		return x || y
 	case *fe.IfExpr:
 		a.expr(e.Cond, env)
-		x := a.blockValue(e.Then, env)
-		y := a.blockValue(e.Else, env)
+		left, right := copyTaints(env), copyTaints(env)
+		x := a.blockValue(e.Then, left)
+		y := a.blockValue(e.Else, right)
 		if e.ElseIf != nil {
-			y = y || a.expr(e.ElseIf, env)
+			y = a.expr(e.ElseIf, right) || y
 		}
+		joinTaints(env, left, right)
 		return x || y
 	case *fe.MatchExpr:
-		a.expr(e.X, env)
+		input := a.expr(e.X, env)
 		t := false
 		for _, arm := range e.Arms {
-			a.expr(arm.Guard, env)
-			t = t || a.expr(arm.Value, env)
-			a.block(arm.Body, env)
+			inner := copyTaints(env)
+			bindTaintPattern(arm.Pat, input, inner)
+			a.expr(arm.Guard, inner)
+			t = a.expr(arm.Value, inner) || t
+			t = a.blockValue(arm.Body, inner) || t
+			restorePattern(arm.Pat, env, inner)
+			joinTaints(env, inner)
 		}
 		return t
 	}
 	return false
+}
+
+func bindTaintPattern(p fe.Pattern, t bool, env map[string]bool) {
+	switch p := p.(type) {
+	case *fe.BindPat:
+		env[p.Name] = t
+	case *fe.TuplePat:
+		for _, e := range p.Elems {
+			bindTaintPattern(e, t, env)
+		}
+	case *fe.ArrayPat:
+		for _, e := range p.Elems {
+			bindTaintPattern(e, t, env)
+		}
+		if p.Rest != "" {
+			env[p.Rest] = t
+		}
+	case *fe.StructPat:
+		for _, f := range p.Fields {
+			if f.Pat == nil {
+				env[f.Field] = t
+			} else {
+				bindTaintPattern(f.Pat, t, env)
+			}
+		}
+	case *fe.OrPat:
+		for _, e := range p.Alts {
+			bindTaintPattern(e, t, env)
+		}
+	}
+}
+
+func restorePattern(p fe.Pattern, outer, inner map[string]bool) {
+	names := map[string]bool{}
+	bindTaintPattern(p, false, names)
+	for name := range names {
+		inner[name] = outer[name]
+	}
 }
 
 // blockValue evaluates a block for taint purposes and returns the taint of its
@@ -334,17 +520,14 @@ func (a *taintAnalyzer) blockValue(b *fe.Block, env map[string]bool) bool {
 	if b == nil {
 		return false
 	}
-	value := false
-	for i, st := range b.Stmts {
-		if i == len(b.Stmts)-1 {
-			if es, ok := st.(*fe.ExprStmt); ok {
-				value = a.expr(es.X, env)
-				continue
-			}
+	copy := *b
+	copy.Stmts = append([]fe.Stmt(nil), b.Stmts...)
+	if n := len(copy.Stmts); n > 0 {
+		if es, ok := copy.Stmts[n-1].(*fe.ExprStmt); ok {
+			copy.Stmts[n-1] = &fe.ReturnStmt{Value: es.X, Span: es.Span}
 		}
-		a.stmt(st, env)
 	}
-	return value
+	return a.block(&copy, env)
 }
 
 func (a *taintAnalyzer) assign(x fe.Expr, t bool, env map[string]bool) {
@@ -352,10 +535,11 @@ func (a *taintAnalyzer) assign(x fe.Expr, t bool, env map[string]bool) {
 	case *fe.IdentExpr:
 		env[x.Name] = t
 	case *fe.MemberExpr:
-		// Field assignment taints the base conservatively.
-		env["__field_tainted"] = env["__field_tainted"] || t
+		// Conservatively taint the actual aggregate, not a synthetic unrelated local.
+		a.assign(x.X, a.expr(x.X, env) || t, env)
 	case *fe.IndexExpr:
-		env["__index_tainted"] = env["__index_tainted"] || t
+		a.expr(x.Index, env)
+		a.assign(x.X, a.expr(x.X, env) || t, env)
 	}
 }
 

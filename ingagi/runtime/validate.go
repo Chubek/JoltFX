@@ -13,7 +13,10 @@ const maxFrameSlots = 65536
 // jump targets leave the code, or whose opcodes have no handler. Those shapes
 // used to panic (index out of range, nil handler call) in the middle of a run;
 // they are rejected here with a located diagnostic before installation. Stack
-// shape, all descriptor semantics and resource consumption are not verified.
+// heights are checked across control-flow joins, and type/engine descriptors
+// are checked for referential integrity: every name a descriptor references
+// (method and hook entries, systems, prefab constructors, event types) must
+// resolve inside the module. Value-level typing remains dynamic at runtime.
 
 // Operand kinds per opcode. The compiler emits these meanings and validation
 // enforces them for every instruction, including ones restored by Decode.
@@ -143,6 +146,9 @@ func Validate(m *Module) error {
 	if err := verifyStackShapes(m); err != nil {
 		return err
 	}
+	if err := verifyDescriptors(m); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -235,7 +241,7 @@ func verifyStackShapes(m *Module) error {
 					return fmt.Errorf("ingagi: entry %q pc %d call has negative arity", name, e.pc)
 				}
 				if callee := m.Tape.Pool.String(int(in.C)); callee != "" {
-					if want, ok := m.Params[callee]; ok && want != int(n) {
+					if want, ok := m.Params[callee]; ok && int(n) > want {
 						return fmt.Errorf("ingagi: entry %q pc %d calls %q with %d args, want %d", name, e.pc, callee, n, want)
 					}
 					pop, push = n, 1
@@ -273,7 +279,9 @@ func verifyStackShapes(m *Module) error {
 			case OpBind:
 				pop = int64(in.A) + int64(in.B) + 3
 			case OpDefer:
-				if err := enqueueStackEdge(m, states, &work, int(in.A), h, name); err != nil {
+				// Return removes its result and discards temporary operands before
+				// executing deferred blocks. Registration-time operands aren't live.
+				if err := enqueueStackEdge(m, states, &work, int(in.A), 0, name); err != nil {
 					return err
 				}
 			case OpEndDefer, OpHalt:
@@ -289,6 +297,11 @@ func verifyStackShapes(m *Module) error {
 			h += push
 			if terminal {
 				continue
+			}
+			if in.Op == OpJumpIfFalse || in.Op == OpJumpIfTrue {
+				if err := enqueueStackEdge(m, states, &work, int(in.A), h, name); err != nil {
+					return err
+				}
 			}
 			if e.pc+1 >= len(m.Tape.Code) {
 				return fmt.Errorf("ingagi: entry %q pc %d %s falls off the tape", name, e.pc, OpName(in.Op))

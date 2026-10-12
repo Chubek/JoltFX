@@ -58,6 +58,10 @@ func (vm *VM) run(pc int, b Budget) (Value, error) {
 			// mutation of the tape from turning into a nil handler panic.
 			return NilValue, vm.fail("unknown opcode %d at pc %d", in.Op, pc)
 		}
+		needed := requiredOperands(in, pool)
+		if needed < 0 || int64(vm.stack.depth()-fr.base) < needed {
+			return NilValue, vm.fail("pc %d %s: stack underflow (need %d, have %d)", pc, OpName(in.Op), needed, vm.stack.depth()-fr.base)
+		}
 		npc, rerr := h(vm, fr, in, pc)
 		if rerr != nil {
 			if len(rerr.Trace) == 0 {

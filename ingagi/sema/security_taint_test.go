@@ -52,3 +52,39 @@ fn main() { let raw = host_read(1); let a = identity(raw); print(a); }
 		t.Fatalf("constant flow was marked tainted: %v", ds)
 	}
 }
+
+func TestTaintFlowRegressions(t *testing.T) {
+	for _, src := range []string{
+		`fn main() { print(fetch()); } fn fetch() { return host_read(); }`,
+		`fn main() { let a = 0; if true { a = host_read(); } else { a = 0; } print(a); }`,
+		`fn main() { let a = [0]; a[0] = host_read(); print(a[0]); }`,
+		`fn main() { let x = host_read(); let a = [x, print(host_read())]; }`,
+		`fn main() { print(fetch()); } fn fetch() { if true { return host_read(); } return 0; }`,
+		`fn main() { let x = 0; let y = 0; while true { x = y; y = host_read(); } print(x); }`,
+		`fn main() { let x = host_read(); false && ((x = 0) == 0); print(x); }`,
+		`fn main() { let x = host_read(); x += (x = 0); print(x); }`,
+	} {
+		r := fe.Parse(src)
+		if !r.OK() {
+			t.Fatal(r.Errors)
+		}
+		if ds := CheckTaint(r.File, BuildRegistry(r.File)); len(ds) == 0 {
+			t.Errorf("lost host flow in %s", src)
+		}
+	}
+}
+
+func TestTaintScopesAndDeclarationOrder(t *testing.T) {
+	for _, src := range []string{
+		`fn read() { return host_read(); } fn main() { let x = 0; { let x = host_read(); } print(x); }`,
+		`fn main() { let x = 0; { let x = host_read(); } print(x); } fn read() { return host_read(); }`,
+	} {
+		r := fe.Parse(src)
+		if !r.OK() {
+			t.Fatal(r.Errors)
+		}
+		if ds := CheckTaint(r.File, BuildRegistry(r.File)); len(ds) != 0 {
+			t.Errorf("block-local taint leaked: %v", ds)
+		}
+	}
+}

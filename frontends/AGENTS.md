@@ -1035,6 +1035,21 @@ Long exports appear frozen without a progress bar and ETA.
 
 For questions about the frontend interface or adding a new frontend, post in `#joltfx-frontend-core`.
 
+### Ingagi Game Engine workspace
+
+Desktop API 1.8 appends Game Engine identifiers and `game_*` APIs. Enable
+`JFX_INGAGI=ON` to link the scalar native embedding ABI. Each frontend owns its
+handle/world, destroys it before frontend state, and provides `engine_time()` via
+a synchronous borrowed-userdata callback. Source is import-free and bounded to
+16 KiB; `.ing` loading validates byte count/NULs before replacement. Load/reload
+preserves the previous VM on compile/initializer failure. Calls are bounded to
+100,000 instructions and 256 frames; results and errors are borrowed strings.
+Keep optional-off builds working and cover lifecycle/budget/reload with
+`ingagi_tab`. engine_scene_* callbacks validate scalar indices/numbers, reacquire
+the shared scene and commit through desktop edits/history. Scene indices shift
+on removal; they are not stable ECS IDs. Game Engine uses the modeling viewport
+for preview/scrubbing. Host edits survive failed script execution/reload.
+
 ### Desktop vector animation
 
 The 2D Animation workspace uses `desktop/src/animation_drawing.h` for its private

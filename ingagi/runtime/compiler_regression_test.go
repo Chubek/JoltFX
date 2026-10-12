@@ -39,6 +39,11 @@ func TestNestedFunctionState(t *testing.T) {
             fn helper() { return 1; }
             return 99;
         }`, 0, true},
+		{"question at distinct operand depths", `fn main() {
+            let a = 1?;
+            defer { assert(true); }
+            return a + null?;
+        }`, 0, true},
 	}
 	for _, tc := range cases {
 		for _, optimized := range []bool{false, true} {

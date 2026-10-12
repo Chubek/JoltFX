@@ -25,6 +25,9 @@
 #include "jfx/jfx_automation.h"
 
 #include "host_window.h"
+#ifdef JFX_DESKTOP_HAVE_INGAGI
+#include "Ingagi-Module.h"
+#endif
 #include "animation_drawing.h"
 #include <new>
 #include "imgui.h"
@@ -190,6 +193,7 @@ struct jfx_desktop_frontend {
     bool show_animation;
     bool show_modeling3d;
     bool show_creative;
+    bool show_game;
     int scene_object,scene_vertex,scene_channel,scene_interpolation;
     int scene_bake_frames;
     int scene_primitive,scene_segments,scene_control,scene_ball,scene_gizmo_axis;
@@ -287,6 +291,12 @@ struct jfx_desktop_frontend {
     int creative_width;
     int creative_height;
     jfx_result_t creative_status;
+
+    uint64_t game_session;
+    char game_source[16384];
+    char game_error[4096];
+    char game_output[128];
+    char game_entry[256];
 
     /* Preview buffers. Allocated once at the preview resolution and reused
      * every frame so playback does not churn the allocator. */
@@ -390,6 +400,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_animation = true;
     frontend->show_modeling3d = true;
     frontend->show_creative = true;
+    frontend->show_game = true;
+    std::snprintf(frontend->game_source, sizeof(frontend->game_source),
+        "// Ingagi game logic. engine_time() reads the shared transport clock.\n"
+        "fn main() { return 42; }\n");
+    std::snprintf(frontend->game_entry, sizeof(frontend->game_entry), "main");
     frontend->scene_bake_frames=60;
     frontend->scene_segments=64;
     frontend->scene_clone_count=5;
@@ -530,6 +545,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
 
 extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
     if (frontend) {
+#ifdef JFX_DESKTOP_HAVE_INGAGI
+        if (frontend->game_session) ingagi_destroy(frontend->game_session, nullptr, 0);
+#endif
         jfx_desktop_window_capture_end(frontend->window); jfx_audio_recording_destroy(frontend->recording);
         close_inspector(frontend); jfx_export_destroy(frontend->export_job); reset_audio(frontend);
         jfx_animation_tab_destroy(frontend->animation_tab);
@@ -570,7 +588,29 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     if (!frontend || !path || !path[0] || std::strlen(path) >= sizeof(frontend->project_path)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
+    char owned_path[kMaxProjectPath];
+    std::memcpy(owned_path, path, std::strlen(path) + 1);
+    path = owned_path;
     if (frontend->recording) return JFX_ERROR_BUSY;
+    if (const char *ext = std::strrchr(path, '.'); ext && std::strcmp(ext, ".ing") == 0) {
+        FILE *file = std::fopen(path, "rb");
+        if (!file) return JFX_ERROR_NOT_FOUND;
+        char source[sizeof(frontend->game_source)];
+        size_t n = std::fread(source, 1, sizeof(source) - 1, file);
+        const bool too_large = std::fgetc(file) != EOF;
+        const bool failed = std::ferror(file) != 0;
+        std::fclose(file);
+        if (too_large || failed || n == 0 || std::memchr(source, 0, n)) return JFX_ERROR_INVALID_ARGUMENT;
+        source[n] = 0;
+        auto result = jfx_desktop_frontend_game_set_source(frontend, source);
+        if (result != JFX_SUCCESS) return result;
+        result = jfx_desktop_frontend_set_workspace(frontend, JFX_DESKTOP_WORKSPACE_GAME);
+        if (result != JFX_SUCCESS) return result;
+        std::snprintf(frontend->project_path, sizeof(frontend->project_path), "%s", path);
+        std::snprintf(frontend->project_input, sizeof(frontend->project_input), "%s", path);
+        std::snprintf(frontend->status, sizeof(frontend->status), "opened %.152s", path);
+        return JFX_SUCCESS;
+    }
     auto synced=native_sync(frontend,true); if (synced!=JFX_SUCCESS) return synced;
     close_inspector(frontend);
     finish_grading(frontend);
@@ -609,7 +649,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
             }
         }
     }
-    std::snprintf(frontend->status, sizeof(frontend->status), "opened %s", path);
+    std::snprintf(frontend->status, sizeof(frontend->status), "opened %.152s", path);
     return JFX_SUCCESS;
 }
 
@@ -750,15 +790,16 @@ namespace {
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
     "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation",
-    "Creative Programming"};
+    "Creative Programming","Game Engine"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION,JFX_DESKTOP_PANEL_MODELING3D,
-    JFX_DESKTOP_PANEL_CREATIVE};
+    JFX_DESKTOP_PANEL_CREATIVE,JFX_DESKTOP_PANEL_GAME};
 
 #include "animation_panel.inc"
 #include "modeling3d_panel.inc"
+#include "ingagi_panel.inc"
 
 /* Creative-sketch headless logic. Sketches run through the Glue compiler and
  * the VM directly (per pixel, explicit bindings), which supports any input
@@ -986,6 +1027,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("2D Animation", nullptr, &frontend->show_animation);
             ImGui::MenuItem("3D Modeling & Animation", nullptr, &frontend->show_modeling3d);
             ImGui::MenuItem("Creative Programming", nullptr, &frontend->show_creative);
+            ImGui::MenuItem("Game Engine", nullptr, &frontend->show_game);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -1040,7 +1082,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
         jfx_desktop_frontend_set_zoom(frontend, next);
     }
-    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE) {
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE && frontend->workspace!=JFX_DESKTOP_WORKSPACE_GAME) {
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -1099,7 +1141,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     frontend->workspace_requested=false;
                 }
                 bool wide=ImGui::GetContentRegionAvail().x>=760;
-                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE;
+                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE || i==JFX_DESKTOP_WORKSPACE_GAME;
                 bool columns=!animation && frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
                 if (columns) {
                     ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
@@ -1124,6 +1166,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_ANIMATION: animation_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_MODELING3D: modeling3d_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_CREATIVE: creative_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_GAME: ingagi_panel(frontend); break;
                     default: break;
                     }
                 }
@@ -1409,13 +1452,204 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative, &f->show_game };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
+
+extern "C" bool jfx_desktop_frontend_game_available(void) {
+#ifdef JFX_DESKTOP_HAVE_INGAGI
+    return true;
+#else
+    return false;
+#endif
+}
+
+extern "C" jfx_result_t jfx_desktop_frontend_game_set_source(jfx_desktop_frontend_t *f, const char *source) {
+    if (!f || !source || !source[0] || std::strlen(source) >= sizeof(f->game_source))
+        return JFX_ERROR_INVALID_ARGUMENT;
+    std::memmove(f->game_source, source, std::strlen(source) + 1);
+    return JFX_SUCCESS;
+}
+
+#ifdef JFX_DESKTOP_HAVE_INGAGI
+static ingagi_status game_time_callback(void *userdata, const ingagi_value *, uint32_t argc,
+    ingagi_value *result, char *, size_t) {
+    if (argc != 0 || !userdata || !result) return INGAGI_INVALID_ARGUMENT;
+    *result = {};
+    result->kind = INGAGI_FLOAT;
+    result->real = static_cast<jfx_desktop_frontend_t *>(userdata)->time_seconds;
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_error(char *error, size_t capacity, const char *message) {
+    if (error && capacity) std::snprintf(error, capacity, "%s", message);
+    return INGAGI_RUNTIME_ERROR;
+}
+
+static bool game_scene_index(const ingagi_value &value, uint32_t &index) {
+    if (value.kind != INGAGI_INT || value.integer < 0 || uint64_t(value.integer) > UINT32_MAX) return false;
+    index = uint32_t(value.integer);
+    return true;
+}
+
+static bool game_scene_number(const ingagi_value &value, double &number) {
+    if (value.kind == INGAGI_INT) number = double(value.integer);
+    else if (value.kind == INGAGI_FLOAT) number = value.real;
+    else return false;
+    return std::isfinite(number);
+}
+
+static ingagi_status game_scene_count(void *userdata, const ingagi_value *, uint32_t argc,
+    ingagi_value *result, char *, size_t) {
+    if (!userdata || !result || argc) return INGAGI_INVALID_ARGUMENT;
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    *result = {};
+    result->kind = INGAGI_INT;
+    result->integer = jfx_scene3d_object_count(jfx_editor_scene3d(f->editor));
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_add(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || argc != 1) return INGAGI_INVALID_ARGUMENT;
+    uint32_t primitive;
+    const char *primitives[] = {"cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule"};
+    if (!game_scene_index(args[0], primitive) || primitive >= sizeof(primitives) / sizeof(primitives[0]))
+        return game_scene_error(error, capacity, "engine_scene_add expects a primitive index from 0 to 6");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto status = jfx_desktop_frontend_edit(f, "3d.add", 32, 0, 0, 0, primitives[primitive]);
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    result->kind = INGAGI_INT;
+    result->integer = jfx_scene3d_object_count(jfx_editor_scene3d(f->editor)) - 1;
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_remove(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || argc != 1) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object;
+    if (!game_scene_index(args[0], object)) return game_scene_error(error, capacity, "invalid scene object index");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto status = jfx_desktop_frontend_edit(f, "3d.remove", object, 0, 0, 0, "");
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_read(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || (argc != 2 && argc != 3)) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object, channel;
+    if (!game_scene_index(args[0], object) || !game_scene_index(args[1], channel) || channel >= 9)
+        return game_scene_error(error, capacity, "invalid scene object/channel index");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto *scene = jfx_editor_scene3d(f->editor);
+    double value;
+    jfx_result_t status;
+    if (argc == 3) {
+        double seconds;
+        if (!game_scene_number(args[2], seconds) || seconds < 0)
+            return game_scene_error(error, capacity, "scene sample time must be finite and nonnegative");
+        float transform[9]{};
+        status = jfx_scene3d_sample(scene, object, seconds, transform);
+        value = transform[channel];
+    } else {
+        jfx_object3d_info_t info{};
+        info.size = sizeof(info);
+        status = jfx_scene3d_object_info(scene, object, &info);
+        value = info.transform[channel];
+    }
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    result->kind = INGAGI_FLOAT;
+    result->real = value;
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_write(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || (argc != 3 && argc != 4)) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object, channel, frame = 0;
+    double value;
+    if (!game_scene_index(args[0], object) || !game_scene_index(args[1], channel) || channel >= 9 ||
+        (argc == 4 && !game_scene_index(args[2], frame)) || !game_scene_number(args[argc - 1], value))
+        return game_scene_error(error, capacity, "invalid scene object/channel/frame or numeric value");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto status = jfx_desktop_frontend_edit(f, argc == 4 ? "3d.key" : "3d.transform", object, channel, frame, value, "");
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    return INGAGI_OK;
+}
+#endif
+
+extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f) {
+    if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+#ifdef JFX_DESKTOP_HAVE_INGAGI
+    if (!f->game_session) {
+        if (ingagi_abi_version() != INGAGI_ABI_VERSION) return JFX_ERROR_VERSION_MISMATCH;
+        auto status = ingagi_create(100000, &f->game_session, f->game_error, sizeof(f->game_error));
+        if (status != INGAGI_OK) return JFX_ERROR_PLUGIN_FAILURE;
+        const ingagi_function functions[] = {
+            {"engine_time", 11, 0, 0, game_time_callback, f},
+            {"engine_scene_count", 18, 0, 0, game_scene_count, f},
+            {"engine_scene_add", 16, 1, 0, game_scene_add, f},
+            {"engine_scene_remove", 19, 1, 0, game_scene_remove, f},
+            {"engine_scene_get", 16, 2, 0, game_scene_read, f},
+            {"engine_scene_sample", 19, 3, 0, game_scene_read, f},
+            {"engine_scene_set", 16, 3, 0, game_scene_write, f},
+            {"engine_scene_key", 16, 4, 0, game_scene_write, f}
+        };
+        const ingagi_module module = {INGAGI_ABI_VERSION, uint32_t(sizeof(functions) / sizeof(functions[0])), functions};
+        status = ingagi_register_module(f->game_session, &module, f->game_error, sizeof(f->game_error));
+        if (status != INGAGI_OK) {
+            ingagi_destroy(f->game_session, nullptr, 0);
+            f->game_session = 0;
+            return JFX_ERROR_PLUGIN_FAILURE;
+        }
+    }
+    auto status = ingagi_load(f->game_session, f->game_source, std::strlen(f->game_source),
+        f->game_error, sizeof(f->game_error));
+    if (status != INGAGI_OK) return status == INGAGI_BUSY ? JFX_ERROR_BUSY : JFX_ERROR_PLUGIN_FAILURE;
+    f->game_output[0] = 0;
+    return JFX_SUCCESS;
+#else
+    std::snprintf(f->game_error, sizeof(f->game_error), "Ingagi is unavailable in this build (JFX_INGAGI=OFF)");
+    return JFX_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+extern "C" jfx_result_t jfx_desktop_frontend_game_call(jfx_desktop_frontend_t *f, const char *entry) {
+    if (!f || !entry || !entry[0] || std::strlen(entry) > 255) return JFX_ERROR_INVALID_ARGUMENT;
+#ifdef JFX_DESKTOP_HAVE_INGAGI
+    if (!f->game_session) return JFX_ERROR_NOT_INITIALIZED;
+    ingagi_value result{};
+    auto status = ingagi_call(f->game_session, entry, std::strlen(entry), nullptr, 0, &result,
+        f->game_error, sizeof(f->game_error));
+    if (status != INGAGI_OK) return status == INGAGI_BUSY ? JFX_ERROR_BUSY : JFX_ERROR_PLUGIN_FAILURE;
+    switch (result.kind) {
+    case INGAGI_NIL: std::snprintf(f->game_output, sizeof(f->game_output), "nil"); break;
+    case INGAGI_BOOL: std::snprintf(f->game_output, sizeof(f->game_output), "%s", result.integer ? "true" : "false"); break;
+    case INGAGI_INT: std::snprintf(f->game_output, sizeof(f->game_output), "%lld", (long long)result.integer); break;
+    case INGAGI_FLOAT: std::snprintf(f->game_output, sizeof(f->game_output), "%.17g", result.real); break;
+    default: return JFX_ERROR_PLUGIN_FAILURE;
+    }
+    return JFX_SUCCESS;
+#else
+    return JFX_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+extern "C" const char *jfx_desktop_frontend_game_output(const jfx_desktop_frontend_t *f) {
+    return f ? f->game_output : "";
+}
+extern "C" const char *jfx_desktop_frontend_game_error(const jfx_desktop_frontend_t *f) {
+    return f ? f->game_error : "";
+}
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative, f->show_game };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
@@ -1472,6 +1706,21 @@ extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->workspace == JFX_DESKTOP_WORKSPACE_GAME) {
+        const char *ext = std::strrchr(path, '.');
+        if (!ext || std::strcmp(ext, ".ing") || std::strlen(path) >= kMaxProjectPath)
+            return JFX_ERROR_INVALID_ARGUMENT;
+        char temporary[kMaxProjectPath + 32];
+        std::snprintf(temporary, sizeof(temporary), "%s.ingagi-tmp", path);
+        FILE *file = std::fopen(temporary, "wbx");
+        if (!file) return JFX_ERROR_NOT_FOUND;
+        size_t n = std::strlen(f->game_source);
+        bool ok = std::fwrite(f->game_source, 1, n, file) == n;
+        if (std::fclose(file) != 0) ok = false;
+        if (ok) ok = std::rename(temporary, path) == 0;
+        if (!ok) { std::remove(temporary); return JFX_ERROR_INVALID_ARGUMENT; }
+        return JFX_SUCCESS;
+    }
     auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
     finish_grading(f);
     char *text = static_cast<char *>(imgui_alloc(JFX_PROJECT_MAX_BYTES, nullptr));

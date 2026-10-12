@@ -124,6 +124,9 @@ func (p *Parser) parseEntityDecl(attrs []Attr, vis Visibility, pos, line, col in
 		}
 		p.fail("expected entity member", p.spanAt(p.pos, p.pos))
 		p.skipToBoundary()
+		if p.pos == mpos && !p.eof() {
+			p.advance(1)
+		}
 	}
 	if !p.lit("}") {
 		p.fail("expected `}`", p.spanAt(p.pos, p.pos))
@@ -218,10 +221,16 @@ func (p *Parser) parseSystemDecl(attrs []Attr, vis Visibility, pos, line, col in
 						d.Vars = append(d.Vars, vd)
 					}
 				}
-				continue
+			} else {
+				p.fail("expected system member", p.spanAt(p.pos, p.pos))
+				p.skipToBoundary()
 			}
+		}
+		// Recovery may stop at an item keyword that is not valid in a system.
+		// Such a boundary must not leave the member loop at the same cursor.
+		if p.pos == mpos && !p.eof() {
 			p.fail("expected system member", p.spanAt(p.pos, p.pos))
-			p.skipToBoundary()
+			p.advance(1)
 		}
 	}
 	if !p.lit("}") {

@@ -1,9 +1,42 @@
 package frontend
 
 import (
+	"context"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
+
+// Run stalled-recovery regressions in bounded child processes: a regression
+// must fail this test rather than exhaust memory in the embedding host.
+func TestDeclarationRecoveryTerminates(t *testing.T) {
+	if source := os.Getenv("INGAGI_RECOVERY_SOURCE"); source != "" {
+		if r := NewParser(source).ParseFile(); r.OK() {
+			t.Fatal("accepted malformed declaration")
+		}
+		return
+	}
+	for _, source := range []string{
+		`entity E { entity }`,
+		`system S { entity }`,
+		`system S { public }`,
+		`pipeline P { entity }`,
+		`fn main() { let entity = 1; print(entity); }`,
+		`fn main() { let entity = spawn(); add_component(entity, "SceneObject", SceneObject { object: 0 }); let link = get_component(entity, "SceneObject"); }`,
+	} {
+		t.Run(source, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDeclarationRecoveryTerminates$")
+			cmd.Env = append(os.Environ(), "INGAGI_RECOVERY_SOURCE="+source, "GOMEMLIMIT=64MiB")
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("recovery failed: %v: %s", err, output)
+			}
+		})
+	}
+}
 
 // Explicit statement terminators follow the language grammar on both parsers.
 func TestStatementTerminators(t *testing.T) {
@@ -102,6 +135,9 @@ func FuzzParse(f *testing.F) {
 	f.Add(`fn main() { let f = |x: i32| { return x?; }; return f(1); }`)
 	f.Add(``)
 	f.Add(`struct P { x: i32; }`)
+	f.Add(`entity E { entity }`)
+	f.Add(`system S { public }`)
+	f.Add(`pipeline P { entity }`)
 	f.Fuzz(func(t *testing.T, src string) {
 		r := Parse(src)
 		// A successful parse must yield a file; a failed one must carry at

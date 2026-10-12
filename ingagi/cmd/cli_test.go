@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -133,5 +134,72 @@ func TestTargetDiscovery(t *testing.T) {
 	}
 	if code := runCLI([]string{"targets", "extra"}, &out, &diag); code != 2 {
 		t.Fatalf("unexpected status %d", code)
+	}
+}
+
+func TestWASMCLIImports(t *testing.T) {
+	dir := t.TempDir()
+	src, dep, dst := filepath.Join(dir, "main.ing"), filepath.Join(dir, "dep.ing"), filepath.Join(dir, "main.wasm")
+	if err := os.WriteFile(src, []byte(`import dep; fn main() -> i64 { return dep::value(); }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dep, []byte(`public fn value() -> i64 { return 42; }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	args := []string{"build", "-emit", "wasm", "-o", dst, src}
+	for _, selection := range [][]string{{"-emit", "wasm"}, {"-target", "wasm32"}, {"-target", "WASM"}} {
+		if code := runCLI(append(append([]string{"build"}, selection...), "-o", dst, src), &out, &diag); code != 0 || diag.Len() != 0 {
+			t.Fatalf("%v: %d: %s", selection, code, &diag)
+		}
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil || len(data) < 8 || string(data[:4]) != "\x00asm" {
+		t.Fatalf("%x: %v", data, err)
+	}
+	if node, err := exec.LookPath("node"); err == nil {
+		result, err := exec.Command(node, "-e", `const fs=require('fs'); const m=new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(process.argv[1]))); if(m.exports.ingagi_entry()!==42n)process.exit(1);`, dst).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v", result, err)
+		}
+	}
+	if err := os.WriteFile(dep, []byte(`public fn value() -> i64 { return missing; }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if code := runCLI(args, &out, &diag); code != 1 {
+		t.Fatalf("%d: %s", code, &diag)
+	}
+	after, err := os.ReadFile(dst)
+	if err != nil || !bytes.Equal(data, after) {
+		t.Fatal("failed WASM build replaced artifact")
+	}
+}
+
+func TestCrossShaderCLI(t *testing.T) {
+	cross := os.Getenv("INGAGI_SPIRV_CROSS")
+	if cross == "" {
+		t.Skip("set INGAGI_SPIRV_CROSS for cross-shader CLI execution")
+	}
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "shader.ing"), filepath.Join(dir, "shader.hlsl")
+	if err := os.WriteFile(src, []byte(`shader S { compute(local_size: 1) {} }`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diag bytes.Buffer
+	args := []string{"shader", "-emit", "hlsl", "-spirv-cross", cross, "-o", dst, src}
+	if code := runCLI(args, &out, &diag); code != 0 {
+		t.Fatalf("%d: %s", code, &diag)
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil || !bytes.Contains(data, []byte("numthreads")) {
+		t.Fatalf("%s: %v", data, err)
+	}
+	args[4] = filepath.Join(dir, "missing-cross")
+	if code := runCLI(args, &out, &diag); code != 1 {
+		t.Fatalf("%d: %s", code, &diag)
+	}
+	after, err := os.ReadFile(dst)
+	if err != nil || !bytes.Equal(data, after) {
+		t.Fatal("failed cross-shader build replaced artifact")
 	}
 }

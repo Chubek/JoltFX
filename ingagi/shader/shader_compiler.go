@@ -26,6 +26,12 @@ var stageNames = map[string]string{
 // optional executable defaults to PATH. Temporary source/artifacts are removed
 // before return. Compiler diagnostics are included in returned errors.
 func CompileSPIRV(ctx context.Context, s *fe.ShaderDecl, stage, executable string) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("ingagi: missing shader build context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	glsl, err := CompileGLSL(s, stage)
 	if err != nil {
 		return nil, err
@@ -190,7 +196,9 @@ func CompileGLSL(s *fe.ShaderDecl, stage string) (string, error) {
 			default:
 				e.fail(r.Span, "unknown storage image access %s", r.Access)
 			}
-			e.line("%s) uniform %s%s %s;", layout, access, typ, e.ident(r.Name, r.Span))
+			// Ingagi's floating storage images have a fixed rgba32f texel format.
+			// Vulkan requires a format qualifier for readable storage images.
+			e.line("%s, rgba32f) uniform %s%s %s;", layout, access, typ, e.ident(r.Name, r.Span))
 		default:
 			e.fail(r.Span, "unsupported resource kind %s", r.Kind)
 		}

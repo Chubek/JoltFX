@@ -3,9 +3,9 @@
 Ingagi is a Go-hosted scripting-language prototype for JoltFX's game-engine
 workspace. Its language foundation is `frontend/Ingagi.ebnf`. This snapshot has
 a parser/AST, bytecode compiler and VM, module loader, gradual static analyses,
-a typed scalar QBE native backend, GLSL/SPIR-V shader lowering, an ECS package,
-native math bridges, and a CLI. It is not yet connected to the desktop
-game-engine tab.
+typed scalar QBE and WebAssembly backends, shader artifact lowering, an ECS
+package, native math bridges, and a CLI. The desktop Game Engine tab uses the
+native embedding ABI when built with `JFX_INGAGI=ON`.
 
 ## Build and run
 
@@ -56,9 +56,13 @@ Artifacts:
 - `-emit qbe`: portable QBE IL, no native tools needed.
 - `-emit asm`: QBE target assembly for `amd64_sysv`, `amd64_apple`, `arm64`,
   `arm64_apple`, or `rv64`. Only assembly generation is tested on non-host targets.
-- `-emit obj` (default): AMD64 ELF relocatable, assembled by **Keystone**, then
+- `-emit obj` (default unless `-target wasm32`/`WASM`): AMD64 ELF relocatable, assembled by **Keystone**, then
   wrapped in ELF by Go. Includes a non-executable-stack annotation.
 - `-emit bin`: position-independent x86-64 machine code, entry at byte zero.
+- `-emit wasm`: standalone WebAssembly 1.0 binary with the same typed scalar
+  subset and arithmetic traps. No external tools, CGO, memory or imports are
+  required. `i64` parameters/results use JavaScript BigInt; `bool` uses normalized
+  i32. Use `-target wasm32` or leave the target unset.
 
 All artifacts export the selected source function as `ingagi_entry` (the binary
 format uses offset zero instead of a symbol). Its parameters and result use that
@@ -121,6 +125,30 @@ section to use native scannerless recognition in this compilation path too.
 For embedding, `ingagi.CompileNative(ctx, source, ingagi.NativeOptions{Emit: "obj"})`
 returns artifact bytes. It does not load or execute them. The context bounds the
 QBE subprocess; Keystone assembly is synchronous.
+
+### Explicit scalar JIT
+
+`CompileJIT` / `CompileJITFile` compile the same typed scalar subset through QBE
+and Keystone and install its position-independent code in the current process.
+This path currently requires **Linux amd64 with CGO**, QBE and Keystone. The entry
+accepts up to eight `i64`/`bool` arguments; Go passes/returns `int64`, normalizing
+any nonzero boolean argument to true. A private typed trampoline handles register
+and stack arguments without mismatched C function-pointer signatures.
+
+```go
+fn, err := ingagi.CompileJIT(ctx,
+    `fn main(n: i64) -> i64 { return n * 2; }`, ingagi.NativeOptions{})
+if err != nil { return err }
+defer fn.Close()
+value, err := fn.Call(21) // 42
+```
+
+Executable mappings transition from read/write to read/execute before publication.
+`Close` is idempotent, serializes with calls, and releases the mapping; calls after
+close fail. Callers must explicitly close their handles. The build context bounds
+compilation, not execution. Arithmetic traps remain native process traps, and
+native loops have no VM instruction budget. This explicit entry compilation does
+not automatically tier VM functions or support closures/host callbacks.
 
 ## NovoParse scannerless backend
 
@@ -212,11 +240,21 @@ Failed calls unwind execution stacks but do not roll back global/world changes.
 
 `VM.Encode`, `runtime.Decode` and `VM.LoadDecoded` provide an experimental v1
 snapshot format. Decode checks lengths, nested-value depth, record shapes,
-duplicate entry/type/method/global records, trailing bytes, operand widths,
-constant indices, opcodes and control-flow targets. Module loads reject these
-structural errors before replacing the current module. The same gate is applied
-to modules built in Go; it is not full stack/type verification and does not make
-arbitrary bytecode safe to execute.
+duplicate entry/type/method/global/prefab records and aggregate keys, trailing bytes, operand widths,
+constant indices, opcodes and control-flow targets. A control-flow stack verifier
+checks both conditional edges, stack underflow and consistent join heights for
+every entry and reachable deferred block. Module loads reject these errors before
+replacing the current module. The same gate is applied to modules built in Go.
+Descriptor validation checks type kinds, field/variant names, default-field keys,
+method entries, system hooks, event types and prefab constructors. Snapshot values
+are checked for valid object representations, enum variants and closure entries.
+Loads restore nested builtin and host-callback values by name; required host
+callbacks must be registered before loading. Aggregate storage is copied when
+loading so separate VMs have independent state and callable bindings. Failed
+image validation or callback binding preserves the previously loaded script.
+Values remain dynamically typed; complete opcode-level type verification and
+enum payload signature verification are still pending. Dispatch also rejects
+operand underflow relative to the current activation, including host-mutated tapes.
 
 Frame-local indices are limited to 65,536 slots; functions may declare up to
 65,536 parameters. Aggregate/call counts must fit the current activation's
@@ -266,8 +304,8 @@ ctest --test-dir /tmp/opencode/ingagi-embed --output-on-failure
 
 The root CMake build also accepts `JFX_INGAGI=ON`. The twelve embedded target
 descriptors are validated schema-v1 metadata, exposed by `compiler.Targets`,
-`compiler.LookupTarget` and `ingagi targets`. IngagiVM and QBE are implemented;
-the other ten describe planned adapters/shader emitters. `RequireArtifact`
+`compiler.LookupTarget` and `ingagi targets`. IngagiVM, QBE and WASM are implemented;
+the other nine describe planned adapters/shader emitters. `RequireArtifact`
 rejects planned targets and unsupported output formats. QBE artifact selection
 uses this gate; its architecture-specific checks remain in the native builder.
 
@@ -288,14 +326,21 @@ uses this gate; its architecture-specific checks remain in the native builder.
   import, control-flow and constant-overflow checks. Checks use known annotations
   and inferred scalar/aggregate types; they don't implement generic
   monomorphization, complete nominal/width checking or dynamic host signatures.
-  Security and taint passes still return `E0001` when explicitly requested.
+  Security checks report native/pointer boundaries, including declaration defaults
+  and shader bodies. Taint checks conservatively follow host/world data through
+  locals, aggregate writes, branches, loop fixed points and script return summaries.
+  Return summaries are solved before diagnostics, independent of declaration order.
+  Output and world-mutation sinks produce `W1001` warnings. Parameters are treated
+  as potentially host-supplied, so these review diagnostics can be noisy.
 - Standalone GLSL/SPIR-V shader lowering supports the subset described below.
-  GPU dispatch, additional shader languages and renderer adapters remain pending.
-  QBE is the implemented scalar native backend; other target descriptors still
+   GPU dispatch and renderer adapters remain pending.
+  QBE and WASM are implemented scalar native backends; other target descriptors still
   describe planned adapters rather than claiming GPU integration.
-- Bytecode image serialization is experimental. Full bytecode stack/type verification,
+- Bytecode image serialization is experimental. Complete opcode-level type and enum payload verification,
   comprehensive static analysis, broader native/JIT targets,
-    aggregate/resource C ABI marshalling and desktop wiring remain unfinished.
+  and aggregate/resource C ABI marshalling remain unfinished. The desktop workspace
+  executes source through the scalar ABI; full scene/ECS/render-resource integration
+  remains unfinished.
 
 ## Shader artifacts
 
@@ -322,13 +367,75 @@ are `local_size` (x), `local_size_x`, `local_size_y`, `local_size_z`, defaulting
 one. Stage builtins use their GLSL names, such as `gl_GlobalInvocationID` and
 `gl_Position`.
 
-Unsupported host statements, inferred local types, resource/field attributes,
+Geometry and tessellation stages accept explicit layout options; storage images
+use floating `rgba32f` texels. Unsupported host statements, inferred local types, resource/field attributes,
 stage options and shader types fail with source-positioned errors. GLSL emission
 is source lowering; SPIR-V compilation performs downstream GPU type/link checks.
-Geometry/tessellation/mesh/task lowering, stage-interface declarations, storage
-images, GPU execution and WGSL/HLSL/Cg/DXIL/DXBC/SLang emitters remain pending.
+Mesh/task lowering, stage-interface declarations, GPU execution and
+Cg/DXIL/DXBC/SLang emitters remain pending.
 Tests compile vertex/fragment/compute examples and validate their binaries with
 `spirv-val` when both tools are installed.
+
+### Cross-compiled shader sources
+
+`shader.CompileArtifact(ctx, declaration, stage, format, shader.ToolOptions{})`
+supports `glsl`, `spirv`, `hlsl` (Shader Model 5.0), `glsl-opengl` (450),
+`glsl-es` (300, vertex/fragment only), `msl` (Metal 2.0) and `wgsl`
+(vertex/fragment/compute). Cross-compiled source
+passes through glslang's SPIR-V intermediate and vendored SPIRV-Cross. Both
+processes use the caller context; failed builds preserve existing CLI outputs.
+
+```sh
+bash ingagi/scripts/build-shader-tools.sh
+export INGAGI_SPIRV_CROSS=/tmp/opencode/ingagi-spirv-cross/spirv-cross
+cd ingagi
+GOROOT=/usr/lib/go go run ./cmd shader -emit hlsl -stage compute \
+  -o /tmp/opencode/scale.hlsl examples/compute.ing
+```
+
+Select tools with `-glslang` / `-spirv-cross` or `INGAGI_GLSLANG` /
+`INGAGI_SPIRV_CROSS`; unset paths fall back to PATH. Tests round-trip HLSL and
+OpenGL GLSL through glslang and spirv-val, validate GLSL ES syntax, and check Metal
+source generation when SPIRV-Cross is available. Metal compilation requires the
+Apple toolchain. WGSL uses Naga 29.0.4 (matching vendored wgpu-native's lockfile)
+to translate the SPIR-V intermediate while preserving coordinate space. Select it
+with `-naga`, `ToolOptions.Naga` or `INGAGI_NAGA`. Set `INGAGI_BUILD_NAGA=1` when
+running `build-shader-tools.sh` to install the pinned CLI through Cargo; its locked
+crate dependencies are downloaded on the first build. Tests reparse emitted WGSL
+and validate its SPIR-V round trip. Shader artifacts do not imply working renderer
+adapters.
+
+### Desktop Game Engine workspace
+
+Enable `JFX_INGAGI=ON` in the root CMake build and select **Game Engine**. The
+workspace edits bounded, import-free source, opens/saves `.ing` files, and offers
+Load/Reload, Call entry, and Run source. Each frontend owns a separate VM/world;
+failed reloads preserve its installed script. Calls use 100,000 instructions and
+256 frames. `engine_time()` reads the shared transport clock synchronously.
+The scalar host bridge also exposes the shared editor's 3D scene:
+
+| Callback | Behavior |
+| --- | --- |
+| `engine_scene_count()` | Current object count |
+| `engine_scene_add(primitive)` | Create and return a zero-based object index; 0 cube, 1 sphere, 2 plane, 3 cylinder, 4 cone, 5 torus, 6 capsule |
+| `engine_scene_remove(object)` | Remove an object; later indices shift |
+| `engine_scene_get(object, channel)` | Read the stored transform channel |
+| `engine_scene_set(object, channel, value)` | Commit an undoable transform edit |
+| `engine_scene_key(object, channel, frame, value)` | Commit a linearly interpolated keyframe |
+| `engine_scene_sample(object, channel, seconds)` | Read the animated transform channel |
+
+Channels 0–2 are position XYZ, 3–5 Euler degrees XYZ, and 6–8 scale XYZ. Indices
+require integers; values/times accept finite integers or floats. Invalid arguments
+and editor failures become script runtime errors. Callbacks reacquire the current
+scene each time; edits share modeling history, rendering and persistence. The Game
+Engine tab previews/scrubs this scene after a scene edit. A failed script/reload
+does not roll back already committed scene edits. Scene indices are not persistent
+ECS entity IDs; scripts must maintain their own associations and account for
+removal, scene resets and editor undo/load.
+Results and diagnostics are shown in the workspace. The scalar ABI discards
+script printing and cannot return aggregate values; use Go embedding for those.
+Desktop API 1.8 adds the workspace/panel and `jfx_desktop_frontend_game_*` entry
+points without altering existing identifiers or config layouts.
 
 ## Regenerating the grammar
 

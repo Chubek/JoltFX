@@ -9,17 +9,53 @@ import (
 	"strconv"
 	"strings"
 
+	fe "github.com/Chubek/JoltFX/ingagi/frontend"
 	"github.com/Chubek/JoltFX/ingagi/internal/keystone"
 )
 
 // NativeOptions selects an artifact and the external tool locations. Empty
 // paths use INGAGI_QBE (then PATH's qbe) and INGAGI_KEYSTONE_LIBRARY respectively.
 type NativeOptions struct {
-	Emit            string // qbe, asm, obj (default), bin
-	Target          string // QBE target; obj/bin currently require amd64_sysv
+	Emit            string // qbe, asm, obj (default), bin, wasm
+	Target          string // QBE architecture, or WASM/wasm32
 	Entry           string // source function exposed as ingagi_entry; defaults to main
 	QBE             string
 	KeystoneLibrary string
+}
+
+// BuildNative selects a native emitter after the source graph has been resolved.
+func BuildNative(ctx context.Context, file *fe.File, options NativeOptions) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("native: missing build context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if options.Emit == "wasm" || options.Target == "WASM" || options.Target == "wasm32" {
+		if options.Emit != "" && options.Emit != "wasm" {
+			return nil, fmt.Errorf("wasm: unsupported artifact %q", options.Emit)
+		}
+		if options.Target != "" && options.Target != "WASM" && options.Target != "wasm32" {
+			return nil, fmt.Errorf("wasm: unsupported target %q", options.Target)
+		}
+		spec, err := LookupTarget("WASM")
+		if err != nil {
+			return nil, err
+		}
+		if err := spec.RequireArtifact("wasm"); err != nil {
+			return nil, err
+		}
+		data, err := EmitWASM(file, options.Entry)
+		if err == nil {
+			err = ctx.Err()
+		}
+		return data, err
+	}
+	p, err := EmitQBE(file)
+	if err != nil {
+		return nil, err
+	}
+	return p.Build(ctx, options)
 }
 
 // Build generates an artifact without writing files or invoking a linker.

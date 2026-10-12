@@ -396,6 +396,7 @@ func hReturn(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 	val := vm.stack.pop()
 	if len(fr.deferred) > 0 {
 		fr.retVal = val
+		vm.stack.reset(fr.base)
 		target := fr.deferred[len(fr.deferred)-1]
 		fr.deferred = fr.deferred[:len(fr.deferred)-1]
 		return target, nil
@@ -404,6 +405,7 @@ func hReturn(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 }
 
 func hEndDefer(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
+	vm.stack.reset(fr.base)
 	if len(fr.deferred) > 0 {
 		target := fr.deferred[len(fr.deferred)-1]
 		fr.deferred = fr.deferred[:len(fr.deferred)-1]

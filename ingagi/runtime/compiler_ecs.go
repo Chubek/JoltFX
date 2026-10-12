@@ -61,12 +61,7 @@ func (c *Compiler) compilePrefab(e *fe.EntityDecl) {
 	}
 	c.b.Emit(OpLoadLocal, int32(eslot), 0)
 	c.b.Emit(OpReturn, 0, 0)
-	for _, at := range c.nilFix {
-		c.b.Patch(at, c.b.Pos())
-	}
-	c.b.Emit(OpPushNil, 0, 0)
-	c.b.Emit(OpReturn, 0, 0)
-	c.nilFix = nil
+	c.finishNilReturns()
 	c.popScope()
 }
 

@@ -481,11 +481,7 @@ func (c *Compiler) compileOn(s *fe.OnStmt) {
 	c.compileBlockValue(s.Body, false)
 	c.b.Emit(OpPushNil, 0, 0)
 	c.b.Emit(OpReturn, 0, 0)
-	for _, at := range c.nilFix {
-		c.b.Patch(at, c.b.Pos())
-	}
-	c.b.Emit(OpPushNil, 0, 0)
-	c.b.Emit(OpReturn, 0, 0)
+	c.finishNilReturns()
 	c.popScope()
 	c.b.Patch(end, c.b.Pos())
 	c.b.Emit(OpMakeClosure, 0, c.pool.InternString("<on#"+name+">"))

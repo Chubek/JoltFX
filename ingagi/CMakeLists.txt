@@ -68,6 +68,11 @@ add_custom_target(ingagi_build ALL DEPENDS "${ingagi_library}" "${ingagi_cli_pat
 add_library(ingagi_embed SHARED IMPORTED GLOBAL)
 set_target_properties(ingagi_embed PROPERTIES IMPORTED_LOCATION "${ingagi_library}"
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/native_extension_api")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Go c-shared output has no SONAME. Link by library name so DT_NEEDED
+    # does not capture a relative path that bypasses the executable's RUNPATH.
+    set_target_properties(ingagi_embed PROPERTIES IMPORTED_NO_SONAME TRUE)
+endif()
 add_dependencies(ingagi_embed ingagi_build)
 
 install(PROGRAMS "${ingagi_cli_path}" DESTINATION "${CMAKE_INSTALL_BINDIR}")

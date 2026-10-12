@@ -119,3 +119,14 @@ func TestStorageImageLowering(t *testing.T) {
 		t.Fatalf("storage image was not lowered:\n%s", glsl)
 	}
 }
+
+func TestStorageImageSPIRV(t *testing.T) {
+	glslang, err := exec.LookPath("glslangValidator")
+	if err != nil {
+		t.Skip("glslangValidator unavailable")
+	}
+	s := parseShaderTest(t, `shader Image { storage_image texture2d image: read_write; compute { imageStore(image, ivec2(0, 0), vec4(1.0)); } }`)
+	if _, err := CompileSPIRV(context.Background(), s, "compute", glslang); err != nil {
+		t.Fatal(err)
+	}
+}

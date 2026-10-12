@@ -63,10 +63,25 @@ func (v *securityVisitor) decl(d fe.Decl) {
 		// It is the strongest escape hatch in the language, so it is always
 		// an error outside `unsafe` (extern bodies cannot be inside `unsafe`
 		// blocks anyway).
-		v.error("E0902", "extern declaration \""+d.Lib+"\" is not allowed in sandboxed code", d.Span)
+		v.error("E0902", "extern declaration \""+d.Lib+"\" crosses the native-code boundary", d.Span)
+		for _, fn := range d.Funcs {
+			v.fn(fn)
+		}
+		for _, st := range d.Vars {
+			v.stmt(st)
+		}
+	case *fe.ConstDecl:
+		v.typ(d.Type)
+		v.expr(d.Value)
+	case *fe.ResourceDecl:
+		v.typ(d.Type)
+		v.expr(d.Value)
 	case *fe.FnDecl:
 		v.fn(d)
 	case *fe.StructDecl:
+		for _, base := range d.Bases {
+			v.typ(base)
+		}
 		for _, f := range d.Fields {
 			v.typ(f.Type)
 		}
@@ -77,6 +92,7 @@ func (v *securityVisitor) decl(d fe.Decl) {
 		v.typ(d.Base)
 		for _, f := range d.Fields {
 			v.typ(f.Type)
+			v.expr(f.Default)
 		}
 		for _, m := range d.Methods {
 			v.fn(m)
@@ -85,10 +101,12 @@ func (v *securityVisitor) decl(d fe.Decl) {
 		v.typ(d.Base)
 		for _, f := range d.Fields {
 			v.typ(f.Type)
+			v.expr(f.Default)
 		}
 	case *fe.EnumDecl:
 		v.typ(d.Repr)
 		for _, e := range d.Variants {
+			v.expr(e.Value)
 			for _, t := range e.Types {
 				v.typ(t)
 			}
@@ -98,8 +116,20 @@ func (v *securityVisitor) decl(d fe.Decl) {
 	case *fe.EntityDecl:
 		for _, p := range d.Props {
 			v.typ(p.Type)
+			v.expr(p.Value)
+		}
+		for _, child := range d.Children {
+			v.expr(child.Value)
+		}
+		for _, at := range d.Attachments {
+			for _, f := range at.Inits {
+				v.expr(f.Value)
+			}
 		}
 	case *fe.SystemDecl:
+		for _, st := range d.Vars {
+			v.stmt(st)
+		}
 		for _, fn := range d.Fns {
 			v.fn(fn)
 		}
@@ -110,12 +140,34 @@ func (v *securityVisitor) decl(d fe.Decl) {
 			v.block(h.Body)
 		}
 	case *fe.InterfaceDecl:
+		for _, st := range d.Vars {
+			v.stmt(st)
+		}
 		for _, m := range d.Methods {
 			v.fn(m)
 		}
 	case *fe.ExtendDecl:
 		v.typ(d.Target)
 		v.block(d.Body)
+	case *fe.ShaderDecl:
+		for _, c := range d.Consts {
+			v.expr(c.Value)
+		}
+		for _, c := range d.Specs {
+			v.expr(c.Value)
+		}
+		for _, opt := range d.Options {
+			v.expr(opt.Value)
+		}
+		for _, fn := range d.Funcs {
+			v.block(fn.Body)
+		}
+		for _, stage := range d.Stages {
+			for _, opt := range stage.Options {
+				v.expr(opt)
+			}
+			v.block(stage.Body)
+		}
 	}
 }
 

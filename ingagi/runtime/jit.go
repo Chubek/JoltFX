@@ -4,8 +4,8 @@ import "sort"
 
 // Specializing tier (jit.go): profile-guided fast paths, not machine code.
 //
-// Full machine-code JITs (SLJIT/QBE backends in the wider JoltFX tree) are
-// out of scope for the embeddable scripting VM; instead the VM specializes
+// The explicit scalar QBE/Keystone JIT lives in compiler/jit.go. The scripting
+// VM itself specializes
 // hot instruction sites by observed type: monomorphic arithmetic skips
 // kind checks, and method call sites cache receiver-type resolution. The
 // policy is tiny and predictable — appropriate for frame-budgeted game

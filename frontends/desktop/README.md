@@ -2,7 +2,7 @@
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Creative Programming**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Creative Programming**, **Game Engine**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
@@ -53,6 +53,22 @@ cmake --preset default
 cmake --build build --target jfx_desktop
 ./build/frontends/desktop/jfx_desktop
 ```
+
+## Game Engine / Ingagi
+
+Build with `JFX_INGAGI=ON` to enable Ingagi source execution in the **Game Engine**
+workspace. Its code pad opens/saves `.ing` files (under 16 KiB, import-free), loads
+or reloads a per-frontend VM, and calls a zero-argument entry. **Run source** loads
+then calls. Results and compilation/runtime diagnostics appear in the workspace;
+`engine_time()` reads the shared transport clock. Calls use 100,000 instructions
+and 256 frames. Failed reloads preserve the installed script, and handles are
+released when the frontend closes. The scalar embedding ABI discards script
+printing and cannot return aggregates. The workspace remains visible in optional
+off builds, with execution availability reported explicitly. Validated
+`engine_scene_*` callbacks create/remove objects, read/write transform channels,
+set keys and sample the shared 3D scene. These edits use modeling history and
+the Game Engine tab previews/scrubs the same scene. See `ingagi/README.md` for the
+callback table and index lifetime rules, and `ingagi_tab` for integration checks.
 
 ## Creative Programming
 

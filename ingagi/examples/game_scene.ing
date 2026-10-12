@@ -1,0 +1,17 @@
+// Run this import-free source in the desktop Game Engine workspace.
+// The component is script-owned; scene object indices shift on removal.
+component SceneObject {
+    object: i64;
+}
+
+fn main() {
+    let e = spawn();
+    let object = engine_scene_add(0); // cube
+    add_component(e, "SceneObject", SceneObject { object: object });
+    let link = get_component(e, "SceneObject");
+    engine_scene_set(link.object, 0, 1.5);
+    engine_scene_key(link.object, 4, 0, 0.0);
+    engine_scene_key(link.object, 4, 90, 360.0);
+    despawn(e);
+    return engine_scene_count();
+}
