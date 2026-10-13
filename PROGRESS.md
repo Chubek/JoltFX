@@ -1,5 +1,36 @@
 # Progress
 
+## Joltscript Phase 4 tests (2026-10-13)
+
+- Completed the Phase 4 test roadmap. Added `joltscript/tests/integration/test_kernels.c`
+  to compile and execute shipped color kernels (`brightness`, `contrast`,
+  `opacity`, `threshold`, `grayscale`, `invert`) plus a real brightness→opacity
+  pipeline over multiple pixels. Added `joltscript/tests/benchmarks/bench_compiler.c`
+  as a deterministic compiler benchmark smoke test over legacy f32, typed-core
+  and typed-stdlib sources. Both are wired into `tests/unit/CMakeLists.txt`, and
+  `bench_compiler` carries a `benchmark` label. `JOLTSCRIPT_PLAN.md` now marks
+  Phase 4 as implemented.
+- Verification: main build reconfigured and passed `test_joltscript`,
+  `test_pipeline`, `test_compiler`, `test_typed`, `test_stdlib`, `test_vm`,
+  `test_integration`, `test_kernel_execution`, `test_conformance`,
+  `test_benchmarks` and `bench_compiler`. The no-SLJIT build in
+  `/tmp/opencode/joltfx-no-sljit` also passed `test_vm`,
+  `test_kernel_execution` and `bench_compiler`.
+
+## Joltscript SLJIT backend (2026-10-13)
+
+- Added optional `third_party/sljit` integration for Joltscript JBC1 version-1
+  f32 bytecode (`JFX_JOLTSCRIPT_SLJIT`, default on for native SLJIT CPU
+  families, off for Emscripten/unsupported processors). `jolt_vm_t` now supports
+  `auto`, `interpreter` and `sljit` backend selection; `auto` JITs with a bounded
+  per-VM cache and falls back to the interpreter if executable-code allocation is
+  unavailable. Version-2 typed execution remains on the portable typed VM.
+- Verification: reconfigured the main build, built `jfx_sljit` and the
+  Joltscript C test targets, and passed `test_compiler`, `test_typed`,
+  `test_stdlib`, `test_vm`, `test_integration` and `test_conformance`. Also
+  configured `/tmp/opencode/joltfx-no-sljit` with `JFX_JOLTSCRIPT_SLJIT=OFF`,
+  built `test_vm`, and confirmed the no-JIT capability path passes.
+
 ## Remaining work: GPU viewport + real libosg link (2026-10-13)
 
 - Vulkan offscreen mesh renderer (`backends/vulkan/src/vk_scene.c`,

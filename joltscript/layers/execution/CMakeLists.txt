@@ -7,6 +7,33 @@ add_library(joltscript_execution STATIC
     src/audio_task.c
 )
 
+set(_jfx_joltscript_sljit_default OFF)
+set(_jfx_sljit_processors
+    "(x86_64|AMD64|i[3-6]86|aarch64|arm64|armv[6-9]|ppc|powerpc|mips|riscv|s390x|loongarch)")
+if(NOT EMSCRIPTEN AND CMAKE_SYSTEM_PROCESSOR MATCHES "${_jfx_sljit_processors}")
+    set(_jfx_joltscript_sljit_default ON)
+endif()
+option(JFX_JOLTSCRIPT_SLJIT
+    "Build the vendored SLJIT backend for Joltscript JBC1 bytecode"
+    ${_jfx_joltscript_sljit_default})
+
+if(JFX_JOLTSCRIPT_SLJIT)
+    find_package(Threads REQUIRED)
+    add_library(jfx_sljit STATIC "${PROJECT_SOURCE_DIR}/third_party/sljit/sljit_src/sljitLir.c")
+    target_include_directories(jfx_sljit SYSTEM PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/sljit/sljit_src>)
+    target_compile_definitions(jfx_sljit PRIVATE
+        SLJIT_DEBUG=0
+        SLJIT_VERBOSE=0
+        SLJIT_ARGUMENT_CHECKS=0)
+    target_link_libraries(jfx_sljit PUBLIC Threads::Threads)
+    target_sources(joltscript_execution PRIVATE src/jit_sljit.c)
+    target_link_libraries(joltscript_execution PRIVATE jfx_sljit)
+    target_compile_definitions(joltscript_execution PRIVATE JFX_JOLTSCRIPT_SLJIT=1)
+    install(FILES "${PROJECT_SOURCE_DIR}/third_party/sljit/LICENSE"
+        DESTINATION share/doc/joltfx/third_party/sljit)
+endif()
+
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(stdlib_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib")
 set(stdlib_sources)

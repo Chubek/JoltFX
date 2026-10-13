@@ -264,10 +264,13 @@ resolves lexical bindings and verifies types before execution. C and Rust have
 independent readers/serializers and use the same portable typed verifier/VM.
 
 Native preview and CPU backends execute version 2. Vulkan routes it through CPU
-fallback (`used_gpu=false`). Object export preserves the bytecode; standalone
-HTML/WAT exporters currently accept version 1 only and reject typed programs
-before replacing the output artifact. Typed shader/export lowering is subsequent
-backend work.
+fallback (`used_gpu=false`). Version-1 f32 JBC1 programs can run through the
+portable interpreter or the optional vendored SLJIT backend; `jolt_vm_set_backend`
+selects `auto`, `interpreter` or `sljit`, and unavailable SLJIT builds report
+`JOLT_ERR_CAPABILITY`. Object export preserves the bytecode; standalone HTML/WAT
+exporters currently accept version 1 only and reject typed programs before
+replacing the output artifact. Typed shader/export lowering is subsequent backend
+work.
 
 ## Operations
 

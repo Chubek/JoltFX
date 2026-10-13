@@ -54,6 +54,12 @@ Phase 3 tools are implemented. See `joltscript/docs/language.md` for the
 versioned language and backend boundaries, and `joltscript/docs/tools.md` for
 the compiler-backed documentation/LSP behavior.
 
+Phase 4 tests are implemented. The default CTest suite includes compiler and VM
+unit tests, typed/stdlib ownership tests, real bundled-kernel integration,
+pipeline execution, conformance checks and benchmark smoke targets. The Python
+conformance scripts continue to cover Zoltan C/Rust parity when the Rust tool is
+built.
+
 ### Phase 1: Expand the Compiler (Core Language Features)
 
 **Goal**: Support the core language features from the spec.
@@ -117,11 +123,11 @@ the compiler-backed documentation/LSP behavior.
 **Goal**: Comprehensive test coverage.
 
 **Tasks**:
-1. Add unit tests for the compiler
-2. Add unit tests for the VM
-3. Add integration tests for kernel execution
-4. Add conformance tests for cross-target consistency
-5. Add benchmarks
+1. [x] Add unit tests for the compiler
+2. [x] Add unit tests for the VM
+3. [x] Add integration tests for kernel execution
+4. [x] Add conformance tests for cross-target consistency
+5. [x] Add benchmarks
 
 **Files to create**:
 - `joltscript/tests/unit/test_compiler.c`
@@ -162,6 +168,6 @@ the compiler-backed documentation/LSP behavior.
 - [ ] Compiler supports all operations from the spec
 - [ ] Standard library covers all modules from the spec
 - [x] All tools are implemented and working
-- [ ] All tests pass
+- [x] Phase 4 Joltscript tests pass
 - [ ] Documentation is complete
 - [ ] Zoltan bytecode parity is maintained

@@ -34,6 +34,13 @@ extern "C" {
 #define JOLT_BYTECODE_HEADER_SIZE 16u
 #define JOLT_BYTECODE_INSTRUCTION_SIZE 8u
 typedef enum {
+    /* Select the fastest available backend for the bytecode profile. Version-2
+     * typed programs always use the portable typed executor. */
+    JOLT_VM_BACKEND_AUTO = 0,
+    JOLT_VM_BACKEND_INTERPRETER = 1,
+    JOLT_VM_BACKEND_SLJIT = 2
+} jolt_vm_backend_t;
+typedef enum {
     JOLT_OK = 0, JOLT_ERR_ARGUMENT = -1, JOLT_ERR_MEMORY = -2,
     JOLT_ERR_SYNTAX = -3, JOLT_ERR_BYTECODE = -4, JOLT_ERR_NUMERIC = -5,
     JOLT_ERR_CAPABILITY = -6, JOLT_ERR_NOT_FOUND = -7,
@@ -61,6 +68,10 @@ typedef enum {
 typedef struct jolt_vm jolt_vm_t;
 jolt_vm_t *jolt_vm_create(void);
 void jolt_vm_destroy(jolt_vm_t *vm);
+int jolt_vm_backend_available(jolt_vm_backend_t backend);
+const char *jolt_vm_backend_name(jolt_vm_backend_t backend);
+jolt_status_t jolt_vm_set_backend(jolt_vm_t *vm, jolt_vm_backend_t backend);
+jolt_vm_backend_t jolt_vm_get_backend(const jolt_vm_t *vm);
 /* Legacy entry executes with zero inputs; use run for explicit bindings. */
 int jolt_vm_execute(jolt_vm_t *vm, const uint8_t *bytecode, size_t size);
 jolt_status_t jolt_bytecode_validate(const uint8_t *code, size_t size);

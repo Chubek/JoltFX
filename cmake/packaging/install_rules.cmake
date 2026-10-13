@@ -27,6 +27,9 @@ list(APPEND JFX_INSTALL_TARGETS
     BulletCollision
     BulletDynamics
 )
+if(JFX_JOLTSCRIPT_SLJIT)
+    list(APPEND JFX_INSTALL_TARGETS jfx_sljit)
+endif()
 
 foreach(backend IN LISTS JFX_ENABLED_BACKENDS)
     list(APPEND JFX_INSTALL_TARGETS jfx_backend_${backend})

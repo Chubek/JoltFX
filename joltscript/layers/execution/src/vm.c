@@ -1,17 +1,65 @@
 #include "bytecode_internal.h"
 #include "typed_internal.h"
+#if defined(JFX_JOLTSCRIPT_SLJIT)
+#include "jit_sljit.h"
+#endif
 #include "tilly/containers.h"
 #include <math.h>
-struct jolt_vm { float stack[JOLT_MAX_STACK]; float locals[JOLT_MAX_LOCALS]; char *strings[4]; };
-jolt_vm_t *jolt_vm_create(void) { return tilly_container_calloc(1, sizeof(jolt_vm_t)); }
+struct jolt_vm {
+    float stack[JOLT_MAX_STACK];
+    float locals[JOLT_MAX_LOCALS];
+    char *strings[4];
+    jolt_vm_backend_t backend;
+#if defined(JFX_JOLTSCRIPT_SLJIT)
+    jolt_sljit_cache_t *sljit;
+#endif
+};
+jolt_vm_t *jolt_vm_create(void) {
+    jolt_vm_t *vm = tilly_container_calloc(1, sizeof(jolt_vm_t));
+    if (vm) vm->backend = JOLT_VM_BACKEND_AUTO;
+    return vm;
+}
 void jolt_vm_destroy(jolt_vm_t *vm) {
     if(vm) for(unsigned i=0;i<4;++i) tilly_container_free(vm->strings[i]);
+#if defined(JFX_JOLTSCRIPT_SLJIT)
+    if(vm) jolt_sljit_cache_destroy(vm->sljit);
+#endif
     tilly_container_free(vm);
 }
-jolt_status_t jolt_vm_run_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_t size,
+int jolt_vm_backend_available(jolt_vm_backend_t backend) {
+    switch (backend) {
+    case JOLT_VM_BACKEND_AUTO:
+    case JOLT_VM_BACKEND_INTERPRETER:
+        return 1;
+    case JOLT_VM_BACKEND_SLJIT:
+#if defined(JFX_JOLTSCRIPT_SLJIT)
+        return jolt_sljit_available();
+#else
+        return 0;
+#endif
+    default:
+        return 0;
+    }
+}
+const char *jolt_vm_backend_name(jolt_vm_backend_t backend) {
+    switch (backend) {
+    case JOLT_VM_BACKEND_AUTO: return "auto";
+    case JOLT_VM_BACKEND_INTERPRETER: return "interpreter";
+    case JOLT_VM_BACKEND_SLJIT: return "sljit";
+    default: return "unknown";
+    }
+}
+jolt_status_t jolt_vm_set_backend(jolt_vm_t *vm, jolt_vm_backend_t backend) {
+    if (!vm) return JOLT_ERR_ARGUMENT;
+    if (!jolt_vm_backend_available(backend)) return JOLT_ERR_CAPABILITY;
+    vm->backend = backend;
+    return JOLT_OK;
+}
+jolt_vm_backend_t jolt_vm_get_backend(const jolt_vm_t *vm) {
+    return vm ? vm->backend : JOLT_VM_BACKEND_INTERPRETER;
+}
+static jolt_status_t jolt_vm_interpret_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_t size,
     const float *inputs, size_t input_count, float *outputs, size_t output_count) {
-    if (!vm || !code || !outputs || (input_count && !inputs)) return JOLT_ERR_ARGUMENT;
-    if(size>=16 && jolt_read_u32(code+4)==2) return jt_run_float(code,size,inputs,input_count,outputs,output_count);
     for (size_t i = 0; i < input_count; ++i) if (!isfinite(inputs[i])) return JOLT_ERR_NUMERIC;
     float result[JOLT_MAX_OUTPUTS]; unsigned n = 0;
     for (size_t pos = 16; pos < size; pos += 8) {
@@ -66,6 +114,26 @@ jolt_status_t jolt_vm_run_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_
     }
     memcpy(outputs, result, output_count * sizeof(float));
     return JOLT_OK;
+}
+jolt_status_t jolt_vm_run_prevalidated(jolt_vm_t *vm, const uint8_t *code, size_t size,
+    const float *inputs, size_t input_count, float *outputs, size_t output_count) {
+    if (!vm || !code || !outputs || (input_count && !inputs)) return JOLT_ERR_ARGUMENT;
+    if(size>=16 && jolt_read_u32(code+4)==2) return jt_run_float(code,size,inputs,input_count,outputs,output_count);
+    for (size_t i = 0; i < input_count; ++i) if (!isfinite(inputs[i])) return JOLT_ERR_NUMERIC;
+#if defined(JFX_JOLTSCRIPT_SLJIT)
+    if (vm->backend != JOLT_VM_BACKEND_INTERPRETER) {
+        if (!vm->sljit) vm->sljit = jolt_sljit_cache_create();
+        jolt_status_t jit_status = vm->sljit ?
+            jolt_sljit_cache_run(vm->sljit, code, size, inputs, input_count, outputs, output_count) :
+            JOLT_ERR_MEMORY;
+        if (vm->backend == JOLT_VM_BACKEND_SLJIT ||
+            (jit_status != JOLT_ERR_MEMORY && jit_status != JOLT_ERR_CAPABILITY))
+            return jit_status;
+    }
+#else
+    if (vm->backend == JOLT_VM_BACKEND_SLJIT) return JOLT_ERR_CAPABILITY;
+#endif
+    return jolt_vm_interpret_prevalidated(vm, code, size, inputs, input_count, outputs, output_count);
 }
 jolt_status_t jolt_vm_run(jolt_vm_t *vm, const uint8_t *code, size_t size,
     const float *inputs, size_t input_count, float *outputs, size_t output_count) {

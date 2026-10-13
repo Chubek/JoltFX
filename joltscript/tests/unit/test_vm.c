@@ -254,9 +254,100 @@ static void test_branch_validation(void) {
     jolt_vm_destroy(vm);
 }
 
+static void run_words(jolt_vm_t *vm, const uint32_t *words, size_t word_count,
+                      const float *inputs, size_t input_count,
+                      float *outputs, size_t output_count) {
+    uint8_t code[512];
+    assert(word_count * sizeof(uint32_t) <= sizeof(code));
+    for (size_t i = 0; i < word_count; ++i) write_word(code, i * sizeof(uint32_t), words[i]);
+    assert(jolt_bytecode_validate(code, word_count * sizeof(uint32_t)) == JOLT_OK);
+    assert(jolt_vm_run(vm, code, word_count * sizeof(uint32_t), inputs, input_count,
+                       outputs, output_count) == JOLT_OK);
+}
+
+static void test_vm_backend_selection(void) {
+    assert(jolt_vm_backend_available(JOLT_VM_BACKEND_AUTO));
+    assert(jolt_vm_backend_available(JOLT_VM_BACKEND_INTERPRETER));
+    assert(strcmp(jolt_vm_backend_name(JOLT_VM_BACKEND_SLJIT), "sljit") == 0);
+
+    jolt_vm_t *interp = jolt_vm_create();
+    jolt_vm_t *jit = jolt_vm_create();
+    assert(interp && jit);
+    assert(jolt_vm_set_backend(interp, JOLT_VM_BACKEND_INTERPRETER) == JOLT_OK);
+    assert(jolt_vm_get_backend(interp) == JOLT_VM_BACKEND_INTERPRETER);
+    if (!jolt_vm_backend_available(JOLT_VM_BACKEND_SLJIT)) {
+        assert(jolt_vm_set_backend(jit, JOLT_VM_BACKEND_SLJIT) == JOLT_ERR_CAPABILITY);
+        jolt_vm_destroy(interp);
+        jolt_vm_destroy(jit);
+        return;
+    }
+    assert(jolt_vm_set_backend(jit, JOLT_VM_BACKEND_SLJIT) == JOLT_OK);
+    assert(jolt_vm_get_backend(jit) == JOLT_VM_BACKEND_SLJIT);
+
+    const uint32_t arithmetic_words[] = {
+        JOLT_BYTECODE_MAGIC, 1, 2, 4,
+        JOLT_OP_INPUT, 0, JOLT_OP_INPUT, 1, JOLT_OP_ADD, 0, JOLT_OP_OUTPUT, 0,
+        JOLT_OP_INPUT, 0, JOLT_OP_ABS, 0, JOLT_OP_CONST, 0x40000000,
+        JOLT_OP_POW, 0, JOLT_OP_FLOOR, 0, JOLT_OP_OUTPUT, 1,
+        JOLT_OP_INPUT, 0, JOLT_OP_INPUT, 1, JOLT_OP_LT, 0,
+        JOLT_OP_CONST, 0x41200000, JOLT_OP_CONST, 0x41a00000,
+        JOLT_OP_SELECT, 0, JOLT_OP_OUTPUT, 2,
+        JOLT_OP_CONST, 0x40a00000, JOLT_OP_STORE_LOCAL, 0, JOLT_OP_DROP, 0,
+        JOLT_OP_LOAD_LOCAL, 0, JOLT_OP_CONST, 0x40400000,
+        JOLT_OP_BITWISE_AND, 0, JOLT_OP_OUTPUT, 3
+    };
+    const float inputs[] = {-3.0f, 5.0f};
+    float interp_out[4] = {0}, jit_out[4] = {0};
+    run_words(interp, arithmetic_words, sizeof(arithmetic_words)/sizeof(*arithmetic_words),
+              inputs, 2, interp_out, 4);
+    run_words(jit, arithmetic_words, sizeof(arithmetic_words)/sizeof(*arithmetic_words),
+              inputs, 2, jit_out, 4);
+    for (size_t i = 0; i < 4; ++i) assert(fabsf(interp_out[i] - jit_out[i]) < 1e-6f);
+    assert(jit_out[0] == 2.0f && jit_out[1] == 9.0f && jit_out[2] == 10.0f && jit_out[3] == 1.0f);
+
+    const uint32_t branch_words[] = {
+        JOLT_BYTECODE_MAGIC, 1, 1, 1,
+        JOLT_OP_INPUT, 0,
+        JOLT_OP_BRANCH_IF_ZERO, 64,
+        JOLT_OP_CONST, 0x3f800000,
+        JOLT_OP_STORE_LOCAL, 0,
+        JOLT_OP_DROP, 0,
+        JOLT_OP_JUMP, 88,
+        JOLT_OP_CONST, 0x40000000,
+        JOLT_OP_STORE_LOCAL, 0,
+        JOLT_OP_DROP, 0,
+        JOLT_OP_LOAD_LOCAL, 0,
+        JOLT_OP_OUTPUT, 0
+    };
+    for (unsigned i = 0; i < 2; ++i) {
+        float in = (float)i;
+        float a = 0.0f, b = 0.0f;
+        run_words(interp, branch_words, sizeof(branch_words)/sizeof(*branch_words), &in, 1, &a, 1);
+        run_words(jit, branch_words, sizeof(branch_words)/sizeof(*branch_words), &in, 1, &b, 1);
+        assert(a == b && b == (i ? 1.0f : 2.0f));
+    }
+
+    const uint32_t div_zero_words[] = {
+        JOLT_BYTECODE_MAGIC, 1, 1, 1,
+        JOLT_OP_INPUT, 0, JOLT_OP_CONST, 0,
+        JOLT_OP_DIV, 0, JOLT_OP_OUTPUT, 0
+    };
+    uint8_t div_zero_code[sizeof(div_zero_words)];
+    for (size_t i = 0; i < sizeof(div_zero_words)/sizeof(*div_zero_words); ++i)
+        write_word(div_zero_code, i * sizeof(uint32_t), div_zero_words[i]);
+    float one = 1.0f, unchanged = 42.0f;
+    assert(jolt_vm_run(jit, div_zero_code, sizeof(div_zero_code), &one, 1, &unchanged, 1) == JOLT_ERR_NUMERIC);
+    assert(unchanged == 42.0f);
+
+    jolt_vm_destroy(interp);
+    jolt_vm_destroy(jit);
+    printf("test_vm_backend_selection: PASSED\n");
+}
+
 int main(void) {
     test_branch_validation();
     test_local_validation();
+    test_vm_backend_selection();
     test_vm_create_destroy();
     test_vm_run_basic();
     test_vm_validate();
