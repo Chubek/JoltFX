@@ -73,13 +73,17 @@ callback table and index lifetime rules, and `ingagi_tab` for integration checks
 ## Creative Programming
 
 The **Creative Programming** tab is a Zoltan sketch pad: one
-`(defkernel [x y t ...] body)` program with `x`/`y` as normalized coords,
+`(defkernel name [x y t ...] body)` program with `x`/`y` as normalized coords,
 `t` in seconds and optional `mx`/`my` pointer inputs. The code pad sits
 beside the result view; **Show code** / **Show preview** collapse either
 side. A read-only **Syntax colors** strip previews hand-rolled token colors
 (parens, keywords, numbers, comments). **Run** validates, **Animate**
-advances `t`, and object (minimal ELF64 `.jolt` section, `lief.parse`-able),
-standalone HTML Canvas, and WAT exports mirror the `zoltan export` commands.
+advances `t`. Bodies support bindings, conditionals, loops, functions/closures
+and the six built-in Joltscript library imports (262 exports). Use plain input
+names and numeric scalar/RGBA results; typed programs execute on the CPU.
+The desktop's basic syntax-color and export helpers are separate from Zoltan's
+tooling. Use `zoltan export` for version-aware exports: object wrappers preserve
+either JBC1 version, while standalone HTML/WAT accepts version 1.
 Opening a `.jolt` file loads it into the sketch buffer. Preview compiles with
 the Glue compiler and evaluates per pixel with the VM, bounded to 320x180.
 See [creative programming](../../docs/creative.md).

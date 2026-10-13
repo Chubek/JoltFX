@@ -75,6 +75,12 @@ backends/
 
 ## Backend Interface Contract
 
+The Joltscript version-2 typed interpreter (execution ABI 0.9, including all six
+standard-library modules) runs through the
+shared CPU pipeline, including on a Vulkan-enabled backend. `used_gpu` is false
+for these programs. Version-1 f32 programs retain GPU dispatch. Do not pass a
+typed tree to the version-1 shader decoder; keep version dispatch explicit.
+
 Every backend implements the HAL declared in `common/backend_interface.h`. **No backend may expose its native types to engine code above the HAL boundary.**
 
 ```c

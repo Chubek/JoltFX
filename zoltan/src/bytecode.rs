@@ -2,7 +2,7 @@
 //!
 //! `compile` used to write its input back with a comment header, which meant it
 //! produced nothing any runtime could execute. This module emits the real JBC1
-//! container that the Joltscript VM and every backend run:
+//! container. Legacy version-1 stack programs use this layout:
 //!
 //! ```text
 //! offset  size  field
@@ -13,13 +13,16 @@
 //! 16      8*n   instruction pairs: u32 opcode, u32 operand
 //! ```
 //!
-//! Float constants are IEEE binary32 bit patterns. There are no jumps: the
-//! validator gives a hard execution bound, so a program is straight-line code.
+//! Float constants are IEEE binary32 bit patterns. Branches are forward-only,
+//! with absolute byte-offset targets, giving a hard execution bound.
+//! Typed source (including library imports) is emitted by `typed.rs` as version-2
+//! tree bytecode and executes through the CPU runtime, including Vulkan fallback.
 //!
 //! This mirrors `joltscript/layers/glue/src/compiler.c`. The two must produce
-//! byte-identical output; `tests/bytecode_parity.rs` pins the known vectors and
+//! byte-identical output; this module's unit tests pin known vectors and
 //! `scripts/check-bytecode-parity.sh` compares this compiler against the C one
-//! over every bundled kernel, so a divergence is a test failure rather than a
+//! over the registered JBC1 corpus, library interfaces and conformance fixtures,
+//! so a divergence is a test failure rather than a
 //! silent incompatibility.
 
 use std::collections::HashMap;
@@ -63,6 +66,18 @@ const OP_BITWISE_OR: u32 = 25;
 const OP_BITWISE_XOR: u32 = 26;
 const OP_SHL: u32 = 27;
 const OP_SHR: u32 = 28;
+const OP_LOAD_LOCAL: u32 = 29;
+const OP_STORE_LOCAL: u32 = 30;
+const OP_DROP: u32 = 31;
+const OP_JUMP: u32 = 32;
+const OP_BRANCH_IF_ZERO: u32 = 33;
+const MAX_LOCALS: usize = 128;
+
+struct Local {
+    name: String,
+    mutable: bool,
+    scope: u32,
+}
 
 /// A compilation failure with source position.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +133,8 @@ struct Parser<'a> {
     bindings: HashMap<String, u32>,
     code: Vec<u8>,
     input_count: u32,
+    locals: Vec<Local>,
+    scope: u32,
 }
 
 impl<'a> Parser<'a> {
@@ -131,6 +148,8 @@ impl<'a> Parser<'a> {
             bindings: HashMap::new(),
             code: Vec::with_capacity(HEADER_SIZE),
             input_count: 0,
+            locals: Vec::new(),
+            scope: 0,
         }
     }
 
@@ -223,6 +242,98 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn scoped_expression(&mut self, depth: u32) -> Result<(), CompileError> {
+        let saved = self.locals.len();
+        self.scope += 1;
+        self.expression(depth)?;
+        self.scope -= 1;
+        self.locals.truncate(saved);
+        Ok(())
+    }
+
+    fn patch_target(&mut self, instruction: usize) {
+        let target = (HEADER_SIZE + self.code.len()) as u32;
+        self.code[instruction + 4..instruction + 8].copy_from_slice(&target.to_le_bytes());
+    }
+
+    fn cond_clauses(&mut self, depth: u32) -> Result<(), CompileError> {
+        if depth >= MAX_NESTING {
+            return self.error("expression nesting limit exceeded");
+        }
+        self.skip_space();
+        if self.peek() == Some(b')') {
+            self.bump();
+            return self.emit(OP_CONST, 0);
+        }
+        self.expect_char(b'[', "unexpected delimiter")?;
+        self.skip_space();
+        let test = (self.cursor, self.line, self.column);
+        let mut otherwise = false;
+        if self.peek() != Some(b'(') {
+            otherwise = self.token()? == "else";
+            if !otherwise {
+                (self.cursor, self.line, self.column) = test;
+            }
+        }
+        if otherwise {
+            self.scoped_expression(depth + 1)?;
+            self.expect_char(b']', "unexpected delimiter")?;
+            return self.expect_char(b')', "unexpected delimiter");
+        }
+        self.scoped_expression(depth + 1)?;
+        let branch = self.code.len();
+        self.emit(OP_BRANCH_IF_ZERO, 0)?;
+        self.scoped_expression(depth + 1)?;
+        self.expect_char(b']', "unexpected delimiter")?;
+        let jump = self.code.len();
+        self.emit(OP_JUMP, 0)?;
+        self.patch_target(branch);
+        self.cond_clauses(depth + 1)?;
+        self.patch_target(jump);
+        Ok(())
+    }
+
+    fn sequence(&mut self, depth: u32) -> Result<(), CompileError> {
+        self.skip_space();
+        if self.peek() == Some(b')') {
+            return self.error("expected a nonempty body");
+        }
+        loop {
+            self.expression(depth)?;
+            self.skip_space();
+            if self.peek() == Some(b')') {
+                return self.expect_char(b')', "unexpected delimiter");
+            }
+            self.emit(OP_DROP, 0)?;
+        }
+    }
+
+    fn binding(&mut self, depth: u32, mutable: bool) -> Result<(), CompileError> {
+        let name = self.token()?;
+        if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+            return self.error("binding must start with a letter or underscore");
+        }
+        if self
+            .locals
+            .iter()
+            .any(|l| l.scope == self.scope && l.name == name)
+        {
+            return self.error("duplicate local binding");
+        }
+        let slot = self.locals.len();
+        if slot == MAX_LOCALS {
+            return self.error("local binding limit exceeded");
+        }
+        self.expression(depth + 1)?;
+        self.locals.truncate(slot);
+        self.locals.push(Local {
+            name,
+            mutable,
+            scope: self.scope,
+        });
+        self.emit(OP_STORE_LOCAL, slot as u32)
+    }
+
     /// Parses one expression and appends the instructions that evaluate it.
     fn expression(&mut self, depth: u32) -> Result<(), CompileError> {
         if depth >= MAX_NESTING {
@@ -232,6 +343,86 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(b'(') {
             self.bump();
             let name = self.token()?;
+            if name == "cond" {
+                self.skip_space();
+                if self.peek() == Some(b')') {
+                    return self.error("expected a cond clause");
+                }
+                return self.cond_clauses(depth);
+            }
+            if name == "if" || name == "when" || name == "unless" {
+                self.scoped_expression(depth + 1)?;
+                if name == "unless" {
+                    self.emit(OP_NOT, 0)?;
+                }
+                let branch = self.code.len();
+                self.emit(OP_BRANCH_IF_ZERO, 0)?;
+                if name == "if" {
+                    self.scoped_expression(depth + 1)?;
+                } else {
+                    let saved = self.locals.len();
+                    self.scope += 1;
+                    self.sequence(depth + 1)?;
+                    self.scope -= 1;
+                    self.locals.truncate(saved);
+                }
+                let jump = self.code.len();
+                self.emit(OP_JUMP, 0)?;
+                self.patch_target(branch);
+                if name == "if" {
+                    self.scoped_expression(depth + 1)?;
+                    self.expect_char(b')', "unexpected delimiter")?;
+                } else {
+                    self.emit(OP_CONST, 0)?;
+                }
+                self.patch_target(jump);
+                return Ok(());
+            }
+            if name == "do" {
+                let saved = self.locals.len();
+                self.scope += 1;
+                self.sequence(depth + 1)?;
+                self.scope -= 1;
+                self.locals.truncate(saved);
+                return Ok(());
+            }
+            if name == "let" || name == "var" {
+                self.skip_space();
+                if self.peek() != Some(b'[') {
+                    self.binding(depth, name == "var")?;
+                    return self.expect_char(b')', "unexpected delimiter");
+                }
+                self.bump();
+                let saved = self.locals.len();
+                self.scope += 1;
+                loop {
+                    self.skip_space();
+                    if self.peek() == Some(b']') {
+                        self.bump();
+                        break;
+                    }
+                    self.binding(depth, name == "var")?;
+                    self.emit(OP_DROP, 0)?;
+                }
+                self.sequence(depth + 1)?;
+                self.scope -= 1;
+                self.locals.truncate(saved);
+                return Ok(());
+            }
+            if name == "set!" {
+                let target = self.token()?;
+                let Some(slot) = self.locals.iter().rposition(|l| l.name == target) else {
+                    return self.error("set! requires a mutable local binding");
+                };
+                if !self.locals[slot].mutable {
+                    return self.error("set! requires a mutable local binding");
+                }
+                let saved = self.locals.len();
+                self.expression(depth + 1)?;
+                self.expect_char(b')', "unexpected delimiter")?;
+                self.locals.truncate(saved);
+                return self.emit(OP_STORE_LOCAL, slot as u32);
+            }
             if let Some(&(_, opcode, arity)) = OPERATIONS.iter().find(|(op, _, _)| *op == name) {
                 for _ in 0..arity {
                     self.expression(depth + 1)?;
@@ -243,6 +434,9 @@ impl<'a> Parser<'a> {
         }
 
         let value = self.token()?;
+        if let Some(slot) = self.locals.iter().rposition(|l| l.name == value) {
+            return self.emit(OP_LOAD_LOCAL, slot as u32);
+        }
         if let Some(&index) = self.bindings.get(&value) {
             return self.emit(OP_INPUT, index);
         }
@@ -298,6 +492,9 @@ fn parse_finite_f32(text: &str) -> Option<u32> {
 
 /// Compiles Joltscript source into a JBC1 program.
 pub fn compile(source: &str) -> Result<Vec<u8>, CompileError> {
+    if crate::typed::required(source) {
+        return crate::typed::compile(source);
+    }
     if source.len() > MAX_SOURCE_BYTES {
         return Err(CompileError {
             line: 1,
@@ -331,7 +528,7 @@ pub fn compile(source: &str) -> Result<Vec<u8>, CompileError> {
     }
 
     parser.skip_space();
-    let body_start = parser.cursor;
+    let body_start = (parser.cursor, parser.line, parser.column);
     let mut outputs = 1u32;
     if parser.peek() == Some(b'(') {
         parser.bump();
@@ -339,17 +536,21 @@ pub fn compile(source: &str) -> Result<Vec<u8>, CompileError> {
         if head == "rgba" {
             outputs = 4;
         } else {
-            parser.cursor = body_start;
+            (parser.cursor, parser.line, parser.column) = body_start;
         }
     }
-    for index in 0..outputs {
-        parser.expression(0)?;
-        parser.emit(OP_OUTPUT, index)?;
-    }
-    if outputs == 4 {
+    if outputs == 1 {
+        parser.sequence(0)?;
+        parser.emit(OP_OUTPUT, 0)?;
+    } else {
+        for index in 0..outputs {
+            parser.locals.clear();
+            parser.expression(0)?;
+            parser.emit(OP_OUTPUT, index)?;
+        }
+        parser.expect_char(b')', "unexpected delimiter")?;
         parser.expect_char(b')', "unexpected delimiter")?;
     }
-    parser.expect_char(b')', "unexpected delimiter")?;
     parser.skip_space();
     if parser.cursor != parser.bytes.len() {
         return parser.error("trailing source after kernel");
@@ -366,6 +567,13 @@ pub fn compile(source: &str) -> Result<Vec<u8>, CompileError> {
 
 /// Reads the header of a JBC1 program. Returns `(inputs, outputs)`.
 pub fn header(program: &[u8]) -> Result<(u32, u32), CompileError> {
+    if program.len() >= 16 && u32::from_le_bytes(program[4..8].try_into().unwrap()) == 2 {
+        crate::typed::validate(program)?;
+        return Ok((
+            u32::from_le_bytes(program[8..12].try_into().unwrap()),
+            u32::from_le_bytes(program[12..16].try_into().unwrap()),
+        ));
+    }
     let malformed = |message: &str| CompileError {
         line: 0,
         column: 0,
@@ -396,7 +604,7 @@ pub fn header(program: &[u8]) -> Result<(u32, u32), CompileError> {
     if outputs == 0 || outputs > 4 {
         return Err(malformed("declared output count is out of range"));
     }
-    if !(program.len() - HEADER_SIZE).is_multiple_of(8) {
+    if (program.len() - HEADER_SIZE) & 7 != 0 {
         return Err(malformed(
             "program body is not a whole number of instructions",
         ));
@@ -409,6 +617,109 @@ pub fn header(program: &[u8]) -> Result<(u32, u32), CompileError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn conditional_bytecode_and_scope_errors() {
+        let program = super::compile("(defkernel k [x] (if x 2 3))").unwrap();
+        let words: Vec<u32> = program
+            .chunks_exact(4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .collect();
+        assert_eq!(
+            words,
+            vec![
+                super::MAGIC,
+                1,
+                1,
+                1,
+                2,
+                0,
+                33,
+                48,
+                1,
+                2f32.to_bits(),
+                32,
+                56,
+                1,
+                3f32.to_bits(),
+                15,
+                0
+            ]
+        );
+        for source in [
+            "(defkernel k [] (if 1 2))",
+            "(defkernel k [] (if 1 2 3 4))",
+            "(defkernel k [] (when 1))",
+            "(defkernel k [] (unless))",
+            "(defkernel k [] (cond))",
+            "(defkernel k [] (cond [else 1] [1 2]))",
+            "(defkernel k [] (cond [1]))",
+            "(defkernel k [] (cond [1 2 3]))",
+            "(defkernel k [] (do (if 1 (let a 2) 3) a))",
+            "(defkernel k [] (if (let c 1) c 0))",
+            "(defkernel k [] (if 1 (let a 2) a))",
+            "(defkernel k [] (if 1 2 unknown))",
+        ] {
+            assert!(super::compile(source).is_err(), "{source}");
+        }
+        let source = format!(
+            "(defkernel k [] {}1{})",
+            "(if 1 2 ".repeat(65),
+            ")".repeat(65)
+        );
+        assert!(super::compile(&source)
+            .unwrap_err()
+            .message
+            .contains("nesting"));
+    }
+
+    #[test]
+    fn lexical_binding_bytecode_vector() {
+        let program =
+            super::compile("(defkernel k [x] (do (var a x) (set! a (+ a 2)) a))").unwrap();
+        let words: Vec<u32> = program
+            .chunks_exact(4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .collect();
+        assert_eq!(
+            words,
+            vec![
+                super::MAGIC,
+                1,
+                1,
+                1,
+                2,
+                0,
+                30,
+                0,
+                31,
+                0,
+                29,
+                0,
+                1,
+                2f32.to_bits(),
+                3,
+                0,
+                30,
+                0,
+                31,
+                0,
+                29,
+                0,
+                15,
+                0
+            ]
+        );
+        for source in [
+            "(defkernel k [] (do))",
+            "(defkernel k [] (do (let a 1) (set! a 2)))",
+            "(defkernel k [x] (set! x 2))",
+            "(defkernel k [] (do (let a 1) (let a 2) a))",
+            "(defkernel k [] (+ (do (let a 1) a) a))",
+            "(defkernel k [] (let [a] a))",
+        ] {
+            assert!(super::compile(source).is_err(), "{source}");
+        }
+    }
     use super::*;
 
     fn code(source: &str) -> Vec<u8> {

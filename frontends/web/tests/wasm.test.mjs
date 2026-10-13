@@ -50,6 +50,32 @@ test("real WASM 3D scene keys, mesh processing, physics and persistence", () => 
     const before=bridge.saveDocument(); assert.throws(() => bridge.edit("3d.transform",0,6,0,0)); assert.equal(bridge.saveDocument(),before);
   } finally { bridge.dispose(); }
 });
+
+test("real WASM loads UTF-8 projects larger than its stack and preserves state on rejection", () => withBridge(bridge => {
+  const text = 'graph\nsize 2 1\nnode solid "🎨 رنگ"\noutput 1\n' + '# padding\n'.repeat(120000);
+  bridge.loadDocument(text);
+  assert.equal(bridge.graphState().nodes[0].label, "🎨 رنگ");
+  const before = bridge.saveDocument(), image = pixels(bridge.renderFrame(0));
+  assert.throws(() => bridge.loadDocument(text + "invalid command\n"), /Project rejected/);
+  assert.equal(bridge.saveDocument(), before);
+  assert.deepEqual(pixels(bridge.renderFrame(0)), image);
+}));
+
+test("real WASM typed Joltscript imports, closures and regex drive scene animation", () => {
+  const bridge = new EmscriptenJoltBridge(module, 64, 64);
+  try {
+    bridge.edit("3d.add", 0, 0, 0, 0, "cube");
+    const source = '(import jolt.math (sin HALF-PI)) (import jolt.strings (regex-match?)) ' +
+      '(defkernel lift [time frame index value] (let offset (fn [x] (+ value x))) ' +
+      '(if (regex-match? "^🎨$" "🎨") (offset (* time (sin HALF-PI))) value))';
+    bridge.edit("3d.script", 0, 1, 0, 0, source);
+    assert.equal(bridge.scene3dState().objects[0].scripts[1], source);
+    const first = pixels(bridge.renderFrame(0)), next = pixels(bridge.renderFrame(1));
+    assert.notDeepEqual(first, next);
+    const saved = bridge.saveDocument(); bridge.loadDocument(saved);
+    assert.deepEqual(pixels(bridge.renderFrame(1)), next);
+  } finally { bridge.dispose(); }
+});
 test("real WASM procedural surfaces, cloners, quaternion camera and Joltscript drivers", () => {
   const bridge=new EmscriptenJoltBridge(module,128,128);
   try {

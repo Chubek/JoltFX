@@ -631,6 +631,21 @@ int main(void) {
 - **Extension host**: `#joltfx-ext-core`
 - **Language bindings**: `#joltfx-bindings`
 - **Error handling**: `#joltfx-diagnostics`
+## Typed core compiler (execution ABI 0.8)
+
+`typed_compiler.c` reads/serializes version-2 tree bytecode and invokes the
+execution-layer semantic checker before publication. `compiler.c` selects this
+path for type annotations/literals or loop/function forms, retaining legacy
+f32 JBC1 emission otherwise. Use `jolt_program_run_values` for exact primitives;
+the float wrapper supports floating signatures and numeric outputs. Keep node
+ordering, token bytes and source positions identical to `zoltan/src/typed.rs`.
+Tests: `test_typed`, `check_phase1.py` and the registered byte-parity corpus.
+
+ABI 0.9 adds built-in standard-library imports and checked intrinsic interfaces.
+Import/module tokens select typed compilation in both readers. Keep collection
+values on `jolt_program_run_values`; the float wrapper rejects aggregate outputs.
+`test_stdlib` and `check_phase2.py` cover all six modules and C/Rust parity.
+
 ## CPU image source execution
 
 Color adapters compile individual bundled kernels with `jolt_image_kernel_compile`.

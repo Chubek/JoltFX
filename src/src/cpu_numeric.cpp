@@ -2,7 +2,9 @@
 #include <xsimd/xsimd.hpp>
 #include <cmath>
 #include <limits>
-#if !defined(JFX_CPU_SIMD_OFF) && !defined(XSIMD_NO_SUPPORTED_ARCHITECTURE)
+// This xsimd revision selects its WASM architecture even without -msimd128.
+// Retain the scalar path unless the target actually enables SIMD instructions.
+#if !defined(JFX_CPU_SIMD_OFF) && !defined(XSIMD_NO_SUPPORTED_ARCHITECTURE) && (!defined(__EMSCRIPTEN__) || defined(__wasm_simd128__))
 #define JFX_VECTOR 1
 using Batch=xsimd::batch<float>;
 #endif

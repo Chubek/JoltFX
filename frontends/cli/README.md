@@ -42,12 +42,12 @@ cmake --build build --target joltfx_cli
 - `joltfx edit IN.jfx OUT.jfx [--plugin MODULE ...]` — terminal editor with section-local `grade.*` and
   `calibration.*` commands. See [examples and command reference](../../docs/editor.md).
 
-- `joltfx compile FILE [-o OUTPUT]` — validate a `.jolt` kernel (MVP
-  `defkernel` form); with `-o`, write the compiled JBC1 bytecode.
+- `joltfx compile FILE [-o OUTPUT]` — validate a `.jolt` kernel or built-in
+  library interface; with `-o`, write JBC1 version-1 f32 or version-2 typed bytecode.
 - `joltfx verify FILE` — validate only. Exit 0 when valid, 1 otherwise.
 - `joltfx effects` — list the 12 bundled color kernels.
 - `joltfx info EFFECT|FILE` — sample output for a bundled effect, kernel
-  details for a source file, or the header and instruction count for a
+  details for a source file, or the header and instruction/tree-node count for a
   compiled `.jbc`.
 - `joltfx render [--effect NAME] [--param VALUE] [--width W --height H]
   [-o OUTPUT.ppm] [--backend NAME]` — render a bundled effect over an animated
@@ -67,6 +67,20 @@ cmake --build build --target joltfx_cli
   See [media building and commands](../../docs/media.md).
 - `joltfx version` / `joltfx help [COMMAND]` — version and help.
 - `joltfx run` — legacy entry point: init the engine and tick once.
+
+## Joltscript language support
+
+The compiler supports lexical bindings/mutation, lazy conditionals, typed
+primitives, loops, named/anonymous functions and closures. Built-in imports
+provide `jolt.math`, `jolt.graphics`, `jolt.geometry`, `jolt.time`,
+`jolt.collections` and `jolt.strings` (262 exports). See the
+[language reference](../../joltscript/docs/language.md) and
+[standard library](../../joltscript/docs/stdlib.md).
+
+Typed programs execute on the CPU, including Vulkan fallback. Numeric pixel
+paths accept floating inputs and numeric results; exact integers, strings and
+collections use `jolt_program_run_values` or the `jolti` evaluator. The separate
+CPU image dialect is checked with `joltc --check --image-library LIBRARY FILE`.
 
 ## Where the pixels come from
 

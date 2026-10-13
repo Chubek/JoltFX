@@ -67,7 +67,7 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
                     int x0=int(std::max(0.f,minx)),x1=int(std::min(float(sw-1),maxx)),y0=int(std::max(0.f,miny)),y1=int(std::min(float(sh-1),maxy));
                     for (int y=y0;y<=y1;++y) {
                         int x=x0;
-#if defined(NDEBUG) && !defined(JFX_CPU_SIMD_OFF) && !defined(XSIMD_NO_SUPPORTED_ARCHITECTURE)
+#if defined(NDEBUG) && !defined(JFX_CPU_SIMD_OFF) && !defined(XSIMD_NO_SUPPORTED_ARCHITECTURE) && (!defined(__EMSCRIPTEN__) || defined(__wasm_simd128__))
                         using B=xsimd::batch<float>;
                         alignas(64) float lanes[B::size],zs[B::size],lights[B::size];
                         for (size_t lane=0;lane<B::size;++lane) lanes[lane]=float(lane)+.5f;

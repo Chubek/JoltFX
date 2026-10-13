@@ -1,7 +1,20 @@
 # Geometry libraries stay behind the engine's C boundary. Only VTK's math/core
 # module is needed; do not build its rendering/windowing or language wrappers.
 set(JFX_3D_EIGEN_ROOT "" CACHE PATH "Eigen >=3.4.1 headers (offline override)")
-find_package(Boost 1.74 REQUIRED)
+set(JFX_3D_BOOST_ROOT "" CACHE PATH "Standalone Boost >=1.74 headers for native/cross builds")
+if(JFX_3D_BOOST_ROOT)
+    # Never add a host /usr/include to an NDK/Emscripten compile: its libc
+    # headers would shadow the target sysroot. Use an unpacked Boost tree.
+    file(STRINGS "${JFX_3D_BOOST_ROOT}/boost/version.hpp" jfx_boost_version
+        REGEX "^#define BOOST_VERSION [0-9]+$")
+    string(REGEX REPLACE ".*BOOST_VERSION ([0-9]+).*" "\\1" jfx_boost_version "${jfx_boost_version}")
+    if(NOT jfx_boost_version MATCHES "^[0-9]+$" OR jfx_boost_version LESS 107400)
+        message(FATAL_ERROR "JFX_3D_BOOST_ROOT must contain Boost >=1.74 headers")
+    endif()
+    set(Boost_INCLUDE_DIRS "${JFX_3D_BOOST_ROOT}")
+else()
+    find_package(Boost 1.74 REQUIRED)
+endif()
 if(NOT JFX_3D_EIGEN_ROOT)
     # This checkout's Eigen predates libigl's reshaped/indexing API. Pin a
     # compatible header dependency; callers can supply it for offline builds.
@@ -78,8 +91,10 @@ target_include_directories(jfx_core SYSTEM PRIVATE ${cgal_packages})
 target_compile_definitions(jfx_core PRIVATE CGAL_DISABLE_GMP=1 CGAL_HEADER_ONLY=1 IGL_PARALLEL_FOR_FORCE_SERIAL=1)
 set_property(TARGET jfx_core PROPERTY NO_SYSTEM_FROM_IMPORTED OFF)
 target_link_libraries(jfx_core PRIVATE BulletDynamics BulletCollision LinearMath VTK::CommonCore)
-# This VTK revision unconditionally configures CommonDataModel as well as Core.
-# Its exported package references those archives, so build them for installation.
-add_dependencies(jfx_core vtkCommonDataModel)
+# This VTK revision also configures CommonDataModel. Its exported package needs
+# those archives for SDK installation, but application targets do not link them.
+# Keep them in the default build without forcing web/Android app-only builds to
+# compile an otherwise unused VTK module (or its host code-generation tools).
+add_custom_target(jfx_scene_install_deps ALL DEPENDS vtkCommonDataModel)
 get_target_property(vtk_math_includes VTK::CommonCore INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(jfx_core SYSTEM PRIVATE ${vtk_math_includes})

@@ -4,14 +4,18 @@
 
 Zoltan is the JoltFX command-line interface and development toolchain. It provides project scaffolding, kernel compilation, live preview, hot-reload, package management, and deployment export. This guide covers contributions to Zoltan's codebase, conventions, and release process.
 
-Zoltan is implemented in **Rust** (stable, 1.70+), standard library only so it
-builds and runs offline.
+Zoltan is implemented in **Rust** (stable), with no registry dependencies. Its
+typed verifier/VM bridge also requires a C11 compiler and archiver (`CC`/`AR`
+overrides supported), Python 3 and CMake for the standard-library catalogue and
+vendored PCRE2 interpreter archive; it still builds offline. `PYTHON` overrides
+the interpreter and `CMAKE_TOOLCHAIN_FILE` configures PCRE2 cross builds.
 
 > **The layout below is the design target, not the current tree.** What exists
 > today is `src/main.rs` (command drivers), `src/validate.rs` (the
 > validator), `src/bytecode.rs` (the JBC1 emitter), `src/sketch.rs` (the
 > creative-sketch layer) and `src/stdlib.rs` (bundled snippets) plus
-> `stdlib/*.jolt` example sketches. There is no FFI to the Core engine, no
+> `stdlib/*.jolt` example sketches. `typed.rs` now bridges the portable typed VM
+> (not the Core engine). There is no
 > `context.rs`, and none of the `commands/` or `core/` subdirectories. See
 > `PROGRESS.md` for the verified state.
 
@@ -34,6 +38,33 @@ That is enforced, not hoped for:
 
 If you change one compiler, change the other in the same commit or the parity
 check fails.
+
+The f32 JBC1 subset includes `let`, `var`, `set!`, `do`, scoped vector
+bindings, implicit scalar kernel sequences and lazy `if`/`cond`/`when`/`unless`.
+Forward-only branches 32–33 (execution ABI 0.7) use absolute byte offsets.
+The validator delegates body
+semantics to `bytecode::compile`; keep preview, HTML/WAT lowering and Vulkan
+codegen aligned with the instruction set. WAT uses structured f32-result `if`s
+for compiler-emitted branches; unsupported operations fail rather than emitting
+placeholder results. Language-feature
+fixtures in `joltscript/tests/conformance/*.jolt` are part of the pinned parity
+corpus alongside the bundled kernels and examples.
+
+Version 2 implements Phase 1 primitive types, loops and functions. `typed.rs`
+independently reads and serializes the bounded tree format; `build.rs` compiles
+the shared C verifier/interpreter with Rust allocation callbacks. Never expose
+raw bridge pointers; keep all unsafe operations inside the bridge and match
+allocation/deallocation. Native preview and object export handle version 2;
+HTML/WAT exporters reject it explicitly before writing artifacts. See
+`joltscript/docs/language.md` for semantics/budgets and `check_phase1.py` for
+cross-compiler/exact-value checks. Cross builds must supply target `CC`/`AR`.
+
+Phase 2 imports use the shared typed runtime and the generated catalogue from
+`joltscript/stdlib/*.jolt`. Module interfaces compile to zero-output artifacts;
+metadata validation recognizes them without kernel headers. Preview supports
+numeric results from library kernels and rejects aggregate/string results.
+`check_phase2.py` enforces execution and byte parity for every intrinsic export;
+the pinned parity corpus also includes the six module files and `phase2.jolt`.
 
 The format constants live in `vm.h` (`JOLT_BYTECODE_MAGIC`, `_VERSION`,
 `_HEADER_SIZE`, `_INSTRUCTION_SIZE`) and must be mirrored in `bytecode.rs`.
@@ -128,7 +159,9 @@ For breaking CLI changes (flag renames, output format changes), post in `#joltfx
 
 ## Build and Toolchain
 
-Zoltan is written in Rust and targets **stable Rust 1.70+**. Do not use nightly features without an explicit architecture decision.
+Zoltan targets stable Rust 1.70+ plus a C11 compiler/archiver for the typed bridge,
+Python 3 for catalogue generation and CMake for the vendored PCRE2 archive.
+Do not use nightly features without an explicit architecture decision.
 
 ```bash
 # Build
@@ -250,7 +283,11 @@ Parsing happens in `src/core/project.rs`. Adding a new section or field requires
 
 ## Compiler Bridge
 
-Zoltan delegates Joltscript compilation to the engine's Glue Layer via FFI. The bridge lives in `src/core/compiler.rs` and wraps the C API declared in `joltfx.h`.
+The shipped compiler independently parses/serializes source in `src/bytecode.rs`
+and `src/typed.rs`. Only the typed verifier/VM is shared C code through a private
+allocator bridge. The `src/core/compiler.rs` engine-integration design below is
+a future layout, not the current emission path. Preserve independent C/Rust
+emission and the parity gates when changing either compiler.
 
 ```rust
 pub fn compile_kernel(

@@ -1,0 +1,13 @@
+;; @kernel phase2
+;; @category conformance
+;; @description Standard-library imports, collections, geometry and string parsing
+;; @complexity Low
+;; @gpu No
+;; @since 0.9.0
+(import jolt.math (sin HALF-PI))
+(import jolt.geometry (vec-dot))
+(import jolt.collections (reduce))
+(import jolt.strings (parse-float))
+(defkernel phase2 [x y t]
+  (rgba (sin HALF-PI) (vec-dot [1 2] [3 4])
+        (reduce + 0 [1 2 3]) (parse-float "1.25")))

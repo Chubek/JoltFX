@@ -167,8 +167,10 @@ jfx_result_t jfx_vk_execute_bytecode(jfx_vk_backend_t *backend,
         (parameter_count && !parameters)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
-    backend->used_gpu = backend->gpu != NULL;
-    if (backend->gpu) {
+    bool typed = bytecode_size >= 16 && bytecode[4] == 2 &&
+        bytecode[5] == 0 && bytecode[6] == 0 && bytecode[7] == 0;
+    backend->used_gpu = backend->gpu != NULL && !typed;
+    if (backend->used_gpu) {
         int status = jvk_compute_run(backend->gpu, bytecode, bytecode_size,
             input_rgba, pixels, parameters, parameter_count, output_rgba,
             backend->memory_limit);

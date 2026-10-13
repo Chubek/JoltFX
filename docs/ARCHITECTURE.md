@@ -14,9 +14,9 @@ JoltFX is structured in layers, from low-level runtime to high-level frontends.
 │         Extension Interfaces            │
 │      (Lua, mruby, QuickJS, Python)      │
 ├─────────────────────────────────────────┤
-│         JoltScript Glue Layer           │
+│         Joltscript Glue Layer           │
 ├─────────────────────────────────────────┤
-│       JoltScript Execution Layer        │
+│       Joltscript Execution Layer        │
 ├─────────────────────────────────────────┤
 │         Core Engine                     │
 │  (Scheduler, Memory, Event Bus)         │
@@ -42,14 +42,27 @@ Full runtime services: custom allocators, structured logging, dynamic module loa
 ### Core Engine
 Unified API for buffers, textures, and kernel execution. Manages resource lifecycle and scheduling.
 
-### JoltScript Execution
-Bytecode VM for executing compiled effects. Handles parameter binding and state management.
+### Joltscript Execution
+Execution ABI 0.9 supports the legacy f32 stack VM (JBC1 version 1) and a typed,
+budgeted tree VM (version 2). Typed programs support exact primitives, loops,
+functions/closures, immutable collections and six built-in library modules with
+262 exports. The runtime owns invocation arenas, callback/regex step budgets
+and failure-atomic output publication. Tagged string/collection views are
+VM-owned; pixel APIs consume numeric results. See the
+[language](../joltscript/docs/language.md) and [library](../joltscript/docs/stdlib.md)
+references for limits and ownership.
 
-### JoltScript Glue
-Binds JoltScript VM to core engine resources. Marshals calls between script and native code.
+### Joltscript Glue
+Compiles source into validated JBC1 and binds execution to engine resources.
+C and Zoltan independently parse/serialize identical bytecode; Zoltan shares the
+portable C typed checker/VM through its allocator bridge. Built-in imports
+resolve against a catalogue generated from `joltscript/stdlib/*.jolt`.
+The CPU image profile used by image effects is a separate bounded AST interpreter,
+with its own sampling/resource contract and no standard-library imports.
 
 ### Backends
-Vulkan provides device dispatch. Metal, D3D12, and WebGPU currently share a
+Vulkan provides version-1 device dispatch; version-2 programs use CPU fallback
+and report `used_gpu=false`. Metal, D3D12, and WebGPU currently share a
 validated CPU fallback adapter so every selected backend preserves the JBC1
 pixel contract while native dispatch work proceeds.
 

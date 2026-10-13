@@ -10,9 +10,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(EMSCRIPTEN)
     # The MemTKX C boundary translates C++ allocation failures into NULL/status.
-    # Emscripten must retain catches in both the adapter and C++ frontends.
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fexceptions>)
-    add_link_options(-fexceptions)
+    # Use the same native WASM exception ABI as VTK. Mixing JS exception objects
+    # (-fexceptions) with VTK's propagated -fwasm-exceptions link flags leaves
+    # __resumeException unresolved and cannot unwind across the boundary.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fwasm-exceptions>)
+    add_link_options(-fwasm-exceptions)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")

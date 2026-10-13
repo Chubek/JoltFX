@@ -2,7 +2,7 @@
 
 Minimal end-to-end use of the Core engine with a Joltscript kernel.
 
-- `effect.jolt` — identity passthrough kernel in the MVP `defkernel` syntax.
+- `effect.jolt` — identity passthrough kernel using the legacy f32 `defkernel` profile.
   It verifies with both the C compiler (`joltfx verify`) and the Zoltan MVP
   (`zoltan verify`).
 - `main.c` — initializes the engine, compiles the kernel to JBC1, runs a 2x2

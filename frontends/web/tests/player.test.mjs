@@ -94,6 +94,45 @@ effect grade_lut "" 1 1
   assert.equal(colorLayers(document, 9, 9, grades).length, 0);
 });
 
+test("project loading uses owned UTF-8 heap storage and releases it on rejection", () => {
+  const freed = [], calls = [];
+  let fail = false, allocationFails = false;
+  const module = {
+    HEAPU8: new Uint8Array(16),
+    _jfx_web_alloc(size) {
+      if (allocationFails) return 0;
+      // Allocation may grow memory; copy into the new view, not a retained one.
+      if (size + 128 > this.HEAPU8.length) this.HEAPU8 = new Uint8Array(size + 128);
+      return 128;
+    },
+    _jfx_web_free: p => freed.push(p),
+    cwrap(name, _result, args) {
+      if (name === "jfx_web_session_create") return (_, p) => { new DataView(module.HEAPU8.buffer).setUint32(p, 9, true); return 0; };
+      if (name === "jfx_web_session_load_document") {
+        assert.equal(args[1], "number", "cwrap strings use the bounded WASM stack");
+        return (_, p, size) => {
+          calls.push(new TextDecoder().decode(module.HEAPU8.subarray(p, p + size)));
+          assert.equal(module.HEAPU8[p + size], 0);
+          return fail ? -1 : 0;
+        };
+      }
+      return () => 0;
+    },
+  };
+  const bridge = new EmscriptenJoltBridge(module, 1, 1);
+  const text = 'graph\nnode solid "🎨 رنگ"\n' + '# comment\n'.repeat(120000);
+  bridge.loadDocument(text);
+  assert.deepEqual(calls, [text]);
+  fail = true;
+  const before = freed.length;
+  assert.throws(() => bridge.loadDocument("invalid"), /Project rejected/);
+  assert.equal(freed.length, before + 1);
+  allocationFails = true;
+  assert.throws(() => bridge.loadDocument(text), /allocation failed/);
+  assert.equal(freed.length, before + 1);
+  bridge.dispose();
+});
+
 test("NLE hit-testing follows visible clip order and snap tolerance", () => {
   const state = { tracks: [{ clips: [{ start: 0, length: 30 }, { start: 10, length: 10 }] }] };
   assert.equal(timelineHit(state, 0, 9), 0);

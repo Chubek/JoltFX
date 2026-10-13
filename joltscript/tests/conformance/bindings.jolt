@@ -1,0 +1,11 @@
+;; @kernel bindings
+;; @category conformance
+;; @description Lexical bindings and eager sequencing parity fixture.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.4.0
+(defkernel bindings [x y t]
+  (var total x)
+  (let offset (+ y t))
+  (set! total (+ total offset))
+  (+ (let [total 10 doubled (* total 2)] doubled) total))

@@ -56,6 +56,65 @@ by the app; default project and PPM paths use its private `filesDir`. These buil
 include still-image, LUT and miniaudio decoding plus bundled FFmpeg audio/video
 decoding and encoded export. Optional OpenColorIO is disabled.
 
+ADB/platform-tools alone cannot assemble the app: the JDK, SDK platform, build
+tools, NDK, CMake and access to Google Maven for AGP are also needed. Python 3
+generates the Joltscript library catalogue during the native build.
+Cross-builds need standalone Boost >=1.74 headers (`boost/version.hpp` under the
+chosen root); do not supply a host `/usr/include`. Optional Gradle properties
+forward dependency locations to both native ABIs:
+
+```sh
+./gradlew assembleDebug \
+  -PJFX_3D_BOOST_ROOT=/path/to/boost \
+  -PJFX_3D_EIGEN_ROOT=/path/to/eigen-3.4.1 \
+  -PJFX_FFMPEG_ROOT=/path/to/ffmpeg
+```
+
+Eigen is fetched if no override is given. FFmpeg defaults to
+`third_party/ffmpeg`; the source checkout must contain `configure` (8.0 tested).
+
+### Android document workflows
+
+- **Open project from device… / Save project to device…** use Android's system
+  document picker. Save exports a snapshot of the active workspace.
+- **Browse media…**, the two color LUT browsers, **Browse animation .jolt…**
+  and **Browse PLY mesh…** copy a selected document into persistent app-private
+  imports and populate the corresponding path field. Apply/add the resource
+  with the adjacent editor action. Imports get unique names so importing another
+  file does not replace assets referenced by existing clips or history.
+- Project imports are bounded to 8 MiB and individual assets to 64 MiB. Provider
+  streams run on Android's managed I/O executor; Core edits remain on the main
+  thread. Failed/cancelled imports clean up partial local files. No broad storage
+  permission is required. Referenced external assets are not embedded in `.jfx`.
+- Rotation retains the native session and all workspace histories, with stable
+  field IDs for view-state restoration. Leaving the activity pauses playback;
+  opening a project refreshes NLE, composition and 3D controls together.
+- JNI converts Java UTF-16 to standard UTF-8 for Unicode paths, labels and
+  Joltscript literals, rejecting embedded NUL and unpaired surrogates. Local
+  project saves serialize to a temporary file and rename only after success.
+
+### Android checks without a device
+
+From the repository root, with JDK 17 and a Kotlin compiler, run the bounded-copy/storage regressions:
+
+```sh
+sh frontends/mobile/android/tests/run-storage-tests.sh
+```
+
+`KOTLINC` and `JAVA_HOME` can select the compiler/JDK. The native JNI bridge can
+also run against a real host JVM on Linux/macOS, without Android framework stubs or a device:
+
+```sh
+cmake -S . -B build -DJFX_ANDROID_JNI_HOST_TESTS=ON -DJFX_BACKEND_VULKAN=ON
+cmake --build build --target test_android_jni
+ctest --test-dir build -R '^android_jni$' --output-on-failure
+```
+
+This checks Unicode, typed Joltscript/regex animation, rendered pixels, project
+persistence and failed-save preservation through the production JNI functions
+with `-Xcheck:jni`. APK/NDK builds and device tests are still needed for platform
+ABI, document-provider, rotation, audio and UI integration.
+
 ## Build iOS
 
 Use macOS with Xcode, the iOS SDK and CMake 3.20+. From the repository root,

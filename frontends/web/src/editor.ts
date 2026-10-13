@@ -375,6 +375,7 @@ export class JoltEditor {
     const scriptChannel=this.select(["Position X","Position Y","Position Z","Rotation X","Rotation Y","Rotation Z","Scale X","Scale Y","Scale Z"]),script=document.createElement("textarea");
     script.value="(defkernel spin [time frame index value] (+ value (* time 90)))";
     this.field(panel,"Joltscript channel",scriptChannel); this.field(panel,"Joltscript animation",script);
+    const scriptHelp=document.createElement("p"); scriptHelp.textContent="Joltscript: loops, functions and built-in imports such as jolt.math and jolt.time. Use floating time/frame/index/value inputs and one numeric result; typed programs run on the CPU."; panel.append(scriptHelp);
     panel.append(this.button("Load assigned animation script",() => { script.value=this.scene3d?.objects[this.sceneObject]?.scripts?.[scriptChannel.selectedIndex] ?? ""; }),
       this.button("Apply animation script",() => this.bridge.edit("3d.script",this.sceneObject,scriptChannel.selectedIndex,0,0,script.value)),
       this.button("Remove animation script",() => this.bridge.edit("3d.script",this.sceneObject,scriptChannel.selectedIndex,0,0,"")));

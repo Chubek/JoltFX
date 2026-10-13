@@ -4,6 +4,11 @@
 
 Joltscript ships with a set of tools for kernel development: compiler, REPL, formatter, documentation generator, and LSP server.
 
+The compiler/evaluator implement the Phase 1–2 language and standard library.
+The formatter, documentation generator and LSP are preliminary tools; their
+full semantic integration is the next language-plan phase. Use `joltc --check`
+or `zoltan verify` for compiler-backed validation.
+
 ## joltc — Compiler
 
 Compiles `.jolt` source files to JBC1 bytecode.
@@ -23,6 +28,7 @@ joltc [options] <input.jolt> [-o <output.jbc>]
 | `-v, --version` | Show version information |
 | `--check` | Validate only, don't emit bytecode |
 | `--dump` | Dump disassembly to stdout |
+| `--image-library <path>` | Validate the separate CPU image profile with prepended helpers; requires `--check`, emits no bytecode |
 
 ### Examples
 
@@ -39,6 +45,27 @@ joltc --dump kernel.jolt
 
 ## jolti — REPL
 
+The current evaluator accepts complete kernels, with inputs initialized to zero.
+For example, `jolti -e '(defkernel k [] (if 1 7 (/ 1 0)))'` returns `7`.
+
+Typed kernels print exact integer, string, character, bool and floating results:
+`jolti -e '(defkernel k [] 18446744073709551615u64)'` prints all 20 digits.
+`joltc --dump` displays version-2 tree tags, links, tokens and source positions;
+`joltfx info FILE.jbc` reports the typed container and node count.
+
+Phase 2 adds compiled built-in imports and recursive collection output in
+`jolti`. For example:
+
+```sh
+jolti -e '(import jolt.collections) (defkernel k [] (map + [1 2] [3 4]))'
+# [4 6]
+joltc joltscript/stdlib/math.jolt --check
+```
+
+All six standard-library interfaces can be checked/compiled as zero-output
+module artifacts. See [stdlib.md](stdlib.md) for the API, CPU execution limits
+and Python/CMake/vendored-PCRE2 build requirements.
+
 Interactive Read-Eval-Print Loop for Joltscript.
 
 ### Usage
@@ -53,7 +80,7 @@ jolti [options]
 |--------|-------------|
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version information |
-| `-e, --eval <expr>` | Evaluate expression and exit |
+| `-e, --eval <source>` | Evaluate a complete kernel and exit; inputs are zero-initialized |
 
 ### Examples
 
@@ -62,13 +89,16 @@ jolti [options]
 jolti
 
 # Evaluate expression
-jolti -e '(+ 1 2)'
+jolti -e '(defkernel k [] (+ 1 2))'
 ```
 
 ### REPL Commands
 
 - `quit` or `exit` — Exit the REPL
 - `Ctrl+D` — Exit the REPL
+
+Each evaluation is independent; imports and definitions belong in the same
+source submission as the kernel. Module-only artifacts cannot be invoked.
 
 ## joltfmt — Formatter
 
@@ -103,17 +133,20 @@ joltfmt --check kernel.jolt
 cat kernel.jolt | joltfmt --stdin
 ```
 
-### Style Rules
+### Current formatting scope
 
-- 2-space indentation
-- Align `let`/`var` bindings vertically when > 2
-- Trailing commas in multi-line collections
-- Max line width: 100 columns
-- Sort imports alphabetically by module path
+The standalone token formatter is not a compiler-backed typed-language formatter.
+It currently drops semicolon comments, including metadata, and does not implement
+the planned import sorting, binding alignment or width rules. Preserve original
+sources and metadata when using it; validate formatted source with `joltc`.
 
 ## joltdoc — Documentation Generator
 
 Generates Markdown or HTML documentation from `.jolt` source files.
+
+It extracts source forms/comments without the shared semantic checker. The
+hand-maintained [library reference](stdlib.md) and checked `.jolt` interfaces
+are authoritative for the Phase 2 API.
 
 ### Usage
 
@@ -161,22 +194,21 @@ joltscript-lsp [options]
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version information |
 | `--stdio` | Use stdio for communication (default) |
-| `--tcp <port>` | Use TCP for communication |
+| `--tcp <port>` | Parsed but not implemented; the server still uses stdio |
 
-### Features
+### Current protocol scope
 
-- **Hover** — Show documentation on hover
-- **Completion** — Code completion
-- **Diagnostics** — Error reporting
+The server implements initialization and basic stdio request handling. Hover
+currently returns null, completion returns an empty list, and document-open
+publishes an empty diagnostic list; these are not compiler-backed language
+services. Phase 1–2 compiler/stdlib completion does not imply completed LSP
+features. TCP mode is accepted as an option but is not implemented.
 
 ### Examples
 
 ```bash
 # Start LSP server with stdio
 joltscript-lsp --stdio
-
-# Start LSP server with TCP
-joltscript-lsp --tcp 7072
 ```
 
 ## Building from Source
@@ -221,7 +253,7 @@ cmake --install build --prefix /usr/local
 
 - Verify input is valid Joltscript
 - Check for syntax errors
-- Try `jolti -e '(+ 1 2)'` to test
+- Try `jolti -e '(defkernel k [] (+ 1 2))'` to test
 
 ### joltfmt changes nothing
 

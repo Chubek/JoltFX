@@ -12,9 +12,34 @@
 
 static const char kBrightness[] =
     "(defkernel brightness [r g b a amount] (rgba (* r amount) (* g amount) (* b amount) a))";
+static const char kBindings[] =
+    "(defkernel bindings [r g b a amount] (rgba "
+    "(do (var v r) (set! v (* v amount)) v) "
+    "(let [v (* g amount)] v) (do (let v b) (* v amount)) a))";
 
 static void near(float a, float b) {
     assert(fabsf(a - b) < 1e-6f);
+}
+
+static void conditionals(jfx_vk_backend_t *backend) {
+    const char *typed="(defkernel typed [r g b a] (var n 0) (for [i 0 4] (set! n (+ n i))) (rgba (+ r (f64 n)) g b a))";
+    float typed_in[4]={0.25f,0.5f,0.75f,1},typed_out[4]={0};
+    assert(jfx_vk_execute(backend,typed,typed_in,1,NULL,0,typed_out)==JFX_SUCCESS);
+    near(typed_out[0],6.25f);near(typed_out[1],0.5f);near(typed_out[2],0.75f);near(typed_out[3],1);
+    assert(!jfx_vk_used_gpu(backend));
+    const char *source = "(defkernel k [r g b a] (rgba "
+        "(if (> r 0) r (if (< r 0) 0.5 (/ 1 0))) "
+        "(do (var v g) (when b (set! v (+ v 0.25))) v) "
+        "(cond [(= b 0) 0.75] [else (unless 0 b)]) a))";
+    float in[] = {0.1f, 0.2f, 0.3f, 1, -0.1f, 0.2f, 0, 0.5f};
+    float out[8];
+    assert(jfx_vk_execute(backend, source, in, 2, NULL, 0, out) == JFX_SUCCESS);
+    near(out[0], 0.1f); near(out[1], 0.45f); near(out[2], 0.3f); near(out[3], 1);
+    near(out[4], 0.5f); near(out[5], 0.2f); near(out[6], 0.75f); near(out[7], 0.5f);
+    for (unsigned i = 0; i < 8; ++i) out[i] = 99;
+    in[0] = 0; /* selected numerical failure must not publish partial output */
+    assert(jfx_vk_execute(backend, source, in, 2, NULL, 0, out) != JFX_SUCCESS);
+    for (unsigned i = 0; i < 8; ++i) near(out[i], 99);
 }
 
 int main(void) {
@@ -34,6 +59,7 @@ int main(void) {
     jfx_vk_query_caps(NULL, &caps);
     assert(!caps.gpu_available && strcmp(caps.device_name, "cpu-fallback") == 0);
     jfx_vk_query_caps(backend, NULL);
+    conditionals(backend);
 
     float input[8] = {0.1f, 0.2f, 0.3f, 0.5f, 0.4f, 0.3f, 0.2f, 1.0f};
     float out[8] = {0};
@@ -45,6 +71,8 @@ int main(void) {
     near(out[3], 0.5f);
     near(out[4], 0.8f);
     near(out[7], 1.0f);
+    assert(jfx_vk_execute(backend, kBindings, input, 2, &amount, 1, out) == JFX_SUCCESS);
+    near(out[0], 0.2f); near(out[1], 0.4f); near(out[2], 0.6f); near(out[7], 1.f);
 
     /* In-place execution is safe. */
     float inout[4] = {0.1f, 0.2f, 0.3f, 0.5f};
@@ -82,6 +110,7 @@ int main(void) {
     memset(&caps, 0, sizeof(caps));
     jfx_vk_query_caps(backend, &caps);
     float gpu_out[8] = {0};
+    conditionals(backend);
     assert(jfx_vk_execute(backend, kBrightness, input, 2, &amount, 1, gpu_out) ==
         JFX_SUCCESS);
     near(gpu_out[0], 0.2f);
@@ -90,6 +119,8 @@ int main(void) {
     near(gpu_out[3], 0.5f);
     near(gpu_out[4], 0.8f);
     near(gpu_out[7], 1.0f);
+    assert(jfx_vk_execute(backend, kBindings, input, 2, &amount, 1, gpu_out) == JFX_SUCCESS);
+    near(gpu_out[0], 0.2f); near(gpu_out[1], 0.4f); near(gpu_out[2], 0.6f); near(gpu_out[7], 1.f);
     if (caps.gpu_available) {
         assert(strcmp(caps.device_name, "cpu-fallback") != 0);
         assert(caps.api_version != 0);

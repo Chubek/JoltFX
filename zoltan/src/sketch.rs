@@ -163,14 +163,49 @@ pub fn run_sketch_frames(
 }
 
 fn eval_program(program: &[u8], inputs: &[f32], outputs: usize) -> Result<[f32; 4], String> {
+    if program.len() >= 16 && program[4..8] == 2u32.to_le_bytes() {
+        let result = crate::typed::evaluate(program, inputs, outputs)?;
+        let mut out = [0.; 4];
+        out[..outputs].copy_from_slice(&result);
+        return Ok(out);
+    }
+    if inputs.iter().any(|v| !v.is_finite()) {
+        return Err("non-finite input".to_string());
+    }
     let mut stack: Vec<f32> = Vec::with_capacity(64);
     let mut offset = crate::bytecode::HEADER_SIZE;
     let mut out = [0f32; 4];
+    let mut locals = [None; 128];
     while offset + 8 <= program.len() {
         let op = u32::from_le_bytes(program[offset..offset + 4].try_into().unwrap());
         let operand = u32::from_le_bytes(program[offset + 4..offset + 8].try_into().unwrap());
         offset += 8;
         match op {
+            32 | 33 => {
+                let target = operand as usize;
+                if target < offset
+                    || target > program.len()
+                    || (target - crate::bytecode::HEADER_SIZE) & 7 != 0
+                {
+                    return Err("invalid forward branch".to_string());
+                }
+                if op == 32 || stack.pop().ok_or("stack underflow")? == 0.0 {
+                    offset = target;
+                }
+            }
+            29 => stack.push(
+                *locals
+                    .get(operand as usize)
+                    .and_then(|v| v.as_ref())
+                    .ok_or("uninitialized local")?,
+            ),
+            30 => {
+                *locals.get_mut(operand as usize).ok_or("invalid local")? =
+                    Some(*stack.last().ok_or("stack underflow")?)
+            }
+            31 => {
+                stack.pop().ok_or("stack underflow")?;
+            }
             1 => stack.push(f32::from_bits(operand)),
             2 => stack.push(*inputs.get(operand as usize).unwrap_or(&0.0)),
             3 | 4 | 5 | 6 | 7 | 8 | 11 | 13 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 24 | 25 | 26
@@ -284,6 +319,9 @@ fn eval_program(program: &[u8], inputs: &[f32], outputs: usize) -> Result<[f32; 
             }
             _ => return Err(format!("unknown opcode {op}")),
         }
+        if stack.last().is_some_and(|v| !v.is_finite()) {
+            return Err("non-finite intermediate result".to_string());
+        }
     }
     Ok(out)
 }
@@ -296,6 +334,56 @@ mod tests {
         ;; @description Demo.\n;; @complexity Low\n;; @gpu Yes\n;; @since 0.3.0\n\
         ;; @canvas 320x180\n;; @fps 30\n;; @duration 2\n\
         (defkernel demo [x y t] (rgba x y t 1.0))";
+
+    #[test]
+    fn lazy_conditionals_execute() {
+        for (body, expected) in [
+            ("(if x 7 (/ 1 0))", 7.),
+            ("(if 0 (/ 1 0) (+ x 2))", 5.),
+            ("(+ 10 (if x (if 0 2 3) 4))", 13.),
+            ("(do (var a 1) (if x (set! a 7) (set! a 9)) a)", 7.),
+            ("(when x (let a 4) (+ a x))", 7.),
+            ("(unless x (/ 1 0))", 0.),
+            ("(when 0 (/ 1 0))", 0.),
+            ("(unless 0 (let a 2) (+ a x))", 5.),
+            ("(cond [(< x 0) (/ 1 0)] [(= x 3) 8] [else (/ 1 0)])", 8.),
+            ("(cond [0 10] [else x])", 3.),
+            ("(cond [0 (/ 1 0)])", 0.),
+            ("(do (let a 2) (if x (let a 10) (let a 20)) a)", 2.),
+            ("(do (var a 0) (cond [(set! a 1) a] [(set! a 2) a]) a)", 1.),
+        ] {
+            let source = SKETCH.replace("(rgba x y t 1.0)", body);
+            validate_sketch(&source).unwrap();
+            let program = crate::bytecode::compile(&source).unwrap();
+            assert_eq!(
+                eval_program(&program, &[3., 0., 0.], 1).unwrap()[0],
+                expected,
+                "{body}"
+            );
+        }
+        for body in [
+            "(if 1 (/ 1 0) 7)",
+            "(if (/ 1 0) 7 8)",
+            "(select 1 7 (/ 1 0))",
+        ] {
+            let program = crate::bytecode::compile(&format!("(defkernel k [] {body})")).unwrap();
+            assert!(eval_program(&program, &[], 1).is_err());
+        }
+    }
+
+    #[test]
+    fn lexical_bindings_execute_and_validate() {
+        let src = SKETCH.replace(
+            "(rgba x y t 1.0)",
+            "(do (var a x) (set! a (+ a 2)) (let [b a] (* b b)))",
+        );
+        let info = validate_sketch(&src).unwrap();
+        assert_eq!(info.kernel.outputs, 1);
+        let program = crate::bytecode::compile(&src).unwrap();
+        assert_eq!(eval_program(&program, &[3., 0., 0.], 1).unwrap()[0], 25.);
+        let bad = crate::bytecode::compile("(defkernel k [] (do (let unused (/ 1 0)) 7))").unwrap();
+        assert!(eval_program(&bad, &[], 1).is_err());
+    }
 
     #[test]
     fn valid_sketch_reports_canvas() {

@@ -11,7 +11,12 @@
 - [System Architecture](ARCHITECTURE.md)
 - [Tilly Runtime](api/tilly.md)
 - [Core Engine](api/core.md)
-- [JoltScript Language](api/joltscript.md)
+- [Joltscript Language](../joltscript/docs/language.md)
+- [Joltscript Standard Library](../joltscript/docs/stdlib.md)
+- [Joltscript Tools](../joltscript/docs/tools.md)
+- [Joltscript Examples](../joltscript/docs/examples.md)
+- [Creative Programming](creative.md)
+- [Joltscript Development Plan](../JOLTSCRIPT_PLAN.md) — Phases 1–2 implemented
 
 ## Contributing
 - [How to Contribute](../CONTRIBUTING.md)

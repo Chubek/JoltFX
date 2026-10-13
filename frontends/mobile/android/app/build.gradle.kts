@@ -41,6 +41,10 @@ android {
                     "-DJOLTFX_BUILD_TESTS=OFF",
                     "-DJOLTFX_BUILD_EXAMPLES=OFF"
                 )
+                // Optional standalone header/media trees, shared by both ABIs.
+                for (name in listOf("JFX_3D_BOOST_ROOT", "JFX_3D_EIGEN_ROOT", "JFX_FFMPEG_ROOT")) {
+                    providers.gradleProperty(name).orNull?.let { arguments += "-D$name=$it" }
+                }
             }
         }
     }

@@ -172,7 +172,10 @@
                 [weak apply:@"3d.cloner" a:weak.selected b:(NSUInteger)mode c:(NSUInteger)count value:[weak number:spacing] text:@""]; }];
         [self button:@"Make clones real at playhead" action:^{ [weak apply:@"3d.cloner_make_real" a:weak.selected b:0 c:0 value:weak.seconds text:@""]; }];
         UITextField *scriptChannel=[self field:@"Joltscript channel (0..8)" value:@"4"];
-        UITextField *script=[self field:@"Animation script: time frame index value" value:@"(defkernel spin [time frame index value] (+ value (* time 90)))"];
+        UITextField *script=[self field:@"Joltscript: time frame index value → numeric result" value:@"(defkernel spin [time frame index value] (+ value (* time 90)))"];
+        UILabel *scriptHelp=[[UILabel alloc] init]; scriptHelp.numberOfLines=0;
+        scriptHelp.text=@"Supports loops, functions and built-in imports such as jolt.math and jolt.time. Use floating inputs; typed programs run on the CPU.";
+        [self.content addArrangedSubview:scriptHelp];
         [self button:@"Load assigned animation script" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) script.text=o[@"scripts"][(NSUInteger)ch]; }];
         [self button:@"Apply animation script" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) [weak apply:@"3d.script" a:weak.selected b:(NSUInteger)ch c:0 value:0 text:script.text ?: @""]; }];
         [self button:@"Remove animation script" action:^{ double ch=[weak number:scriptChannel]; if (isfinite(ch) && ch>=0 && ch<=8 && floor(ch)==ch) [weak apply:@"3d.script" a:weak.selected b:(NSUInteger)ch c:0 value:0 text:@""]; }];

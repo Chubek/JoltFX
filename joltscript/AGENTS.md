@@ -6,6 +6,14 @@ Joltscript is a Lisp dialect designed specifically for authoring JoltFX kernels.
 
 This document covers the language specification, compiler architecture, and contribution guidelines for the Joltscript compiler (`joltc`), runtime, and standard library.
 
+**Implementation checkpoint — Phases 1–2 complete, execution ABI 0.9:** the
+compiler emits legacy f32 JBC1 version 1 or typed version 2 with primitives,
+loops, functions/closures and six built-in library modules (262 exports).
+`docs/language.md` and `docs/stdlib.md` describe the shipped syntax, execution
+budgets and CPU/backend boundaries. The specification/layout below includes
+future designs such as macros, user modules, FFI, structs, native source targets
+and `jolt.io`; those are not implied by the Phase 1–2 completion checkpoint.
+
 ---
 
 ## Repository Layout
@@ -551,7 +559,7 @@ Generates idiomatic Go with goroutines for parallel kernels. Uses Go's GC; ARC m
 
 ## Standard Library
 
-Joltscript ships with a standard library covering:
+Joltscript ships with six checked intrinsic-interface modules (262 exports):
 
 | Module | Contents |
 |--------|----------|
@@ -559,11 +567,12 @@ Joltscript ships with a standard library covering:
 | `jolt.graphics` | Color spaces, transforms, filters, blend modes |
 | `jolt.geometry` | Points, vectors, matrices, quaternions, splines |
 | `jolt.time` | Curves, easing functions, keyframe interpolation |
-| `jolt.io` | File reading, image loading, serialization |
 | `jolt.collections` | Lists, vectors, maps, sets, sequences |
 | `jolt.strings` | Manipulation, parsing, formatting, regex |
 
-All stdlib functions are implemented as Joltscript intrinsics or pure Joltscript.
+The `.jolt` interfaces generate a build-time catalogue; implementations are
+budgeted typed-VM intrinsics. `jolt.io` remains a design target; built-in imports
+provide no filesystem access. See `docs/stdlib.md` for the implemented API.
 
 ---
 
@@ -637,6 +646,36 @@ IR (Joltscript IR — SSA-based, kernel-aware)
 
 ## Tooling
 
+The JBC1 compiler now implements f32 `let`/`var`/`set!`, scoped vector bindings,
+`do` and implicit scalar kernel sequences. Execution ABI 0.7 adds forward-only
+branches for lazy `if`/`cond`/`when`/`unless`, with path-sensitive stack, output
+and local-initialization validation. Keep C and Zoltan emission identical and add fixtures to
+`tests/conformance/*.jolt` for `scripts/check-bytecode-parity.sh`. See
+`docs/language.md` for current semantics; the full type/module language above
+remains the design target.
+
+`tests/conformance/check_conditionals.py` checks C/Rust byte parity, rejects
+invalid scopes/arity, and executes HTML exports with Node. Pass `--wasm` with
+Python wasmtime installed to assemble and execute WAT exports as well.
+
+Phase 1's remaining core forms/types use version-2 tree bytecode (ABI 0.8).
+`layers/glue/src/typed_compiler.c` is the bounded reader/serializer;
+`layers/execution/src/typed_program.c` validates types and executes budgeted
+loops, calls and closures with exact primitive values. Preserve the original
+version-1 path. `value.h` owns the tagged-value/lifetime contract. Tests live in
+`tests/unit/test_typed.c` and `tests/conformance/check_phase1.py`; the latter
+compares independent C/Rust emission and exact REPL results. Zoltan shares the
+portable typed checker/VM via a Rust allocator bridge, not the C emitter.
+
+Phase 2 (execution ABI 0.9) makes all six `stdlib/*.jolt` interfaces executable.
+`stdlib/generate.py` generates the catalogue used by `typed_program.c`;
+`stdlib_runtime.inc` implements its intrinsics with the invocation arena/budget.
+Imports are embedded built-in module resolution, not filesystem loading.
+Add an execution/parity case in `tests/conformance/check_phase2.py` for every new
+export; it enforces complete catalogue coverage. `test_stdlib` covers aggregate
+ownership, callbacks, limits and failure atomicity. See `docs/stdlib.md` for the
+authoritative API and build dependencies (Python 3, CMake, vendored PCRE2).
+
 Native compiler/tool buffers use Tilly's MemTKX-backed allocation. Pair process
 helpers in `tilly/memory.h` with `tilly_mem_free`; validate size arithmetic, OOM
 and input boundaries before access. The LSP caps exact-length messages at 16 MiB
@@ -645,13 +684,13 @@ large and malformed formatter/documentation/LSP input under sanitizers.
 
 | Tool | Purpose |
 |------|---------|
-| `joltc` | Compiler driver (all targets) |
-| `jolti` | REPL with incremental compilation |
-| `joltfmt` | Formatter (enforces consistent style) |
-| `joltdoc` | Documentation generator (Markdown/HTML) |
-| `joltscript-lsp` | LSP server (hover, completion, diagnostics) |
+| `joltc` | JBC1 compiler/checker; separate CPU image validation |
+| `jolti` | Independent complete-kernel evaluations, exact typed/collection printing |
+| `joltfmt` | Preliminary token formatter; currently drops comments/metadata |
+| `joltdoc` | Preliminary source/comment documentation extraction (Markdown/HTML) |
+| `joltscript-lsp` | Stdio protocol scaffold; semantic services are Phase 3 work |
 
-### Formatter Rules (`joltfmt`)
+### Planned formatter rules (`joltfmt`)
 
 - 2-space indentation
 - Align `let`/`var` bindings vertically when > 2
@@ -661,7 +700,7 @@ large and malformed formatter/documentation/LSP input under sanitizers.
 
 ---
 
-## Performance Characteristics
+## Planned performance characteristics
 
 - **Zero-cost abstractions**: Lisp forms compile to native loops and function calls
 - **Tail-call optimization**: Guaranteed for self-recursive and mutual recursion
@@ -684,10 +723,14 @@ large and malformed formatter/documentation/LSP input under sanitizers.
 
 ### Adding a New Stdlib Function
 
-1. Implement in `stdlib/<module>.jolt`
-2. Add tests in `tests/integration/stdlib/`
-3. Run `joltfmt` on the file
-4. Update `docs/stdlib/<module>.md` via `joltdoc`
+1. Declare the checked interface in `stdlib/<module>.jolt`; `stdlib/generate.py`
+   generates the shared catalogue.
+2. Implement the intrinsic in `layers/execution/src/stdlib_runtime.inc`, using
+   the invocation allocator/budget and the existing typed callback machinery.
+3. Add execution/parity coverage in `tests/conformance/check_phase2.py` and
+   relevant runtime/ownership cases in `tests/unit/test_stdlib.c`.
+4. Update `docs/stdlib.md` and preserve C/Rust emission parity. Formatter and
+   documentation-generator semantic integration is Phase 3 work.
 
 ### Modifying the Type System
 

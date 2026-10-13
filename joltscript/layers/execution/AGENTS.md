@@ -74,6 +74,49 @@ joltscript/layers/execution/
 
 ## Core Components
 
+### JBC1 local storage (ABI 0.6)
+
+The VM supports 128 local f32 slots. `LOAD_LOCAL` pushes a slot,
+`STORE_LOCAL` copies the operand-stack top without popping, and `DROP` pops one
+value with operand zero. Validation tracks initialization from the start of each
+program; never rely on locals retained from a previous invocation. Existing
+opcodes/container version remain stable. Update both emitters and all consumers
+when extending the instruction set; `test_vm` covers malformed local bytecode.
+
+### JBC1 forward branches (ABI 0.7)
+
+`JUMP` and `BRANCH_IF_ZERO` target absolute byte offsets of strictly later
+instructions (or the program end); the conditional instruction pops its test.
+Validation traverses the resulting acyclic control-flow graph in byte order,
+requiring identical stack depth/output counts at joins and intersecting the
+definitely-initialized local sets. Unreachable code and missing outputs on any
+path are rejected. Pending distinct targets are bounded to 256. Preserve this
+hard execution bound; backward edges require a separate budgeted design.
+
+### Typed core execution (ABI 0.8)
+
+`value.h` adds exact primitive values, signature queries and budgeted invocation.
+`typed_program.c` checks version-2 tree structure, lexical references and types
+before running. Each invocation has private environments/captured cells and a
+shared node/iteration budget; calls and syntax have a 128-level bound. Output
+publication is atomic. String results are copied into VM-owned storage and
+survive until the next successful typed run or VM destruction. Preserve input
+ownership and alias safety. `test_typed` covers integer boundaries, Unicode,
+closures, loops, malformed trees and failure atomicity. Native Tilly allocation
+and the private Rust-host allocator must use matching release paths.
+
+### Standard-library execution (ABI 0.9)
+
+The six `stdlib/*.jolt` interfaces generate a private catalogue at build time.
+`stdlib_runtime.inc` shares the typed VM's arena, callbacks and execution budget.
+PCRE2 uses engine-backed allocation and match callouts charged to that budget.
+Aggregate results are recursively packed into independently owned VM storage;
+preserve failure atomicity, input/output aliasing and matching deallocation.
+Collections store up to 4096 items, nesting to 64, with a 16 MiB invocation arena.
+Run `test_stdlib`, `test_typed` and `check_phase2.py` after changes. The latter
+requires coverage of every declared export. Public collection views append tags
+without changing `jolt_value_t` layout. See `docs/stdlib.md` for all limits.
+
 ### Implemented CPU image task runner (ABI 0.4)
 
 `include/joltscript/image_task.h` and `src/image_task.c` provide synchronous,

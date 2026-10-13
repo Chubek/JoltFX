@@ -6,6 +6,15 @@ JoltFX frontends are user-facing applications built on top of the core engine an
 
 All frontends implement a common contract defined in `common/include/jfx_frontend.h`.
 
+Joltscript language Phases 1–2 are implemented (execution ABI 0.9): legacy f32
+JBC1 plus typed programs with loops, functions/closures and six built-in modules
+(262 exports). Keep application help aligned with `joltscript/docs/language.md`
+and `stdlib.md`. Numeric previews/drivers use floating inputs and numeric output;
+typed execution uses the CPU, including Vulkan fallback. Zoltan object export
+preserves both bytecode versions; its HTML/WAT lowering accepts version 1.
+The desktop's lightweight binding scanner requires plain parameter names, and
+its syntax-color/export helpers are separate from Zoltan's Rust tooling.
+
 ---
 
 ## Repository Layout
@@ -355,7 +364,12 @@ Use the repository-root Emscripten configure command in
 `frontends/web/README.md`, then build `joltfx_web`. Install/build the TypeScript
 package and copy the generated `.js`/`.wasm` to `frontends/web/public/`. Serve
 `frontends/web/` over HTTP and open `public/index.html`; both `dist/` and `public/`
-must be served. The working module is tested with Emscripten 6.0.10.
+must be served. The working module is tested with Emscripten 6.0.13-git.
+Cross builds accept `JFX_3D_BOOST_ROOT`, `JFX_3D_EIGEN_ROOT` and
+`JFX_FFMPEG_ROOT`; Boost must be a standalone header tree, not host `/usr/include`.
+Use native WASM exceptions consistently with VTK. Numeric/raster SIMD requires
+`__wasm_simd128__`; otherwise preserve scalar paths. Application-only targets
+must not depend on VTK's unlinked SDK-install archives.
 
 The module exposes session/color/composition functions through `cwrap`, a virtual
 filesystem and a growable heap. Non-pthread modules use the serial bounded
@@ -369,7 +383,10 @@ Run `npm --prefix frontends/web test` for UI/bridge unit tests. Run
 against the actual module before changing exports, memory settings or the bridge.
 
 Native transfer storage uses `jfx_web_alloc` / `jfx_web_free` over the process
-MemTKX heap; never mix those pointers with Emscripten `_free`. The bridge must
+MemTKX heap; never mix those pointers with Emscripten `_free`. Large project
+strings must be heap-marshaled, not passed through cwrap's stack conversion.
+`test:browser` checks the actual launch page with Firefox after serving the
+rebuilt module and TypeScript output. The bridge must
 release on failure, refresh views after growth and reject calls after disposal.
 Desktop drawing uses `tilly::vector`/`string`; reserve fallible mutations before
 checkpoint/commit, and recover allocation failures inside UI operations so C++
@@ -636,6 +653,17 @@ widgets and the color inspectors. JNI pixel arrays become a Bitmap for preview.
 Worker ownership remains in the scheduler; UI playback uses Choreographer.
 Graph/timeline gestures commit once on release and canvas-local pan/zoom is UI
 state. App file defaults use `filesDir`.
+
+Android document pickers copy provider data with `DocumentFiles` and
+`DocumentTransfer`. Only file I/O runs on the platform-managed executor; JNI and
+Core edits stay on the Activity thread. Bound copies, use unique persistent asset
+names and remove failed/cancelled partial files. Retain the native handle across
+configuration changes and transfer its single ownership; cancel unclaimed file
+transfers on Activity destruction. Standard UTF-8 conversion belongs in
+`jni_utf8.h`, never JNI's modified-UTF-8 string helpers for Core strings.
+Project saves serialize before publishing a closed temporary via rename.
+`JFX_ANDROID_JNI_HOST_TESTS=ON` enables a real-JVM test on native Unix builds;
+also run `android/tests/run-storage-tests.sh`, APK builds and device checks.
 
 ### iOS
 

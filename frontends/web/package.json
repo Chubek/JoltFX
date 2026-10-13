@@ -5,9 +5,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/player.test.mjs",
-    "test:wasm": "npm run build && node --test tests/wasm.test.mjs"
+    "test:wasm": "npm run build && node --test tests/wasm.test.mjs",
+    "test:browser": "npm run build && node --test tests/browser.test.mjs"
   },
   "devDependencies": {
+    "playwright": "1.64.0",
     "typescript": "6.0.3"
   }
 }

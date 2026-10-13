@@ -2,7 +2,13 @@
 
 ## Overview
 
-This file guides agents implementing Joltscript kernels for JoltFX. Each kernel is a self-contained compute unit executed by the Execution Layer. Kernels are authored in Joltscript and compiled to GPU-executable code via the Glue Layer.
+This file guides agents implementing Joltscript kernels for JoltFX. Each kernel
+is a self-contained compute unit executed by the Execution Layer. Legacy f32
+JBC1 version 1 supports Vulkan dispatch; typed version 2 (execution ABI 0.9,
+including six library modules) executes on the CPU. Image effects use a separate
+bounded CPU profile. See `joltscript/docs/language.md`, `joltscript/docs/stdlib.md`
+and the implemented image-profile section below; the resource/composition syntax
+and GPU intrinsics illustrated in this guide remain design targets.
 
 ---
 
@@ -339,7 +345,10 @@ If kernel A is a special case of kernel B, implement A as a thin wrapper that ca
 | `js_rotate_uv` | Rotate UV coordinates |
 | `js_polar_uv` | Cartesian → Polar UV transform |
 
-See `joltscript/stdlib/graphics.jolt` and `geometry.jolt` for full list.
+The `js_*` names above describe planned resource intrinsics. Implemented typed
+library exports are declared in `joltscript/stdlib/graphics.jolt` and
+`geometry.jolt`, with semantics in `joltscript/docs/stdlib.md`. CPU image helpers
+live separately in `kernels/common/image.jolt`.
 
 ---
 

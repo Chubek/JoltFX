@@ -10,6 +10,7 @@
 mod bytecode;
 mod sketch;
 mod stdlib;
+mod typed;
 mod validate;
 
 use std::env;
@@ -22,17 +23,17 @@ const VERSION: &str = "0.3.0";
 
 fn usage() -> String {
     format!(
-        "zoltan {VERSION} - JoltScript compiler and creative-programming tool\n\
+        "zoltan {VERSION} - Joltscript compiler and creative-programming tool\n\
          \n\
          Usage: zoltan <command> [options]\n\
          \n\
          Commands:\n\
-         \x20 compile FILE [-o OUTPUT] [--emit-metadata]  Validate a kernel and emit JBC1 bytecode\n\
-         \x20 verify FILE                                 Validate a kernel without writing output\n\
+         \x20 compile FILE [-o OUTPUT] [--emit-metadata]  Compile a kernel or built-in library interface\n\
+         \x20 verify FILE                                 Validate source without writing output\n\
          \x20 new NAME [--dir DIR]                        Scaffold a creative sketch\n\
          \x20 run FILE [--frames N] [--width W] [--height H]  Preview a sketch on the CPU\n\
          \x20 export FILE --as obj|html|wasm [-o OUTPUT]  Export a sketch project\n\
-         \x20 stdlib list|show NAME                       List or print stdlib snippets\n\
+         \x20 stdlib list|show NAME                       List or print creative body snippets\n\
          \x20 help [COMMAND]                              Show help\n\
          \n\
          Global options:\n\
@@ -44,13 +45,15 @@ fn usage() -> String {
 fn compile_help() -> &'static str {
     "Usage: zoltan compile FILE [-o OUTPUT] [--emit-metadata]\n\
      \n\
-     Validates a Joltscript kernel (single `(defkernel name [inputs...] body)`\n\
-     form, scalar f32 expressions) and, with -o, writes the compiled JBC1\n\
-     bytecode. Without -o nothing is written and the kernel is only checked.\n\
+     Validates Joltscript source and, with -o, writes JBC1 bytecode. Without\n\
+     -o the source is checked only. Supports legacy f32 kernels and typed\n\
+     kernels with loops, functions, closures, collections and built-in imports.\n\
+     The six library interfaces compile as zero-output module artifacts.\n\
      \n\
-     The emitted bytecode is byte-identical to the Glue Layer compiler's, so\n\
-     the output runs anywhere JoltFX does. Exits non-zero with a\n\
-     file:line:column diagnostic on failure.\n"
+     C and Rust emit identical bytecode. Typed version 2 uses CPU execution;\n\
+     HTML/WAT export supports version 1. Library modules: jolt.math,\n\
+     jolt.graphics, jolt.geometry, jolt.time, jolt.collections, jolt.strings.\n\
+     Exits non-zero with a file:line:column diagnostic on failure.\n"
 }
 
 fn read_source(path: &str) -> Result<String, String> {
@@ -438,18 +441,35 @@ fn write_minimal_elf(program: &[u8], kernel: &str, out: &str) -> Result<(), Stri
 
 fn transpile_to_js(source: &str) -> Result<String, String> {
     // Reuse the bytecode compiler as the syntax gate, then lower the
-    // instruction stream to JS. Only straight-line JBC1 scalar code is
-    // supported; image-profile forms are rejected with a clear error.
+    // instruction stream to JS. Forward branches preserve lazy evaluation;
+    // image-profile forms are rejected with a clear error.
     let program = bytecode::compile(source).map_err(|e| e.to_string())?;
+    if program[4..8] == 2u32.to_le_bytes() {
+        return Err(
+            "HTML export does not yet lower typed version-2 programs; use obj or native preview"
+                .into(),
+        );
+    }
     let (inputs, _) = bytecode::header(&program).map_err(|e| e.to_string())?;
-    let mut js = String::from("(x,y,t,mx,my)=>{const s=[];const inp=[x,y,t,mx,my];");
+    let mut js =
+        String::from("(x,y,t,mx,my)=>{const s=[],locals=[];let out0=0;const inp=[x,y,t,mx,my];");
     js.push_str(&format!("while(inp.length<{inputs})inp.push(0);"));
+    js.push_str(&format!(
+        "let ip=16;while(ip<{}){{switch(ip){{",
+        program.len()
+    ));
     let mut offset = bytecode::HEADER_SIZE;
     while offset + 8 <= program.len() {
         let op = u32::from_le_bytes(program[offset..offset + 4].try_into().unwrap());
         let operand = u32::from_le_bytes(program[offset + 4..offset + 8].try_into().unwrap());
         offset += 8;
+        js.push_str(&format!("case {}:", offset - 8));
         match op {
+            32 => js.push_str(&format!("ip={operand};continue;")),
+            33 => js.push_str(&format!("ip=s.pop()===0?{operand}:{offset};continue;")),
+            29 => js.push_str(&format!("s.push(locals[{operand}]);")),
+            30 => js.push_str(&format!("locals[{operand}]=s[s.length-1];")),
+            31 => js.push_str("s.pop();"),
             1 => js.push_str(&format!("s.push({});", f32::from_bits(operand))),
             2 => js.push_str(&format!("s.push(inp[{operand}]);")),
             3 => js.push_str("s.push(s.pop()+s.pop());"),
@@ -464,12 +484,107 @@ fn transpile_to_js(source: &str) -> Result<String, String> {
             12 => js.push_str("s.push(Math.sqrt(s.pop()));"),
             13 => js.push_str("{const b=s.pop(),a=s.pop();s.push(a<b?1:0);}"),
             14 => js.push_str("{const c=s.pop(),b=s.pop(),a=s.pop();s.push(a!==0?b:c);}"),
-            15 => js.push_str(&format!("if({operand}===0)out0=s.pop();")),
+            15 => js.push_str(if operand == 0 {
+                "out0=s.pop();"
+            } else {
+                "s.pop();"
+            }),
+            16..=20 => {
+                let cmp = [">", "<=", ">=", "===", "!=="][(op - 16) as usize];
+                js.push_str(&format!(
+                    "{{const b=s.pop(),a=s.pop();s.push(a{cmp}b?1:0);}}"
+                ));
+            }
+            21 => js.push_str("{const b=s.pop(),a=s.pop();s.push(a!==0&&b!==0?1:0);}"),
+            22 => js.push_str("{const b=s.pop(),a=s.pop();s.push(a!==0||b!==0?1:0);}"),
+            23 => js.push_str("s.push(s.pop()===0?1:0);"),
             _ => return Err(format!("HTML export: opcode {op} not lowered yet")),
         }
+        js.push_str(&format!("ip={offset};break;"));
     }
-    js.push_str("return out0;}");
+    js.push_str("}if(s.length){s[s.length-1]=Math.fround(s[s.length-1]);if(!Number.isFinite(s[s.length-1]))throw Error('non-finite intermediate result');}}return out0;}");
     Ok(js)
+}
+
+/// Lower compiler-emitted forward conditionals to structured Wasm `if`s. Each
+/// arm produces one f32; values below it stay on the enclosing operand stack.
+fn wat_range(program: &[u8], start: usize, end: usize, wat: &mut String) -> Result<(), String> {
+    let read = |pos: usize| u32::from_le_bytes(program[pos..pos + 4].try_into().unwrap());
+    let mut offset = start;
+    while offset < end {
+        let op = read(offset);
+        let operand = read(offset + 4);
+        offset += 8;
+        if op == 33 {
+            let otherwise = operand as usize;
+            if otherwise < offset + 8 || otherwise > end || read(otherwise - 8) != 32 {
+                return Err("WASM export: malformed conditional".into());
+            }
+            let join = read(otherwise - 4) as usize;
+            if join < otherwise || join > end {
+                return Err("WASM export: malformed conditional join".into());
+            }
+            wat.push_str("  f32.const 0\n  f32.ne\n  if (result f32)\n");
+            wat_range(program, offset, otherwise - 8, wat)?;
+            wat.push_str("  else\n");
+            wat_range(program, otherwise, join, wat)?;
+            wat.push_str("  end\n");
+            offset = join;
+            continue;
+        }
+        match op {
+            1 => wat.push_str(&format!("  f32.const {}\n", f32::from_bits(operand))),
+            2 => wat.push_str(match operand {
+                0 => "  local.get $x\n", 1 => "  local.get $y\n", 2 => "  local.get $t\n",
+                _ => "  f32.const 0\n",
+            }),
+            3 => wat.push_str("  f32.add\n"),
+            4 => wat.push_str("  f32.sub\n"),
+            5 => wat.push_str("  f32.mul\n"),
+            6 => wat.push_str("  f32.div\n"),
+            7 => wat.push_str("  f32.min\n"),
+            8 => wat.push_str("  f32.max\n"),
+            9 => wat.push_str("  f32.abs\n"),
+            10 => wat.push_str("  f32.floor\n"),
+            12 => wat.push_str("  f32.sqrt\n"),
+            13 | 16..=20 => {
+                let cmp = match op { 13 => "lt", 16 => "gt", 17 => "le", 18 => "ge", 19 => "eq", _ => "ne" };
+                wat.push_str(&format!("  f32.{cmp}\n  f32.convert_i32_u\n"));
+            }
+            14 => wat.push_str("  local.set $c\n  local.set $b\n  local.set $a\n  local.get $b\n  local.get $c\n  local.get $a\n  f32.const 0\n  f32.ne\n  select\n"),
+            15 => wat.push_str(if operand == 0 { "  local.set $out\n" } else { "  drop\n" }),
+            21 | 22 => {
+                wat.push_str("  local.set $b\n  f32.const 0\n  f32.ne\n  local.get $b\n  f32.const 0\n  f32.ne\n");
+                wat.push_str(if op == 21 { "  i32.and\n" } else { "  i32.or\n" });
+                wat.push_str("  f32.convert_i32_u\n");
+            }
+            23 => wat.push_str("  f32.const 0\n  f32.eq\n  f32.convert_i32_u\n"),
+            29 => wat.push_str(&format!("  local.get $l{operand}\n")),
+            30 => wat.push_str(&format!("  local.tee $l{operand}\n")),
+            31 => wat.push_str("  drop\n"),
+            _ => return Err(format!("WASM export: opcode {op} not lowered yet")),
+        }
+        if op != 15 && op != 31 {
+            wat.push_str("  call $finite\n");
+        }
+    }
+    Ok(())
+}
+
+fn transpile_to_wat(program: &[u8]) -> Result<String, String> {
+    if program.len() >= 16 && program[4..8] == 2u32.to_le_bytes() {
+        return Err(
+            "WASM export does not yet lower typed version-2 programs; use obj or native preview"
+                .into(),
+        );
+    }
+    let mut wat = "(module\n (func $finite (param $v f32) (result f32)\n  local.get $v\n  f32.abs\n  f32.const 340282346638528859811704183484516925440\n  f32.le\n  i32.eqz\n  if unreachable end\n  local.get $v)\n (func $pixel (param $x f32) (param $y f32) (param $t f32) (result f32)\n  (local $a f32) (local $b f32) (local $c f32) (local $out f32)\n".to_string();
+    for slot in 0..128 {
+        wat.push_str(&format!("  (local $l{slot} f32)\n"));
+    }
+    wat_range(program, bytecode::HEADER_SIZE, program.len(), &mut wat)?;
+    wat.push_str("  local.get $out\n )\n (export \"pixel\" (func $pixel)))\n");
+    Ok(wat)
 }
 
 fn cmd_export(args: &[String]) -> ExitCode {
@@ -591,46 +706,13 @@ fn cmd_export(args: &[String]) -> ExitCode {
             // Stack-machine WAT mirroring the JBC1 program; assemble with
             // `wat2wasm` (wabt) when available. Full Emscripten bundling is a
             // separate step and needs a configured emsdk (see docs).
-            let mut wat = "(module\n (func $pixel (param $x f32) (param $y f32) (param $t f32) (result f32)\n"
-                .to_string();
-            let mut offset = bytecode::HEADER_SIZE;
-            while offset + 8 <= program.len() {
-                let op = u32::from_le_bytes(program[offset..offset + 4].try_into().unwrap());
-                let operand =
-                    u32::from_le_bytes(program[offset + 4..offset + 8].try_into().unwrap());
-                offset += 8;
-                match op {
-                    1 => wat.push_str(&format!("  f32.const {}\n", f32::from_bits(operand))),
-                    2 => wat.push_str(&format!(
-                        "  {}\n",
-                        match operand {
-                            0 => "local.get $x",
-                            1 => "local.get $y",
-                            2 => "local.get $t",
-                            _ => "f32.const 0",
-                        }
-                    )),
-                    3 => wat.push_str("  f32.add\n"),
-                    4 => wat.push_str("  f32.sub\n"),
-                    5 => wat.push_str("  f32.mul\n"),
-                    6 => wat.push_str("  f32.div\n"),
-                    7 => wat.push_str("  f32.min\n"),
-                    8 => wat.push_str("  f32.max\n"),
-                    9 => wat.push_str("  f32.abs\n"),
-                    10 => wat.push_str("  f32.floor\n"),
-                    11 => wat.push_str("  call $pow\n"),
-                    12 => wat.push_str("  f32.sqrt\n"),
-                    13 => wat.push_str("  f32.lt\n"),
-                    14 => wat.push_str("  select\n"),
-                    15 => {}
-                    _ => {
-                        eprintln!("error: WASM export: opcode {op} not lowered yet");
-                        return ExitCode::FAILURE;
-                    }
+            let wat = match transpile_to_wat(&program) {
+                Ok(wat) => wat,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    return ExitCode::FAILURE;
                 }
-            }
-            wat.push_str(" )\n (func $pow (param f32 f32) (result f32) f32.const 0)\n");
-            wat.push_str(" (export \"pixel\" (func $pixel)))\n");
+            };
             match fs::write(&dest, &wat) {
                 Ok(()) => {
                     println!(

@@ -101,6 +101,11 @@ enable fast-math or require host-native ISA flags for distributable builds.
 `cpu_numeric`/`cpu_numeric_scalar` test reference behavior and tails; benchmarks
 live under `tests/perf`. Scene normals are lazy, immutable, engine-allocated
 caches shared across candidate documents; geometry/shading edits invalidate them.
+Emscripten builds must gate xsimd numeric/raster paths on `__wasm_simd128__`:
+the vendored xsimd detects Emscripten even when SIMD is not enabled. Keep C++
+exception flags consistent with VTK (`-fwasm-exceptions`) throughout the module.
+Application targets link CommonCore only; the default build additionally prepares
+CommonDataModel via `jfx_scene_install_deps` for SDK installation.
 
 The engine owns all allocations. External callers and kernels never call `malloc`/`free` directly.
 

@@ -1,6 +1,7 @@
 add_library(joltscript_glue STATIC
     src/bindings.c
     src/compiler.c
+    src/typed_compiler.c
     src/image_program.c
 )
 
@@ -8,6 +9,7 @@ target_include_directories(joltscript_glue PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
+target_include_directories(joltscript_glue PRIVATE ../execution/src)
 
 # The Glue layer sits *below* the engine: the compiler and the ABI registry must
 # not depend on jfx_core, or the engine could not depend on them in order to run

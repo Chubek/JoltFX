@@ -6,14 +6,18 @@
 extern "C" {
 #endif
 #define JOLT_EXEC_ABI_MAJOR 0
-#define JOLT_EXEC_ABI_MINOR 5
+#define JOLT_EXEC_ABI_MINOR 9
+#define JOLT_MAX_LOCALS 128u
+/* Simultaneously unresolved forward branches, i.e. open conditional scopes. */
+#define JOLT_MAX_BRANCHES 256u
 #define JOLT_MAX_INPUTS 32u
 #define JOLT_MAX_OUTPUTS 4u
 #define JOLT_MAX_STACK 128u
 #define JOLT_MAX_INSTRUCTIONS 4096u
 /* JBC1: little-endian u32 magic, version, input count, output count;
  * followed by pairs of u32 opcode/operand. Float constants are IEEE binary32.
- * No jumps: validation provides a hard execution bound.
+ * Control flow is forward-only: branch operands are absolute byte offsets of a
+ * later instruction boundary, so validation bounds execution by program size.
  *
  *   offset  size  field
  *   0       4     magic
@@ -33,7 +37,8 @@ typedef enum {
     JOLT_OK = 0, JOLT_ERR_ARGUMENT = -1, JOLT_ERR_MEMORY = -2,
     JOLT_ERR_SYNTAX = -3, JOLT_ERR_BYTECODE = -4, JOLT_ERR_NUMERIC = -5,
     JOLT_ERR_CAPABILITY = -6, JOLT_ERR_NOT_FOUND = -7,
-    JOLT_ERR_DUPLICATE = -8, JOLT_ERR_BUDGET = -9, JOLT_ERR_CYCLE = -10
+    JOLT_ERR_DUPLICATE = -8, JOLT_ERR_BUDGET = -9, JOLT_ERR_CYCLE = -10,
+    JOLT_ERR_TYPE = -11
 } jolt_status_t;
 typedef enum {
     JOLT_OP_CONST = 1, JOLT_OP_INPUT, JOLT_OP_ADD, JOLT_OP_SUB,
@@ -44,7 +49,14 @@ typedef enum {
     JOLT_OP_GT = 16, JOLT_OP_LE, JOLT_OP_GE, JOLT_OP_EQ, JOLT_OP_NE,
     JOLT_OP_AND, JOLT_OP_OR, JOLT_OP_NOT,
     JOLT_OP_BITWISE_AND, JOLT_OP_BITWISE_OR, JOLT_OP_BITWISE_XOR,
-    JOLT_OP_SHL, JOLT_OP_SHR
+    JOLT_OP_SHL, JOLT_OP_SHR,
+    /* ABI 0.6: LOAD pushes an initialized local; STORE copies the stack top
+     * without popping it; DROP pops one value (operand must be zero). */
+    JOLT_OP_LOAD_LOCAL, JOLT_OP_STORE_LOCAL, JOLT_OP_DROP,
+    /* ABI 0.7: forward-only control flow. The operand is the absolute byte
+     * offset of a strictly later instruction (or the end of the program).
+     * JUMP pops nothing; BRANCH_IF_ZERO pops the condition. */
+    JOLT_OP_JUMP, JOLT_OP_BRANCH_IF_ZERO
 } jolt_opcode_t;
 typedef struct jolt_vm jolt_vm_t;
 jolt_vm_t *jolt_vm_create(void);

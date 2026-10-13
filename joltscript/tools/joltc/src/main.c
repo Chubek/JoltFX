@@ -3,7 +3,8 @@
  * Compiles .jolt source files to JBC1 bytecode.
  *
  * JoltFX ships two dialects and this driver handles both:
- *   - JBC1, the stack bytecode profile, which is the default.
+ *   - JBC1, with legacy f32 stack programs (version 1) and typed tree programs
+ *     (version 2, including the six built-in library interfaces).
  *   - The bounded CPU image profile (image_program.c), which is interpreted
  *     from an AST and emits no bytecode, so it is validated only. It is
  *     selected with --image-library and requires --check.
@@ -52,6 +53,9 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "      --image-library <path>  Validate a bounded CPU image kernel, using\n");
     fprintf(stderr, "                             <path> as the prepended library. Requires --check.\n");
     fprintf(stderr, "      --dump           Dump disassembly to stdout\n");
+    fprintf(stderr, "\nJBC1 supports f32 and typed kernels: bindings, conditionals, loops, functions,\n");
+    fprintf(stderr, "closures and built-in imports (math, graphics, geometry, time, collections, strings).\n");
+    fprintf(stderr, "Typed version-2 programs execute on the CPU; library interfaces are compile-only.\n");
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s kernel.jolt -o kernel.jbc\n", prog);
     fprintf(stderr, "  %s --check kernel.jolt\n", prog);
@@ -87,11 +91,9 @@ static int write_file(const char *path, const uint8_t *data, size_t size) {
     return written == size ? 0 : -1;
 }
 
-/* The JBC1 grammar accepts a single `defkernel` form and nothing else, so every
- * CPU image kernel -- which leads with `param`, `defn` or `passes` -- is rejected
- * with "expected defkernel". That message names neither the real dialect nor the
- * flag that switches to it, which is an easy dead end for someone who has just
- * edited a shipping kernel. Detect that signature and point at the way out. */
+/* After JBC1 compilation fails, recognize forms commonly used by the separate
+ * CPU image dialect and suggest its validation flag. defn is also valid in the
+ * typed JBC1 language; this is a hint, not a profile detector. */
 static bool looks_like_image_kernel(const char *source) {
     static const char *const forms[] = {"(param", "(defn", "(passes"};
     for (const char *p = source; *p; ++p) {
@@ -137,6 +139,11 @@ static const char *opcode_name(uint32_t op) {
     case JOLT_OP_BITWISE_XOR: return "BITWISE_XOR";
     case JOLT_OP_SHL: return "SHL";
     case JOLT_OP_SHR: return "SHR";
+    case JOLT_OP_LOAD_LOCAL: return "LOAD_LOCAL";
+    case JOLT_OP_STORE_LOCAL: return "STORE_LOCAL";
+    case JOLT_OP_DROP: return "DROP";
+    case JOLT_OP_JUMP: return "JUMP";
+    case JOLT_OP_BRANCH_IF_ZERO: return "BRANCH_IF_ZERO";
     default: return "UNKNOWN";
     }
 }
@@ -159,6 +166,18 @@ static void dump_disasm(const uint8_t *code, size_t size) {
     printf("  version:  %u\n", version);
     printf("  inputs:   %u\n", inputs);
     printf("  outputs:  %u\n", outputs);
+    if(version==2) {
+        uint32_t nodes=(uint32_t)code[16]|((uint32_t)code[17]<<8)|((uint32_t)code[18]<<16)|((uint32_t)code[19]<<24);
+        printf("  typed tree nodes: %u\n",nodes);
+        for(uint32_t i=1;i<nodes;++i) {
+            uint32_t words[7];for(unsigned j=0;j<7;++j) { size_t p=32+(size_t)i*28+j*4;
+                words[j]=(uint32_t)code[p]|((uint32_t)code[p+1]<<8)|((uint32_t)code[p+2]<<16)|((uint32_t)code[p+3]<<24); }
+            printf("    %u: tag=%u child=%u next=%u @%u:%u",i,words[0],words[1],words[2],words[5],words[6]);
+            if(words[4]) printf(" %.*s",(int)words[4],(const char *)code+32+(size_t)nodes*28+words[3]);
+            printf("\n");
+        }
+        return;
+    }
     printf("  instructions:\n");
     for (size_t pos = JOLT_BYTECODE_HEADER_SIZE; pos + 8 <= size; pos += 8) {
         uint32_t op = (uint32_t)code[pos] | ((uint32_t)code[pos+1] << 8) |

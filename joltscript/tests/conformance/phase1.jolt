@@ -1,0 +1,23 @@
+;; @kernel phase1
+;; @category conformance
+;; @description Typed primitives, closures, named functions and budgeted loops.
+;; @complexity Medium
+;; @gpu No
+;; @since 0.8.0
+(defn fact [(n i64)] -> i64
+  (if (<= n 1i64) 1i64 (* n (fact (- n 1i64)))))
+(defkernel phase1 [x y t]
+  (var total 0i64)
+  (for [i 0 5]
+    (when (= i 2) (continue))
+    (set! total (+ total (i64 i))))
+  (while (< total 10i64) (set! total (+ total 1i64)))
+  (loop (set! total (+ total 1i64)) (break))
+  (let bump (fn [(n i64)] -> i64 (+ total n)))
+  (let truth (= "hello\u{1F600}" "hello😀"))
+  (let code \u{1F600})
+  (let small (+ 255u8 1u8))
+  (let medium 65535u16)
+  (let wide 4294967295u32)
+  (let exact 18446744073709551615u64)
+  (rgba (+ x (f64 (bump (fact 5i64)))) y (f32 t) (if truth 1.0 0.0)))

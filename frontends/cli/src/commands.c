@@ -136,12 +136,13 @@ void print_command_help(const char *command) {
     }
     if (command == NULL || strcmp(command, "compile") == 0) {
         printf("Usage: joltfx compile FILE [-o OUTPUT]\n\n");
-        printf("Validates a Joltscript kernel (MVP defkernel form) and, with -o,\n");
+        printf("Validates a Joltscript kernel or built-in library interface and, with -o,\n");
         printf("writes the compiled JBC1 bytecode to OUTPUT.\n");
     }
     if (command == NULL || strcmp(command, "verify") == 0) {
         printf("Usage: joltfx verify FILE\n\n");
-        printf("Validates a Joltscript kernel. Exits 0 when valid, 1 otherwise.\n");
+        printf("Validates Joltscript source (f32/typed kernels or built-in library interfaces).\n");
+        printf("Exits 0 when valid, 1 otherwise.\n");
     }
     if (command == NULL || strcmp(command, "effects") == 0) {
         printf("Usage: joltfx effects\n\n");
@@ -431,13 +432,18 @@ static int info_for_bytecode(const char *path, const uint8_t *bytes, size_t size
         inputs |= (uint32_t)bytes[8 + i] << (8u * i);
         outputs |= (uint32_t)bytes[12 + i] << (8u * i);
     }
-    if (version != JOLT_BYTECODE_VERSION) {
+    if (version != JOLT_BYTECODE_VERSION && version != 2) {
         fprintf(stderr, "error: %s: unsupported JBC1 version %u\n", path, version);
         return 1;
     }
     if (jolt_bytecode_validate(bytes, size) != JOLT_OK) {
         fprintf(stderr, "error: %s: invalid JBC1 program\n", path);
         return 1;
+    }
+    if(version==2) {
+        uint32_t nodes=0;for(unsigned i=0;i<4;++i) nodes|=(uint32_t)bytes[16+i]<<(8*i);
+        printf("file: %s\nformat: JBC1 v2 (typed)\ninputs: %u\noutputs: %u\nnodes: %u\nbytecode: %zu bytes\n",path,inputs,outputs,nodes,size);
+        return 0;
     }
     const size_t instructions = (size - JOLT_BYTECODE_HEADER_SIZE) / 8u;
     printf("file: %s\nformat: JBC1 v%u\ninputs: %u\noutputs: %u\ninstructions: %zu\n"

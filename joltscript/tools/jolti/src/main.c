@@ -12,6 +12,8 @@
 
 #include "tilly/memory.h"
 #include "joltscript/compiler.h"
+#include "joltscript/value.h"
+#include <inttypes.h>
 #include "joltscript/vm.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,10 +33,12 @@ static void print_help(const char *prog) {
     fprintf(stderr, "\nOptions:\n");
     fprintf(stderr, "  -h, --help           Show this help message\n");
     fprintf(stderr, "  -v, --version        Show version information\n");
-    fprintf(stderr, "  -e, --eval <expr>    Evaluate expression and exit\n");
+    fprintf(stderr, "  -e, --eval <source>  Evaluate a complete kernel and exit (zero-initialized inputs)\n");
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s\n", prog);
-    fprintf(stderr, "  %s -e '(+ 1 2)'\n", prog);
+    fprintf(stderr, "  %s -e '(defkernel k [] (+ 1 2))'\n", prog);
+    fprintf(stderr, "  %s -e '(import jolt.math) (defkernel k [] (sin HALF-PI))'\n", prog);
+    fprintf(stderr, "\nPrints exact typed primitives and collections; each evaluation is independent.\n");
 }
 
 static void print_result(const float *outputs, size_t count) {
@@ -49,6 +53,22 @@ static void print_result(const float *outputs, size_t count) {
             printf("%g", outputs[i]);
         }
         printf(")\n");
+    }
+}
+
+static void print_value(jolt_value_t v) {
+    switch(v.type) {
+    case JOLT_TYPE_VOID:printf("()");break;
+    case JOLT_TYPE_I32:case JOLT_TYPE_I64:printf("%" PRId64,v.as.integer);break;
+    case JOLT_TYPE_F32:case JOLT_TYPE_F64:printf("%.17g",v.as.number);break;
+    case JOLT_TYPE_BOOL:printf("%s",v.as.unsigned_integer?"true":"false");break;
+    case JOLT_TYPE_CHAR:printf("\\u{%" PRIX64 "}",v.as.unsigned_integer);break;
+    case JOLT_TYPE_STRING:if(v.as.string.size) fwrite(v.as.string.data,1,v.as.string.size,stdout);break;
+    case JOLT_TYPE_LIST:case JOLT_TYPE_VECTOR:case JOLT_TYPE_MAP:case JOLT_TYPE_SET:
+        printf("%s",v.type==JOLT_TYPE_LIST?"(list ":v.type==JOLT_TYPE_MAP?"(hash-map ":v.type==JOLT_TYPE_SET?"(set ":"[");
+        for(size_t i=0;i<v.as.collection.size;++i) {if(i) printf(" ");print_value(v.as.collection.items[i]);}
+        printf("%s",v.type==JOLT_TYPE_VECTOR?"]":")");break;
+    default:printf("%" PRIu64,v.as.unsigned_integer);break;
     }
 }
 
@@ -77,6 +97,18 @@ static int eval_source(const char *source, const char *name) {
         return 1;
     }
 
+    if(data[4]==2) {
+        jolt_type_t it[32],ot[4];jolt_value_t in[32]={{0}},out[4];
+        status=jolt_bytecode_signature(data,size,it,32,ot,4);
+        if(!status) { for(uint32_t i=0;i<inputs;++i) in[i].type=it[i];
+            status=jolt_vm_run_values(vm,data,size,in,inputs,out,outputs,NULL); }
+        if(status) fprintf(stderr,"error: execution failed with status %d\n",status);
+        else for(uint32_t i=0;i<outputs;++i) {
+            print_value(out[i]);
+            printf("%s",i+1==outputs?"\n":" ");
+        }
+        jolt_vm_destroy(vm);jolt_program_destroy(program);return status?1:0;
+    }
     float *in = tilly_mem_calloc(inputs ? inputs : 1, sizeof(float));
     float *out = tilly_mem_calloc(outputs ? outputs : 1, sizeof(float));
     if (!in || !out) {

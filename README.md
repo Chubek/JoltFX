@@ -12,14 +12,18 @@ JoltFX is built in layers, each of which can be used on its own:
 
 - **Tilly / TillyZ** — the runtime foundation: allocators, a logger, a dynamic
   module registry, and the bootstrap compiler TillyZ.
-- **JoltScript** — the kernel language. The Glue layer compiles `.jolt` source
-  to JBC1 bytecode; the Execution layer runs it on the CPU as a bounded stack
-  program.
+- **Joltscript** — the kernel language. The Glue layer compiles `.jolt` source
+  to legacy f32 JBC1 version 1 or typed version 2. The bounded runtime supports
+  exact primitive values, bindings, conditionals, loops, functions and closures,
+  plus six standard-library modules with 262 exports: math, graphics, geometry,
+  time, collections and strings. See the [language reference](joltscript/docs/language.md)
+  and [standard library](joltscript/docs/stdlib.md).
 - **Core** — the engine: owns backend selection, the frame loop, the scheduler,
   the event bus, buffers, textures, kernels and the native plugin host.
 - **Backends** — Vulkan, Metal, D3D12 and WebGPU, behind one operations table.
-  Vulkan dispatches JBC1 to the device as generated GLSL compute shaders; the
-  other three currently run the shared validated CPU pipeline.
+  Vulkan dispatches version-1 JBC1 to the device as generated GLSL compute
+  shaders. Typed version-2 programs use CPU fallback; the other three currently
+  run the shared validated CPU pipeline.
 - **Kernels** — the bundled effect catalog (12 colour effects), compiled once at
   build time and addressable by name from any frontend.
 - **Zoltan** — the Joltscript compiler. It emits bytecode byte-identical to the
@@ -34,6 +38,10 @@ JoltFX is built in layers, each of which can be used on its own:
 The 3D engine needs Boost 1.74+ development headers. CMake fetches pinned Eigen
 3.4.1 headers; use `JFX_3D_EIGEN_ROOT` for offline builds. See
 [3D build dependencies](docs/modeling3d.md#libraries-and-build).
+
+Joltscript's standard-library build requires Python 3 for catalogue generation
+and builds the vendored PCRE2 archive with CMake. Zoltan additionally requires
+Rust, a C11 compiler and an archiver; it builds offline without registry dependencies.
 
 ```bash
 # Configure and build (needs SDL2 for the desktop window; it degrades to a
@@ -62,6 +70,19 @@ $CLI export --effect invert --start 0 --end 47 -o frames/
 $CLI capabilities                  # what this build actually implements
 $CLI info build/glow.jbc           # inspect compiled bytecode
 ```
+
+### Joltscript tools
+
+```sh
+build/joltscript/tools/joltc/joltc --check joltscript/tests/conformance/phase2.jolt
+build/joltscript/tools/jolti/jolti -e '(import jolt.collections) (defkernel k [] (map + [1 2] [3 4]))'
+# [4 6]
+```
+
+Typed execution is ABI 0.9. Use the tagged-value API for exact integers,
+strings and collections; pixel previews accept numeric results. Native object
+exports preserve typed bytecode, while Zoltan HTML/WAT export accepts version 1.
+See [tool usage](joltscript/docs/tools.md) and the [development plan](JOLTSCRIPT_PLAN.md).
 
 ### Desktop
 

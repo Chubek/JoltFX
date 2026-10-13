@@ -330,6 +330,86 @@ static const char *component_name(uint32_t input) {
     }
 }
 
+/* Forward control flow uses a bounded stack-machine dispatch. The straight-line
+ * fast path below retains its SSA temporaries for existing kernels. */
+static void codegen_branches(const uint8_t *code, size_t size, builder_t *b) {
+    char line[256];
+    snprintf(line, sizeof(line),
+        " float s[%u]; uint n=0u; uint ip=16u;\n"
+        " for (uint step=0u; step<%uu && ip<%zuu; ++step) {\n switch(ip) {\n",
+        JOLT_MAX_STACK, JOLT_MAX_INSTRUCTIONS, size);
+    emit(b, line);
+    for (size_t pos = 16; pos < size; pos += 8) {
+        uint32_t op = read_u32(code + pos), arg = read_u32(code + pos + 4);
+        snprintf(line, sizeof(line), " case %zuu: {\n", pos);
+        emit(b, line);
+        switch (op) {
+        case JOLT_OP_JUMP:
+            snprintf(line, sizeof(line), " ip=%uu; break; }\n", arg);
+            emit(b, line); continue;
+        case JOLT_OP_BRANCH_IF_ZERO:
+            snprintf(line, sizeof(line), " ip=(s[--n]==0.0) ? %uu : %zuu; break; }\n", arg, pos+8);
+            emit(b, line); continue;
+        case JOLT_OP_CONST:
+            snprintf(line, sizeof(line), " s[n++]=uintBitsToFloat(0x%08xu);\n", arg);
+            emit(b, line); break;
+        case JOLT_OP_INPUT:
+            if (arg < 4) snprintf(line, sizeof(line), " s[n++]=%s;\n", component_name(arg));
+            else snprintf(line, sizeof(line), " s[n++]=pc.params[%u];\n", arg-4);
+            emit(b, line); break;
+        case JOLT_OP_LOAD_LOCAL:
+            snprintf(line, sizeof(line), " s[n++]=locals[%u];\n", arg);
+            emit(b, line); break;
+        case JOLT_OP_STORE_LOCAL:
+            snprintf(line, sizeof(line), " locals[%u]=s[n-1u];\n", arg);
+            emit(b, line); break;
+        case JOLT_OP_DROP: emit(b, " --n;\n"); break;
+        case JOLT_OP_OUTPUT:
+            snprintf(line, sizeof(line), " o[%u]=s[--n];\n", arg);
+            emit(b, line); break;
+        case JOLT_OP_ABS: emit(b, " s[n-1u]=abs(s[n-1u]);\n"); break;
+        case JOLT_OP_FLOOR: emit(b, " s[n-1u]=floor(s[n-1u]);\n"); break;
+        case JOLT_OP_SQRT: emit(b, " s[n-1u]=sqrt(s[n-1u]);\n"); break;
+        case JOLT_OP_NOT: emit(b, " s[n-1u]=(s[n-1u]==0.0) ? 1.0 : 0.0;\n"); break;
+        case JOLT_OP_SELECT:
+            emit(b, " float c=s[--n]; float a=s[--n]; s[n-1u]=(s[n-1u]!=0.0) ? a : c;\n"); break;
+        default: {
+            const char *expr;
+            switch (op) {
+            case JOLT_OP_ADD: expr="a+c"; break;
+            case JOLT_OP_SUB: expr="a-c"; break;
+            case JOLT_OP_MUL: expr="a*c"; break;
+            case JOLT_OP_DIV: expr="a/c"; break;
+            case JOLT_OP_MIN: expr="min(a,c)"; break;
+            case JOLT_OP_MAX: expr="max(a,c)"; break;
+            case JOLT_OP_POW: expr="pow(a,c)"; break;
+            case JOLT_OP_LT: expr="(a<c) ? 1.0 : 0.0"; break;
+            case JOLT_OP_GT: expr="(a>c) ? 1.0 : 0.0"; break;
+            case JOLT_OP_LE: expr="(a<=c) ? 1.0 : 0.0"; break;
+            case JOLT_OP_GE: expr="(a>=c) ? 1.0 : 0.0"; break;
+            case JOLT_OP_EQ: expr="(a==c) ? 1.0 : 0.0"; break;
+            case JOLT_OP_NE: expr="(a!=c) ? 1.0 : 0.0"; break;
+            case JOLT_OP_AND: expr="(a!=0.0 && c!=0.0) ? 1.0 : 0.0"; break;
+            case JOLT_OP_OR: expr="(a!=0.0 || c!=0.0) ? 1.0 : 0.0"; break;
+            case JOLT_OP_BITWISE_AND: expr="float(uint(a)&uint(c))"; break;
+            case JOLT_OP_BITWISE_OR: expr="float(uint(a)|uint(c))"; break;
+            case JOLT_OP_BITWISE_XOR: expr="float(uint(a)^uint(c))"; break;
+            case JOLT_OP_SHL: expr="float(uint(a)<<(uint(c)&31u))"; break;
+            case JOLT_OP_SHR: expr="float(uint(a)>>(uint(c)&31u))"; break;
+            default: b->failed = true; return;
+            }
+            snprintf(line, sizeof(line), " float c=s[--n]; float a=s[n-1u]; s[n-1u]=%s;\n", expr);
+            emit(b, line); break;
+        }
+        }
+        snprintf(line, sizeof(line), " ip=%zuu; break; }\n", pos+8);
+        emit(b, line);
+    }
+    emit(b, " }\n if (n>0u && (isnan(s[n-1u]) || isinf(s[n-1u]))) {\n"
+        " vout.v[idx]=vec4(uintBitsToFloat(0x7fc00000u)); return; }\n }\n"
+        " vout.v[idx]=vec4(o[0],o[1],o[2],o[3]);\n}\n");
+}
+
 /* Appends a compute shader implementing validated bytecode. Outputs must be
  * 4 (RGBA); inputs are 4 pixel components plus param_count uniforms. */
 static void codegen(const uint8_t *code, size_t size, size_t param_count,
@@ -351,12 +431,32 @@ static void codegen(const uint8_t *code, size_t size, size_t param_count,
         " uint idx = gl_GlobalInvocationID.x;\n"
         " if (idx >= pc.pixel_count) return;\n"
         " vec4 px = vin.v[idx];\n"
-        " float o[4];\n");
+         " float o[4];\n"
+         " float locals[128];\n");
+    for (size_t pos = 16; pos < size; pos += 8) {
+        uint32_t op = read_u32(code + pos);
+        if (op == JOLT_OP_JUMP || op == JOLT_OP_BRANCH_IF_ZERO) {
+            codegen_branches(code, size, b);
+            return;
+        }
+    }
     unsigned temps[JOLT_MAX_STACK];
     unsigned depth = 0, seq = 0;
     for (size_t pos = 16; pos + 8 <= size && pos + 8 >= pos; pos += 8) {
         uint32_t op = read_u32(code + pos), arg = read_u32(code + pos + 4);
         switch (op) {
+        case JOLT_OP_LOAD_LOCAL:
+            snprintf(line, sizeof(line), " float t%u = locals[%u];\n", seq, arg);
+            emit(b, line);
+            temps[depth++] = seq++;
+            break;
+        case JOLT_OP_STORE_LOCAL:
+            snprintf(line, sizeof(line), " locals[%u] = t%u;\n", arg, temps[depth-1]);
+            emit(b, line);
+            break;
+        case JOLT_OP_DROP:
+            --depth;
+            break;
         case JOLT_OP_CONST:
             snprintf(line, sizeof(line), " float t%u = uintBitsToFloat(0x%08xu);\n",
                 seq, arg);
@@ -741,7 +841,7 @@ int jvk_compute_run(jvk_compute_device_t *dev, const uint8_t *code, size_t size,
         (parameter_count && !parameters)) {
         return -1;
     }
-    if (jolt_bytecode_validate(code, size) != JOLT_OK ||
+    if (jolt_bytecode_validate(code, size) != JOLT_OK || read_u32(code + 4) != 1 ||
         read_u32(code + 8) != 4 + (uint32_t)parameter_count ||
         read_u32(code + 12) != 4) {
         return -1;

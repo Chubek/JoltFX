@@ -1,0 +1,18 @@
+;; @kernel conditionals
+;; @category conformance
+;; @description Lazy branches, nested scopes and side effects.
+;; @complexity Low
+;; @gpu Yes
+;; @since 0.7.0
+(defkernel conditionals [x y t]
+  (var total 1)
+  (when (> x 0)
+    (let delta 2)
+    (set! total (+ total delta)))
+  (unless (= y 0)
+    (set! total (+ total 4)))
+  (+ total
+    (cond
+      [(< t 0) (if x 10 20)]
+      [(= t 0) (if y 30 40)]
+      [else (if 0 (/ 1 0) 50)])))

@@ -76,12 +76,19 @@ virtual filesystem. See [editor usage](../../docs/editor.md).
 
 ## Build and launch the browser editor
 
-Requires Node.js, npm, CMake 3.20+ and an activated Emscripten toolchain. The
-module is tested with Emscripten 6.0.10. Configure from the repository root:
+Requires Node.js, npm, Python 3, CMake 3.20+ and an activated Emscripten toolchain.
+The module is tested with Emscripten 6.0.13-git. Supply a standalone Boost >=1.74
+header tree for cross-compilation and an FFmpeg source tree (tested with 8.0).
+`JFX_3D_BOOST_ROOT` must contain `boost/version.hpp`; do not pass host
+`/usr/include`, which would shadow Emscripten's libc headers. Eigen 3.4.1 is
+fetched automatically; `JFX_3D_EIGEN_ROOT` supplies an offline tree.
+`JFX_FFMPEG_ROOT` defaults to `third_party/ffmpeg` when populated.
+Configure from the repository root, substituting your dependency paths:
 
 ```sh
 emcmake cmake -S . -B build-web \
   -DCMAKE_BUILD_TYPE=Release \
+  -DJFX_3D_BOOST_ROOT=/path/to/boost -DJFX_FFMPEG_ROOT=/path/to/ffmpeg \
   -DJFX_BACKEND_VULKAN=OFF -DJFX_BACKEND_METAL=OFF -DJFX_BACKEND_D3D12=OFF \
   -DJFX_BACKEND_WEBGPU=ON -DJFX_FRONTEND_WEB=ON \
   -DJFX_FRONTEND_DESKTOP=OFF -DJFX_FRONTEND_MOBILE=OFF -DJFX_FRONTEND_CLI=OFF \
@@ -107,17 +114,37 @@ this build runs the synchronous CPU reference renderer and needs no cross-origin
 isolation headers. The WebGPU adapter name identifies the selected backend;
 graph/color evaluation uses the shared CPU path.
 
+C++ uses native WebAssembly exception handling consistently with VTK; the browser
+or Node runtime must support that feature. Builds without `-msimd128` use scalar
+numeric/render kernels. Application targets build only their linked geometry
+libraries; the default all-target build also prepares VTK SDK-install archives.
+
 Transfer buffers use exported `_jfx_web_alloc` / `_jfx_web_free` over MemTKX.
 Release through the matching export, never `_free`. Rebuild the native module
 and TypeScript package together. The bridge copies output before releasing it,
 refreshes heap views after growth, and rejects session calls after idempotent
 disposal. See [memory ownership](../../docs/memory.md).
+Project imports marshal UTF-8 through owned heap buffers, so the full 8-MiB
+document limit is independent of the smaller WASM stack.
 
 `npm test` covers UI gestures, inspectors and bridge validation with native-call
 doubles. `test:wasm` executes the actual compiled module through
 `EmscriptenJoltBridge`: exports/catalogs, editing/history, native pixel parity,
 independent graph/sequence previews, virtual image/LUT resources, heap growth and
-error propagation. Set `JFX_WASM_MODULE` to an **absolute** module path.
+error propagation, large UTF-8 projects and typed Joltscript animation with
+imports/closures/regex. Set `JFX_WASM_MODULE` to an **absolute** module path.
+
+For a real-browser smoke test, leave the built launch page served as above:
+
+```sh
+cd frontends/web
+npx playwright install firefox
+npm run test:browser
+```
+
+`JFX_WEB_URL` overrides `http://localhost:8080/public/index.html`. The test checks
+launch, scene creation, typed animation, rendered pixel changes, undo/redo and
+download/reopening of a project. Playwright is a development-only dependency.
 
 Imported media and LUT files live in the module's virtual filesystem. Reimport
 them when reopening a project in a fresh module instance. PPM exports contain

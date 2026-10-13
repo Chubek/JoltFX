@@ -1,10 +1,7 @@
-//! MVP validator for Joltscript kernel sources.
-//!
-//! Mirrors the MVP subset accepted by the Glue Layer compiler
-//! (`joltscript/layers/glue/src/compiler.c`): a single
-//! `(defkernel name [inputs...] body)` form with scalar `f32` expressions,
-//! at most 32 bindings, and nesting depth 64. When the Glue compiler grows,
-//! this validator must grow with it; any divergence is a bug.
+//! Metadata validation for legacy f32 and typed Joltscript kernels and built-in
+//! library interfaces. Typed semantics delegate to the portable verifier through
+//! `typed.rs`; C and Rust retain independent, byte-identical source emitters.
+//! The legacy parser below handles version-1 kernel metadata/shape.
 //!
 //! Future home per `zoltan/AGENTS.md`: `src/core/validation.rs` with the
 //! command driver in `src/commands/`.
@@ -163,7 +160,6 @@ fn arity(op: &str) -> Option<usize> {
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
-    bindings: &'a [String],
 }
 
 impl<'a> Parser<'a> {
@@ -194,66 +190,34 @@ impl<'a> Parser<'a> {
             }),
         }
     }
-
-    fn expression(&mut self, depth: usize) -> Result<(), Diagnostic> {
-        if depth >= 64 {
-            let t = self.peek().cloned();
-            let (line, column) = t.map(|t| (t.line, t.column)).unwrap_or((1, 1));
-            return Err(Diagnostic {
-                line,
-                column,
-                message: "expression nesting limit exceeded".to_string(),
-            });
-        }
-        let token = self.next().cloned().ok_or(Diagnostic {
-            line: 1,
-            column: 1,
-            message: "unexpected end of input in expression".to_string(),
-        })?;
-        if token.text == "(" {
-            let head = self.next().cloned().ok_or(Diagnostic {
-                line: token.line,
-                column: token.column,
-                message: "unexpected end of input after '('".to_string(),
-            })?;
-            let Some(expected) = arity(&head.text) else {
-                return Err(Diagnostic {
-                    line: head.line,
-                    column: head.column,
-                    message: format!("unknown operation '{}'", head.text),
-                });
-            };
-            for _ in 0..expected {
-                self.expression(depth + 1)?;
-            }
-            self.expect(")")?;
-            Ok(())
-        } else if ["(", ")", "[", "]"].contains(&token.text.as_str()) {
-            Err(Diagnostic {
-                line: token.line,
-                column: token.column,
-                message: format!("unexpected '{}' in expression", token.text),
-            })
-        } else if self.bindings.iter().any(|b| b == &token.text) {
-            Ok(())
-        } else {
-            match token.text.parse::<f32>() {
-                Ok(v) if v.is_finite() => Ok(()),
-                _ => Err(Diagnostic {
-                    line: token.line,
-                    column: token.column,
-                    message: format!(
-                        "undefined binding or invalid finite f32 literal '{}'",
-                        token.text
-                    ),
-                }),
-            }
-        }
-    }
 }
 
 /// Validate a kernel source. Returns facts about the kernel on success.
 pub fn validate_source(source: &str) -> Result<KernelInfo, Diagnostic> {
+    let typed_program = if crate::typed::required(source) {
+        let program = crate::bytecode::compile(source).map_err(|e| Diagnostic {
+            line: e.line,
+            column: e.column,
+            message: e.message,
+        })?;
+        let (_, outputs) = crate::bytecode::header(&program).map_err(|e| Diagnostic {
+            line: e.line,
+            column: e.column,
+            message: e.message,
+        })?;
+        if outputs == 0 {
+            let (name, inputs) = crate::typed::facts(&program);
+            return Ok(KernelInfo {
+                name,
+                inputs,
+                outputs,
+                category: "stdlib".into(),
+            });
+        }
+        Some(program)
+    } else {
+        None
+    };
     let fail = |line: usize, column: usize, message: &str| Diagnostic {
         line,
         column,
@@ -308,6 +272,23 @@ pub fn validate_source(source: &str) -> Result<KernelInfo, Diagnostic> {
         }
     }
 
+    if let Some(program) = typed_program {
+        let (name, inputs) = crate::typed::facts(&program);
+        if name != get("kernel") {
+            return Err(fail(1, 1, "kernel name does not match @kernel"));
+        }
+        let (_, outputs) = crate::bytecode::header(&program).map_err(|e| Diagnostic {
+            line: e.line,
+            column: e.column,
+            message: e.message,
+        })?;
+        return Ok(KernelInfo {
+            name,
+            category: get("category"),
+            inputs,
+            outputs,
+        });
+    }
     let tokens = tokenize(source)?;
     if tokens.is_empty() {
         return Err(fail(1, 1, "missing (defkernel ...) form"));
@@ -315,7 +296,6 @@ pub fn validate_source(source: &str) -> Result<KernelInfo, Diagnostic> {
     let mut parser = Parser {
         tokens: &tokens,
         pos: 0,
-        bindings: &[],
     };
     parser.expect("(")?;
     let defkernel = parser
@@ -373,35 +353,17 @@ pub fn validate_source(source: &str) -> Result<KernelInfo, Diagnostic> {
         let (line, column) = t.map(|t| (t.line, t.column)).unwrap_or((1, 1));
         return Err(fail(line, column, "kernel declares no inputs"));
     }
-    parser.bindings = &[];
-
-    // Body: either `(rgba r g b a)` (4 outputs) or scalar expressions.
-    let body_parser = Parser {
-        tokens: &tokens,
-        pos: parser.pos,
-        bindings: &bindings,
-    };
-    let mut body = body_parser;
-    let outputs: u32;
-    if body.peek().map(|t| t.text.as_str()) == Some("(")
-        && tokens.get(body.pos + 1).map(|t| t.text.as_str()) == Some("rgba")
-    {
-        body.next(); // (
-        body.next(); // rgba
-        for _ in 0..4 {
-            body.expression(0)?;
-        }
-        body.expect(")")?;
-        outputs = 4;
-    } else {
-        outputs = 1;
-        body.expression(0)?;
-    }
-    body.expect(")")?;
-    if body.pos != tokens.len() {
-        let t = tokens[body.pos].clone();
-        return Err(fail(t.line, t.column, "trailing source after kernel"));
-    }
+    // Semantic validation shares the emitter, preventing grammar drift.
+    let program = crate::bytecode::compile(source).map_err(|e| Diagnostic {
+        line: e.line,
+        column: e.column,
+        message: e.message,
+    })?;
+    let (_, outputs) = crate::bytecode::header(&program).map_err(|e| Diagnostic {
+        line: e.line,
+        column: e.column,
+        message: e.message,
+    })?;
 
     Ok(KernelInfo {
         name: name.text,

@@ -1,161 +1,29 @@
-;; jolt.graphics — Graphics and color operations for Joltscript
-;; Color spaces, transforms, filters, and blend modes.
-;;
-;; STATUS: specification artefact -- NOT loadable by the shipped compiler.
-;;
-;; These modules are written against the full language described in
-;; ../AGENTS.md (modules, imports, vectors and tuples as values, mutation,
-;; closures, collections, strings and `extern-c` FFI). The only Joltscript
-;; implementation in the tree is the bounded CPU image profile in
-;; ../../layers/glue/src/image_program.c, whose dialect is deliberately
-;; narrower, so every file here is rejected at compile time.
-;;
-;; The incompatibility is syntactic, not a missing-builtins gap. In particular
-;; this dialect writes `(let name value)` with an implicit `do` body, while the
-;; image profile requires `(let [name value ...] body)` with exactly one body
-;; form and scalars only -- no vectors or tuples. `math.jolt` additionally needs
-;; 23 `extern-c` calls, which the profile forbids outright: it guarantees
-;; programs have "no filesystem, FFI, imports, allocation, or system resources"
-;; (joltscript/layers/glue/include/joltscript/image_program.h).
-;;
-;; Do not "fix" a compile error here by editing the call sites: kernels written
-;; against the bounded profile would stop compiling. See joltscript/docs/stdlib.md.
-
+;; jolt.graphics — RGB in [0,1], hue in turns; straight-alpha source-over.
 (module jolt.graphics)
-
-(import jolt.math (clamp lerp smoothstep))
-
-;; Color space conversions
-(defn rgb->hsv [r g b]
-  (let max-c (max r (max g b)))
-  (let min-c (min r (min g b)))
-  (let delta (- max-c min-c))
-  (let v max-c)
-  (let s (if (> max-c 0.0) (/ delta max-c) 0.0))
-  (let h (if (= delta 0.0) 0.0
-            (if (= max-c r) (mod (/ (- g b) delta) 6.0)
-            (if (= max-c g) (+ (/ (- b r) delta) 2.0)
-                              (+ (/ (- r g) delta) 4.0)))))
-  [h s v])
-
-(defn hsv->rgb [h s v]
-  (let c (* v s))
-  (let x (* c (- 1.0 (abs (- (mod h 2.0) 1.0)))))
-  (let m (- v c))
-  (let h-seg (mod h 6.0))
-  (let r (if (< h-seg 1.0) c (if (< h-seg 2.0) x (if (< h-seg 4.0) 0.0 (if (< h-seg 5.0) x c)))))
-  (let g (if (< h-seg 1.0) x (if (< h-seg 3.0) c (if (< h-seg 4.0) x (if (< h-seg 6.0) 0.0 x)))))
-  (let b (if (< h-seg 2.0) 0.0 (if (< h-seg 3.0) x (if (< h-seg 5.0) c (if (< h-seg 6.0) x 0.0)))))
-  [(+ r m) (+ g m) (+ b m)])
-
-(defn rgb->hsl [r g b]
-  (let max-c (max r (max g b)))
-  (let min-c (min r (min g b)))
-  (let l (/ (+ max-c min-c) 2.0))
-  (let delta (- max-c min-c))
-  (let h (if (= delta 0.0) 0.0
-            (if (= max-c r) (mod (/ (- g b) delta) 6.0)
-            (if (= max-c g) (+ (/ (- b r) delta) 2.0)
-                              (+ (/ (- r g) delta) 4.0)))))
-  (let s (if (= delta 0.0) 0.0 (/ delta (- 1.0 (abs (- (* 2.0 l) 1.0))))))
-  [h s l])
-
-(defn hsl->rgb [h s l]
-  (let c (- 1.0 (abs (- (* 2.0 l) 1.0))))
-  (let x (* c (- 1.0 (abs (- (mod h 2.0) 1.0)))))
-  (let m (- l (/ c 2.0)))
-  (let h-seg (mod h 6.0))
-  (let r (if (< h-seg 1.0) c (if (< h-seg 2.0) x (if (< h-seg 4.0) 0.0 (if (< h-seg 5.0) x c)))))
-  (let g (if (< h-seg 1.0) x (if (< h-seg 3.0) c (if (< h-seg 4.0) x (if (< h-seg 6.0) 0.0 x)))))
-  (let b (if (< h-seg 2.0) 0.0 (if (< h-seg 3.0) x (if (< h-seg 5.0) c (if (< h-seg 6.0) x 0.0)))))
-  [(+ r m) (+ g m) (+ b m)])
-
-;; Color adjustments
-(defn brightness [r g b amount]
-  (rgba (clamp (* r amount) 0.0 1.0)
-        (clamp (* g amount) 0.0 1.0)
-        (clamp (* b amount) 0.0 1.0)
-        1.0))
-
-(defn contrast [r g b amount]
-  (let factor (/ (* 259.0 (+ amount 255.0)) (* 255.0 (- 259.0 amount))))
-  (rgba (clamp (* factor (- r 0.5)) 0.0 1.0)
-        (clamp (* factor (- g 0.5)) 0.0 1.0)
-        (clamp (* factor (- b 0.5)) 0.0 1.0)
-        1.0))
-
-(defn saturation [r g b amount]
-  (let gray (+ (* 0.2126 r) (* 0.7152 g) (* 0.0722 b)))
-  (rgba (clamp (lerp gray r amount) 0.0 1.0)
-        (clamp (lerp gray g amount) 0.0 1.0)
-        (clamp (lerp gray b amount) 0.0 1.0)
-        1.0))
-
-(defn invert [r g b a]
-  (rgba (- 1.0 r) (- 1.0 g) (- 1.0 b) a))
-
-(defn grayscale [r g b]
-  (let gray (+ (* 0.2126 r) (* 0.7152 g) (* 0.0722 b)))
-  (rgba gray gray gray 1.0))
-
-(defn sepia [r g b]
-  (let tr (+ (* 0.393 r) (* 0.769 g) (* 0.189 b)))
-  (let tg (+ (* 0.349 r) (* 0.686 g) (* 0.168 b)))
-  (let tb (+ (* 0.272 r) (* 0.534 g) (* 0.131 b)))
-  (rgba (clamp tr 0.0 1.0) (clamp tg 0.0 1.0) (clamp tb 0.0 1.0) 1.0))
-
-;; Blend modes
-(defn blend-normal [src dst] src)
-(defn blend-multiply [src dst] (* src dst))
-(defn blend-screen [src dst] (- 1.0 (* (- 1.0 src) (- 1.0 dst))))
-(defn blend-overlay [src dst]
-  (if (< dst 0.5)
-    (* 2.0 src dst)
-    (- 1.0 (* 2.0 (- 1.0 src) (- 1.0 dst)))))
-(defn blend-darken [src dst] (min src dst))
-(defn blend-lighten [src dst] (max src dst))
-(defn blend-difference [src dst] (abs (- src dst)))
-
-;; Alpha compositing
-(defn alpha-composite [src-r src-g src-b src-a dst-r dst-g dst-b dst-a]
-  (let out-a (+ src-a (* dst-a (- 1.0 src-a))))
-  (let out-r (if (> out-a 0.0)
-    (/ (+ (* src-r src-a) (* dst-r dst-a (- 1.0 src-a))) out-a)
-    0.0))
-  (let out-g (if (> out-a 0.0)
-    (/ (+ (* src-g src-a) (* dst-g dst-a (- 1.0 src-a))) out-a)
-    0.0))
-  (let out-b (if (> out-a 0.0)
-    (/ (+ (* src-b src-a) (* dst-b dst-a (- 1.0 src-a))) out-a)
-    0.0))
-  [out-r out-g out-b out-a])
-
-;; Color temperature
-(defn color-temperature [r g b temp]
-  (let t (/ temp 100.0))
-  (let r (if (<= t 66.0) 255.0
-            (clamp (- 329.698727446 (pow (- t 60.0) -0.1332047592)) 0.0 255.0)))
-  (let g (if (<= t 66.0)
-            (clamp (+ (* 99.4708025861 (log t)) (- 161.1195681661)) 0.0 255.0)
-            (clamp (- 288.1221695283 (pow (- t 60.0) -0.0755148492)) 0.0 255.0)))
-  (let b (if (>= t 66.0) 255.0
-            (if (<= t 19.0) 0.0
-            (clamp (+ (* 138.5177312231 (log (- t 10.0))) (- 305.0447927307)) 0.0 255.0))))
-  [(/ r 255.0) (/ g 255.0) (/ b 255.0)])
-
-;; Gamma correction
-(defn gamma-correct [r g b gamma]
-  (rgba (pow r gamma) (pow g gamma) (pow b gamma) 1.0))
-
-(defn gamma-decode [r g b]
-  (gamma-correct r g b 2.2))
-
-(defn gamma-encode [r g b]
-  (gamma-correct r g b 0.4545))
-
-(export rgb->hsv hsv->rgb rgb->hsl hsl->rgb
-        brightness contrast saturation invert grayscale sepia
-        blend-normal blend-multiply blend-screen blend-overlay
-        blend-darken blend-lighten blend-difference
-        alpha-composite color-temperature
-        gamma-correct gamma-decode gamma-encode)
+(intrinsic rgb->hsv [number number number] -> vector)
+(intrinsic hsv->rgb [number number number] -> vector)
+(intrinsic rgb->hsl [number number number] -> vector)
+(intrinsic hsl->rgb [number number number] -> vector)
+(intrinsic brightness [number number number number] -> vector)
+(intrinsic contrast [number number number number] -> vector)
+(intrinsic saturation [number number number number] -> vector)
+(intrinsic invert [number number number number] -> vector)
+(intrinsic grayscale [number number number] -> vector)
+(intrinsic sepia [number number number] -> vector)
+(intrinsic blend-normal [number number] -> f64)
+(intrinsic blend-multiply [number number] -> f64)
+(intrinsic blend-screen [number number] -> f64)
+(intrinsic blend-overlay [number number] -> f64)
+(intrinsic blend-darken [number number] -> f64)
+(intrinsic blend-lighten [number number] -> f64)
+(intrinsic blend-difference [number number] -> f64)
+(intrinsic alpha-composite [number number number number number number number number] -> vector)
+(intrinsic color-temperature [number number number number] -> vector)
+(intrinsic gamma-correct [number number number number] -> vector)
+(intrinsic gamma-decode [number number number] -> vector)
+(intrinsic gamma-encode [number number number] -> vector)
+;; CPU filter primitives: finite samples and weights, normalized by weight sum.
+(intrinsic convolve [sequence sequence] -> f64)
+(intrinsic box-filter [sequence] -> f64)
+(intrinsic gaussian-weight [number number] -> f64)
+(export *)

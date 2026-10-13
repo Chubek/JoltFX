@@ -1,5 +1,200 @@
 # Progress
 
+## Web and Android frontend development (2026-10-13)
+
+- Inspecting the real Emscripten/Android builds, shared editor bridges, editing,
+  playback and Joltscript workflows. Preserving the earlier language work.
+- Initial environment: Emscripten source at `/mnt/warble/emscripten` requires
+  bootstrap; LLVM is installed at `/opt/emscripten-llvm`. Root filesystem is
+  full, so build/download caches use `/tmp/opencode`. ADB is installed with no
+  connected device; JDK/SDK/NDK are not on PATH.
+- Bootstrapped a writable Emscripten 6.0.13-git distribution and JDK 17 under
+  `/tmp/opencode`. Google SDK repository requests return HTTP 404 and Gradle
+  cannot resolve AGP 8.7.3 from Google Maven, blocking APK assembly here.
+- Real cross-build fixes: standalone Boost and FFmpeg source overrides, early
+  missing-FFmpeg diagnostics, application builds separated from VTK's unused SDK
+  install dependencies, consistent native WASM C++ exceptions, scalar fallback
+  when wasm SIMD is not enabled, and consolidated scene-state exports.
+- Web project loading now uses owned heap UTF-8 storage rather than cwrap's
+  1-MiB stack. Added allocation/failure tests and real-WASM large-project and
+  typed Joltscript/regex/closure animation cases.
+- Android adds system file pickers for projects, media, LUTs, Joltscript and PLY;
+  bounded persistent asset copies preserve referenced files. Platform-managed
+  I/O runs apart from main-thread Core calls. Native sessions/history survive
+  rotation; pause stops playback and project loading refreshes 3D state too.
+- A host JVM test reproduced JNI modified-UTF-8 corruption of supplementary
+  characters. Standard UTF-8 conversion now preserves scripts/labels/paths and
+  rejects NUL/unpaired surrogates. Project saves use serialize-then-rename rather
+  than truncating the destination. Initial real-JVM bridge test and Kotlin
+  storage tests pass; all Android Kotlin sources type-check against API 35.
+- Verification complete for available tooling: Emscripten app build with FFmpeg
+  8.0 succeeds; 14 web unit tests and all 10 actual-WASM tests pass, including
+  audio/video encode/decode/cancel. A new Playwright/Firefox browser gate passes
+  launch, pixel-changing typed animation, seeking, undo/redo, download and reopen.
+  Scalar and `-msimd128` numeric executables both pass in Node. Nine native
+  modeling/numeric/frontend/JNI checks pass. Android Kotlin compiles with
+  `-Werror` against API 35 (R constants generated from resources for this host
+  type-check); standalone storage tests cover bounds, Unicode, cancellation and
+  provider/close failure cleanup. The real JNI host suite passes with `-Xcheck:jni`.
+- JNI bridge/host objects also pass standalone ASan/UBSan linked to the existing
+  native engine archives (engine archives uninstrumented; JVM leak detection and
+  ASan SIGSEGV interception disabled). Native JNI final build has no compiler
+  warnings; `git diff --check` passes. APK assembly/device UI remains unverified:
+  SDK/NDK are absent, Google downloads/dependency resolution fail, and ADB lists
+  no devices. No claim of Android packaging or on-device verification is made.
+- Updated frontend/Core instructions and web/mobile build/workflow documentation.
+  Build/test logs and artifacts are under `/tmp/opencode/{web-*,android-*}`.
+  The staged web preview is served on port 8080 from
+  `/tmp/opencode/joltfx-web-site/public/index.html`; original public WASM artifacts
+  were preserved. Browser screenshot: `/tmp/opencode/joltfx-web-browser.png`.
+
+## Joltscript reference refresh (2026-10-13)
+
+- Updated CLI/compiler/REPL help, desktop creative and 3D guidance, and web/mobile
+  animation guidance for completed Phases 1–2 (execution ABI 0.9): typed core
+  language, six built-in modules and 262 exports.
+- Refreshed overview, roadmap, architecture, build, creative, language/tool and
+  contributor references; repaired the documentation index's language link.
+  Documented exact-value APIs, typed CPU fallback, the separate image profile,
+  Zoltan version-aware exports and the desktop binding-scanner/export boundaries.
+  Distinguished current tool capabilities from Phase 3 semantic-tooling plans.
+- Corrected example imports, fixed-arity expressions, delimiters and local names;
+  added a typed function/loop/collection example and library-based animation.
+  Typed examples now carry CPU metadata. All 20 complete kernels from the example,
+  creative, modeling and stdlib guides compile with identical C/Rust bytecode
+  (test metadata supplied where the documentation omits it). Four evaluator
+  examples produce their documented values; 36 added relative links resolve.
+- Verification: native CLI/compiler/REPL/desktop and affected UI targets build
+  without warnings; eight UI/CLI/creative/headless CTest checks pass. Zoltan
+  builds, Rust formatting passes, and five help entry points smoke-test cleanly.
+  Web TypeScript build and 13 interaction tests pass; tracked web output rebuilt.
+  `git diff --check` passes. Android/iOS guidance changes were source-reviewed;
+  platform builds were not run for this text-only refresh.
+
+## Phase 2 standard library completion (2026-10-13)
+
+- Audited all six existing specification files. They contain invalid syntax and
+  incorrect formulas (including smoothstep, matrix multiplication and easing).
+  Replaced these with 262 checked intrinsic exports backed by the shared typed
+  runtime. The six `.jolt` interfaces compile independently in C and Rust and
+  generate the embedded catalogue at build time. Imports support selective and
+  qualified names, ambiguity diagnostics and checked module declarations.
+- Implemented math/interpolation and closure-local deterministic random; color
+  spaces, gamma/temperature transforms, compositing and sample filters; points,
+  vectors, row-major matrices, quaternions, splines and bounds; easing/curves and
+  unsorted keyframe interpolation; immutable lists/vectors/maps/sets, higher-order
+  callbacks and bounded sequence generators; Unicode-indexed strings, exact
+  parsing/formatting and vendored PCRE2 UTF/property-aware regular expressions.
+- Execution ABI 0.9 adds aggregate views and signature-only dynamic values while
+  retaining the tagged-value struct layout. Invocations use a 16 MiB bounded
+  arena and existing step limits, including regex callouts. Aggregate/string
+  outputs are recursively owned by the VM, preserve prior storage on failure,
+  and support aliased invocation. The REPL prints collections recursively.
+- CMake and Cargo build the catalogue with Python 3 and the vendored PCRE2 archive
+  with CMake. Zoltan remains offline with no registry dependencies; CC/AR/PYTHON
+  and a PCRE2 CMAKE_TOOLCHAIN_FILE are configurable. Install rules include all six
+  interfaces, the PCRE2 archive/exported dependency and its license.
+- Verification: 11 native suites pass, 34 Rust tests pass, Clippy with warnings
+  denied and Rust formatting pass, native compiler output has no diagnostics,
+  and `git diff --check` is clean. The export-coverage gate checks all 262 exports
+  in 298 C/Rust parity + exact/tolerant execution cases, 12 rejection cases and
+  six module parity checks. The registered bytecode corpus passes 27/27; 298
+  image-profile sources are explicitly not applicable. Phase 1's 20 execution/
+  parity cases and 12 rejection cases also pass.
+- Standalone Clang ASan/UBSan compiler/VM/stdlib and typed tests pass with leak
+  detection and halt-on-UB, including aggregate lifetime/aliasing, callback
+  failures, numeric/dimension edges, regex backtracking limits and successive
+  step-budget boundaries. PCRE2 is sanitizer-instrumented in these runs; the
+  existing Tilly archives are not. Logs/artifacts: `/tmp/opencode/phase2-*` and
+  `/tmp/opencode/joltscript-{stdlib,typed}-san`.
+- Updated the plan, library/language references and subsystem instructions.
+  Library execution uses the typed CPU path; typed shader/HTML/WAT lowering
+  retains Phase 1's documented backend boundary. General user-module loading
+  is outside this built-in import mechanism. Next planned phase: Phase 3 tools.
+
+## Phase 1 core-language completion (2026-10-13)
+
+- Implemented all remaining Phase 1 forms/types together. Version-2 typechecked
+  tree bytecode adds annotations/casts, all eleven listed primitive types plus
+  unit, bounded `for`/`while`/`loop`, `break`/`continue`, named/anonymous functions,
+  forward calls, annotated recursion, and lexical closures with captured mutation.
+- Added execution ABI 0.8 exact tagged values, typed program/VM invocation and
+  signature queries. Integer math has defined width/wrap behavior; conversions,
+  Unicode and finite floating values are checked. Invocation budgets cover node/
+  iteration steps, depth and lexical-cell storage. Failed calls publish nothing;
+  string outputs have explicit VM ownership and lifetime.
+- C/Rust independently parse and serialize version 2. Zoltan's safe bridge uses
+  the same portable C typechecker/VM with Rust allocation callbacks, built offline
+  by `build.rs` using a C11 compiler and archiver. Native preview/metadata and
+  object export support typed kernels. Legacy version-1 emission remains intact.
+- Vulkan selects CPU fallback for typed programs and reports `used_gpu=false`;
+  the version-1 shader decoder rejects version 2. HTML/WAT exports explicitly
+  reject typed programs before writing; typed shader/export lowering is follow-up
+  backend work. `jolti` prints exact values and CLI/disassembly describe both
+  bytecode versions.
+- Verification: 10 native suites (language, pipeline, Vulkan and CLI), 33 Rust
+  tests, Clippy with denied warnings, Rust formatting, and clean native compiler
+  output. The typed ASan/UBSan suite passes, including malformed-tree mutation/
+  truncation and string lifetimes; existing Tilly archives remain uninstrumented.
+  Registered C/Rust parity covers 20/20 sources; 298 image-profile sources remain
+  explicitly not applicable. Additional checks pass 20 Phase 1 exact-execution/
+  parity cases and 12 rejection cases, plus the earlier 19 JS/assembled-Wasm
+  conditional executions and 14 rejection cases.
+- Updated the plan checkpoint, language/API/tool documentation and subsystem
+  instructions. Next planned phase: the standard library.
+
+## Joltscript lazy conditionals (2026-10-13)
+
+- Implemented f32 `if`, `cond`, `when` and `unless` in both JBC1 emitters.
+  Tests/arms have private declaration scopes; selected outer mutations persist.
+  Unmatched cond and skipped when/unless return zero. Select/and/or stay eager.
+- Execution ABI 0.7 adds absolute forward-only branches. Validation merges
+  stack depth/output counts and intersects initialized locals; rejects invalid
+  targets, unreachable code and incomplete output paths. VM preserves failure
+  atomicity and program-size execution bounds.
+- Added bounded stack-machine GLSL lowering for branching programs while
+  retaining the existing straight-line path. GPU tests exercise nested branches,
+  conditions, mutations and unselected/selected numerical errors.
+- Zoltan preview and HTML honor branches; WAT reconstructs structured f32 `if`s.
+  Corrected WAT comparison/select typing and output consumption needed for
+  conditionals. Numerical results are checked; removed the fake zero-returning
+  WAT pow stub in favor of explicit unsupported-operation failure.
+- Verification: 19/19 registered C/Rust bytecode parity sources; 30 Rust tests;
+  eight rebuilt native compiler/VM/integration/conformance/benchmark/pipeline/
+  Vulkan tests pass, including real Vulkan dispatch. Clippy and formatting pass.
+  Repeatable conformance script passes 19 JS/assembled-Wasm execution cases and
+  14 C/Rust rejection cases. Wasmtime 49 was installed in /tmp/opencode for this
+  check (download succeeded through the existing SOCKS proxy).
+- Both conformance fixtures survive joltfmt round trips with identical bytecode;
+  the documented full-kernel jolti conditional example evaluates to 7.
+- Standalone ASan/UBSan compiler and VM suites pass with changed C sources
+  instrumented and existing uninstrumented Tilly archives linked, as before.
+- Next Phase 1 work: bounded loops, functions and primitive types. The bounded
+  image profile and the full-language stdlib retain their existing contracts.
+
+## Joltscript Phase 1 continuation (2026-10-12)
+
+- Implemented f32 `let`, `var`, `set!`, scoped vector bindings, `do` and
+  implicit scalar kernel sequences in matching C/Rust emitters. Initialization
+  is eager and once-only; lexical shadowing, duplicate rejection and immutable
+  binding checks are covered by execution/error tests.
+- Added execution ABI 0.6 local opcodes (29–31), initialization/stack validation,
+  VM storage, Vulkan GLSL lowering, disassembly and Zoltan preview/HTML/WAT
+  lowering. Zoltan body validation now delegates to its compiler.
+- Added a pinned conformance fixture: bytecode parity passes 18/18 registered
+  sources; 298 image-profile sources are explicitly reported not applicable.
+- Eight rebuilt native compiler/VM/integration/conformance/benchmark/pipeline/
+  Vulkan checks pass. Zoltan's 28 tests, Clippy with warnings denied and formatting
+  pass. Generated HTML executes the binding fixture correctly under Node.
+- Standalone ASan/UBSan compiler and VM suites pass, including the 128-local
+  boundary and malformed local instructions. These instrument the changed C
+  sources and link existing uninstrumented Tilly archives. The relocated full
+  sanitizer CMake cache was unusable. WAT lowering has generation smoke coverage;
+  binary assembly/execution was unavailable because wat2wasm is not installed.
+- Updated the plan checkpoint, language/API documentation and subsystem guides.
+- The bounded image profile remains a separate language contract. Full primitive
+  types, control flow, functions and loadable stdlib remain later Phase 1 work.
+
 ## Ingagi image descriptors and callable restoration (2026-10-12)
 
 - Continued the existing uncommitted implementation. Added AST-independent

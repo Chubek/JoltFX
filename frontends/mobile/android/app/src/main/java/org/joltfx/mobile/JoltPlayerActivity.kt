@@ -3,6 +3,7 @@ package org.joltfx.mobile
 import android.app.Activity
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.media.AudioTrack
 import android.media.AudioFormat
@@ -22,12 +23,21 @@ import android.text.TextWatcher
 import android.text.Editable
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 private class PreviewImageView(context: Context) : ImageView(context) {
     override fun performClick(): Boolean { super.performClick(); return true }
 }
 
-class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
+class JoltPlayerActivity : Activity(), Choreographer.FrameCallback, DocumentTransferReceiver {
+    private data class RetainedSession(val handle: Long, val previewNode: Int)
+    private var sessionRetained = false
+    private var pendingImport: String? = null
+    private var pendingExport: String? = null
+    private val importFields = mutableMapOf<String, EditText>()
+    private var documentTransfer: DocumentTransfer? = null
+    private val openDocumentRequest = 100
+    private val saveDocumentRequest = 101
     private var nativeHandle = 0L
     private var lastFrameNanos = 0L
     private var touchStartX = 0f
@@ -58,6 +68,12 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         System.loadLibrary("jfx_android_jni")
+        (lastNonConfigurationInstance as? RetainedSession)?.let {
+            nativeHandle = it.handle; previewNode = it.previewNode
+        }
+        if (nativeHandle == 0L) nativeHandle = nativeCreate(320, 180, 60.0)
+        pendingImport = savedInstanceState?.getString("pendingImport")
+        pendingExport = savedInstanceState?.getString("pendingExport")
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         preview = PreviewImageView(this)
         preview.contentDescription = getString(R.string.preview_description)
@@ -109,13 +125,18 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         status = TextView(this)
         content.addView(preview); content.addView(status)
         fun heading(title: String) { content.addView(TextView(this).apply { text = title; textSize = 20f }) }
+        var fieldId = 1000
         fun field(label: String, initial: String): EditText {
             content.addView(TextView(this).apply { text = label })
-            return EditText(this).apply { setText(initial); content.addView(this) }
+            return EditText(this).apply { id = fieldId++; setText(initial); content.addView(this) }
         }
         fun action(label: String, run: () -> Unit) { content.addView(Button(this).apply { text = label; setOnClickListener {
             try { run() } catch (e: Exception) { status.text = e.message }
         } }) }
+        fun browse(key: String, field: EditText, label: String) {
+            importFields[key] = field
+            action(label) { chooseDocument(key) }
+        }
         fun edit(op: String, a: Int = 0, b: Int = 0, c: Int = 0, value: Double = 0.0, text: String = ""): Boolean {
             val result = nativeEdit(nativeHandle, op, a, b, c, value, text)
             status.text = if (result == 0) "" else "Edit could not be applied ($result)"
@@ -130,6 +151,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         val track = field("Track index", "0"); val clip = field("Clip index", "0")
         val start = field("Start frame", "0"); val length = field("Length in frames", "90")
         val path = field("Media file path", "")
+        browse("media", path, "Browse media…")
         val frame = field("Playhead frame", "0"); val destination = field("Destination track", "0")
         val slip = field("Slip delta (frames)", "0"); val name = field("Clip / track name", "")
         timeline = NLETimelineView(this); content.addView(timeline)
@@ -189,8 +211,10 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         action("Remove track") { edit("track.remove", track.text.toString().toInt()) }
         action("Undo") { edit("undo") }; action("Redo") { edit("redo") }
         val project = field("Project file path", "${filesDir}/project.jfx")
-        action("Open project") { stopAudio(); if (nativeProjectFile(nativeHandle, project.text.toString(), false) != 0) throw IllegalArgumentException("Unable to open project"); previewNode = -1; invalidateColors.forEach { it() }; refreshNLE(); refreshGraph() }
+        action("Open project") { loadProject(File(project.text.toString())) }
         action("Save project") { if (nativeProjectFile(nativeHandle, project.text.toString(), true) != 0) throw IllegalArgumentException("Unable to save project") }
+        action("Open project from device…") { chooseDocument("project") }
+        action("Save project to device…") { chooseProjectDestination() }
         val output = field("Frame export path (PPM)", "${filesDir}/frame.ppm")
         action("Export selected frame") { if (nativeWriteFrame(nativeHandle, kotlin.math.floor(timeline.frame + 1e-7).toLong(), output.text.toString()) != 0) throw IllegalArgumentException("Unable to export frame") }
         val videoOutput = field("Encoded video path (.mp4/.mov/.mkv)", "${filesDir}/sequence.mp4")
@@ -256,6 +280,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
             }
             content.addView(controls)
             val lut = field("$title LUT file path", "")
+            browse("$section.lut", lut, "Browse $title LUT…")
             action("Load LUT into selected color layer") { colorEdit("path", text = lut.text.toString()) }
             action("Clear LUT") { colorEdit("path") }
             action("Enable color layer") { colorEdit("enabled", 1.0) }
@@ -388,7 +413,8 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         action("Apply cloner") { edit("3d.cloner", object3D.text.toString().toInt(), cloneMode.text.toString().toInt(), cloneCount.text.toString().toInt(), cloneSpacing.text.toString().toDouble()) }
         action("Make clones real") { edit("3d.cloner_make_real", object3D.text.toString().toInt()) }
         val scriptChannel = field("Joltscript channel (0..8)", "4")
-        val script3D = field("Animation script: inputs time frame index value", "(defkernel spin [time frame index value] (+ value (* time 90)))")
+        val script3D = field("Joltscript: time frame index value → numeric result", "(defkernel spin [time frame index value] (+ value (* time 90)))")
+        content.addView(TextView(this).apply { text = "Supports loops, functions and built-in imports such as jolt.math and jolt.time. Use floating inputs; typed programs run on the CPU." })
         action("Load assigned animation script") {
             val objects = JSONObject(nativeScene3DState(nativeHandle) ?: "{}").getJSONArray("objects")
             script3D.setText(objects.getJSONObject(object3D.text.toString().toInt()).getJSONArray("scripts").getString(scriptChannel.text.toString().toInt()))
@@ -396,6 +422,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         action("Apply animation script") { edit("3d.script", object3D.text.toString().toInt(), scriptChannel.text.toString().toInt(), text = script3D.text.toString()) }
         action("Remove animation script") { edit("3d.script", object3D.text.toString().toInt(), scriptChannel.text.toString().toInt(), text = "") }
         val scriptPath3D = field("Animation .jolt path", "${filesDir}/spin.jolt")
+        browse("script", scriptPath3D, "Browse animation .jolt…")
         action("Load animation .jolt") { edit("3d.script_file", object3D.text.toString().toInt(), scriptChannel.text.toString().toInt(), text = scriptPath3D.text.toString()) }
         for ((channel, title) in listOf("Material R", "Material G", "Material B").withIndex()) {
             val input = field(title, listOf("0.32", "0.65", "0.9")[channel])
@@ -417,6 +444,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         val keyChannel = field("3D key channel (0..8)", "0"); val interpolation = field("3D interpolation (0 hold, 1 linear, 2 smooth)", "1")
         action("Set 3D key interpolation") { edit("3d.interpolation", object3D.text.toString().toInt(), keyChannel.text.toString().toInt(), frame3D.text.toString().toInt(), interpolation.text.toString().toDouble()) }
         val mesh = field("3D PLY path", "${filesDir}/mesh.ply")
+        browse("mesh", mesh, "Browse PLY mesh…")
         action("Import PLY") { edit("3d.import_ply", text = mesh.text.toString()) }
         action("Export PLY") { edit("3d.export_ply", object3D.text.toString().toInt(), text = mesh.text.toString()) }
         action("Subdivide mesh") { edit("3d.subdivide", object3D.text.toString().toInt()) }
@@ -438,12 +466,13 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
         action("Export 3D frame (PPM)") {
             if (edit("3d") && nativeWriteFrame(nativeHandle, frame3D.text.toString().toLong(), output.text.toString()) != 0) throw IllegalArgumentException("Unable to export 3D frame")
         }
-        setContentView(ScrollView(this).apply { addView(content) })
+        setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(content) })
     }
 
     override fun onResume() {
         super.onResume()
         if (nativeHandle == 0L) nativeHandle = nativeCreate(320, 180, 60.0)
+        if (nativeHandle == 0L) { status.text = "Unable to initialize JoltFX"; return }
         refreshNLE()
         refreshGraph()
         refreshScene3D()
@@ -454,6 +483,7 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
     override fun onPause() {
         if (sceneNavigating && nativeHandle != 0L) { nativeEdit(nativeHandle, "3d.navigation_cancel", 0, 0, 0, 0.0, ""); sceneNavigating=false }
         Choreographer.getInstance().removeFrameCallback(this)
+        if (nativeHandle != 0L && nativePlaying(nativeHandle)) nativeTap(nativeHandle)
         stopAudio()
         if (exportJob != 0L) nativeExportDestroy(exportJob)
         exportJob = 0L
@@ -462,9 +492,89 @@ class JoltPlayerActivity : Activity(), Choreographer.FrameCallback {
 
     override fun onDestroy() {
         stopAudio()
-        if (nativeHandle != 0L) nativeDestroy(nativeHandle)
+        documentTransfer?.cancel(true); documentTransfer = null
+        if (nativeHandle != 0L && !sessionRetained) nativeDestroy(nativeHandle)
         nativeHandle = 0L
+        if (isFinishing) pendingExport?.let { File(it).delete() }
         super.onDestroy()
+    }
+
+    // Core owns no Activity/View references. Transfer the handle on rotation so
+    // all workspaces and their histories survive without replaying UI commands.
+    override fun onRetainNonConfigurationInstance(): Any {
+        sessionRetained = true
+        return RetainedSession(nativeHandle, previewNode)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("pendingImport", pendingImport)
+        outState.putString("pendingExport", pendingExport)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun loadProject(file: File) {
+        check(nativeHandle != 0L) { "JoltFX is not initialized" }
+        check(nativeProjectFile(nativeHandle, file.absolutePath, false) == 0) { "Unable to open project" }
+        stopAudio(); previewNode = -1
+        invalidateColors.forEach { it() }; refreshNLE(); refreshGraph(); refreshScene3D()
+    }
+
+    private fun chooseDocument(key: String) {
+        check(pendingImport == null && pendingExport == null && documentTransfer == null) { "A file operation is already running" }
+        pendingImport = key
+        try {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+            }, openDocumentRequest)
+        } catch (failure: Exception) { pendingImport = null; throw failure }
+    }
+
+    private fun chooseProjectDestination() {
+        check(pendingImport == null && pendingExport == null && documentTransfer == null) { "A file operation is already running" }
+        val snapshot = File.createTempFile("project-", ".jfx", cacheDir)
+        try {
+            check(nativeProjectFile(nativeHandle, snapshot.absolutePath, true) == 0) { "Unable to save project" }
+            pendingExport = snapshot.absolutePath
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"
+                putExtra(Intent.EXTRA_TITLE, "project.jfx")
+            }, saveDocumentRequest)
+        } catch (failure: Exception) { pendingExport = null; snapshot.delete(); throw failure }
+    }
+
+    @Deprecated("Activity result API retained for the dependency-free API 26 frontend")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != openDocumentRequest && requestCode != saveDocumentRequest) return
+        val key = pendingImport; val snapshot = pendingExport?.let { File(it) }
+        pendingImport = null; pendingExport = null
+        try {
+            if (resultCode != RESULT_OK) { snapshot?.delete(); return }
+            val uri = data?.data ?: error("The file provider returned no document")
+            if (requestCode == saveDocumentRequest) {
+                checkNotNull(snapshot) { "The export snapshot is unavailable" }
+            } else checkNotNull(key) { "The import destination is unavailable" }
+            documentTransfer = DocumentTransfer(this, this, key ?: "save", uri, snapshot).also { it.execute() }
+            status.text = "Transferring document…"
+        } catch (failure: Exception) { snapshot?.delete(); status.text = failure.message }
+    }
+
+    override fun documentTransferred(task: DocumentTransfer, key: String, file: File?, name: String, error: Exception?) {
+        if (documentTransfer !== task) { file?.delete(); return }
+        documentTransfer = null
+        try {
+            if (error != null) throw error
+            if (key == "save") { status.text = "Project saved"; return }
+            checkNotNull(file) { "The import is unavailable" }
+            if (key == "project") {
+                try { loadProject(file) } finally { file.delete() }
+            } else {
+                val field = importFields[key]
+                if (field == null) { file.delete(); error("The import destination is unavailable") }
+                field.setText(file.absolutePath)
+            }
+            status.text = "Imported $name"
+        } catch (failure: Exception) { status.text = failure.message }
     }
 
     override fun doFrame(frameTimeNanos: Long) {

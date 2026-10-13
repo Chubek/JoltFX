@@ -2,7 +2,12 @@
 
 ## Overview
 
-This document provides examples of Joltscript kernels for common image processing tasks.
+These complete kernels demonstrate the implemented Phase 1–2 language and
+standard library (execution ABI 0.9). Save a block as `example.jolt` and run
+`joltc --check example.jolt`. Pixel examples take floating inputs and return
+four numeric RGBA lanes; examples with imports use typed JBC1 version 2 and
+execute on the CPU. The resource-based CPU image profile is documented separately
+in [language.md](language.md).
 
 ## Basic Kernels
 
@@ -44,12 +49,13 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category color
 ;; @description Converts to grayscale
 ;; @complexity Low
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math)
 (defkernel grayscale [r g b a]
-  (let gray (+ (* 0.2126 r) (* 0.7152 g) (* 0.0722 b)))
-  (rgba gray gray gray a)))
+  (let gray (+ (+ (* 0.2126 r) (* 0.7152 g)) (* 0.0722 b)))
+  (rgba gray gray gray a))
 ```
 
 ### Gamma Correction
@@ -77,9 +83,10 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category color
 ;; @description Adjusts image contrast
 ;; @complexity Medium
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math (clamp))
 (defkernel contrast [r g b a amount]
   (let factor (/ (* 259.0 (+ amount 255.0)) (* 255.0 (- 259.0 amount))))
   (rgba (clamp (* factor (- r 0.5)) 0.0 1.0)
@@ -96,11 +103,12 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category color
 ;; @description Adjusts image saturation
 ;; @complexity Medium
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math (clamp lerp))
 (defkernel saturation [r g b a amount]
-  (let gray (+ (* 0.2126 r) (* 0.7152 g) (* 0.0722 b)))
+  (let gray (+ (+ (* 0.2126 r) (* 0.7152 g)) (* 0.0722 b)))
   (rgba (clamp (lerp gray r amount) 0.0 1.0)
         (clamp (lerp gray g amount) 0.0 1.0)
         (clamp (lerp gray b amount) 0.0 1.0)
@@ -133,9 +141,10 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category color
 ;; @description Adjusts color balance
 ;; @complexity Medium
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math (clamp))
 (defkernel color-balance [r g b a r-gain g-gain b-gain]
   (rgba (clamp (* r r-gain) 0.0 1.0)
         (clamp (* g g-gain) 0.0 1.0)
@@ -153,13 +162,14 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category color
 ;; @description Applies sepia tone
 ;; @complexity Medium
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math (clamp))
 (defkernel sepia [r g b a]
-  (let tr (+ (* 0.393 r) (* 0.769 g) (* 0.189 b)))
-  (let tg (+ (* 0.349 r) (* 0.686 g) (* 0.168 b)))
-  (let tb (+ (* 0.272 r) (* 0.534 g) (* 0.131 b)))
+  (let tr (+ (+ (* 0.393 r) (* 0.769 g)) (* 0.189 b)))
+  (let tg (+ (+ (* 0.349 r) (* 0.686 g)) (* 0.168 b)))
+  (let tb (+ (+ (* 0.272 r) (* 0.534 g)) (* 0.131 b)))
   (rgba (clamp tr 0.0 1.0) (clamp tg 0.0 1.0) (clamp tb 0.0 1.0) a))
 ```
 
@@ -171,9 +181,10 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category effect
 ;; @description Applies vignette effect
 ;; @complexity High
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math (clamp))
 (defkernel vignette [r g b a x y width height strength]
   (let cx (/ width 2.0))
   (let cy (/ height 2.0))
@@ -190,26 +201,29 @@ This document provides examples of Joltscript kernels for common image processin
 
 ### Color Temperature
 
+`temp` is a positive color temperature in kelvin (for example, 6500).
+
 ```lisp
 ;; Adjusts the color temperature of an image.
 ;; @kernel color-temperature
 ;; @category color
 ;; @description Adjusts color temperature
 ;; @complexity High
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math (clamp log))
 (defkernel color-temperature [r g b a temp]
   (let t (/ temp 100.0))
-  (let r (if (<= t 66.0) 255.0
-            (clamp (- 329.698727446 (pow (- t 60.0) -0.1332047592)) 0.0 255.0)))
-  (let g (if (<= t 66.0)
-            (clamp (+ (* 99.4708025861 (log t)) (- 161.1195681661)) 0.0 255.0)
-            (clamp (- 288.1221695283 (pow (- t 60.0) -0.0755148492)) 0.0 255.0)))
-  (let b (if (>= t 66.0) 255.0
+  (let red (if (<= t 66.0) 255.0
+            (clamp (* 329.698727446 (pow (- t 60.0) -0.1332047592)) 0.0 255.0)))
+  (let green (if (<= t 66.0)
+            (clamp (- (* 99.4708025861 (log t)) 161.1195681661) 0.0 255.0)
+            (clamp (* 288.1221695283 (pow (- t 60.0) -0.0755148492)) 0.0 255.0)))
+  (let blue (if (>= t 66.0) 255.0
             (if (<= t 19.0) 0.0
-            (clamp (+ (* 138.5177312231 (log (- t 10.0))) (- 305.0447927307)) 0.0 255.0))))
-  (rgba (/ r 255.0) (/ g 255.0) (/ b 255.0) a))
+            (clamp (- (* 138.5177312231 (log (- t 10.0))) 305.0447927307) 0.0 255.0))))
+  (rgba (/ red 255.0) (/ green 255.0) (/ blue 255.0) a))
 ```
 
 ### Blend Modes
@@ -220,9 +234,10 @@ This document provides examples of Joltscript kernels for common image processin
 ;; @category composite
 ;; @description Blends two images
 ;; @complexity Medium
-;; @gpu Yes
+;; @gpu No
 ;; @since 1.0.0
 
+(import jolt.math)
 (defkernel blend [src-r src-g src-b src-a dst-r dst-g dst-b dst-a mode]
   (let blended-r (select (= mode 0) src-r
                   (select (= mode 1) (* src-r dst-r)
@@ -251,6 +266,7 @@ This document provides examples of Joltscript kernels for common image processin
 
 ```lisp
 ;; Pipeline: brightness followed by contrast
+(import jolt.math (clamp))
 (defkernel brightness-contrast [r g b a brightness contrast]
   (let bright-r (* r brightness))
   (let bright-g (* g brightness))
@@ -266,22 +282,42 @@ This document provides examples of Joltscript kernels for common image processin
 
 ```lisp
 ;; Pipeline: gamma correction followed by saturation
+(import jolt.math (clamp lerp))
 (defkernel gamma-saturation [r g b a gamma saturation]
   (let gamma-r (pow r gamma))
   (let gamma-g (pow g gamma))
   (let gamma-b (pow b gamma))
-  (let gray (+ (* 0.2126 gamma-r) (* 0.7152 gamma-g) (* 0.0722 gamma-b)))
+  (let gray (+ (+ (* 0.2126 gamma-r) (* 0.7152 gamma-g)) (* 0.0722 gamma-b)))
   (rgba (clamp (lerp gray gamma-r saturation) 0.0 1.0)
         (clamp (lerp gray gamma-g saturation) 0.0 1.0)
         (clamp (lerp gray gamma-b saturation) 0.0 1.0)
         a))
 ```
 
+## Typed values, functions and collections
+
+The evaluator accepts a complete kernel. For example,
+`jolti -e '(defkernel exact [] 18446744073709551615u64)'` preserves every digit.
+This program uses a typed function, loop and immutable vector:
+
+```lisp
+(import jolt.collections (map))
+(defn sum-to [(n i32)] -> i32
+  (var total 0)
+  (for [i 0 n] (set! total (+ total i)))
+  total)
+(defkernel totals [] (map sum-to [3 4 5]))
+;; [3 6 10]
+```
+
+Use `jolti` or the tagged-value API for collection output. See [stdlib.md](stdlib.md)
+for all six modules, callback signatures, strings/regex and execution budgets.
+
 ## Tips
 
 ### Performance
 
-- Use `select` instead of nested `if` expressions
+- Use lazy `if`/`cond` when unselected branches should not execute; `select` is eager
 - Minimize the number of operations in a kernel
 - Use constants instead of repeated literals
 
@@ -295,4 +331,4 @@ This document provides examples of Joltscript kernels for common image processin
 
 - Use `joltc --check` to validate syntax
 - Use `joltc --dump` to inspect bytecode
-- Use `jolti` to test expressions interactively
+- Use `jolti` to evaluate complete kernels interactively

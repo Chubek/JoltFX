@@ -16,6 +16,7 @@ list(APPEND JFX_INSTALL_TARGETS
     tillyz
     tilly
     joltscript_execution
+    pcre2-8-static
     joltscript_glue
     jfx_core
     jfx_backend_software

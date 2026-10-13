@@ -209,12 +209,23 @@ Inputs are positional: seconds, fractional scene frame, zero-based clone index,
 and the channel's keyed value after clone placement. A driver outputs the final
 channel value. Drivers are pure, bounded JBC1 programs executed by the existing
 Joltscript VM at arbitrary preview/export times; no frame baking is required.
-Use zero to four input bindings and exactly one scalar output. Supported scalar
-operators are arithmetic (`+ - * / min max abs floor pow sqrt`), comparisons,
-logical/bitwise operations and `select`; operators retain the compiler's fixed
-arity. Sources are limited to 4096 bytes. Invalid source is rejected on attachment;
+Use zero to four floating input bindings and exactly one numeric output.
+Drivers support the completed core language (bindings, conditionals, loops,
+functions/closures) and typed standard-library imports, including `jolt.math`
+and `jolt.time` for animation. Imported library code runs on the CPU; collections
+and strings can be intermediate values, but the channel result must be numeric.
+Sources are limited to 4096 bytes. Invalid source is rejected on attachment;
 non-finite/out-of-range runtime values fail the frame without publishing partial
 pixels. Scripts do not access files or mutate the scene during evaluation.
+
+```lisp
+(import jolt.math (sin TWO-PI))
+(defkernel wave [time frame index value]
+  (+ value (* 10.0 (sin (* time TWO-PI)))))
+```
+
+See the [language reference](../joltscript/docs/language.md) and
+[standard library](../joltscript/docs/stdlib.md) for exact types and budgets.
 
 Examples in `examples/modeling3d/` demonstrate spin, looping bounce and indexed
 clone offsets. Load a file through the CLI, then render the same animation:

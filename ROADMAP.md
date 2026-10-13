@@ -7,10 +7,11 @@
 - [ ] Basic CMake build system
 
 ## Phase 2: Core Functionality (Q2 2027)
-- [x] JoltScript execution and glue layers
+- [x] Joltscript execution and glue layers (legacy f32 JBC1 plus typed version 2, ABI 0.9)
+- [x] Joltscript core language and six-module standard library (262 exports; [language Phases 1–2](JOLTSCRIPT_PLAN.md))
 - [x] Vulkan backend implementation (JBC1→GLSL codegen + device dispatch verified on RX 580; pipeline caching and async submit remain open, see PROGRESS.md)
 - [x] Essential kernel library (10+ effects)
-- [x] Zoltan compiler MVP
+- [x] Zoltan C/Rust bytecode parity, typed CPU preview and built-in library imports
 
 ## Phase 3: Integration (Q3 2027)
 - [x] CLI frontend (`compile`/`verify`/`effects`/`info`/`render` + `version`/`help`/`run`, PPM render path)
@@ -29,4 +30,3 @@
 - [ ] Plugin system (After Effects, Premiere, DaVinci)
 - [ ] Performance optimization
 - [ ] Public beta release
-

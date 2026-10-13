@@ -1,380 +1,248 @@
 # Joltscript Standard Library
 
-## Overview
+The six modules in `joltscript/stdlib/` are executable intrinsic interfaces for
+the typed JBC1 version-2 runtime (execution ABI **0.9**). C and Zoltan compile
+them independently into identical bytecode. The build generates the runtime
+catalogue from these declarations; imports resolve against that embedded
+catalogue, with no runtime filesystem lookup or FFI access.
 
-The Joltscript standard library provides common operations for kernel authoring. All functions are implemented as Joltscript intrinsics or pure Joltscript.
+| Module | Contents |
+|---|---|
+| [`jolt.math`](../stdlib/math.jolt) | Trigonometry, exponentials, rounding, interpolation, deterministic random, linear algebra |
+| [`jolt.graphics`](../stdlib/graphics.jolt) | RGB/HSV/HSL and gamma transforms, color adjustments, blending, compositing, sample filters |
+| [`jolt.geometry`](../stdlib/geometry.jolt) | Points, vectors, transforms, matrices, quaternions, splines, bounding boxes |
+| [`jolt.time`](../stdlib/time.jolt) | Frame/time conversion, easing, scalar curves, keyframe interpolation, looping |
+| [`jolt.collections`](../stdlib/collections.jolt) | Immutable lists, vectors, maps, sets, higher-order operations, bounded sequence generators |
+| [`jolt.strings`](../stdlib/strings.jolt) | UTF-8 manipulation, parsing, formatting, PCRE2 regular expressions |
 
-## Status: not loadable by the current implementation
+The linked `.jolt` files are the complete signature reference (262 exports).
+`number` accepts any numeric primitive; `sequence` accepts a list, vector or set;
+`value` accepts any value. `?` introduces optional parameters, and `&` a repeated
+parameter, up to the language's 32-argument limit. These two signature categories
+(`number`, `sequence`) are private to intrinsic interfaces. Use concrete types
+or `value` in user functions.
 
-**The six modules in `joltscript/stdlib/` do not compile, and that is expected.** They
-are specification artefacts for the full language described in `joltscript/AGENTS.md`;
-the only Joltscript implementation in the tree is the bounded CPU image profile, whose
-dialect is deliberately narrower. Nothing in the build, the tests or the tools loads
-these files, so this does not affect any shipping kernel.
+## Imports and execution
 
-The gap is **syntactic, not a set of missing builtins**, which matters because it cannot
-be closed by adding functions:
+```lisp
+(import jolt.math (sin HALF-PI))
+(import jolt.collections (map reduce))
 
-| construct | these modules write | image profile accepts |
-|---|---|---|
-| `let` | `(let name value)` | `(let [name value ...] body)` |
-| function body | several forms (implicit `do`) | exactly one form |
-| values | vectors `[h s v]`, 4-tuples | scalars only (`f64`) |
-| top level | `module`, `import`, `export`, `defconst` | `param`, `defn`, `defkernel`, `passes` |
+(defkernel example []
+  (let samples (map (fn [x] (* x x)) [1 2 3]))
+  (+ (reduce + 0.0 samples) (sin HALF-PI)))
+;; 15
+```
 
-`graphics.jolt` is the closest to loadable — no collections, no FFI, no mutation — and
-it still fails on its first `let`. All six modules need collections; `strings.jolt`
-additionally needs a string value type; and `math.jolt` needs **23 `extern-c` FFI
-calls**, which the profile forbids outright. It guarantees that programs have "no
-filesystem, FFI, imports, allocation, or system resources"
-(`joltscript/layers/glue/include/joltscript/image_program.h`). Supporting these modules
-therefore means implementing a second, general-purpose language with values, mutation
-and FFI, or weakening that sandbox guarantee.
+`(import jolt.math)` imports every export. Selective imports restrict the visible
+names. Imported names are also available fully qualified, such as
+`jolt.math/length`. If two imports expose the same unqualified name, qualify it
+or select only the intended export. Lexical function bindings shadow imports.
+Unknown modules, unknown exports, wrong arity and statically incompatible
+arguments are source-located compile errors.
 
-For the language that *does* compile today, see [language.md](language.md); the shared
-kernel helpers that are actually in use are `kernels/common/*.jolt`, which are prepended
-to each kernel as a library by `kernels/CMakeLists.txt`.
+The six library files contain `(module jolt.name)`, checked `(intrinsic ... )`
+declarations and `(export *)`. They compile as zero-input/zero-output library
+artifacts, which cannot be invoked as kernels. This is the built-in module
+interface mechanism; arbitrary user module files, import aliases and re-exports
+are not implemented.
 
-Each module carries the same `STATUS:` banner in its header. Do not silence a compile
-error here by rewriting call sites — kernels written against the bounded profile would
-stop compiling.
+```sh
+joltc joltscript/stdlib/math.jolt --check
+zoltan compile joltscript/stdlib/math.jolt -o math.jbc
+jolti -e '(import jolt.math) (defkernel k [] (sin HALF-PI))'
+```
 
-## Modules
+Imports select version 2. Native execution and Zoltan CPU preview support the
+library; Vulkan uses its typed CPU fallback. Object exports preserve the typed
+bytecode. Standalone HTML/WAT exporters still reject version 2. The bounded CPU
+image profile has its own operations and does not load these modules.
 
-### jolt.math
+## Math
 
-Mathematical functions for trigonometry, linear algebra, interpolation, and random numbers.
+Numeric library operations return finite `f64` values. Imported `min`, `max`,
+`abs`, `floor`, `pow` and `sqrt` use these library signatures; unimported core
+arithmetic retains its typed integer/float rules. Numeric domain failures return
+`JOLT_ERR_NUMERIC`; invalid bounds/dimensions return `JOLT_ERR_ARGUMENT`.
 
-#### Trigonometry
-- `(sin x)` — Sine
-- `(cos x)` — Cosine
-- `(tan x)` — Tangent
-- `(asin x)` — Arcsine
-- `(acos x)` — Arccosine
-- `(atan x)` — Arctangent
-- `(atan2 y x)` — Arctangent (2-arg)
+- Angles are radians; `deg->rad` and `rad->deg` convert units.
+- `mod` is nonnegative modulo `abs(divisor)`.
+- `clamp(value, minimum, maximum)` requires ordered bounds.
+- `lerp(a, b, t)` is `a + t*(b-a)`.
+- `smoothstep(edge0, edge1, x)` clamps the normalized coordinate and applies
+  `t*t*(3-2*t)`; edges must be strictly increasing.
+- `map-range(x, in0, in1, out0, out1)` maps without clamping.
+- Constants are `PI`, `TWO-PI`, `HALF-PI`, `E`, `SQRT2`, `SQRT1_2`.
+- `(random-seed 42u32)` creates an invocation-local zero-argument generator.
+  Each call advances `state = state*1664525 + 1013904223` modulo 2^32 and returns
+  `state / 2^32` in `[0,1)`. There is no global random state.
+- `dot`, Euclidean `length`, `normalize`, `cross`, `mat2-mul` and `mat2-det`
+  share the geometry conventions below.
 
-#### Exponential and Logarithmic
-- `(exp x)` — Exponential
-- `(log x)` — Natural logarithm
-- `(log10 x)` — Base-10 logarithm
-- `(log2 x)` — Base-2 logarithm
-- `(exp2 x)` — Base-2 exponential
+## Geometry and graphics
 
-#### Power and Root
-- `(pow x y)` — Power
-- `(sqrt x)` — Square root
-- `(cbrt x)` — Cube root
-- `(hypot x y)` — Hypotenuse
+Geometry operates on numeric vectors, with exact dimension checks for indexed
+accesses and matching dimensions for pairwise operations. General vector
+operations accept 1–64 components. Matrices are flat row-major arrays;
+`mat-mul(a,b,n)` and `mat-transpose(a,n)` support square dimensions 1–8.
+`mat2-mul` uses ordinary row/column multiplication, not component-wise products.
+Zero-vector normalization returns the zero vector.
 
-#### Rounding
-- `(floor x)` — Floor
-- `(ceil x)` — Ceiling
-- `(round x)` — Round
-- `(trunc x)` — Truncate
+Points have 2 or 3 components. Transform angles use radians. Quaternions use
+`[x y z w]`, with identity `[0 0 0 1]`; axis-angle construction normalizes the
+axis, and quaternion rotation accounts for quaternion magnitude. A zero axis
+produces identity; a zero rotation quaternion is invalid. Splines take four
+point vectors followed by `t`. Bounds are `[min-x min-y max-x max-y]` or
+`[min-x min-y min-z max-x max-y max-z]`; bound tests include the boundary.
+Bounding-box construction accepts 1–64 points.
 
-#### Other
-- `(abs x)` — Absolute value
-- `(sign x)` — Sign
-- `(min x y)` — Minimum
-- `(max x y)` — Maximum
-- `(clamp x lo hi)` — Clamp to range
-- `(lerp a b t)` — Linear interpolation
-- `(smoothstep edge0 edge1 x)` — Smoothstep interpolation
-- `(map-range x in-min in-max out-min out-max)` — Map value between ranges
-- `(deg->rad deg)` — Degrees to radians
-- `(rad->deg rad)` — Radians to degrees
+Colors use RGB components in `[0,1]` and hue in turns. Color-space conversions
+return three components. Color adjustments return `[r g b 1]`, except `invert`
+preserves its fourth alpha argument and `color-temperature` returns RGB.
+Brightness multiplies by its factor; contrast scales around 0.5; saturation
+interpolates from Rec.709 luminance. These three adjustments and sepia clamp
+their output to `[0,1]`. Gamma decode/encode use the piecewise sRGB transfer
+functions; `gamma-correct` raises each component to the supplied exponent.
+Color temperature is in Kelvin, bounded to 1000–40000.
 
-#### Constants
-- `PI` — π
-- `TWO-PI` — 2π
-- `HALF-PI` — π/2
-- `E` — Euler's number
-- `SQRT2` — √2
-- `SQRT1_2` — 1/√2
+Blend functions take `(source, destination)` scalars. Overlay chooses its branch
+from the destination. `alpha-composite(sr,sg,sb,sa,dr,dg,db,da)` implements
+straight-alpha source-over and returns RGBA; fully transparent output has zero
+RGB. `convolve(samples,weights)` returns the normalized weighted sum, `box-filter`
+returns the sample mean, and `gaussian-weight(distance,sigma)` returns a normalized
+one-dimensional Gaussian weight. Empty filters, mismatched weights, zero total
+weight and nonpositive sigma fail.
 
-#### Vector Operations
-- `(dot v1 v2)` — Dot product
-- `(length v)` — Vector length
-- `(normalize v)` — Normalize vector
-- `(cross v1 v2)` — Cross product
+## Time and animation
 
-#### Matrix Operations
-- `(mat2-mul m1 m2)` — 2x2 matrix multiplication
-- `(mat2-det m)` — 2x2 matrix determinant
+Easing functions cover linear, quadratic, cubic, quartic, quintic, sine,
+exponential, circular, elastic, back and bounce curves. The domain is `[0,1]`;
+elastic/back easing may overshoot. In/out/in-out variants preserve endpoints.
+Scalar Bézier and Catmull–Rom curves take `(t,p0,p1,p2,p3)`; geometric splines
+take the four vectors before `t`.
 
-#### Easing Functions
-- `(ease-in-quad t)` — Ease in (quadratic)
-- `(ease-out-quad t)` — Ease out (quadratic)
-- `(ease-in-out-quad t)` — Ease in-out (quadratic)
-- `(ease-in-cubic t)` — Ease in (cubic)
-- `(ease-out-cubic t)` — Ease out (cubic)
-- `(ease-in-out-cubic t)` — Ease in-out (cubic)
+`keyframe-value(keyframes,time)` accepts unsorted `[time value]` pairs, linearly
+interpolates adjacent times, and clamps before/after the range. Empty input
+returns zero. At an exact duplicate timestamp, the last matching pair wins.
+`animate(duration,time,easing)` invokes its callback with clamped `time/duration`.
+`ping-pong` has period two; `loop-time(time,duration)` wraps negative time;
+`repeat-count` returns the floored cycle count. Durations must be positive.
 
-### jolt.graphics
+## Collections and higher-order functions
 
-Graphics and color operations.
+`[a b c]` creates a heterogeneous immutable vector. `list`, `vector`, `hash-map`
+and `set` construct the other collection values. Maps store alternating keys and
+values; repeated keys replace their value, preserving insertion order. Sets
+deduplicate values and retain insertion order. Collection keys/membership use
+type-sensitive structural equality; map/set equality ignores insertion order.
+`length` counts entries, not both halves of a map pair.
 
-#### Color Space Conversions
-- `(rgb->hsv r g b)` — RGB to HSV
-- `(hsv->rgb h s v)` — HSV to RGB
-- `(rgb->hsl r g b)` — RGB to HSL
-- `(hsl->rgb h s l)` — HSL to RGB
+Collection transformations allocate new values. `vec-set`, `vec-push`, `assoc`
+and `dissoc` never mutate their argument. Indices are zero-based, slice ends
+exclusive; invalid indices fail. `get`/`map-get` return unit on a missing key,
+or their optional default. `map-get-in` returns unit for a missing/non-map path.
+`take`/`drop` clamp to collection size. `partition` drops an incomplete final
+group; `partition-all` includes it. `interleave` includes remaining elements of
+longer inputs. `sort` is stable and accepts a strict-less-than callback.
 
-#### Color Adjustments
-- `(brightness r g b amount)` — Adjust brightness
-- `(contrast r g b amount)` — Adjust contrast
-- `(saturation r g b amount)` — Adjust saturation
-- `(invert r g b a)` — Invert colors
-- `(grayscale r g b)` — Convert to grayscale
-- `(sepia r g b)` — Apply sepia tone
+```lisp
+(import jolt.collections)
+(defkernel example []
+  (let square (fn [(x value)] (* x x)))
+  (let xs (map square [1 2 3]))
+  (reduce + 0 xs))
+;; exact i32 result: 14
+```
 
-#### Blend Modes
-- `(blend-normal src dst)` — Normal blend
-- `(blend-multiply src dst)` — Multiply blend
-- `(blend-screen src dst)` — Screen blend
-- `(blend-overlay src dst)` — Overlay blend
-- `(blend-darken src dst)` — Darken blend
-- `(blend-lighten src dst)` — Lighten blend
-- `(blend-difference src dst)` — Difference blend
+Unannotated callback parameters still default to `f64`. Annotate `(x value)`
+for heterogeneous/exact values, or use concrete types. `function` annotations
+accept callbacks. Dynamic values are checked when consumed or called. Core
+operators and imported functions can be passed as callback values.
 
-#### Alpha Compositing
-- `(alpha-composite src-r src-g src-b src-a dst-r dst-g dst-b dst-a)` — Alpha composite
+`map` accepts multiple sequences and stops at the shortest. `map-indexed` passes
+`(index,item)`, with an `i64` index. `filter`/`remove`, `some`/`every?`, and
+take/drop-while accept numeric/bool predicates (unit is false). `keep` retains
+non-unit callback results, including false and zero. `reduce-kv` passes
+`(accumulator,key,value)`; `apply-kv` spreads alternating keys/values as arguments.
 
-#### Color Temperature
-- `(color-temperature r g b temp)` — Adjust color temperature
+Sequence generators are stateful zero-argument closures local to one invocation:
 
-#### Gamma Correction
-- `(gamma-correct r g b gamma)` — Apply gamma correction
-- `(gamma-decode r g b)` — Decode gamma (sRGB to linear)
-- `(gamma-encode r g b)` — Encode gamma (linear to sRGB)
+- `range-seq(start,end,step=1)`: exact `i64`, end-exclusive, signed nonzero step;
+  reaching integer bounds terminates instead of wrapping.
+- `iterate(f,initial)`: yields initial, then repeated applications of `f`.
+- `repeatedly(f)`: invokes a zero-argument callback per item.
+- `cycle(sequence)`: repeats a finite sequence; empty input terminates.
+- `lazy-seq(f)`: invokes `f(state)`, initially unit; callback returns
+  `[item,next-state]` or unit to terminate.
 
-### jolt.geometry
+Unit terminates generators. `take(n,generator)` materializes at most `n` items;
+`drop(n,generator)` consumes items and returns that same generator. Generator
+state is shared by its aliases. Higher-order `map`/`filter`/`reduce` consume finite
+collections; use `take` to materialize a generator first.
 
-Geometric operations for points, vectors, matrices, quaternions, and splines.
+## Strings and regular expressions
 
-#### 2D Points
-- `(point2d x y)` — Create 2D point
-- `(point2d-x p)` — Get X coordinate
-- `(point2d-y p)` — Get Y coordinate
-- `(point2d-add p1 p2)` — Add points
-- `(point2d-sub p1 p2)` — Subtract points
-- `(point2d-scale p s)` — Scale point
-- `(point2d-dist p1 p2)` — Distance between points
-- `(point2d-lerp p1 p2 t)` — Interpolate between points
+Strings are immutable validated UTF-8. `str-length`, `char-at`, `substring`,
+reverse and padding operate on Unicode scalar values, not bytes or grapheme
+clusters. Trimming recognizes Unicode whitespace. Case conversion is ASCII-only
+and leaves other codepoints unchanged. Comparisons use lexicographic UTF-8 order.
 
-#### 3D Points
-- `(point3d x y z)` — Create 3D point
-- `(point3d-x p)` — Get X coordinate
-- `(point3d-y p)` — Get Y coordinate
-- `(point3d-z p)` — Get Z coordinate
-- `(point3d-add p1 p2)` — Add points
-- `(point3d-sub p1 p2)` — Subtract points
-- `(point3d-scale p s)` — Scale point
-- `(point3d-dist p1 p2)` — Distance between points
-- `(point3d-lerp p1 p2 t)` — Interpolate between points
+Replacement searches the original text, so replacement text is never searched
+again. Split/replacement separators must be nonempty. Split preserves empty
+fields, including trailing fields. Padding requires a single Unicode scalar.
 
-#### Vector Operations
-- `(vec2 x y)` — Create 2D vector
-- `(vec3 x y z)` — Create 3D vector
-- `(vec4 x y z w)` — Create 4D vector
-- `(vec-dot v1 v2)` — Dot product
-- `(vec-length v)` — Vector length
-- `(vec-normalize v)` — Normalize vector
-- `(vec-cross v1 v2)` — Cross product
-- `(vec-lerp v1 v2 t)` — Interpolate between vectors
+`parse-int` parses a complete signed decimal `i64` with overflow checking.
+`parse-float` requires a complete finite decimal/exponent form; neither accepts
+whitespace. `parse-bool` accepts case-insensitive `true/t/yes/1` and
+`false/f/no/0`; other values fail. `format-int` preserves all signed/unsigned
+64-bit digits; `format-float(value,precision)` accepts precision 0–17.
+`format(template,args...)` supports `{}`, indexed `{0}`, and escaped `{{`/`}}`;
+primitive arguments only, with malformed/missing placeholders rejected.
 
-#### 2D Transformations
-- `(translate2d p tx ty)` — Translate point
-- `(scale2d p sx sy)` — Scale point
-- `(rotate2d p angle)` — Rotate point
+Regex functions take `(pattern,subject[,replacement])`. They use vendored PCRE2
+with UTF and Unicode-property support, no JIT. `regex-match?` searches anywhere;
+use anchors for full matching. `regex-find` returns the first matched substring
+or unit. `regex-replace` replaces all matches and supports PCRE2 extended
+replacement syntax (`$1`, `${name}`, escapes). Invalid patterns are errors.
 
-#### 3D Transformations
-- `(translate3d p tx ty tz)` — Translate point
-- `(scale3d p sx sy sz)` — Scale point
-- `(rotate3d-x p angle)` — Rotate around X axis
-- `(rotate3d-y p angle)` — Rotate around Y axis
-- `(rotate3d-z p angle)` — Rotate around Z axis
+## Budgets, ownership and builds
 
-#### Quaternion Operations
-- `(quat x y z w)` — Create quaternion
-- `(quat-identity)` — Identity quaternion
-- `(quat-mul q1 q2)` — Multiply quaternions
-- `(quat-normalize q)` — Normalize quaternion
-- `(quat-from-axis-angle axis angle)` — Create from axis-angle
-- `(quat-rotate q v)` — Rotate vector by quaternion
+All operations share the VM's step budget, including higher-order callbacks and
+PCRE2 match callouts. Each collection has at most 4096 stored elements (2048 map
+pairs); nested data is bounded to 64 levels at the API boundary. An invocation
+has at most 16 MiB of temporary arena allocations. Constructed strings are
+bounded to 1 MiB; regex patterns to 1024 bytes, match depth to 128 and match heap
+to 1 MiB. Expensive operations can exhaust the default 100,000 steps; the typed
+run API allows up to 10,000,000. Geometry and regex have additional bounds above.
 
-#### Spline Operations
-- `(catmull-rom-spline p0 p1 p2 p3 t)` — Catmull-Rom spline
-- `(bezier-spline p0 p1 p2 p3 t)` — Bezier spline
+The public tagged-value API adds list/vector/map/set views without changing the
+value struct layout. `JOLT_TYPE_VALUE` is signature-only; actual data carries a
+concrete tag. Aggregate output storage, including nested strings, is VM-owned
+until the next successful typed invocation or destruction. Failed runs preserve
+both previous storage and caller output bytes. Input/output aliasing is supported.
+Function/generator values cannot cross the public data boundary. Numeric preview
+rejects aggregate/string outputs; `jolti` recursively prints collection results.
 
-#### Bounding Boxes
-- `(bbox2d points)` — 2D bounding box
-- `(bbox3d points)` — 3D bounding box
-- `(point-in-bbox2d p bbox)` — Point in 2D bbox test
-- `(point-in-bbox3d p bbox)` — Point in 3D bbox test
+CMake and Zoltan build the catalogue using Python 3 and build the vendored PCRE2
+archive using CMake and a C compiler. Zoltan remains offline/no-registry-dependency;
+its build additionally needs an archiver. `CC`, `AR`, `PYTHON` and
+`CMAKE_TOOLCHAIN_FILE` support toolchain configuration (cross builds must configure
+both the bridge compiler and the PCRE2 toolchain). Library sources install under
+`share/joltfx/stdlib`; compiled runtimes embed their interfaces.
 
-### jolt.time
+## Verification
 
-Time and animation functions.
+```sh
+ctest --test-dir build -R 'test_(stdlib|typed)' --output-on-failure
+cargo test --manifest-path zoltan/Cargo.toml --all-features
+python3 joltscript/tests/conformance/check_phase2.py \
+  --joltc build/joltscript/tools/joltc/joltc \
+  --jolti build/joltscript/tools/jolti/jolti \
+  --zoltan zoltan/target/debug/zoltan
+scripts/check-bytecode-parity.sh
+```
 
-#### Time Conversion
-- `(fps->frame-time fps)` — FPS to frame time
-- `(frame-time->fps frame-time)` — Frame time to FPS
-- `(seconds->frames seconds fps)` — Seconds to frames
-- `(frames->seconds frames fps)` — Frames to seconds
-
-#### Keyframe Interpolation
-- `(keyframe-value keyframes time)` — Interpolate keyframe value
-
-#### Easing Functions
-- `(ease-linear t)` — Linear
-- `(ease-in-quad t)` — Ease in (quadratic)
-- `(ease-out-quad t)` — Ease out (quadratic)
-- `(ease-in-out-quad t)` — Ease in-out (quadratic)
-- `(ease-in-cubic t)` — Ease in (cubic)
-- `(ease-out-cubic t)` — Ease out (cubic)
-- `(ease-in-out-cubic t)` — Ease in-out (cubic)
-- `(ease-in-quart t)` — Ease in (quartic)
-- `(ease-out-quart t)` — Ease out (quartic)
-- `(ease-in-out-quart t)` — Ease in-out (quartic)
-- `(ease-in-quint t)` — Ease in (quintic)
-- `(ease-out-quint t)` — Ease out (quintic)
-- `(ease-in-out-quint t)` — Ease in-out (quintic)
-- `(ease-in-sine t)` — Ease in (sine)
-- `(ease-out-sine t)` — Ease out (sine)
-- `(ease-in-out-sine t)` — Ease in-out (sine)
-- `(ease-in-expo t)` — Ease in (exponential)
-- `(ease-out-expo t)` — Ease out (exponential)
-- `(ease-in-out-expo t)` — Ease in-out (exponential)
-- `(ease-in-circ t)` — Ease in (circular)
-- `(ease-out-circ t)` — Ease out (circular)
-- `(ease-in-out-circ t)` — Ease in-out (circular)
-- `(ease-in-elastic t)` — Ease in (elastic)
-- `(ease-out-elastic t)` — Ease out (elastic)
-- `(ease-in-out-elastic t)` — Ease in-out (elastic)
-- `(ease-in-back t)` — Ease in (back)
-- `(ease-out-back t)` — Ease out (back)
-- `(ease-in-out-back t)` — Ease in-out (back)
-- `(ease-in-bounce t)` — Ease in (bounce)
-- `(ease-out-bounce t)` — Ease out (bounce)
-- `(ease-in-out-bounce t)` — Ease in-out (bounce)
-
-#### Animation Curves
-- `(linear-curve t)` — Linear curve
-- `(bezier-curve t p0 p1 p2 p3)` — Bezier curve
-- `(catmull-rom-curve t p0 p1 p2 p3)` — Catmull-Rom curve
-
-#### Time-based Animation
-- `(animate duration time easing-fn)` — Animate with easing
-- `(ping-pong t)` — Ping-pong time
-- `(loop-time t duration)` — Loop time
-- `(repeat-count t duration)` — Repeat count
-
-### jolt.collections
-
-Collection operations for lists, vectors, maps, sets, and sequences.
-
-#### List Operations
-- `(list & args)` — Create list
-- `(empty? coll)` — Check if empty
-- `(not-empty? coll)` — Check if not empty
-- `(first coll)` — First element
-- `(rest coll)` — Rest of list
-- `(last coll)` — Last element
-- `(butlast coll)` — All but last
-- `(take n coll)` — Take first n
-- `(drop n coll)` — Drop first n
-- `(take-while pred coll)` — Take while predicate
-- `(drop-while pred coll)` — Drop while predicate
-- `(partition n coll)` — Partition into groups
-- `(partition-all n coll)` — Partition all
-- `(interpose sep coll)` — Interpose separator
-- `(interleave & colls)` — Interleave collections
-- `(zipmap keys vals)` — Zip keys and values
-- `(frequencies coll)` — Count frequencies
-- `(group-by key-fn coll)` — Group by key function
-
-#### Vector Operations
-- `(vector & args)` — Create vector
-- `(vec-get v i)` — Get element
-- `(vec-set v i x)` — Set element
-- `(vec-push v x)` — Push element
-- `(vec-pop v)` — Pop element
-- `(vec-peek v)` — Peek element
-
-#### Map Operations
-- `(map-get m k)` — Get value
-- `(map-get-in m ks)` — Get nested value
-- `(map-keys m)` — Get keys
-- `(map-vals m)` — Get values
-- `(map-merge & maps)` — Merge maps
-- `(map-invert m)` — Invert map
-
-#### Set Operations
-- `(set-union s1 s2)` — Union
-- `(set-intersection s1 s2)` — Intersection
-- `(set-difference s1 s2)` — Difference
-
-#### Sequence Operations
-- `(lazy-seq f)` — Create lazy sequence
-- `(iterate f x)` — Iterate function
-- `(repeatedly f)` — Repeatedly call function
-- `(cycle coll)` — Cycle collection
-- `(range-seq start end step)` — Range sequence
-
-#### Higher-order Functions
-- `(map-indexed f coll)` — Map with index
-- `(keep f coll)` — Keep elements
-- `(remove pred coll)` — Remove elements
-- `(reduce-kv f init m)` — Reduce key-value
-- `(apply-kv f m)` — Apply to key-value
-
-### jolt.strings
-
-String manipulation, parsing, formatting, and regex.
-
-#### String Manipulation
-- `(str-length s)` — String length
-- `(str-empty? s)` — Check if empty
-- `(str-not-empty? s)` — Check if not empty
-- `(str-trim s)` — Trim whitespace
-- `(str-trim-left s)` — Trim left
-- `(str-trim-right s)` — Trim right
-- `(str-upper s)` — Uppercase
-- `(str-lower s)` — Lowercase
-- `(str-capitalize s)` — Capitalize
-- `(str-replace s old new)` — Replace
-- `(str-replace-all s old new)` — Replace all
-- `(str-split s sep)` — Split
-- `(str-join sep strs)` — Join
-- `(str-concat & strs)` — Concatenate
-
-#### String Predicates
-- `(str-contains? s substr)` — Contains
-- `(str-starts-with? s prefix)` — Starts with
-- `(str-ends-with? s suffix)` — Ends with
-
-#### String Parsing
-- `(parse-int s)` — Parse integer
-- `(parse-float s)` — Parse float
-- `(parse-bool s)` — Parse boolean
-
-#### String Formatting
-- `(format fmt & args)` — Format string
-- `(format-int n)` — Format integer
-- `(format-float n precision)` — Format float
-
-#### String Slicing
-- `(char-at s i)` — Character at index
-- `(substring s start end)` — Substring
-- `(str-reverse s)` — Reverse
-- `(str-repeat s n)` — Repeat
-- `(str-pad-left s len char)` — Pad left
-- `(str-pad-right s len char)` — Pad right
-
-#### String Comparison
-- `(str-compare s1 s2)` — Compare
-- `(str-equals? s1 s2)` — Equals
-- `(str-less? s1 s2)` — Less than
-- `(str-greater? s1 s2)` — Greater than
+The export-coverage gate requires an execution/parity case for every declared
+intrinsic. Native tests additionally cover aggregate ownership, aliasing,
+failure-atomic publication, invalid dimensions/types, callback errors, regex
+limits and budget exhaustion at successive execution boundaries.

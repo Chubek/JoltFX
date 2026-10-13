@@ -2,10 +2,14 @@
 
 ## Current State
 
-Joltscript currently has a minimal MVP implementation:
+Joltscript implements bounded f32 and typed JBC1 language profiles:
 
-- **Glue Layer**: A bytecode compiler (`compiler.c`) that handles `(defkernel name [inputs...] expression)` with basic arithmetic operations (+, -, *, /, min, max, abs, floor, pow, sqrt, <, select)
-- **Execution Layer**: A stack-based VM (`vm.c`) for JBC1 bytecode, pipeline execution with DAG resolution
+- **Glue Layer**: A bytecode compiler (`compiler.c`) with arithmetic, comparison,
+  logical and bitwise operations, lexical bindings/mutation, sequences and lazy
+  conditionals. The CPU image interpreter is a separate bounded profile.
+- **Execution Layer**: A stack-based VM (`vm.c`) for legacy bytecode and a typed
+  tree VM with functions, loops, exact values, collections and the six built-in
+  standard-library modules; pipeline execution with DAG resolution
 - **Zoltan**: A second implementation of the JBC1 emitter in Rust (must be byte-identical to C)
 
 ## Target State (from AGENTS.md)
@@ -23,16 +27,42 @@ The full Joltscript language includes:
 
 ## Development Plan
 
+### Implementation checkpoint (2026-10-13)
+
+Phase 1 core-language tasks are implemented. Legacy f32 programs retain JBC1
+version 1. Execution ABI 0.8 adds version-2 typechecked tree bytecode for all
+listed primitive types, annotations/casts, `for`/`while`/`loop`, `break`/`continue`,
+named functions, recursive calls and lexical closures. Execution is step-,
+depth- and environment-budgeted; exact values use the new typed C API.
+
+C and Rust independently read/serialize version 2, with a shared portable C
+typechecker/VM used by Zoltan's safe Rust bridge. Native preview and CPU backend
+execution support it; Vulkan routes version 2 through CPU fallback. Existing
+HTML/WAT lowering remains version-1-only and explicitly rejects version 2.
+Typed shader/export lowering remains additional backend work. The CPU image
+interpreter remains a distinct profile.
+
+Phase 2 is implemented with 262 intrinsic exports across math, graphics,
+geometry, time, collections and strings. The six `.jolt` interfaces generate an
+embedded catalogue; imports, immutable aggregate values, higher-order functions,
+bounded sequence generators and PCRE2 strings execute through the typed VM.
+Execution ABI 0.9 adds collection views while preserving the value struct layout.
+All exported intrinsics have execution/C–Rust parity coverage. See
+`joltscript/docs/stdlib.md` for exact semantics, budgets and build dependencies.
+
+Next: Phase 3 tools. See `joltscript/docs/language.md` for the versioned language
+and backend boundaries.
+
 ### Phase 1: Expand the Compiler (Core Language Features)
 
 **Goal**: Support the core language features from the spec.
 
 **Tasks**:
-1. Add special forms: `let`, `var`, `if`, `cond`, `when`, `unless`, `for`, `while`, `loop`, `fn`, `defn`, `do`
-2. Add more types: `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `bool`, `char`, `string`
-3. Add more operations: comparison (`<`, `>`, `<=`, `>=`, `=`, `!=`), logical (`and`, `or`, `not`), bitwise (`bitwise-and`, `bitwise-or`, `bitwise-xor`, `shl`, `shr`)
-4. Add better error messages with source locations
-5. Update Zoltan's `bytecode.rs` to match (byte-identical output required)
+1. [x] Add special forms: `let`, `var`, `if`, `cond`, `when`, `unless`, `for`, `while`, `loop`, `fn`, `defn`, `do`
+2. [x] Add more types: `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `bool`, `char`, `string`
+3. [x] Add more operations: comparison (`<`, `>`, `<=`, `>=`, `=`, `!=`), logical (`and`, `or`, `not`), bitwise (`bitwise-and`, `bitwise-or`, `bitwise-xor`, `shl`, `shr`)
+4. [x] Add better error messages with source locations
+5. [x] Update Zoltan's `bytecode.rs` to match (byte-identical output required)
 
 **Files to modify**:
 - `joltscript/layers/glue/src/compiler.c` - Expand the compiler
@@ -47,13 +77,13 @@ The full Joltscript language includes:
 **Goal**: Provide a standard library covering common operations.
 
 **Tasks**:
-1. Create `joltscript/stdlib/` directory
-2. Add `math.jolt` - Trigonometry, linear algebra, interpolation, random
-3. Add `graphics.jolt` - Color spaces, transforms, filters, blend modes
-4. Add `geometry.jolt` - Points, vectors, matrices, quaternions, splines
-5. Add `time.jolt` - Curves, easing functions, keyframe interpolation
-6. Add `collections.jolt` - Lists, vectors, maps, sets, sequences
-7. Add `strings.jolt` - Manipulation, parsing, formatting, regex
+1. [x] Create `joltscript/stdlib/` directory
+2. [x] Add `math.jolt` - Trigonometry, linear algebra, interpolation, random
+3. [x] Add `graphics.jolt` - Color spaces, transforms, filters, blend modes
+4. [x] Add `geometry.jolt` - Points, vectors, matrices, quaternions, splines
+5. [x] Add `time.jolt` - Curves, easing functions, keyframe interpolation
+6. [x] Add `collections.jolt` - Lists, vectors, maps, sets, sequences
+7. [x] Add `strings.jolt` - Manipulation, parsing, formatting, regex
 
 **Files to create**:
 - `joltscript/stdlib/math.jolt`

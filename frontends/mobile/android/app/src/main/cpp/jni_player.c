@@ -2,9 +2,12 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include "jfx/mobile_player.h"
 #include "jfx/jfx_color.h"
 #include "tilly/containers.h"
+#include "jni_utf8.h"
 
 static jfx_mobile_player_t *player_from_handle(jlong h) { return (jfx_mobile_player_t *)(uintptr_t)h; }
 #define JNI(name) Java_org_joltfx_mobile_JoltPlayerActivity_##name
@@ -14,10 +17,10 @@ static void throw_result(JNIEnv *env,jfx_result_t result) {
 }
 JNIEXPORT jlong JNICALL JNI(nativeExportBegin)(JNIEnv *env,jobject self,jlong h,jstring path,jlong start,jlong count,jboolean audio) {
     (void)self; if (!path || start<0 || count<0) { throw_result(env,JFX_ERROR_INVALID_ARGUMENT); return 0; }
-    const char *p=(*env)->GetStringUTFChars(env,path,NULL); if (!p) return 0;
+    char *p=jfx_jni_utf8(env,path); if (!p) return 0;
     jfx_export_options_t o={.size=sizeof(o),.path=p,.start_frame=(uint64_t)start,.frame_count=(uint64_t)count,.audio=audio!=0};
     jfx_export_job_t *job=NULL; jfx_result_t r=jfx_mobile_player_export_begin(player_from_handle(h),&o,&job);
-    (*env)->ReleaseStringUTFChars(env,path,p);
+    tilly_container_free(p);
     if (r!=JFX_SUCCESS) throw_result(env,r);
     return (jlong)(uintptr_t)job;
 }
@@ -81,12 +84,12 @@ JNIEXPORT jint JNICALL JNI(nativeEdit)(JNIEnv *env,jobject self,jlong h,jstring 
     jint a,jint b,jint c,jdouble value,jstring text) {
     (void)self;
     if (!op || !text || a<0 || b<0 || c<0) return JFX_ERROR_INVALID_ARGUMENT;
-    const char *o=(*env)->GetStringUTFChars(env,op,NULL);
+    char *o=jfx_jni_utf8(env,op);
     if (!o) return JFX_ERROR_OUT_OF_MEMORY;
-    const char *t=(*env)->GetStringUTFChars(env,text,NULL);
+    char *t=jfx_jni_utf8(env,text);
     jfx_result_t r=t?jfx_mobile_player_edit(player_from_handle(h),o,(uint32_t)a,(uint32_t)b,(uint32_t)c,value,t):JFX_ERROR_OUT_OF_MEMORY;
-    if (t) (*env)->ReleaseStringUTFChars(env,text,t);
-    (*env)->ReleaseStringUTFChars(env,op,o); return (jint)r;
+    tilly_container_free(t);
+    tilly_container_free(o); return (jint)r;
 }
 static jintArray pixels(JNIEnv *env,jlong h,int graph,jint node) {
     jfx_mobile_player_t *p=player_from_handle(h);
@@ -113,28 +116,28 @@ JNIEXPORT jintArray JNICALL JNI(nativeGraphPixels)(JNIEnv *env,jobject self,jlon
 }
 JNIEXPORT jstring JNICALL JNI(nativeNodeCatalog)(JNIEnv *env,jobject self) {
     (void)self; size_t cap=1024*1024; char *json=tilly_container_alloc(cap); jstring out=NULL;
-    if (json && jfx_node_catalog(json,cap)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
+    if (json && jfx_node_catalog(json,cap)==JFX_SUCCESS) out=jfx_jni_string(env,json);
     tilly_container_free(json); return out;
 }
 JNIEXPORT jstring JNICALL JNI(nativeGraphState)(JNIEnv *env,jobject self,jlong h) {
     (void)self; size_t cap=1024*1024; char *json=tilly_container_alloc(cap); jstring out=NULL;
-    if (json && jfx_mobile_player_graph_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
+    if (json && jfx_mobile_player_graph_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=jfx_jni_string(env,json);
     tilly_container_free(json); return out;
 }
 JNIEXPORT jstring JNICALL JNI(nativeScene3DState)(JNIEnv *env,jobject self,jlong h) {
     (void)self; size_t cap=4*1024*1024; char *json=tilly_container_alloc(cap); jstring out=NULL;
-    if (json && jfx_mobile_player_scene3d_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
+    if (json && jfx_mobile_player_scene3d_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=jfx_jni_string(env,json);
     tilly_container_free(json); return out;
 }
 JNIEXPORT jint JNICALL JNI(nativeWriteGraph)(JNIEnv *env,jobject self,jlong h,jdouble seconds,jstring path) {
     (void)self; if (!path) return JFX_ERROR_INVALID_ARGUMENT;
-    const char *p=(*env)->GetStringUTFChars(env,path,NULL); if (!p) return JFX_ERROR_OUT_OF_MEMORY;
+    char *p=jfx_jni_utf8(env,path); if (!p) return JFX_ERROR_OUT_OF_MEMORY;
     jfx_result_t r=jfx_mobile_player_write_graph(player_from_handle(h),UINT32_MAX,seconds,p);
-    (*env)->ReleaseStringUTFChars(env,path,p); return r;
+    tilly_container_free(p); return r;
 }
 JNIEXPORT jstring JNICALL JNI(nativeColorCatalog)(JNIEnv *env,jobject self) {
     (void)self; char *json=tilly_container_alloc(65536); jstring out=NULL;
-    if (json && jfx_color_catalog(json,65536)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
+    if (json && jfx_color_catalog(json,65536)==JFX_SUCCESS) out=jfx_jni_string(env,json);
     tilly_container_free(json); return out;
 }
 static uint32_t color_index(jfx_timeline_t *t,jint a,jint b,jint c,jint section) {
@@ -148,7 +151,7 @@ JNIEXPORT jstring JNICALL JNI(nativeColorKind)(JNIEnv *env,jobject self,jlong h,
     (void)self; jfx_timeline_t *t=jfx_editor_timeline(jfx_mobile_player_editor(player_from_handle(h)));
     uint32_t i=color_index(t,a,b,c,section);
     const char *name=jfx_timeline_effect_kind(t,(uint32_t)a,(uint32_t)b,i);
-    return (*env)->NewStringUTF(env,name?name:"");
+    return jfx_jni_string(env,name?name:"");
 }
 JNIEXPORT jdouble JNICALL JNI(nativeColorValue)(JNIEnv *env,jobject self,jlong h,jint a,jint b,jint c,jint section,jint param) {
     (void)env; (void)self; jfx_timeline_t *t=jfx_editor_timeline(jfx_mobile_player_editor(player_from_handle(h)));
@@ -157,7 +160,7 @@ JNIEXPORT jdouble JNICALL JNI(nativeColorValue)(JNIEnv *env,jobject self,jlong h
 }
 JNIEXPORT jstring JNICALL JNI(nativeSequenceState)(JNIEnv *env,jobject self,jlong h) {
     (void)self; size_t cap=4*1024*1024; char *json=tilly_container_alloc(cap); jstring out=NULL;
-    if (json && jfx_mobile_player_sequence_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=(*env)->NewStringUTF(env,json);
+    if (json && jfx_mobile_player_sequence_state(player_from_handle(h),json,cap)==JFX_SUCCESS) out=jfx_jni_string(env,json);
     tilly_container_free(json); return out;
 }
 JNIEXPORT jint JNICALL JNI(nativeSeek)(JNIEnv *env,jobject self,jlong h,jdouble seconds) {
@@ -169,26 +172,48 @@ JNIEXPORT jdouble JNICALL JNI(nativeTime)(JNIEnv *env,jobject self,jlong h) {
 }
 JNIEXPORT jint JNICALL JNI(nativeWriteFrame)(JNIEnv *env,jobject self,jlong h,jlong frame,jstring path) {
     (void)self; if (!path || frame<0) return JFX_ERROR_INVALID_ARGUMENT;
-    const char *p=(*env)->GetStringUTFChars(env,path,NULL); if (!p) return JFX_ERROR_OUT_OF_MEMORY;
+    char *p=jfx_jni_utf8(env,path); if (!p) return JFX_ERROR_OUT_OF_MEMORY;
     jfx_result_t r=jfx_mobile_player_write_frame(player_from_handle(h),(uint64_t)frame,p);
-    (*env)->ReleaseStringUTFChars(env,path,p); return r;
+    tilly_container_free(p); return r;
 }
 JNIEXPORT jint JNICALL JNI(nativeProjectFile)(JNIEnv *env,jobject self,jlong h,jstring path,jboolean save) {
-    (void)self; if (!path) return JFX_ERROR_INVALID_ARGUMENT;
-    const char *p=(*env)->GetStringUTFChars(env,path,NULL); if (!p) return JFX_ERROR_OUT_OF_MEMORY;
-    FILE *file=fopen(p,save?"wb":"rb"); (*env)->ReleaseStringUTFChars(env,path,p);
-    if (!file) return JFX_ERROR_NOT_FOUND;
+    (void)self; if (!path || !h) return JFX_ERROR_INVALID_ARGUMENT;
+    char *p=jfx_jni_utf8(env,path); if (!p) return JFX_ERROR_OUT_OF_MEMORY;
     char *text=tilly_container_alloc(JFX_PROJECT_MAX_BYTES+1); size_t n=0;
     jfx_result_t r=JFX_ERROR_OUT_OF_MEMORY;
     if (text) {
         if (save) {
+            /* Serialize before touching the destination, then publish a closed
+             * same-directory temporary. Failed saves preserve the old file. */
             r=jfx_mobile_player_save_document(player_from_handle(h),text,JFX_PROJECT_MAX_BYTES,&n);
-            if (r==JFX_SUCCESS && fwrite(text,1,n,file)!=n) r=JFX_ERROR_BACKEND_FAILURE;
+            if (r==JFX_SUCCESS) {
+                size_t capacity=strlen(p)+8;
+                char *temporary=tilly_container_alloc(capacity);
+                if(!temporary) r=JFX_ERROR_OUT_OF_MEMORY;
+                else {
+                    snprintf(temporary,capacity,"%s.XXXXXX",p);
+                    int fd=mkstemp(temporary);
+                    FILE *file=fd<0?NULL:fdopen(fd,"wb");
+                    if(!file) { if(fd>=0) close(fd); r=JFX_ERROR_BACKEND_FAILURE; }
+                    else {
+                        if(fwrite(text,1,n,file)!=n) r=JFX_ERROR_BACKEND_FAILURE;
+                        if(fclose(file)!=0) r=JFX_ERROR_BACKEND_FAILURE;
+                        if(r==JFX_SUCCESS && rename(temporary,p)!=0) r=JFX_ERROR_BACKEND_FAILURE;
+                    }
+                    if(fd>=0 && r!=JFX_SUCCESS) unlink(temporary);
+                    tilly_container_free(temporary);
+                }
+            }
         } else {
-            n=fread(text,1,JFX_PROJECT_MAX_BYTES+1,file);
-            r=ferror(file)?JFX_ERROR_BACKEND_FAILURE:jfx_mobile_player_load_document(player_from_handle(h),text,n,NULL,0);
+            FILE *file=fopen(p,"rb");
+            if(!file) r=JFX_ERROR_NOT_FOUND;
+            else {
+                n=fread(text,1,JFX_PROJECT_MAX_BYTES+1,file);
+                int failed=ferror(file);
+                if(fclose(file)!=0) failed=1;
+                r=failed?JFX_ERROR_BACKEND_FAILURE:jfx_mobile_player_load_document(player_from_handle(h),text,n,NULL,0);
+            }
         }
     }
-    if (fclose(file) && r==JFX_SUCCESS) r=JFX_ERROR_BACKEND_FAILURE;
-    tilly_container_free(text); return r;
+    tilly_container_free(text); tilly_container_free(p); return r;
 }

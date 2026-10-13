@@ -1,7 +1,13 @@
-# A small, reproducible offline build of the FFmpeg submodule. System packages
+# A small, reproducible offline build of an FFmpeg source tree. System packages
 # can expose additional codecs; this profile includes no external dependencies.
 include(ExternalProject)
 include(GNUInstallDirs)
+set(JFX_FFMPEG_ROOT "${PROJECT_SOURCE_DIR}/third_party/ffmpeg" CACHE PATH "FFmpeg source checkout for bundled media builds")
+if(NOT EXISTS "${JFX_FFMPEG_ROOT}/configure")
+    message(FATAL_ERROR "FFmpeg sources not found at '${JFX_FFMPEG_ROOT}'. "
+        "Provide a source checkout with -DJFX_FFMPEG_ROOT=<checkout>, "
+        "or configure -DJFX_VIDEO_FFMPEG=OFF for a build without encoded media.")
+endif()
 find_program(JFX_MEDIA_MAKE NAMES gmake make REQUIRED)
 set(JFX_MEDIA_BUILD_JOBS 4 CACHE STRING "Parallel jobs for vendored FFmpeg")
 set(ffmpeg_prefix "${CMAKE_BINARY_DIR}/third_party/ffmpeg-install")
@@ -56,7 +62,7 @@ foreach(lib IN ITEMS avformat avcodec swscale swresample avutil)
     list(APPEND ffmpeg_byproducts "${ffmpeg_prefix}/lib/lib${lib}.a")
 endforeach()
 ExternalProject_Add(jfx_ffmpeg_build
-    SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/ffmpeg"
+    SOURCE_DIR "${JFX_FFMPEG_ROOT}"
     BINARY_DIR "${CMAKE_BINARY_DIR}/third_party/ffmpeg-build"
     DOWNLOAD_COMMAND "" UPDATE_COMMAND ""
     CONFIGURE_COMMAND <SOURCE_DIR>/configure "--prefix=${ffmpeg_prefix}"

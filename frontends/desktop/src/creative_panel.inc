@@ -19,8 +19,8 @@ inline bool is_op_char(char c) {
 }
 
 // Splits one line into colored spans. Comments (`;` to end of line) win over
-// everything; numbers are finite f32 literals; keywords are the defkernel
-// form, `rgba`/`select`, and the JBC1 operation names both compilers accept.
+// everything. This basic display tokenizer recognizes legacy numeric literals
+// and a subset of forms; the compiler owns full typed-language validation.
 inline void tokenize_line(const char *begin, const char *end, Span *out, size_t capacity,
     size_t *out_count) {
     size_t count = 0;
@@ -141,8 +141,8 @@ void creative_highlight_preview(const char *source) {
 }
 
 void creative_panel(jfx_desktop_frontend_t *f) {
-    ImGui::TextUnformatted("Zoltan creative sketch: one (defkernel [x y t ...] body) program.");
-    ImGui::TextDisabled("x/y are normalized coords, t is seconds, mx/my the pointer. Same JBC1 both compilers emit.");
+    ImGui::TextUnformatted("Joltscript sketch: (defkernel name [x y t ...] body), with optional imports and functions.");
+    ImGui::TextDisabled("CPU preview: x/y normalized, t seconds, mx/my pointer. Use plain input names and numeric scalar/RGBA output.");
     ImGui::Checkbox("Show code", &f->creative_show_code);
     ImGui::SameLine();
     ImGui::Checkbox("Show preview", &f->creative_show_preview);
@@ -184,7 +184,9 @@ void creative_panel(jfx_desktop_frontend_t *f) {
                 f->creative_error[0] = 0;
                 f->creative_dirty = true;
             }
-            ImGui::TextDisabled("Ops: + - * / min max abs floor pow sqrt < > <= >= = != and or not bitwise-and/or/xor shl shr select");
+            ImGui::TextWrapped("Core: let/var/set!, do, if/cond/when/unless, for/while/loop, fn/defn and typed arithmetic.");
+            ImGui::TextWrapped("Libraries: jolt.math, jolt.graphics, jolt.geometry, jolt.time, jolt.collections, jolt.strings (262 exports). Import selects typed CPU execution.");
+            ImGui::TextDisabled("Reference: joltscript/docs/language.md and stdlib.md. Syntax colors show a basic subset.");
             ImGui::SetNextItemWidth(120);
             if (ImGui::SliderFloat("t", &f->creative_t, 0.0f, 60.0f)) {
                 f->creative_dirty = true;
@@ -220,6 +222,7 @@ void creative_panel(jfx_desktop_frontend_t *f) {
             if (f->creative_height > 180) {
                 f->creative_height = 180;
             }
+            ImGui::TextWrapped("For version-aware export, use zoltan export. Its HTML/WAT targets support version 1; object export also supports typed version 2.");
             ImGui::InputText("Export path", f->creative_export_path, sizeof(f->creative_export_path));
             if (ImGui::Button("Export object (.o)")) {
                 auto r = jfx_desktop_frontend_creative_export(f, "obj", f->creative_export_path);

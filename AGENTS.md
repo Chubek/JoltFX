@@ -70,22 +70,25 @@ Kernels are authored in **Joltscript** (see below). Kernels are stateless by con
 
 ### Joltscript
 
-Joltscript is the primary kernel authoring language. It is a dialect of Lisp, designed for concise, data-oriented expression of transformation logic. Joltscript is implemented in C and can be compiled to the following targets:
+Joltscript is the Lisp-based kernel authoring language. Language-plan Phases 1–2
+are implemented in JBC1: version 1 retains the bounded f32 stack profile;
+version 2 adds typed primitives, annotations/inference/casts, loops, functions,
+recursion and lexical closures. Execution ABI 0.9 adds immutable collections and
+six built-in standard-library modules with 262 exports (math, graphics, geometry,
+time, collections, strings). C and Rust independently emit identical bytecode.
 
-- C
-- Rust
-- Python
-- Go
+Typed execution uses the budgeted CPU VM, including Vulkan CPU fallback. The
+tagged-value C API preserves exact integers and owns string/collection output
+views. The CPU image interpreter is a separate bounded language profile.
+Zoltan supports native numeric preview and typed object export; its HTML/WAT
+lowering accepts version 1. Builds require Python 3 for catalogue generation
+and CMake for the vendored PCRE2 archive; Zoltan also needs a C11 compiler/archiver.
 
-Joltscript is fully interoperable with C and with every API language binding.
-
-**Key characteristics:**
-- Statically typed with type inference
-- Hygienic macros with compile-time metaprogramming
-- Zero-cost abstractions (compiles to native loops)
-- Tail-call optimization guaranteed
-- SIMD vectorization for image/array operations
-- C ABI compatibility via `extern-c` / `export-c`
+Native C/Rust/Python/Go source generation, hygienic macros, guaranteed tail-call
+optimization, user FFI forms and typed shader/browser-export lowering remain
+design targets. Use `joltscript/docs/language.md`, `joltscript/docs/stdlib.md` and
+`JOLTSCRIPT_PLAN.md` for the implemented contract rather than the aspirational
+language examples elsewhere in this guide.
 
 ### Tilly
 

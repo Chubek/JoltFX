@@ -63,9 +63,13 @@ done
 [[ -n "${audio_source}" ]] && jbc1_expected+=("${audio_source}")
 examples=(examples/*/*.jolt)
 jbc1_expected+=("${examples[@]}")
+fixtures=(joltscript/tests/conformance/*.jolt)
+jbc1_expected+=("${fixtures[@]}")
+libraries=(joltscript/stdlib/*.jolt)
+jbc1_expected+=("${libraries[@]}")
 shopt -u nullglob
 
-all_sources=(kernels/*/*.jolt examples/*/*.jolt)
+all_sources=(kernels/*/*.jolt examples/*/*.jolt "${fixtures[@]}" "${libraries[@]}")
 if [[ ${#all_sources[@]} -eq 0 ]]; then
   echo "error: no .jolt kernels found" >&2
   exit 1

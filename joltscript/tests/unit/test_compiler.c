@@ -403,7 +403,124 @@ static void test_constants(void) {
     printf("test_constants: PASSED\n");
 }
 
+static void test_bindings(void) {
+    const char *sources[] = {
+        "(defkernel k [x] (do (let a (+ x 1)) (* a a)))",
+        "(defkernel k [x] (do (var a x) (set! a (+ a 2)) a))",
+        "(defkernel k [x] (let [a x b (+ a 2)] (+ a b)))",
+        "(defkernel k [x] (+ (do (let x 10) x) x))",
+        "(defkernel k [x] (do (let a x) (do (let a 10) a) a))",
+        "(defkernel k [x] (do (var a x) (do (set! a 8)) a))",
+        "(defkernel k [x] (do (var a x) (let [b (set! a (+ a 1))] (+ b b)) a))",
+        "(defkernel k [x] (let [x (+ x 1)] x))",
+        "(defkernel k [x] (let a x) (var b a) (set! b (+ b 2)) b)"
+    };
+    const float expected[] = {16, 5, 8, 13, 3, 8, 4, 4, 5};
+    jolt_vm_t *vm = jolt_vm_create();
+    jolt_diagnostic_t d = {.size = sizeof(d)};
+    for (size_t i = 0; i < sizeof(sources)/sizeof(*sources); ++i) {
+        jolt_program_t *p = NULL;
+        float in = 3, out = -1;
+        assert(jolt_compile(sources[i], &p, &d) == JOLT_OK);
+        assert(jolt_program_run(vm, p, &in, 1, &out, 1) == JOLT_OK);
+        assert(out == expected[i]);
+        jolt_program_destroy(p);
+    }
+    const char *invalid[] = {
+        "(defkernel k [] (do))",
+        "(defkernel k [] (do (let a 1) (set! a 2)))",
+        "(defkernel k [x] (set! x 2))",
+        "(defkernel k [] (do (let a 1) (let a 2) a))",
+        "(defkernel k [] (+ (do (let a 1) a) a))",
+        "(defkernel k [] (let [a] a))",
+        "(defkernel k [] (let [a 1]))"
+    };
+    for (size_t i = 0; i < sizeof(invalid)/sizeof(*invalid); ++i) {
+        jolt_program_t *p = NULL;
+        assert(jolt_compile(invalid[i], &p, &d) == JOLT_ERR_SYNTAX);
+        assert(!p && d.line && d.column && d.message[0]);
+    }
+    jolt_program_t *p = NULL;
+    float out = 99;
+    assert(jolt_compile("(defkernel k [] (do (let unused (/ 1 0)) 7))", &p, &d) == JOLT_OK);
+    assert(jolt_program_run(vm, p, NULL, 0, &out, 1) == JOLT_ERR_NUMERIC);
+    assert(out == 99);
+    jolt_program_destroy(p);
+    char source[8192];
+    size_t used = (size_t)snprintf(source, sizeof(source), "(defkernel k [] (do ");
+    for (unsigned i = 0; i < JOLT_MAX_LOCALS; ++i)
+        used += (size_t)snprintf(source + used, sizeof(source) - used, "(let v%u 1) ", i);
+    strcpy(source + used, "v127))");
+    assert(jolt_compile(source, &p, &d) == JOLT_OK);
+    assert(jolt_program_run(vm, p, NULL, 0, &out, 1) == JOLT_OK && out == 1);
+    jolt_program_destroy(p);
+    strcpy(source + used, "(let overflow 1) overflow))");
+    assert(jolt_compile(source, &p, &d) == JOLT_ERR_BUDGET && !p);
+    jolt_vm_destroy(vm);
+}
+
+static void test_conditionals(void) {
+    const char *sources[] = {
+        "(defkernel k [x] (if x 7 (/ 1 0)))",
+        "(defkernel k [x] (if 0 (/ 1 0) (+ x 2)))",
+        "(defkernel k [x] (+ 10 (if x (if 0 2 3) 4)))",
+        "(defkernel k [x] (do (var a 1) (if x (set! a 7) (set! a 9)) a))",
+        "(defkernel k [x] (when x (let a 4) (+ a x)))",
+        "(defkernel k [x] (unless x (/ 1 0)))",
+        "(defkernel k [x] (when 0 (/ 1 0)))",
+        "(defkernel k [x] (unless 0 (let a 2) (+ a x)))",
+        "(defkernel k [x] (cond [(< x 0) (/ 1 0)] [(= x 3) 8] [else (/ 1 0)]))",
+        "(defkernel k [x] (cond [0 10] [else x]))",
+        "(defkernel k [x] (cond [0 (/ 1 0)]))",
+        "(defkernel k [x] (do (let a 2) (if x (let a 10) (let a 20)) a))",
+        "(defkernel k [x] (do (var a 0) (cond [(set! a 1) a] [(set! a 2) a]) a))"
+    };
+    const float expected[] = {7, 5, 13, 7, 7, 0, 0, 5, 8, 3, 0, 2, 1};
+    jolt_vm_t *vm = jolt_vm_create();
+    assert(vm);
+    jolt_diagnostic_t d = {.size = sizeof(d)};
+    for (size_t i = 0; i < sizeof(sources)/sizeof(*sources); ++i) {
+        jolt_program_t *p = NULL;
+        float in = 3, out = -1;
+        assert(jolt_compile(sources[i], &p, &d) == JOLT_OK);
+        assert(jolt_program_run(vm, p, &in, 1, &out, 1) == JOLT_OK);
+        assert(out == expected[i]);
+        jolt_program_destroy(p);
+    }
+    const char *invalid[] = {
+        "(defkernel k [] (if 1 2))", "(defkernel k [] (if 1 2 3 4))",
+        "(defkernel k [] (when 1))", "(defkernel k [] (unless))",
+        "(defkernel k [] (cond))", "(defkernel k [] (cond [else 1] [1 2]))",
+        "(defkernel k [] (cond [1]))", "(defkernel k [] (cond [1 2 3]))",
+        "(defkernel k [] (do (if 1 (let a 2) 3) a))",
+        "(defkernel k [] (if (let c 1) c 0))",
+        "(defkernel k [] (if 1 (let a 2) a))",
+        "(defkernel k [] (if 1 2 unknown))"
+    };
+    for (size_t i = 0; i < sizeof(invalid)/sizeof(*invalid); ++i) {
+        jolt_program_t *p = NULL;
+        assert(jolt_compile(invalid[i], &p, &d) == JOLT_ERR_SYNTAX);
+        assert(!p && d.line && d.column && d.message[0]);
+    }
+    const char *failing[] = {
+        "(defkernel k [] (if 1 (/ 1 0) 7))",
+        "(defkernel k [] (if (/ 1 0) 7 8))",
+        "(defkernel k [] (select 1 7 (/ 1 0)))"
+    };
+    for (size_t i = 0; i < sizeof(failing)/sizeof(*failing); ++i) {
+        jolt_program_t *p = NULL;
+        float out = 99;
+        assert(jolt_compile(failing[i], &p, &d) == JOLT_OK);
+        assert(jolt_program_run(vm, p, NULL, 0, &out, 1) == JOLT_ERR_NUMERIC);
+        assert(out == 99);
+        jolt_program_destroy(p);
+    }
+    jolt_vm_destroy(vm);
+}
+
 int main(void) {
+    test_conditionals();
+    test_bindings();
     test_basic_arithmetic();
     test_comparison_operations();
     test_logical_operations();

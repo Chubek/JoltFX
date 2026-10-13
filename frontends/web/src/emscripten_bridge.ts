@@ -65,9 +65,17 @@ export class EmscriptenJoltBridge implements JoltWasmBridge {
     this.ensureOpen();
     const bytes = new TextEncoder().encode(text);
     if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new RangeError("Project exceeds 8 MiB");
-    const load = this.module.cwrap("jfx_web_session_load_document", "number", ["number", "string", "number", "number", "number"]);
-    const result = load(this.session, text, bytes.length, 0, 0);
-    if (result !== 0) throw new Error(`Project rejected (${result})`);
+    // cwrap's string conversion uses stackAlloc. Documents can exceed the
+    // module's 1-MiB stack, so marshal them through owned heap storage instead.
+    const pointer = this.module._jfx_web_alloc(bytes.length + 1);
+    if (!pointer) throw new Error("WASM heap allocation failed");
+    try {
+      this.module.HEAPU8.set(bytes, pointer);
+      this.module.HEAPU8[pointer + bytes.length] = 0;
+      const load = this.module.cwrap("jfx_web_session_load_document", "number", ["number", "number", "number", "number", "number"]);
+      const result = load(this.session, pointer, bytes.length, 0, 0);
+      if (result !== 0) throw new Error(`Project rejected (${result})`);
+    } finally { this.module._jfx_web_free(pointer); }
     this.resetAudio();
   }
 

@@ -179,6 +179,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                 ImGui::InputText("Animation .jolt path",f->scene_script_path,sizeof(f->scene_script_path));
                 if (ImGui::Button("Load animation .jolt")) command("3d.script_file",selected,uint32_t(f->scene_channel),0,0,f->scene_script_path);
                 ImGui::TextWrapped("Inputs: time (seconds), frame, clone index, keyed value. One scalar output drives the selected transform channel during preview and export.");
+                ImGui::TextWrapped("Joltscript supports loops, functions and built-in imports such as jolt.math and jolt.time. Use floating inputs and a numeric result; typed programs run on the CPU.");
             }
             if (ImGui::CollapsingHeader("Animation keys")) {
                 ImGui::Combo("Channel",&f->scene_channel,"Position X\0Position Y\0Position Z\0Rotation X\0Rotation Y\0Rotation Z\0Scale X\0Scale Y\0Scale Z\0");

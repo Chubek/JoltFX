@@ -8,6 +8,7 @@
 #pragma GCC diagnostic ignored "-Wconversion"
 #endif
 #include "joltscript/compiler.h"
+#include "typed_internal.h"
 #include "tilly/containers.h"
 #include <ctype.h>
 #include <errno.h>
@@ -22,6 +23,8 @@ typedef struct {
     khash_t(symbols) *symbols;
     jolt_diagnostic_t *diagnostic;
     jolt_status_t status;
+    struct { char name[64]; bool mutable; unsigned scope; } locals[JOLT_MAX_LOCALS];
+    unsigned local_count, scope;
 } parser_t;
 static bool fail(parser_t *p, jolt_status_t status, const char *message) {
     if (p->status != JOLT_OK) return false;
@@ -86,12 +89,146 @@ static const struct { const char *name; uint32_t op; unsigned arity; } operation
     {"bitwise-xor",JOLT_OP_BITWISE_XOR,2}, {"shl",JOLT_OP_SHL,2}, {"shr",JOLT_OP_SHR,2},
     {"select",JOLT_OP_SELECT,3}
 };
+static bool expression(parser_t *p, unsigned depth);
+static bool scoped_expression(parser_t *p, unsigned depth) {
+    unsigned saved = p->local_count;
+    ++p->scope;
+    bool ok = expression(p, depth);
+    --p->scope; p->local_count = saved;
+    return ok;
+}
+static void patch_target(parser_t *p, size_t instruction) {
+    put_u32(p->program->bytes.a + instruction + 4, (uint32_t)p->program->bytes.n);
+}
+/* cond lowers to nested forward conditionals. Clause tests/results have private
+ * declaration scopes; mutation of existing outer var slots remains visible. */
+static bool cond_clauses(parser_t *p, unsigned depth) {
+    if (depth >= 64) return fail(p, JOLT_ERR_BUDGET, "expression nesting limit exceeded");
+    space(p);
+    if (*p->cursor == ')') { ++p->cursor; return emit(p, JOLT_OP_CONST, 0); }
+    if (!character(p, '[')) return false;
+    space(p);
+    const char *test = p->cursor;
+    bool otherwise = false;
+    if (*p->cursor != '(') {
+        char name[64];
+        if (!token(p, name)) return false;
+        otherwise = !strcmp(name, "else");
+        if (!otherwise) p->cursor = test;
+    }
+    if (otherwise)
+        return scoped_expression(p, depth + 1) && character(p, ']') && character(p, ')');
+    if (!scoped_expression(p, depth + 1)) return false;
+    size_t branch = p->program->bytes.n;
+    if (!emit(p, JOLT_OP_BRANCH_IF_ZERO, 0) || !scoped_expression(p, depth + 1) || !character(p, ']')) return false;
+    size_t jump = p->program->bytes.n;
+    if (!emit(p, JOLT_OP_JUMP, 0)) return false;
+    patch_target(p, branch);
+    if (!cond_clauses(p, depth + 1)) return false;
+    patch_target(p, jump);
+    return true;
+}
+/* Every form leaves one scalar. A sequence evaluates all forms eagerly and
+ * discards intermediate values; declarations live until its scope exits. */
+static bool sequence(parser_t *p, unsigned depth) {
+    space(p);
+    if (*p->cursor == ')') return fail(p, JOLT_ERR_SYNTAX, "expected a nonempty body");
+    for (;;) {
+        if (!expression(p, depth)) return false;
+        space(p);
+        if (*p->cursor == ')') return character(p, ')');
+        if (!emit(p, JOLT_OP_DROP, 0)) return false;
+    }
+}
+static bool binding(parser_t *p, unsigned depth, bool mutable) {
+    char name[64];
+    if (!token(p, name)) return false;
+    if (!isalpha((unsigned char)name[0]) && name[0] != '_')
+        return fail(p, JOLT_ERR_SYNTAX, "binding must start with a letter or underscore");
+    for (unsigned i = 0; i < p->local_count; ++i)
+        if (p->locals[i].scope == p->scope && !strcmp(p->locals[i].name, name))
+            return fail(p, JOLT_ERR_SYNTAX, "duplicate local binding");
+    unsigned slot = p->local_count;
+    if (slot == JOLT_MAX_LOCALS) return fail(p, JOLT_ERR_BUDGET, "local binding limit exceeded");
+    if (!expression(p, depth + 1)) return false;
+    /* Bind only after initialization, and keep initializer declarations private. */
+    p->local_count = slot;
+    strcpy(p->locals[slot].name, name);
+    p->locals[slot].mutable = mutable;
+    p->locals[slot].scope = p->scope;
+    ++p->local_count;
+    return emit(p, JOLT_OP_STORE_LOCAL, slot);
+}
 static bool expression(parser_t *p, unsigned depth) {
     if (depth >= 64) return fail(p, JOLT_ERR_BUDGET, "expression nesting limit exceeded");
     space(p); char value[64];
     if (*p->cursor == '(') {
         ++p->cursor;
         if (!token(p, value)) return false;
+        if (!strcmp(value, "cond")) {
+            space(p);
+            if (*p->cursor == ')') return fail(p, JOLT_ERR_SYNTAX, "expected a cond clause");
+            return cond_clauses(p, depth);
+        }
+        if (!strcmp(value, "if") || !strcmp(value, "when") || !strcmp(value, "unless")) {
+            bool conditional = !strcmp(value, "if"), invert = !strcmp(value, "unless");
+            if (!scoped_expression(p, depth + 1)) return false;
+            if (invert && !emit(p, JOLT_OP_NOT, 0)) return false;
+            size_t branch = p->program->bytes.n;
+            if (!emit(p, JOLT_OP_BRANCH_IF_ZERO, 0)) return false;
+            if (conditional) {
+                if (!scoped_expression(p, depth + 1)) return false;
+            } else {
+                unsigned saved = p->local_count;
+                ++p->scope;
+                bool ok = sequence(p, depth + 1);
+                --p->scope; p->local_count = saved;
+                if (!ok) return false;
+            }
+            size_t jump = p->program->bytes.n;
+            if (!emit(p, JOLT_OP_JUMP, 0)) return false;
+            patch_target(p, branch);
+            if (conditional) {
+                if (!scoped_expression(p, depth + 1) || !character(p, ')')) return false;
+            } else if (!emit(p, JOLT_OP_CONST, 0)) return false;
+            patch_target(p, jump);
+            return true;
+        }
+        if (!strcmp(value, "do")) {
+            unsigned saved = p->local_count;
+            ++p->scope;
+            bool ok = sequence(p, depth + 1);
+            --p->scope; p->local_count = saved;
+            return ok;
+        }
+        if (!strcmp(value, "let") || !strcmp(value, "var")) {
+            bool mutable = !strcmp(value, "var");
+            space(p);
+            if (*p->cursor != '[')
+                return binding(p, depth, mutable) && character(p, ')');
+            ++p->cursor;
+            unsigned saved = p->local_count;
+            ++p->scope;
+            for (;;) {
+                space(p);
+                if (*p->cursor == ']') { ++p->cursor; break; }
+                if (!binding(p, depth, mutable) || !emit(p, JOLT_OP_DROP, 0)) return false;
+            }
+            bool ok = sequence(p, depth + 1);
+            --p->scope; p->local_count = saved;
+            return ok;
+        }
+        if (!strcmp(value, "set!")) {
+            if (!token(p, value)) return false;
+            unsigned i = p->local_count;
+            while (i && strcmp(p->locals[i-1].name, value)) --i;
+            if (!i || !p->locals[i-1].mutable)
+                return fail(p, JOLT_ERR_SYNTAX, "set! requires a mutable local binding");
+            unsigned saved = p->local_count;
+            if (!expression(p, depth + 1) || !character(p, ')')) return false;
+            p->local_count = saved;
+            return emit(p, JOLT_OP_STORE_LOCAL, i-1);
+        }
         for (size_t i = 0; i < sizeof(operations)/sizeof(*operations); ++i) {
             if (strcmp(value, operations[i].name)) continue;
             for (unsigned j = 0; j < operations[i].arity; ++j)
@@ -101,6 +238,8 @@ static bool expression(parser_t *p, unsigned depth) {
         return fail(p, JOLT_ERR_SYNTAX, "unknown operation");
     }
     if (!token(p, value)) return false;
+    for (unsigned i = p->local_count; i; --i)
+        if (!strcmp(p->locals[i-1].name, value)) return emit(p, JOLT_OP_LOAD_LOCAL, i-1);
     khiter_t k = kh_get(symbols, p->symbols, value);
     if (k != kh_end(p->symbols)) return emit(p, JOLT_OP_INPUT, kh_value(p->symbols,k));
     char *end; errno = 0;
@@ -117,6 +256,18 @@ jolt_status_t jolt_compile(const char *source, jolt_program_t **out, jolt_diagno
     size_t length = 0;
     while (source[length] && length <= 1024 * 1024) ++length;
     if (length > 1024 * 1024) return JOLT_ERR_BUDGET;
+    if (jt_source_typed(source)) {
+        uint8_t *code=NULL; size_t size=0; jt_error error={0};
+        jolt_status_t status=jt_compile(source,&code,&size,&error);
+        if(status) {
+            if(d) { d->line=error.line?error.line:1; d->column=error.column?error.column:1;
+                snprintf(d->message,sizeof(d->message),"%s",error.message[0]?error.message:"invalid typed program"); }
+            return status;
+        }
+        jolt_program_t *program=tilly_container_calloc(1,sizeof(*program));
+        if(!program) { tilly_container_free(code);return JOLT_ERR_MEMORY; }
+        program->bytes.a=code;program->bytes.n=program->bytes.m=size;*out=program;return JOLT_OK;
+    }
     parser_t p = {.start=source,.cursor=source,.diagnostic=d};
     p.program = tilly_container_calloc(1,sizeof(*p.program));
     p.symbols = kh_init(symbols);
@@ -149,10 +300,15 @@ jolt_status_t jolt_compile(const char *source, jolt_program_t **out, jolt_diagno
         if (!token(&p,name)) goto done;
         if (!strcmp(name,"rgba")) outputs = 4; else p.cursor = body;
     }
-    for (uint32_t i = 0; i < outputs; ++i)
-        if (!expression(&p,0) || !emit(&p,JOLT_OP_OUTPUT,i)) goto done;
-    if (outputs == 4 && !character(&p,')')) goto done;
-    if (!character(&p,')')) goto done;
+    if (outputs == 1) {
+        if (!sequence(&p, 0) || !emit(&p, JOLT_OP_OUTPUT, 0)) goto done;
+    } else {
+        for (uint32_t i = 0; i < outputs; ++i) {
+            p.local_count = 0;
+            if (!expression(&p,0) || !emit(&p,JOLT_OP_OUTPUT,i)) goto done;
+        }
+        if (!character(&p,')') || !character(&p,')')) goto done;
+    }
     space(&p);
     if (*p.cursor) { fail(&p,JOLT_ERR_SYNTAX,"trailing source after kernel"); goto done; }
     put_u32(p.program->bytes.a,JOLT_BYTECODE_MAGIC);
@@ -179,6 +335,10 @@ const uint8_t *jolt_program_data(const jolt_program_t *p, size_t *size) {
 jolt_status_t jolt_program_run(jolt_vm_t *vm, const jolt_program_t *p,
     const float *in, size_t ni, float *out, size_t no) {
     return p ? jolt_vm_run(vm,p->bytes.a,p->bytes.n,in,ni,out,no) : JOLT_ERR_ARGUMENT;
+}
+jolt_status_t jolt_program_run_values(jolt_vm_t *vm,const jolt_program_t *p,
+    const jolt_value_t *in,size_t ni,jolt_value_t *out,size_t no,const jolt_run_options_t *options) {
+    return p ? jolt_vm_run_values(vm,p->bytes.a,p->bytes.n,in,ni,out,no,options) : JOLT_ERR_ARGUMENT;
 }
 
 void jolt_diagnostic_format(const jolt_diagnostic_t *d, const char *path, char *out,
