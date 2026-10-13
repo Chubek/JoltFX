@@ -5,9 +5,10 @@
 Joltscript ships with a set of tools for kernel development: compiler, REPL, formatter, documentation generator, and LSP server.
 
 The compiler/evaluator implement the Phase 1–2 language and standard library.
-The formatter, documentation generator and LSP are preliminary tools; their
-full semantic integration is the next language-plan phase. Use `joltc --check`
-or `zoltan verify` for compiler-backed validation.
+Phase 3 tool integration is implemented for the C tools: `joltdoc` validates
+compilable kernels/modules through `jolt_compile`, `joltscript-lsp` publishes
+compiler-backed diagnostics, and `joltfmt` preserves semicolon comments and
+metadata while applying bounded token formatting.
 
 ## joltc — Compiler
 
@@ -135,18 +136,21 @@ cat kernel.jolt | joltfmt --stdin
 
 ### Current formatting scope
 
-The standalone token formatter is not a compiler-backed typed-language formatter.
-It currently drops semicolon comments, including metadata, and does not implement
-the planned import sorting, binding alignment or width rules. Preserve original
-sources and metadata when using it; validate formatted source with `joltc`.
+The standalone token formatter preserves semicolon comments/metadata, uses
+2-space indentation, avoids a space after opening delimiters, separates top-level
+forms and wraps long token runs near 100 columns. It is intentionally token-based
+rather than a typed AST rewriter, so it does not reorder imports or alter binding
+semantics; validate formatted source with `joltc` when changing kernels.
 
 ## joltdoc — Documentation Generator
 
 Generates Markdown or HTML documentation from `.jolt` source files.
 
-It extracts source forms/comments without the shared semantic checker. The
-hand-maintained [library reference](stdlib.md) and checked `.jolt` interfaces
-are authoritative for the Phase 2 API.
+For complete kernels, imports and standard-library module interfaces, `joltdoc`
+first runs the shared compiler/typed semantic checker and reports the same
+source-located diagnostics as `joltc`. It extracts module headings, kernels,
+functions, intrinsics and documentation comments to Markdown or HTML. Loose
+function-only snippets are still accepted for authoring notes and examples.
 
 ### Usage
 
@@ -198,11 +202,10 @@ joltscript-lsp [options]
 
 ### Current protocol scope
 
-The server implements initialization and basic stdio request handling. Hover
-currently returns null, completion returns an empty list, and document-open
-publishes an empty diagnostic list; these are not compiler-backed language
-services. Phase 1–2 compiler/stdlib completion does not imply completed LSP
-features. TCP mode is accepted as an option but is not implemented.
+The server implements bounded stdio JSON-RPC, initialization, document open/change
+diagnostics via `jolt_compile`, completion items for core forms and built-in
+modules, and hover text for common core/stdlib symbols. TCP mode is accepted as
+an option for compatibility but remains reserved; the process still uses stdio.
 
 ### Examples
 
@@ -263,4 +266,4 @@ cmake --install build --prefix /usr/local
 ### joltdoc generates empty output
 
 - Verify source contains documentation comments
-- Check for `defkernel`, `defn`, `defmacro` forms
+- Check for `module`, `intrinsic`, `defkernel`, `defn` or `defmacro` forms

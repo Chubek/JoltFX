@@ -50,8 +50,9 @@ Execution ABI 0.9 adds collection views while preserving the value struct layout
 All exported intrinsics have execution/C–Rust parity coverage. See
 `joltscript/docs/stdlib.md` for exact semantics, budgets and build dependencies.
 
-Next: Phase 3 tools. See `joltscript/docs/language.md` for the versioned language
-and backend boundaries.
+Phase 3 tools are implemented. See `joltscript/docs/language.md` for the
+versioned language and backend boundaries, and `joltscript/docs/tools.md` for
+the compiler-backed documentation/LSP behavior.
 
 ### Phase 1: Expand the Compiler (Core Language Features)
 
@@ -98,11 +99,11 @@ and backend boundaries.
 **Goal**: Provide the tools described in the spec.
 
 **Tasks**:
-1. Create `joltscript/tools/joltc/` - Compiler driver
-2. Create `joltscript/tools/jolti/` - REPL
-3. Create `joltscript/tools/joltfmt/` - Formatter
-4. Create `joltscript/tools/joltdoc/` - Documentation generator
-5. Create `joltscript/tools/joltscript-lsp/` - LSP server
+1. [x] Create `joltscript/tools/joltc/` - Compiler driver
+2. [x] Create `joltscript/tools/jolti/` - REPL
+3. [x] Create `joltscript/tools/joltfmt/` - Formatter
+4. [x] Create `joltscript/tools/joltdoc/` - Documentation generator
+5. [x] Create `joltscript/tools/joltscript-lsp/` - LSP server
 
 **Files to create**:
 - `joltscript/tools/joltc/src/main.c`
@@ -160,7 +161,7 @@ and backend boundaries.
 - [ ] Compiler supports all types from the spec
 - [ ] Compiler supports all operations from the spec
 - [ ] Standard library covers all modules from the spec
-- [ ] All tools are implemented and working
+- [x] All tools are implemented and working
 - [ ] All tests pass
 - [ ] Documentation is complete
 - [ ] Zoltan bytecode parity is maintained

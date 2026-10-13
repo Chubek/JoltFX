@@ -686,9 +686,9 @@ large and malformed formatter/documentation/LSP input under sanitizers.
 |------|---------|
 | `joltc` | JBC1 compiler/checker; separate CPU image validation |
 | `jolti` | Independent complete-kernel evaluations, exact typed/collection printing |
-| `joltfmt` | Preliminary token formatter; currently drops comments/metadata |
-| `joltdoc` | Preliminary source/comment documentation extraction (Markdown/HTML) |
-| `joltscript-lsp` | Stdio protocol scaffold; semantic services are Phase 3 work |
+| `joltfmt` | Comment-preserving bounded token formatter with 2-space indentation and width wrapping |
+| `joltdoc` | Markdown/HTML docs with compiler validation for kernels/imports/stdlib interfaces |
+| `joltscript-lsp` | Stdio LSP with compiler-backed diagnostics plus core/stdlib completion and hover |
 
 ### Planned formatter rules (`joltfmt`)
 

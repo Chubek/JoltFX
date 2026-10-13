@@ -13,6 +13,7 @@
  */
 
 #include "tilly/memory.h"
+#include "joltscript/compiler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,6 +89,87 @@ static int write_file(const char *path, const char *content) {
     return written == len ? 0 : -1;
 }
 
+static bool should_validate_source(const char *source) {
+    for (const char *p = source; *p;) {
+        if (isspace((unsigned char)*p)) { ++p; continue; }
+        if (*p == ';') { while (*p && *p != '\n') ++p; continue; }
+        if (*p == '"') {
+            ++p;
+            while (*p && *p != '"') { if (*p == '\\' && p[1]) ++p; ++p; }
+            if (*p) ++p;
+            continue;
+        }
+        if (!strncmp(p, "(defkernel", 10) || !strncmp(p, "(module", 7) || !strncmp(p, "(import", 7)) return true;
+        ++p;
+    }
+    return false;
+}
+
+static void append_escaped(char **out, size_t *size, size_t *capacity, const char *text, size_t len, bool html) {
+    for (size_t i = 0; i < len; ++i) {
+        const char *replacement = NULL;
+        char c = text[i];
+        if (html) {
+            if (c == '&') replacement = "&amp;";
+            else if (c == '<') replacement = "&lt;";
+            else if (c == '>') replacement = "&gt;";
+            else if (c == '"') replacement = "&quot;";
+        }
+        size_t need = replacement ? strlen(replacement) : 1u;
+        if (*size + need + 1 > *capacity) {
+            *capacity = (*capacity + need + 1024) * 2;
+            char *new_out = tilly_mem_realloc(*out, *capacity);
+            if (!new_out) return;
+            *out = new_out;
+        }
+        if (replacement) {
+            memcpy(*out + *size, replacement, need);
+            *size += need;
+        } else {
+            (*out)[(*size)++] = c;
+        }
+    }
+    (*out)[*size] = 0;
+}
+
+static const char *skip_form(const char *p) {
+    int depth = 1;
+    bool in_string = false;
+    bool escaped = false;
+    while (*p && depth > 0) {
+        char c = *p++;
+        if (in_string) {
+            if (escaped) escaped = false;
+            else if (c == '\\') escaped = true;
+            else if (c == '"') in_string = false;
+            continue;
+        }
+        if (c == '"') in_string = true;
+        else if (c == ';') while (*p && *p != '\n') ++p;
+        else if (c == '(' || c == '[') ++depth;
+        else if (c == ')' || c == ']') --depth;
+    }
+    return p;
+}
+
+static size_t symbol_len(const char *p) {
+    size_t len = 0;
+    while (p[len] && !isspace((unsigned char)p[len]) && p[len] != ')' && p[len] != '(' && p[len] != '[' && p[len] != ']') ++len;
+    return len;
+}
+
+static void append_heading(char **out, size_t *size, size_t *capacity, const char *name, size_t name_len, const char *kind, bool html) {
+    if (html) {
+        *size += (size_t)snprintf(*out + *size, *capacity - *size, "<h2><code>");
+        append_escaped(out, size, capacity, name, name_len, true);
+        *size += (size_t)snprintf(*out + *size, *capacity - *size, "</code>%s</h2>\n", kind ? kind : "");
+    } else {
+        *size += (size_t)snprintf(*out + *size, *capacity - *size, "## `");
+        append_escaped(out, size, capacity, name, name_len, false);
+        *size += (size_t)snprintf(*out + *size, *capacity - *size, "`%s\n\n", kind ? kind : "");
+    }
+}
+
 /* Extract documentation from source */
 static char *extract_docs(const char *src, bool html) {
     /* Every emitted form has at most its source length plus 80 markup bytes;
@@ -115,7 +197,8 @@ static char *extract_docs(const char *src, bool html) {
         size += sprintf(out + size, "# Joltscript Documentation\n\n");
     }
 
-    /* Parse source for defkernel, defn, defmacro, etc. */
+    /* Parse source for shipped semantic forms. Compilation has already validated
+     * the language profile, so this pass only extracts documentation facts. */
     const char *p = src;
     while (*p) {
         /* Skip whitespace */
@@ -134,123 +217,107 @@ static char *extract_docs(const char *src, bool html) {
                 if (!new_out) { tilly_mem_free(out); return NULL; }
                 out = new_out;
             }
-            memcpy(out + size, start, len);
-            size += len;
-            out[size++] = '\n';
+            const char *body = start + 2;
+            while (*body == ' ') ++body;
+            if (html) {
+                size += (size_t)sprintf(out + size, "<p>");
+                append_escaped(&out, &size, &capacity, body, (size_t)(p - body), true);
+                size += (size_t)sprintf(out + size, "</p>\n");
+            } else {
+                append_escaped(&out, &size, &capacity, body, (size_t)(p - body), false);
+                out[size++] = '\n';
+            }
+            continue;
+        }
+
+        if (strncmp(p, "(module", 7) == 0) {
+            p += 7;
+            while (*p && isspace((unsigned char)*p)) p++;
+            size_t name_len = symbol_len(p);
+            if (name_len) {
+                if (html) {
+                    size += (size_t)sprintf(out + size, "<h1>");
+                    append_escaped(&out, &size, &capacity, p, name_len, true);
+                    size += (size_t)sprintf(out + size, "</h1>\n");
+                } else {
+                    size += (size_t)sprintf(out + size, "# ");
+                    append_escaped(&out, &size, &capacity, p, name_len, false);
+                    size += (size_t)sprintf(out + size, "\n\n");
+                }
+            }
+            p = skip_form(p);
             continue;
         }
 
         /* Look for defkernel */
         if (strncmp(p, "(defkernel", 10) == 0) {
-            const char *start = p;
             /* Find the name */
             p += 10;
             while (*p && isspace((unsigned char)*p)) p++;
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(') p++;
             size_t name_len = p - name_start;
-            char *name = tilly_mem_strndup(name_start, name_len);
-            if (!name) { tilly_mem_free(out); return NULL; }
 
             if (html) {
                 size += sprintf(out + size, "<div class=\"kernel\">\n");
-                size += sprintf(out + size, "<h2><code>%s</code></h2>\n", name);
-            } else {
-                size += sprintf(out + size, "## `%s`\n\n", name);
             }
-            tilly_mem_free(name);
+            append_heading(&out, &size, &capacity, name_start, name_len, html ? "" : "", html);
+            if (html) size += sprintf(out + size, "</div>\n");
 
             /* Find the body */
-            int depth = 1;
-            while (*p && depth > 0) {
-                if (*p == '(') depth++;
-                else if (*p == ')') depth--;
-                p++;
-            }
+            p = skip_form(p);
             continue;
         }
 
         /* Look for defn */
         if (strncmp(p, "(defn", 5) == 0) {
-            const char *start = p;
             p += 5;
             while (*p && isspace((unsigned char)*p)) p++;
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(' && *p != '[') p++;
             size_t name_len = p - name_start;
-            char *name = tilly_mem_strndup(name_start, name_len);
-            if (!name) { tilly_mem_free(out); return NULL; }
-
-            if (html) {
-                size += sprintf(out + size, "<h2><code>%s</code></h2>\n", name);
-            } else {
-                size += sprintf(out + size, "## `%s`\n\n", name);
-            }
-            tilly_mem_free(name);
+            append_heading(&out, &size, &capacity, name_start, name_len, html ? "" : "", html);
 
             /* Find the body */
-            int depth = 1;
-            while (*p && depth > 0) {
-                if (*p == '(') depth++;
-                else if (*p == ')') depth--;
-                p++;
-            }
+            p = skip_form(p);
             continue;
         }
 
         /* Look for defmacro */
         if (strncmp(p, "(defmacro", 9) == 0) {
-            const char *start = p;
             p += 9;
             while (*p && isspace((unsigned char)*p)) p++;
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(' && *p != '[') p++;
             size_t name_len = p - name_start;
-            char *name = tilly_mem_strndup(name_start, name_len);
-            if (!name) { tilly_mem_free(out); return NULL; }
-
-            if (html) {
-                size += sprintf(out + size, "<h2><code>%s</code> <em>(macro)</em></h2>\n", name);
-            } else {
-                size += sprintf(out + size, "## `%s` *(macro)*\n\n", name);
-            }
-            tilly_mem_free(name);
+            append_heading(&out, &size, &capacity, name_start, name_len, html ? " <em>(macro)</em>" : " *(macro)*", html);
 
             /* Find the body */
-            int depth = 1;
-            while (*p && depth > 0) {
-                if (*p == '(') depth++;
-                else if (*p == ')') depth--;
-                p++;
-            }
+            p = skip_form(p);
             continue;
         }
 
         /* Look for defconst */
         if (strncmp(p, "(defconst", 9) == 0) {
-            const char *start = p;
             p += 9;
             while (*p && isspace((unsigned char)*p)) p++;
             const char *name_start = p;
             while (*p && !isspace((unsigned char)*p) && *p != ')' && *p != '(') p++;
             size_t name_len = p - name_start;
-            char *name = tilly_mem_strndup(name_start, name_len);
-            if (!name) { tilly_mem_free(out); return NULL; }
-
-            if (html) {
-                size += sprintf(out + size, "<h2><code>%s</code> <em>(constant)</em></h2>\n", name);
-            } else {
-                size += sprintf(out + size, "## `%s` *(constant)*\n\n", name);
-            }
-            tilly_mem_free(name);
+            append_heading(&out, &size, &capacity, name_start, name_len, html ? " <em>(constant)</em>" : " *(constant)*", html);
 
             /* Find the body */
-            int depth = 1;
-            while (*p && depth > 0) {
-                if (*p == '(') depth++;
-                else if (*p == ')') depth--;
-                p++;
-            }
+            p = skip_form(p);
+            continue;
+        }
+
+        if (strncmp(p, "(intrinsic", 10) == 0) {
+            p += 10;
+            while (*p && isspace((unsigned char)*p)) p++;
+            const char *name_start = p;
+            size_t name_len = symbol_len(p);
+            append_heading(&out, &size, &capacity, name_start, name_len, html ? " <em>(intrinsic)</em>" : " *(intrinsic)*", html);
+            p = skip_form(p);
             continue;
         }
 
@@ -328,6 +395,20 @@ int main(int argc, char **argv) {
     if (!source) {
         fprintf(stderr, "error: cannot read input\n");
         return 1;
+    }
+
+    if (should_validate_source(source)) {
+        jolt_program_t *program = NULL;
+        jolt_diagnostic_t diagnostic = {.size = sizeof(diagnostic)};
+        jolt_status_t status = jolt_compile(source, &program, &diagnostic);
+        if (status != JOLT_OK) {
+            char message[256];
+            jolt_diagnostic_format(&diagnostic, opts.input_path ? opts.input_path : "<stdin>", message, sizeof(message));
+            fprintf(stderr, "%s\n", message);
+            tilly_mem_free(source);
+            return 1;
+        }
+        jolt_program_destroy(program);
     }
 
     char *docs = extract_docs(source, opts.html_output);

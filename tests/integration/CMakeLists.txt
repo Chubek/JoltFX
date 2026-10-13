@@ -17,7 +17,12 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME memory_tool_edges COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/memory/test_tools.py"
         "$<TARGET_FILE:joltfmt>" "$<TARGET_FILE:joltdoc>" "$<TARGET_FILE:joltscript-lsp>")
+    add_test(NAME joltscript_tools_phase3 COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/joltscript/test_tools_phase3.py"
+        "$<TARGET_FILE:joltfmt>" "$<TARGET_FILE:joltdoc>" "$<TARGET_FILE:joltscript-lsp>"
+        "${PROJECT_SOURCE_DIR}")
     set_tests_properties(memory_allocation_policy memory_tool_edges PROPERTIES LABELS "integration;memory" TIMEOUT 60)
+    set_tests_properties(joltscript_tools_phase3 PROPERTIES LABELS "integration;joltscript;tools" TIMEOUT 60)
     if(TARGET joltfx_cli)
         add_test(NAME memory_image_cli COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/memory/test_image_cli.py" "$<TARGET_FILE:joltfx_cli>")

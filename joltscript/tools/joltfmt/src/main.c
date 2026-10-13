@@ -140,11 +140,6 @@ static void lexer_skip_ws(lexer_t *lex) {
             lex->pos++;
             lex->line++;
             lex->col = 1;
-        } else if (c == ';') {
-            while (lex->pos < lex->len && lex->src[lex->pos] != '\n') {
-                lex->pos++;
-                lex->col++;
-            }
         } else {
             break;
         }
@@ -234,10 +229,16 @@ static void token_free(token_t *tok) {
     if (tok) { tilly_mem_free(tok->text); tilly_mem_free(tok); }
 }
 
+static size_t current_column(const char *out, size_t size) {
+    size_t col = 0;
+    while (size && out[size - 1] != '\n') { --size; ++col; }
+    return col;
+}
+
 /* Simple formatter: re-indent with 2-space indentation */
 static char *format_source(const char *src) {
     lexer_t lex;
-    lexer_init(&lex, lex.src = src);
+    lexer_init(&lex, src);
     if (strlen(src) > (SIZE_MAX - 32) / 2) return NULL;
     size_t capacity = strlen(src) * 2 + 32;
     size_t size = 0;
@@ -245,43 +246,73 @@ static char *format_source(const char *src) {
     if (!out) return NULL;
     size_t indent = 0;
     bool at_line_start = true;
+    bool after_open = false;
+    bool previous_was_top_form = false;
     token_t *tok;
     while ((tok = lexer_next(&lex)) && tok->type != TOKEN_EOF) {
-        if (tok->len > SIZE_MAX - size - 16) { token_free(tok); tilly_mem_free(out); return NULL; }
-        if (size + tok->len + 16 > capacity) {
-            capacity = size + tok->len + 16;
+        if (tok->len > SIZE_MAX - size - 128) { token_free(tok); tilly_mem_free(out); return NULL; }
+        if (size + tok->len + indent * INDENT_SIZE + 128 > capacity) {
+            capacity = (size + tok->len + indent * INDENT_SIZE + 128) * 2;
             char *new_out = tilly_mem_realloc(out, capacity);
             if (!new_out) { tilly_mem_free(out); token_free(tok); return NULL; }
             out = new_out;
         }
         if (tok->type == TOKEN_LPAREN || tok->type == TOKEN_LBRACKET || tok->type == TOKEN_LBRACE) {
-            if (!at_line_start) { out[size++] = ' '; }
+            if (indent == 0 && previous_was_top_form && !at_line_start) { out[size++] = '\n'; at_line_start = true; }
+            if (at_line_start) {
+                for (size_t i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
+            } else if (!after_open) {
+                if (current_column(out, size) + tok->len + 1 > MAX_LINE_WIDTH) {
+                    out[size++] = '\n';
+                    for (size_t i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
+                } else {
+                    out[size++] = ' ';
+                }
+            }
             memcpy(out + size, tok->text, tok->len); size += tok->len;
             indent++;
             at_line_start = false;
+            after_open = true;
+            previous_was_top_form = false;
         } else if (tok->type == TOKEN_RPAREN || tok->type == TOKEN_RBRACKET || tok->type == TOKEN_RBRACE) {
             if (indent) indent--;
             memcpy(out + size, tok->text, tok->len); size += tok->len;
             at_line_start = false;
+            after_open = false;
+            if (indent == 0) { out[size++] = '\n'; previous_was_top_form = true; at_line_start = true; }
         } else if (tok->type == TOKEN_COMMENT) {
-            if (!at_line_start) { out[size++] = ' '; }
+            if (!at_line_start) { out[size++] = '\n'; at_line_start = true; }
+            for (size_t i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
             memcpy(out + size, tok->text, tok->len); size += tok->len;
-            at_line_start = false;
+            out[size++] = '\n';
+            at_line_start = true;
+            after_open = false;
         } else {
             if (at_line_start) {
-                /* Leading indentation is zero in this flat profile. */
                 for (size_t i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
                 at_line_start = false;
+            } else if (!after_open) {
+                if (current_column(out, size) + tok->len + 1 > MAX_LINE_WIDTH) {
+                    out[size++] = '\n';
+                    for (size_t i = 0; i < indent * INDENT_SIZE; ++i) out[size++] = ' ';
+                } else {
+                    out[size++] = ' ';
+                }
             } else {
-                out[size++] = ' ';
+                after_open = false;
+            }
+            if (after_open) {
+                after_open = false;
             }
             memcpy(out + size, tok->text, tok->len); size += tok->len;
+            previous_was_top_form = false;
         }
         token_free(tok);
     }
     if (!tok) { tilly_mem_free(out); return NULL; }
     token_free(tok);
-    out[size++] = '\n';
+    while (size > 1 && out[size - 1] == '\n' && out[size - 2] == '\n') --size;
+    if (size == 0 || out[size - 1] != '\n') out[size++] = '\n';
     out[size] = 0;
     return out;
 }

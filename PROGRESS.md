@@ -1740,3 +1740,24 @@ Follow-on from the plan audit above. Two changes, both additive.
   clamped to 0.25x–8x and supports Ctrl/Cmd-wheel on desktop and web.
 - Hardened animation scene input validation and bytecode playback error
   propagation, and added shared frontend contract coverage for zoom dispatch.
+
+### 2026-10-13 — Joltscript Phase 3 tools
+
+- Implemented the Phase 3 tool integration pass for Joltscript's existing C tools:
+  - `joltfmt` now preserves semicolon comments/metadata, removes the old `"( "`
+    spacing artifact, separates top-level forms, applies 2-space indentation and
+    wraps long token runs near the 100-column style target.
+  - `joltdoc` now links the Joltscript compiler/execution libraries and validates
+    complete kernels/imports/stdlib module interfaces through `jolt_compile`
+    before generating documentation. It documents module declarations and
+    `(intrinsic ...)` stdlib signatures in addition to kernels/functions.
+  - `joltscript-lsp` now keeps document text, publishes compiler-backed diagnostics
+    on open/change, and provides core/stdlib completion and hover data over the
+    bounded stdio LSP transport.
+- Added `tests/integration/joltscript/test_tools_phase3.py` and registered the
+  `joltscript_tools_phase3` CTest case to cover formatter comment preservation,
+  stdlib docs extraction, documentation validation failures, and LSP diagnostics/
+  completion behavior.
+- Updated `JOLTSCRIPT_PLAN.md`, `joltscript/AGENTS.md`, and
+  `joltscript/docs/tools.md` so the repository no longer describes Phase 3 tools
+  as pending/preliminary.
