@@ -56,6 +56,27 @@ func verifyDescriptors(m *Module) error {
 		if ti.Kind == "enum" && len(ti.Fields) != 0 {
 			return fmt.Errorf("ingagi: enum %q declares fields", name)
 		}
+		// Enum payload signatures: a known (non-nil) table must cover every
+		// variant exactly once with non-negative arities; nil means unknown
+		// (v1 images) and skips the check. Non-enums carry no signatures.
+		if ti.Kind != "enum" {
+			if ti.EnumArity != nil && len(ti.EnumArity) != 0 {
+				return fmt.Errorf("ingagi: non-enum %q declares payload signatures", name)
+			}
+		} else if ti.EnumArity != nil {
+			if len(ti.EnumArity) != len(ti.Variants) {
+				return fmt.Errorf("ingagi: enum %q has %d variants but %d payload signatures", name, len(ti.Variants), len(ti.EnumArity))
+			}
+			for _, v := range ti.Variants {
+				a, ok := ti.EnumArity[v]
+				if !ok {
+					return fmt.Errorf("ingagi: enum %q variant %q has no payload signature", name, v)
+				}
+				if a < 0 {
+					return fmt.Errorf("ingagi: enum %q variant %q has negative arity %d", name, v, a)
+				}
+			}
+		}
 		for field := range ti.Defaults {
 			if !known[field] {
 				return fmt.Errorf("ingagi: default for unknown field %s.%s", name, field)

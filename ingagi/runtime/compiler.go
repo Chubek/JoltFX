@@ -38,7 +38,11 @@ type TypeInfo struct {
 	Fields   []TypeField
 	Defaults map[string]Value
 	Variants []string
-	Methods  map[string]string // method name -> qualified entry name
+	// EnumArity records each enum variant's payload length. Nil means the
+	// signature is unknown (images decoded from v1); a non-nil map, possibly
+	// empty, means every variant's arity is known and enforced.
+	EnumArity map[string]int
+	Methods   map[string]string // method name -> qualified entry name
 }
 
 // TypeField is one named field with its default AST (evaluated at load).
@@ -192,9 +196,10 @@ func (c *Compiler) collect(f *fe.File) {
 			}
 			c.module.Types[d.Name] = ti
 		case *fe.EnumDecl:
-			ti := &TypeInfo{Kind: "enum", Defaults: map[string]Value{}, Methods: map[string]string{}}
+			ti := &TypeInfo{Kind: "enum", Defaults: map[string]Value{}, Methods: map[string]string{}, EnumArity: map[string]int{}}
 			for _, v := range d.Variants {
 				ti.Variants = append(ti.Variants, v.Name)
+				ti.EnumArity[v.Name] = len(v.Types)
 			}
 			c.module.Types[d.Name] = ti
 		case *fe.EventDecl:

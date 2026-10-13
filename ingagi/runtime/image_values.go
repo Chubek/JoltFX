@@ -133,6 +133,15 @@ func prepareImageValues(d *Decoded, vm *VM) (map[string]Value, map[string]map[st
 			if !found {
 				return bad()
 			}
+			if ti.EnumArity != nil {
+				want, ok := ti.EnumArity[p.Variant]
+				if !ok {
+					return bad()
+				}
+				if len(p.Payload) != want {
+					return NilValue, fmt.Errorf("ingagi: enum %s::%s takes %d payload values, got %d", p.Type, p.Variant, want, len(p.Payload))
+				}
+			}
 			out := &EnumObj{Type: p.Type, Variant: p.Variant, Payload: make([]Value, len(p.Payload))}
 			for i, elem := range p.Payload {
 				x, err := value(elem, depth+1)
@@ -148,7 +157,7 @@ func prepareImageValues(d *Decoded, vm *VM) (map[string]Value, map[string]map[st
 				return NilValue, fmt.Errorf("ingagi: closure references missing entry %q", p.Name)
 			}
 			if len(p.Up) != 0 {
-				return NilValue, fmt.Errorf("ingagi: image v1 cannot restore captured closure %q", p.Name)
+				return NilValue, fmt.Errorf("ingagi: image cannot restore captured closure %q", p.Name)
 			}
 			v.O = &ClosureObj{Name: p.Name}
 		case KBuiltin:

@@ -16,7 +16,10 @@ const maxFrameSlots = 65536
 // heights are checked across control-flow joins, and type/engine descriptors
 // are checked for referential integrity: every name a descriptor references
 // (method and hook entries, systems, prefab constructors, event types) must
-// resolve inside the module. Value-level typing remains dynamic at runtime.
+// resolve inside the module. Opcode-level type verification checks every
+// instruction's descriptor operands (struct/enum/closure/call targets and
+// enum payload arities) plus unused-operand hygiene. Value-level typing
+// remains dynamic at runtime.
 
 // Operand kinds per opcode. The compiler emits these meanings and validation
 // enforces them for every instruction, including ones restored by Decode.
@@ -31,6 +34,8 @@ const (
 	slotA                     // A is a non-negative local slot or upvalue index
 	flagA                     // A is 0 or 1
 	obsC                      // C indexes pool.Strings and A is an observer kind (0..2)
+	bindAB                    // A/B are with/without counts, C is unused
+	foreachA                  // A is a binding count, B/C are unused
 )
 
 // opOperands describes each opcode's operand meaning.
@@ -46,14 +51,18 @@ func init() {
 	set(fltC, OpPushFloat)
 	set(strC,
 		OpPushString, OpLoadGlobal, OpStoreGlobal, OpLoadField, OpStoreField,
-		OpTryField, OpMakeStruct, OpMakeEnum, OpBind, OpMakeClosure,
-		OpCall, OpCallMethod, OpForEachBegin)
+		OpTryField, OpMakeStruct, OpMakeEnum, OpMakeClosure,
+		OpCall, OpCallMethod)
 	set(tgtA, OpJump, OpJumpIfFalse, OpJumpIfTrue, OpJumpIfNil, OpForEachNext, OpDefer)
 	set(countA, OpMakeArray, OpMakeMap)
 	set(slotA, OpLoadLocal, OpStoreLocal, OpLoadUp, OpStoreUp)
 	set(flagA, OpPushBool, OpReturn)
 	// OpObserve uses A for the kind and C for the component name.
 	set(obsC, OpObserve)
+	// OpBind carries both counts; its C operand is unused (pipeline and stage
+	// travel on the stack). OpForEachBegin's world travels on the stack too.
+	set(bindAB, OpBind)
+	set(foreachA, OpForEachBegin)
 	// Opcodes that only move or combine stack values.
 	set(noOperands,
 		OpPushNil, OpDup, OpPop, OpLoadIndex, OpStoreIndex,
@@ -65,7 +74,9 @@ func init() {
 
 // Validate reports structural problems in m: a nil tape or pool, unknown
 // opcodes, out-of-range pool indices or jump targets, negative counts or
-// slots, and entry points that do not address code.
+// slots, unused operands that must stay zero, descriptor references that do
+// not resolve, enum payload arity mismatches, and entry points that do not
+// address code.
 func Validate(m *Module) error {
 	if m == nil {
 		return fmt.Errorf("ingagi: nil module")
@@ -87,17 +98,36 @@ func Validate(m *Module) error {
 			if err := checkIndex("string", int(in.C), len(pool.Strings)); err != nil {
 				return fmt.Errorf("ingagi: pc %d %s: %w", pc, OpName(in.Op), err)
 			}
+			if in.B != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused B operand must be 0, got %d", pc, OpName(in.Op), in.B)
+			}
+			switch in.Op {
+			case OpPushString, OpLoadGlobal, OpStoreGlobal, OpLoadField,
+				OpStoreField, OpTryField:
+				if in.A != 0 {
+					return fmt.Errorf("ingagi: pc %d %s: unused A operand must be 0, got %d", pc, OpName(in.Op), in.A)
+				}
+			}
 		case intC:
 			if err := checkIndex("int", int(in.C), len(pool.Ints)); err != nil {
 				return fmt.Errorf("ingagi: pc %d %s: %w", pc, OpName(in.Op), err)
+			}
+			if in.A != 0 || in.B != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got A=%d B=%d", pc, OpName(in.Op), in.A, in.B)
 			}
 		case fltC:
 			if err := checkIndex("float", int(in.C), len(pool.Floats)); err != nil {
 				return fmt.Errorf("ingagi: pc %d %s: %w", pc, OpName(in.Op), err)
 			}
+			if in.A != 0 || in.B != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got A=%d B=%d", pc, OpName(in.Op), in.A, in.B)
+			}
 		case tgtA:
 			if err := checkIndex("target", int(in.A), len(code)); err != nil {
 				return fmt.Errorf("ingagi: pc %d %s: %w", pc, OpName(in.Op), err)
+			}
+			if in.B != 0 || in.C != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got B=%d C=%d", pc, OpName(in.Op), in.B, in.C)
 			}
 		case countA, slotA:
 			if in.A < 0 {
@@ -106,9 +136,15 @@ func Validate(m *Module) error {
 			if opOperands[in.Op] == slotA && in.A >= maxFrameSlots {
 				return fmt.Errorf("ingagi: pc %d: slot %d exceeds frame limit", pc, in.A)
 			}
+			if in.B != 0 || in.C != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got B=%d C=%d", pc, OpName(in.Op), in.B, in.C)
+			}
 		case flagA:
 			if in.A != 0 && in.A != 1 {
 				return fmt.Errorf("ingagi: pc %d %s: flag %d is not 0 or 1", pc, OpName(in.Op), in.A)
+			}
+			if in.B != 0 || in.C != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got B=%d C=%d", pc, OpName(in.Op), in.B, in.C)
 			}
 		case obsC:
 			if err := checkIndex("string", int(in.C), len(pool.Strings)); err != nil {
@@ -117,15 +153,32 @@ func Validate(m *Module) error {
 			if in.A < 0 || in.A > 2 {
 				return fmt.Errorf("ingagi: pc %d %s: observer kind %d out of range", pc, OpName(in.Op), in.A)
 			}
+			if in.B != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused B operand must be 0, got %d", pc, OpName(in.Op), in.B)
+			}
+		case bindAB:
+			if in.A < 0 || in.B < 0 {
+				return fmt.Errorf("ingagi: pc %d %s: negative count", pc, OpName(in.Op))
+			}
+			if in.C != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused C operand must be 0, got %d", pc, OpName(in.Op), in.C)
+			}
+		case foreachA:
+			if in.A < 0 {
+				return fmt.Errorf("ingagi: pc %d %s: negative operand %d", pc, OpName(in.Op), in.A)
+			}
+			if in.B != 0 || in.C != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got B=%d C=%d", pc, OpName(in.Op), in.B, in.C)
+			}
 		case noOperands:
+			if in.A != 0 || in.B != 0 || in.C != 0 {
+				return fmt.Errorf("ingagi: pc %d %s: unused operands must be 0, got A=%d B=%d C=%d", pc, OpName(in.Op), in.A, in.B, in.C)
+			}
 		default:
 			return fmt.Errorf("ingagi: pc %d: opcode %s has no operand rule", pc, OpName(in.Op))
 		}
-		switch in.Op {
-		case OpCall, OpCallMethod, OpMakeStruct, OpMakeEnum, OpMakeClosure, OpForEachBegin, OpBind:
-			if in.A < 0 || in.Op == OpBind && in.B < 0 {
-				return fmt.Errorf("ingagi: pc %d %s: negative count", pc, OpName(in.Op))
-			}
+		if err := verifyOpcodeTypes(m, pc, in); err != nil {
+			return err
 		}
 	}
 	for name, pc := range m.Tape.Entry {
@@ -155,6 +208,117 @@ func Validate(m *Module) error {
 func checkIndex(what string, i, n int) error {
 	if i < 0 || i >= n {
 		return fmt.Errorf("%s index %d outside pool of %d", what, i, n)
+	}
+	return nil
+}
+
+// enumPayloadArity reports the declared payload length for Type::Variant.
+// known is false when the module carries no signature for the variant (v1
+// images decode EnumArity as nil), in which case callers skip the arity
+// check but still enforce type/variant existence.
+func enumPayloadArity(m *Module, tn, vn string) (arity int, known bool, err error) {
+	ti, ok := m.Types[tn]
+	if !ok || ti == nil {
+		return 0, false, fmt.Errorf("unknown enum type %q", tn)
+	}
+	if ti.Kind != "enum" {
+		return 0, false, fmt.Errorf("%q is %s, not an enum", tn, ti.Kind)
+	}
+	found := false
+	for _, v := range ti.Variants {
+		if v == vn {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return 0, false, fmt.Errorf("unknown variant %q::%q", tn, vn)
+	}
+	if ti.EnumArity == nil {
+		return 0, false, nil
+	}
+	a, ok := ti.EnumArity[vn]
+	if !ok {
+		return 0, false, fmt.Errorf("variant %q::%q has no payload signature", tn, vn)
+	}
+	if a < 0 {
+		return 0, false, fmt.Errorf("variant %q::%q has negative arity %d", tn, vn, a)
+	}
+	return a, true, nil
+}
+
+// verifyOpcodeTypes checks per-opcode descriptor operands: struct/enum type
+// references, closure entry targets, method names and enum payload arities
+// for both MakeEnum construction and static Type::Variant calls. Scripts stay
+// dynamically relinkable: unknown function/host names are allowed and only
+// rejected at call time, but a statically known enum signature must match.
+func verifyOpcodeTypes(m *Module, pc int, in Instr) error {
+	pool := m.Tape.Pool
+	at := func(format string, args ...any) error {
+		return fmt.Errorf("ingagi: pc %d %s: %s", pc, OpName(in.Op), fmt.Sprintf(format, args...))
+	}
+	switch in.Op {
+	case OpCall, OpCallMethod, OpMakeStruct, OpMakeEnum, OpMakeClosure:
+		if in.A < 0 {
+			return at("negative count %d", in.A)
+		}
+	}
+	switch in.Op {
+	case OpMakeStruct:
+		name := pool.String(int(in.C))
+		if name == "" {
+			return at("struct type name is empty")
+		}
+		if ti, ok := m.Types[name]; ok && ti != nil && ti.Kind == "enum" {
+			return at("type %q is an enum, not a struct", name)
+		}
+	case OpMakeEnum:
+		full := pool.String(int(in.C))
+		tn, vn, ok := splitVariant(full)
+		if !ok || tn == "" || vn == "" {
+			return at("malformed enum reference %q, want Type::Variant", full)
+		}
+		arity, known, err := enumPayloadArity(m, tn, vn)
+		if err != nil {
+			return at("%s", err.Error())
+		}
+		if known && int(in.A) != arity {
+			return at("variant %q takes %d payload values, got %d", full, arity, in.A)
+		}
+	case OpMakeClosure:
+		name := pool.String(int(in.C))
+		if name == "" {
+			return at("closure entry name is empty")
+		}
+		if _, ok := m.Tape.Entry[name]; !ok {
+			return at("closure references missing entry %q", name)
+		}
+	case OpCall:
+		name := pool.String(int(in.C))
+		if name == "" {
+			return nil // indirect call through the stack value
+		}
+		if tn, vn, ok := splitVariant(name); ok && tn != "" && vn != "" {
+			if ti, exists := m.Types[tn]; exists && ti != nil && ti.Kind == "enum" {
+				arity, known, err := enumPayloadArity(m, tn, vn)
+				if err != nil {
+					return at("%s", err.Error())
+				}
+				if known && int(in.A) != arity {
+					return at("variant %q takes %d payload values, got %d", name, arity, in.A)
+				}
+				return nil
+			}
+		}
+		// Missing arguments pad with nil; extras are rejected here so a
+		// corrupt image cannot push more values than the callee frame holds.
+		if want, ok := m.Params[name]; ok && int(in.A) > want {
+			return at("calls %q with %d args, want %d", name, in.A, want)
+		}
+	case OpCallMethod:
+		if pool.String(int(in.C)) == "" {
+			return at("method name is empty")
+		}
 	}
 	return nil
 }

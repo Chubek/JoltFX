@@ -24,13 +24,20 @@
   Reject source/image reload during active execution. Structural validation is
   in `runtime/validate.go` and `runtime/aot.go`; control-flow stack verification
   covers conditional edges and deferred blocks. runtime/descriptors.go checks
-  descriptor references; runtime/image_values.go validates snapshot object
+  descriptor references and enum payload-signature consistency; runtime/image_values.go validates snapshot object
   representations and clones/rebinds nested callable values before installation.
+  Opcode verification (`verifyOpcodeTypes`) checks struct/enum/closure/call
+  descriptor operands, enum payload arities for MakeEnum and static
+  Type::Variant calls, method names and unused-operand hygiene; `OpBind` uses
+  the bindAB kind (C must be 0) and `OpForEachBegin` uses foreachA (B/C must be
+  0) since their pipeline/world operands travel on the stack. Enum arities live
+  in `TypeInfo.EnumArity` (nil means unknown, from v1 images); snapshot v2
+  preserves them and still decodes v1. `hMakeEnum` and `callNamed` enforce the
+  signatures at runtime, and `check` validates the lowered tape.
   Required host callbacks must be registered first; never mutate shared Decoded
-  values while binding them to a VM. Complete opcode-level type verification and
-  enum payload signatures remain pending. Check counts before allocating, relative to the activation's stack
+  values while binding them to a VM. Check counts before allocating, relative to the activation's stack
   base. Enforce frame limits before growing locals or padding missing arguments.
-- Keep snapshot encoding deterministic. Image v1 must reject captured closures
+- Keep snapshot encoding deterministic. Snapshots must reject captured closures
   rather than silently losing environments; cyclic/deep values must fail cleanly.
   Reload must reset globals/arities and code-site profiles/caches. Decode fuzzing
   must not execute arbitrary accepted tapes without full verification.

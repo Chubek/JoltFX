@@ -197,9 +197,14 @@ func (vm *VM) callNamed(name string, args []Value, b Budget) (Value, error) {
 	}
 	// Enum payload constructor `Type::Variant(args)`.
 	if tn, vn, ok := splitVariant(name); ok {
-		if ti, ok := vm.types[tn]; ok && ti.Kind == "enum" {
+		if ti, ok := vm.types[tn]; ok && ti != nil && ti.Kind == "enum" {
 			for _, v := range ti.Variants {
 				if v == vn {
+					if ti.EnumArity != nil {
+						if want, ok := ti.EnumArity[vn]; ok && len(args) != want {
+							return NilValue, vm.fail("variant %q takes %d payload values, got %d", name, want, len(args))
+						}
+					}
 					return Value{K: KEnum, O: &EnumObj{Type: tn, Variant: vn, Payload: args}}, nil
 				}
 			}

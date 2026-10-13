@@ -25,7 +25,7 @@ import (
 
 const (
 	aotMagic   = "IGBC1\x00"
-	aotVersion = 1
+	aotVersion = 2
 )
 
 type aotWriter struct {
@@ -98,7 +98,8 @@ func (vm *VM) Encode() ([]byte, error) {
 	if err := w.writeValueMap(vm.globals); err != nil {
 		return nil, err
 	}
-	// Types: kinds, fields, variants, methods, materialized defaults.
+	// Types: kinds, fields, variants, variant arities (v2), methods,
+	// materialized defaults.
 	w.u64(uint64(len(vm.types)))
 	for _, name := range sortedKeys(vm.types) {
 		ti := vm.types[name]
@@ -109,6 +110,16 @@ func (vm *VM) Encode() ([]byte, error) {
 		}
 		w.strs(fields)
 		w.strs(ti.Variants)
+		// Parallel arity table in variant order; unknown (nil) arities encode
+		// as zero-length with a present flag so v1 payloads stay distinguishable.
+		if ti.EnumArity == nil {
+			w.u64(0)
+		} else {
+			w.u64(uint64(len(ti.Variants)))
+			for _, v := range ti.Variants {
+				w.u64(uint64(ti.EnumArity[v]))
+			}
+		}
 		w.u64(uint64(len(ti.Methods)))
 		for _, k := range sortedKeys(ti.Methods) {
 			v := ti.Methods[k]
@@ -251,7 +262,7 @@ func (w *aotWriter) writeValue(v Value) error {
 	case KClosure:
 		cl := v.O.(*ClosureObj)
 		if len(cl.Up) != 0 {
-			return fmt.Errorf("ingagi: image v1 cannot serialize captured closure %q", cl.Name)
+			return fmt.Errorf("ingagi: image cannot serialize captured closure %q", cl.Name)
 		}
 		w.str(cl.Name)
 	case KBuiltin:
@@ -455,8 +466,12 @@ func Decode(data []byte) (*Decoded, error) {
 	}
 	// The reader starts after the magic so remaining() always means "bytes left".
 	r := &aotReader{b: bytes.NewReader(data[len(aotMagic):])}
-	if v := r.u64(); v != aotVersion {
-		return nil, fmt.Errorf("ingagi: image version %d, want %d", v, aotVersion)
+	version := r.u64()
+	if r.err != nil {
+		return nil, r.err
+	}
+	if version != 1 && version != aotVersion {
+		return nil, fmt.Errorf("ingagi: image version %d, want %d", version, aotVersion)
 	}
 	pool := NewConstPool()
 	nInts, err := r.count(aotMaxItems, "int pool")
@@ -565,6 +580,37 @@ func Decode(data []byte) (*Decoded, error) {
 		if err != nil {
 			return nil, err
 		}
+		// v2 carries a parallel arity table in variant order. v1 images have
+		// no signatures; their arity stays nil (unknown) so old snapshots
+		// still load without false mismatches.
+		var arity map[string]int
+		if version >= 2 {
+			nArity, err := r.count(aotMaxItems, "variant arity")
+			if err != nil {
+				return nil, err
+			}
+			if nArity != 0 && nArity != uint64(len(variants)) {
+				return nil, fmt.Errorf("ingagi: image type %q has %d variants but %d arities", head[0], len(variants), nArity)
+			}
+			if nArity > 0 {
+				arity = make(map[string]int, nArity)
+				for _, v := range variants {
+					a := r.u64()
+					if r.err != nil {
+						return nil, r.err
+					}
+					if a > aotMaxItems {
+						return nil, fmt.Errorf("ingagi: image variant %q arity %d exceeds limit", v, a)
+					}
+					arity[v] = int(a)
+				}
+			} else if head[1] == "enum" {
+				arity = map[string]int{}
+				for _, v := range variants {
+					arity[v] = 0
+				}
+			}
+		}
 		nm, err := r.count(aotMaxItems, "method")
 		if err != nil {
 			return nil, err
@@ -583,7 +629,7 @@ func Decode(data []byte) (*Decoded, error) {
 			}
 			methods[kv[0]] = kv[1]
 		}
-		ti := &TypeInfo{Kind: head[1], Defaults: map[string]Value{}, Methods: methods, Variants: variants}
+		ti := &TypeInfo{Kind: head[1], Defaults: map[string]Value{}, Methods: methods, Variants: variants, EnumArity: arity}
 		for _, f := range fields {
 			ti.Fields = append(ti.Fields, TypeField{Name: f})
 		}

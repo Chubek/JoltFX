@@ -567,7 +567,29 @@ func hMakeEnum(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 		payload[i] = vm.stack.pop()
 	}
 	full := vm.tape.Pool.String(int(in.C))
-	tn, vn, _ := splitVariant(full)
+	tn, vn, ok := splitVariant(full)
+	if !ok || tn == "" || vn == "" {
+		return pc, vm.fail("malformed enum reference %q, want Type::Variant", full)
+	}
+	if ti, exists := vm.types[tn]; !exists || ti == nil || ti.Kind != "enum" {
+		return pc, vm.fail("unknown enum type %q", tn)
+	} else {
+		found := false
+		for _, v := range ti.Variants {
+			if v == vn {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return pc, vm.fail("unknown variant %q", full)
+		}
+		if ti.EnumArity != nil {
+			if want, ok := ti.EnumArity[vn]; ok && len(payload) != want {
+				return pc, vm.fail("variant %q takes %d payload values, got %d", full, want, len(payload))
+			}
+		}
+	}
 	vm.stack.push(Value{K: KEnum, O: &EnumObj{Type: tn, Variant: vn, Payload: payload}})
 	return pc + 1, nil
 }

@@ -1,5 +1,29 @@
 # Progress
 
+## Ingagi opcode verification and enum payload signatures (2026-10-13)
+
+- Finished the two pending validation items from `ingagi/AGENTS.md`. `TypeInfo`
+  now carries `EnumArity` (nil means unknown, as decoded from v1 images),
+  populated from `EnumDecl` payload types. Snapshot format bumped to v2 with a
+  parallel variant-arity table; v1 images still decode with unknown signatures.
+- `runtime/validate.go` adds `verifyOpcodeTypes`: struct/enum/closure/call
+  descriptor operands, enum arities for `MakeEnum` and static `Type::Variant`
+  calls, method-name checks and unused-operand hygiene. `OpBind`/`OpForEachBegin`
+  have dedicated operand kinds (their pipeline/world operands travel on the
+  stack, so C must be 0). Descriptors check signature consistency; `hMakeEnum`
+  and `callNamed` enforce arities at runtime; snapshot values check payload
+  lengths; bare globals are only created for zero-arity variants. CLI `check`
+  now validates the lowered tape, so static mismatches fail without execution.
+- New `runtime/verify_types_test.go` covers compiled signatures, call arities,
+  descriptor references, unused operands, descriptor consistency, snapshot
+  round trips with tampered payloads, and v1 backward compatibility.
+- Verification: standard and CGO-disabled full Go suites pass, `go vet` clean,
+  race checks for runtime/cmd pass, full NovoParse-tagged suite passes via
+  `bash ingagi/scripts/test-native.sh`, and all six standalone CMake/CTest
+  embedding checks pass. `gofmt`/`git diff --check` clean. The C embedding ABI
+  is unchanged (still 1.0.0). GPU execution, wider native types, aggregate C
+  marshalling and automatic scene associations remain future work as documented.
+
 ## Web and Android frontend development (2026-10-13)
 
 - Inspecting the real Emscripten/Android builds, shared editor bridges, editing,

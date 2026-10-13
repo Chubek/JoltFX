@@ -212,11 +212,19 @@ func (vm *VM) LoadModule(m *Module) (err error) {
 		}
 	}
 	// Enum variants become qualified globals (bare names via suffix match).
+	// Payload-carrying variants have no bare value: they must be constructed
+	// with their arguments. When signatures are unknown (nil), keep the
+	// historic behavior of exposing every variant.
 	for name, ti := range m.Types {
 		if ti.Kind != "enum" {
 			continue
 		}
 		for _, v := range ti.Variants {
+			if ti.EnumArity != nil {
+				if want, ok := ti.EnumArity[v]; !ok || want != 0 {
+					continue
+				}
+			}
 			vm.globals[name+"::"+v] = Value{K: KEnum, O: &EnumObj{Type: name, Variant: v}}
 		}
 	}

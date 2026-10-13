@@ -24,7 +24,9 @@ initialization and the entry call, including their nested calls. Zero disables
 the instruction limit. `check` resolves imports and checks scope, statically
 known types, declaration constraints, control flow, constant integer arithmetic,
 ECS queries/system ordering and shader/pipeline references, then checks bytecode
-lowering. Dynamic values and unknown host signatures aren't fully type-verified.
+lowering and validates the lowered tape (pool indices, control-flow targets,
+stack shapes, descriptor references and enum payload arities). Dynamic values
+and unknown host signatures aren't fully type-verified.
 It does not execute the module. `dump` prints
 optimized bytecode. Exit codes are 0 for success, 1 for input/compilation/runtime
 errors, and 2 for CLI usage errors.
@@ -238,22 +240,26 @@ Failed calls unwind execution stacks but do not roll back global/world changes.
 
 ### Bytecode images and reload
 
-`VM.Encode`, `runtime.Decode` and `VM.LoadDecoded` provide an experimental v1
-snapshot format. Decode checks lengths, nested-value depth, record shapes,
+`VM.Encode`, `runtime.Decode` and `VM.LoadDecoded` provide an experimental v2
+snapshot format (v1 images still decode, with unknown enum signatures).
+Decode checks lengths, nested-value depth, record shapes,
 duplicate entry/type/method/global/prefab records and aggregate keys, trailing bytes, operand widths,
 constant indices, opcodes and control-flow targets. A control-flow stack verifier
 checks both conditional edges, stack underflow and consistent join heights for
 every entry and reachable deferred block. Module loads reject these errors before
 replacing the current module. The same gate is applied to modules built in Go.
 Descriptor validation checks type kinds, field/variant names, default-field keys,
-method entries, system hooks, event types and prefab constructors. Snapshot values
-are checked for valid object representations, enum variants and closure entries.
+enum payload signatures, method entries, system hooks, event types and prefab constructors.
+Opcode verification checks struct/enum/closure/call descriptor operands, enum
+payload arities for both `MakeEnum` construction and static `Type::Variant`
+calls, method names and unused-operand hygiene. Snapshot values
+are checked for valid object representations, enum variants and payload lengths,
+and closure entries.
 Loads restore nested builtin and host-callback values by name; required host
 callbacks must be registered before loading. Aggregate storage is copied when
 loading so separate VMs have independent state and callable bindings. Failed
 image validation or callback binding preserves the previously loaded script.
-Values remain dynamically typed; complete opcode-level type verification and
-enum payload signature verification are still pending. Dispatch also rejects
+Values remain dynamically typed; Dispatch also rejects
 operand underflow relative to the current activation, including host-mutated tapes.
 
 Frame-local indices are limited to 65,536 slots; functions may declare up to
@@ -264,9 +270,9 @@ are limited to 65,536 elements, individual strings to 16 MiB, and nested snapsho
 values to 64 levels.
 
 Encoding orders symbol/type/method maps deterministically. It rejects cyclic or
-deeply nested values and captured closures because v1 cannot preserve their
+deeply nested values and captured closures because snapshots cannot preserve their
 environments. Named function closures remain supported. Object alias identity,
-world state and dynamic observer registrations are not preserved by v1.
+world state and dynamic observer registrations are not preserved by snapshots.
 
 Reload replaces globals, arities and optimization profiles/caches while retaining
 host registrations and the injected ECS world. Validation or initializer failure
@@ -336,8 +342,10 @@ uses this gate; its architecture-specific checks remain in the native builder.
    GPU dispatch and renderer adapters remain pending.
   QBE and WASM are implemented scalar native backends; other target descriptors still
   describe planned adapters rather than claiming GPU integration.
-- Bytecode image serialization is experimental. Complete opcode-level type and enum payload verification,
-  comprehensive static analysis, broader native/JIT targets,
+- Bytecode image serialization is experimental (snapshot v2, decodes v1).
+  Opcode-level descriptor verification and enum payload signatures are enforced
+  at load, at snapshot install and at runtime construction; comprehensive static
+  analysis, broader native/JIT targets,
   and aggregate/resource C ABI marshalling remain unfinished. The desktop workspace
   executes source through the scalar ABI; full scene/ECS/render-resource integration
   remains unfinished.

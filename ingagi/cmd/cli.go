@@ -147,12 +147,15 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		if sema.HasErrors(ds) {
 			return 1
 		}
-		_, errs := rt.Compile(f)
+		m, errs := rt.Compile(f)
 		if len(errs) > 0 {
 			for _, err := range errs {
 				fmt.Fprintf(stderr, "%s: %s\n", path, err)
 			}
 			return 1
+		}
+		if err := rt.Validate(m); err != nil {
+			return fail(err)
 		}
 		return 0
 	}
