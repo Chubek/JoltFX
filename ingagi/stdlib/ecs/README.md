@@ -1,5 +1,7 @@
 # Ecs
 
+
+Implemented for the JoltFX 3D tab: `joltfx_scene_ecs.ing` (ECS entity -> scene-object linkage, animation keys, cloners, procedural queries). See `docs/iap.md` and `examples/joltfx_3d_drive.ing`.
 Proposed Ingagi standard-library modules in this subsystem.
 
 ## `std.ecs`

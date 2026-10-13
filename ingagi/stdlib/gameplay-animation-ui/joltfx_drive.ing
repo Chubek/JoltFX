@@ -1,0 +1,48 @@
+// std.animation binding: programmatic animation + cloner drives for the 3D tab.
+// Writes the same key/event stream that `.iap` export serializes, so an
+// Ingagi drive followed by "Export .iap" captures exactly what the script
+// authored. After export, the future .iap player replays the event stream.
+// Host callbacks: engine_scene_set/key/sample/count, engine_scene_cloner.
+
+component SceneObject {
+    object: i64;
+}
+
+// Spin rotation-Y 0 -> 360 degrees over `frames` frames.
+fn anim_spin(object: i64, frames: i64) {
+    engine_scene_key(object, 4, 0, 0.0);
+    engine_scene_key(object, 4, frames, 360.0);
+}
+
+// Bounce position-Y with three keys (up/down/up).
+fn anim_bounce(object: i64, height: f64, mid_frame: i64, end_frame: i64) {
+    engine_scene_key(object, 1, 0, 0.0);
+    engine_scene_key(object, 1, mid_frame, height);
+    engine_scene_key(object, 1, end_frame, 0.0);
+}
+
+// Sample the animated channel back (read-your-writes check for drives).
+fn anim_sample(object: i64, channel: i64, seconds: f64) -> f64 {
+    return engine_scene_sample(object, channel, seconds);
+}
+
+// Radial cloner arrangement used by motion-graphics drives.
+fn anim_radial(object: i64, count: i64, radius: f64) {
+    engine_scene_cloner(object, 2, count, radius);
+}
+
+fn drive() -> i64 {
+    let e = spawn();
+    let object = engine_scene_add(0);
+    add_component(e, "SceneObject", SceneObject { object: object });
+    let link = get_component(e, "SceneObject");
+    anim_spin(link.object, 90);
+    anim_bounce(link.object, 2.0, 45, 90);
+    anim_radial(link.object, 6, 3.0);
+    despawn(e);
+    return engine_scene_count();
+}
+
+fn main() -> i64 {
+    return drive();
+}

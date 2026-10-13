@@ -254,6 +254,7 @@ cmake --build . --target jfx_cli
 - `joltfx nle new/edit/info/render` — create, edit, inspect and export sequences
 - `joltfx compose new/edit/info/render` — typed node graphs, terminal editing and PPM export
 - `joltfx scripts list/run/edit` — sandboxed Lua/mruby/QuickJS/MicroPython/WAMR over the shared Core editor
+- `joltfx iap info/validate/export/import` — pack, inspect and apply 3D animation event streams (`.iap`)
 - `joltfx version`, `joltfx help [COMMAND]`
 
 `DOC.jfx` is the plain-text project format in `core/include/jfx/jfx_project.h`:

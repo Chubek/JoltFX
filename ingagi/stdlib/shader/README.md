@@ -1,5 +1,7 @@
 # Shader
 
+
+Implemented for the JoltFX 3D tab: `joltfx_material.ing` (RGB material + key ramps through `engine_scene_color/key/procedural`). Full GPU lowering stays in `ingagi/shader`.
 Proposed Ingagi standard-library modules in this subsystem.
 
 ## `std.shader`

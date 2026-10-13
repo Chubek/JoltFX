@@ -54,6 +54,25 @@ jfx_result_t jfx_vk_execute_bytecode(jfx_vk_backend_t *backend,
     const float *input_rgba, size_t pixels,
     const float *parameters, size_t parameter_count, float *output_rgba);
 
+/* Offscreen scene rasterizer (backends/vulkan/src/vk_scene.c). Renders
+ * object-space triangle soup with per-draw model/normal matrices through
+ * the embedded vertex/fragment shaders into tightly packed RGBA8 with
+ * y-down rows. `vp` is a column-major view-projection matrix, `sun_xyz` a
+ * normalized world-space light direction. False on any failure (no driver,
+ * no graphics queue, unsupported formats, oversized scenes) with output
+ * untouched; the caller falls back to the CPU rasterizer. */
+typedef struct {
+    const float *vertices;
+    uint32_t vertex_count;
+    float model[16];
+    float nmat[16];
+    float color[4];
+} jvk_scene_draw_t;
+
+bool jvk_scene_render(const jvk_scene_draw_t *draws, uint32_t draw_count,
+    const float vp[16], const float sun_xyz[3], const float clear_rgb[3],
+    uint32_t width, uint32_t height, uint8_t *out_rgba);
+
 #ifdef __cplusplus
 }
 #endif

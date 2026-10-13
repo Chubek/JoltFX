@@ -1,5 +1,7 @@
 # Gameplay Animation Ui
 
+
+Implemented for the JoltFX 3D tab: `joltfx_drive.ing` (spin/bounce/radial drives writing the `.iap` event stream).
 Proposed Ingagi standard-library modules in this subsystem.
 
 ## `std.animation`

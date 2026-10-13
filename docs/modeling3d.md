@@ -60,6 +60,7 @@ scrubbing: a bake produces ordinary editable keys.
 | `third_party/libigl` | Triangle subdivision |
 | `third_party/stb` | PNG frame output through `stb_image_write` |
 | `third_party/glm` | Camera/object quaternions, geometry generators, perspective projection and shading |
+| `third_party/openscenegraph` | Opt-in OSG viewport bridge (`JFX_USE_OSG`, `jfx_osg_viewport.h`): trackball math, adaptive drag resolution, instance culling, wider gimbal picking; see `docs/osg_viewport.md` |
 
 `cmake/Modeling3D.cmake` builds Bullet's LinearMath/Collision/Dynamics and only
 VTK's CommonCore module plus its required dependencies. This VTK revision also
@@ -140,6 +141,7 @@ and `undo`, `redo`, `show`, `save`, `quit` use the normal terminal editor.
 | `3d.cloner_make_real` | A = object, VALUE = snapshot time in seconds; replaces its instances with independently editable objects |
 | `3d.script` | A = object, B = transform channel, TEXT = Joltscript source; empty TEXT removes the driver |
 | `3d.script_file` | A = object, B = transform channel, TEXT = `.jolt` path; embeds the source in the scene |
+| `3d.iap_import` | TEXT = `.iap` pack path; applies its clock/cloners/keys onto the matching objects in one undoable step (see `docs/iap.md`) |
 | `3d.clock` | A = integer FPS 1..240, B = duration in frames 1..36000 |
 
 Transform channels: **0..2 position XYZ**, **3..5 Euler rotation XYZ in degrees**,

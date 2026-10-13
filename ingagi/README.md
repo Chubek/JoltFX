@@ -425,12 +425,27 @@ The scalar host bridge also exposes the shared editor's 3D scene:
 | Callback | Behavior |
 | --- | --- |
 | `engine_scene_count()` | Current object count |
-| `engine_scene_add(primitive)` | Create and return a zero-based object index; 0 cube, 1 sphere, 2 plane, 3 cylinder, 4 cone, 5 torus, 6 capsule |
+| `engine_scene_add(primitive)` | Create and return a zero-based object index; 0 cube, 1 sphere, 2 plane, 3 cylinder, 4 cone, 5 torus, 6 capsule, 7 pyramid, 8 disk, 9 tube, 10 hemisphere, 11 wedge, 12 tetrahedron, 13 octahedron, 14 icosahedron, 15 nurbs, 16 metaball |
 | `engine_scene_remove(object)` | Remove an object; later indices shift |
 | `engine_scene_get(object, channel)` | Read the stored transform channel |
 | `engine_scene_set(object, channel, value)` | Commit an undoable transform edit |
 | `engine_scene_key(object, channel, frame, value)` | Commit a linearly interpolated keyframe |
 | `engine_scene_sample(object, channel, seconds)` | Read the animated transform channel |
+| `engine_scene_cloner(object, mode, count, spacing)` | `3d.cloner` arrangement over source geometry |
+| `engine_scene_cloner_real(object)` | `3d.cloner_make_real` at transport time; returns object count |
+| `engine_scene_procedural(object, field)` | 0 generator, 1 instances, 2 cloner mode, 3 smooth |
+| `engine_scene_color(object, channel, value)` | `3d.color` material channel 0..2 |
+
+The 3D tab adds an **Ingagi drive** runner (loads shared source, calls the
+named entry) and **.iap export/inspect** (`jfx_desktop_frontend_drive_3d`,
+`jfx_desktop_frontend_export_iap`, `jfx_desktop_frontend_iap_info`). The
+script-side library lives in `stdlib/ecs/joltfx_scene_ecs.ing`,
+`stdlib/shader/joltfx_material.ing`,
+`stdlib/gameplay-animation-ui/joltfx_drive.ing` and
+`stdlib/assets-resources/joltfx_iap.ing`, with runnable
+`examples/joltfx_3d_drive.ing` and `examples/joltfx_iap_pack.ing`. The pack
+format is `docs/iap.md` (`IAP1` v1: animation event stream + assets + CRC);
+the player is future work.
 
 Channels 0–2 are position XYZ, 3–5 Euler degrees XYZ, and 6–8 scale XYZ. Indices
 require integers; values/times accept finite integers or floats. Invalid arguments

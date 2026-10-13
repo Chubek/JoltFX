@@ -1,0 +1,64 @@
+// std.ecs binding for the JoltFX 3D Modeling & Animation tab.
+// Implements the `std.ecs.*` workflow against the desktop's shared scene:
+// ECS entities own stable script-side IDs, scene object indices are stored
+// in a `SceneObject` component and refreshed after removal/undo.
+// Host callbacks used: engine_scene_add/remove/get/set/key/sample/count,
+// engine_scene_cloner/cloner_real/procedural/color (desktop API 1.8+3D).
+// Copy this file into the Game Engine workspace or open it via .ing load;
+// the workspace source must stay import-free and under 16 KiB.
+
+component SceneObject {
+    object: i64;
+}
+
+component Drive {
+    channel: i64;
+    v0: f64;
+    v1: f64;
+    start_frame: i64;
+    end_frame: i64;
+}
+
+// Spawn a scene object and track it with stable ECS identity.
+fn ecs_spawn_object(primitive: i64) -> i64 {
+    let e = spawn();
+    let object = engine_scene_add(primitive);
+    add_component(e, "SceneObject", SceneObject { object: object });
+    return e;
+}
+
+// Drive one transform channel from `v0` to `v1` across a frame range by
+// writing linear keys. Callers pick channel 0..8 (0-2 position, 3-5 Euler
+// degrees, 6-8 scale).
+fn ecs_animate(e: i64, channel: i64, v0: f64, v1: f64, start_frame: i64, end_frame: i64) {
+    let link = get_component(e, "SceneObject");
+    add_component(e, "Drive", Drive { channel: channel, v0: v0, v1: v1, start_frame: start_frame, end_frame: end_frame });
+    engine_scene_key(link.object, channel, start_frame, v0);
+    engine_scene_key(link.object, channel, end_frame, v1);
+}
+
+// Arrange clones over source geometry (mode 1 linear, 2 radial, 3 grid).
+fn ecs_cloner(e: i64, mode: i64, count: i64, spacing: f64) {
+    let link = get_component(e, "SceneObject");
+    engine_scene_cloner(link.object, mode, count, spacing);
+}
+
+// Bake clones into real objects at the current transport time.
+fn ecs_cloner_real(e: i64) -> i64 {
+    let link = get_component(e, "SceneObject");
+    return engine_scene_cloner_real(link.object);
+}
+
+// Read shader-relevant state: field 0 generator, 1 instances, 2 mode, 3 smooth.
+fn ecs_procedural(e: i64, field: i64) -> i64 {
+    let link = get_component(e, "SceneObject");
+    return engine_scene_procedural(link.object, field);
+}
+
+fn main() -> i64 {
+    let e = ecs_spawn_object(0);
+    ecs_animate(e, 4, 0.0, 360.0, 0, 90);
+    ecs_cloner(e, 2, 6, 3.0);
+    despawn(e);
+    return engine_scene_count();
+}

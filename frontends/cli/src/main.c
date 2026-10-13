@@ -84,6 +84,7 @@ int main(int argc, char **argv) {
     if (strcmp(command, "nle") == 0) return cmd_nle(rest_argc, rest_argv);
     if (strcmp(command, "compose") == 0) return cmd_compose(rest_argc, rest_argv);
     if (strcmp(command,"3d")==0) return cmd_scene3d(rest_argc,rest_argv);
+    if (strcmp(command,"iap")==0) return cmd_iap(rest_argc,rest_argv);
     if (strcmp(command, "grade") == 0) return cmd_color(rest_argc, rest_argv, 0);
     if (strcmp(command, "calibration") == 0) return cmd_color(rest_argc, rest_argv, 1);
     if (strcmp(command, "nodes") == 0) {

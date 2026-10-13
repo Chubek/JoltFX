@@ -44,6 +44,7 @@ void print_usage(void) {
     printf("  nle render IN.jfx -o PREFIX Render a PPM sequence\n");
     printf("  compose new/edit/info/render Node-based composition editor and PPM export\n");
     printf("  3d new/edit/info/render    3D mesh modeling, keyframe animation and PNG export\n");
+    printf("  iap info/validate/export/import  Ingagi Animation Pack: pack, inspect and apply 3D animation\n");
     printf("\nColor Grading (dedicated section):\n");
     printf("  grade list                 List grading kernels and parameter ranges\n");
     printf("  grade apply KIND IN OUT    Grade an image; append name=value or --lut FILE\n");
@@ -65,7 +66,9 @@ void print_command_help(const char *command) {
         printf("Usage: joltfx 3d new SCENE.jfx\n"
             "       joltfx 3d edit INPUT.jfx OUTPUT.jfx\n"
             "       joltfx 3d info SCENE.jfx\n"
-            "       joltfx 3d render SCENE.jfx OUT.png [SECONDS]\n"
+            "       joltfx 3d render SCENE.jfx OUT.png [SECONDS] [gpu]\n"
+            "The gpu flag renders through the Vulkan offscreen path when a\n"
+            "driver is present, otherwise it reports the fallback.\n"
             "Terminal syntax: OP OBJECT CHANNEL FRAME VALUE TEXT (zero-based indices).\n"
             "Commands: 3d.add/transform/vertex/color/key/key_remove/interpolation,\n"
             "3d.subdivide/align/mass/bake/import_ply/export_ply/name/visible/remove/duplicate,\n"
@@ -74,6 +77,15 @@ void print_command_help(const char *command) {
             "3d.cloner/cloner_make_real/script/script_file/smooth/make_editable; undo, redo, scene3d, show, save.\n"
             "Primitives: cube sphere plane cylinder cone torus capsule pyramid disk nurbs metaball.\n"
             "See docs/modeling3d.md for channel indices, physics and file limits.\n"); return;
+    }
+    if (command && !strcmp(command,"iap")) {
+        printf("Usage: joltfx iap info PACK.iap\n"
+            "       joltfx iap validate PACK.iap\n"
+            "       joltfx iap export SCENE.jfx OUT.iap [ASSET...]\n"
+            "       joltfx iap import IN.jfx PACK.iap OUT.jfx\n"
+            "Packs hold the scene's animation event stream (keys, cloners, clock)\n"
+            "plus packed asset bytes. Import applies the stream onto a scene with\n"
+            "matching objects in one undoable step. See docs/iap.md.\n"); return;
     }
     if (command && !strcmp(command, "scripts")) {
         printf("Usage: joltfx scripts list\n"

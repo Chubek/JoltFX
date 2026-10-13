@@ -55,9 +55,28 @@ bool jvk_load_fns(void *loader, jvk_fns_t *out_fns) {
         "vkDestroyFence",
         "vkWaitForFences",
         "vkDeviceWaitIdle",
+        "vkCreateImage",
+        "vkDestroyImage",
+        "vkGetImageMemoryRequirements",
+        "vkBindImageMemory",
+        "vkCreateImageView",
+        "vkDestroyImageView",
+        "vkCreateRenderPass",
+        "vkDestroyRenderPass",
+        "vkCreateFramebuffer",
+        "vkDestroyFramebuffer",
+        "vkCreateGraphicsPipelines",
+        "vkCmdBeginRenderPass",
+        "vkCmdEndRenderPass",
+        "vkCmdBindVertexBuffers",
+        "vkCmdDraw",
+        "vkCmdCopyImageToBuffer",
+        "vkCmdSetViewport",
+        "vkCmdSetScissor",
+        "vkGetPhysicalDeviceFormatProperties",
     };
     /* Must match the declaration order of jvk_fns_t field by field. */
-    _Static_assert(sizeof(names) / sizeof(*names) == 48,
+    _Static_assert(sizeof(names) / sizeof(*names) == 67,
         "loader table must cover every jvk_fns_t entry");
     if (!loader || !out_fns) {
         return false;

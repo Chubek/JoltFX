@@ -2,8 +2,11 @@
 #include "jfx/jfx_editor.h"
 #include "jfx/jfx_color.h"
 #include "jfx/jfx_export.h"
+#include "jfx/jfx_iap.h"
+#include "jfx/jfx_modeling3d.h"
 #include "jfx/jfx_plugin_sdk.h"
 #include "tilly/allocator.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,9 +120,14 @@ static int positive(const char *text,uint32_t *out) {
 }
 int cmd_scene3d(int argc,char **argv) {
     if (argc>=1 && !strcmp(argv[0],"edit")) return cmd_edit(argc-1,argv+1);
-    if (argc<2) { fprintf(stderr,"usage: joltfx 3d new FILE | info FILE | edit IN OUT | render FILE OUT.png [SECONDS]\n"); return 1; }
+    if (argc<2) { fprintf(stderr,"usage: joltfx 3d new FILE | info FILE | edit IN OUT | render FILE OUT.png [SECONDS] [gpu]\n"); return 1; }
     bool create=!strcmp(argv[0],"new"),info=!strcmp(argv[0],"info"),render=!strcmp(argv[0],"render");
-    if ((!create && !info && !render) || (render?(argc<3 || argc>4):argc!=2)) return 1;
+    if ((!create && !info && !render) || (render?(argc<3 || argc>5):argc!=2)) return 1;
+    bool gpu=false;
+    if (render && argc==5) {
+        if (strcmp(argv[4],"gpu")) return 1;
+        gpu=true;
+    }
     char *buffer=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),JFX_PROJECT_MAX_BYTES+1,_Alignof(max_align_t));
     jfx_editor_t *e=jfx_editor_create(960,540); int code=1; size_t n=0;
     if (!buffer || !e) goto cleanup;
@@ -137,12 +145,66 @@ int cmd_scene3d(int argc,char **argv) {
         if (info) { if (jfx_editor_scene3d_state(e,buffer,JFX_PROJECT_MAX_BYTES)==JFX_SUCCESS) { puts(buffer); code=0; } }
         else {
             double seconds=0;
-            if (argc==4) { char *end=NULL; seconds=strtod(argv[3],&end); if (end==argv[3] || *end || !isfinite(seconds) || seconds<0) goto cleanup; }
-            code=jfx_scene3d_write_png(jfx_editor_scene3d(e),seconds,960,540,argv[2])==JFX_SUCCESS?0:1;
+            if (argc>=4) { char *end=NULL; seconds=strtod(argv[3],&end); if (end==argv[3] || *end || !isfinite(seconds) || seconds<0) goto cleanup; }
+            code=(gpu?jfx_scene3d_write_png_gpu:jfx_scene3d_write_png)(jfx_editor_scene3d(e),seconds,960,540,argv[2])==JFX_SUCCESS?0:1;
+            if (gpu && code) fprintf(stderr,"GPU render unavailable, CPU fallback is the default path\n");
         }
     }
 cleanup:
     tilly_free((tilly_allocator_t *)tilly_default_allocator(),buffer); jfx_editor_destroy(e); return code;
+}
+/* Ingagi Animation Pack: headless export/import/inspect for the 3D tab's
+ * animation event stream. Export packs a scene's keys/cloners plus optional
+ * asset files; import applies a pack onto a scene with matching objects. */
+static int load_scene_doc(const char *path,jfx_editor_t *e,char *buffer) {
+    FILE *file=fopen(path,"rb"); if (!file) { perror(path); return 0; }
+    size_t n=fread(buffer,1,JFX_PROJECT_MAX_BYTES+1,file); bool failed=ferror(file)!=0; fclose(file);
+    char error[256]={0};
+    if (failed || jfx_editor_load(e,buffer,n,error,sizeof(error))!=JFX_SUCCESS || jfx_editor_kind(e)!=JFX_PROJECT_KIND_SCENE3D) {
+        fprintf(stderr,"3D scene rejected: %s\n",error); return 0;
+    }
+    return 1;
+}
+int cmd_iap(int argc,char **argv) {
+    if (argc<1) { fprintf(stderr,"usage: joltfx iap info PACK | validate PACK | export SCENE.jfx OUT.iap [ASSET...] | import IN.jfx PACK OUT.jfx\n"); return 1; }
+    if (!strcmp(argv[0],"info") && argc==2) {
+        uint32_t fps=0,frames=0,objects=0,assets=0; uint64_t bytes=0;
+        if (jfx_iap_info(argv[1],&fps,&frames,&objects,&assets,&bytes)!=JFX_SUCCESS) { fprintf(stderr,"invalid pack: %s\n",argv[1]); return 1; }
+        printf("fps=%"PRIu32" frames=%"PRIu32" objects=%"PRIu32" assets=%"PRIu32" bytes=%"PRIu64"\n",fps,frames,objects,assets,bytes);
+        return 0;
+    }
+    if (!strcmp(argv[0],"validate") && argc==2) {
+        if (jfx_iap_validate(argv[1])!=JFX_SUCCESS) { fprintf(stderr,"invalid pack: %s\n",argv[1]); return 1; }
+        printf("valid: %s\n",argv[1]); return 0;
+    }
+    if (!strcmp(argv[0],"export") && argc>=3) {
+        char *buffer=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),JFX_PROJECT_MAX_BYTES+1,_Alignof(max_align_t));
+        jfx_editor_t *e=jfx_editor_create(960,540); int code=1;
+        size_t nassets=0; const char **assets=NULL;
+        if (!buffer || !e) goto export_cleanup;
+        if (!load_scene_doc(argv[1],e,buffer)) goto export_cleanup;
+        nassets=(size_t)(argc-3);
+        assets=(const char **)argv+3;
+        for (size_t i=0;i<nassets;++i) if (!assets[i][0] || strlen(assets[i])>127) goto export_cleanup;
+        if (nassets>JFX_IAP_MAX_ASSETS) goto export_cleanup;
+        code=jfx_iap_export(jfx_editor_scene3d(e),assets,nassets,argv[2])==JFX_SUCCESS?0:1;
+export_cleanup:
+        tilly_free((tilly_allocator_t *)tilly_default_allocator(),buffer); jfx_editor_destroy(e); return code;
+    }
+    if (!strcmp(argv[0],"import") && argc==4) {
+        char *buffer=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),JFX_PROJECT_MAX_BYTES+1,_Alignof(max_align_t));
+        jfx_editor_t *e=jfx_editor_create(960,540); int code=1; size_t n=0;
+        if (!buffer || !e) goto import_cleanup;
+        if (!load_scene_doc(argv[1],e,buffer)) goto import_cleanup;
+        if (jfx_iap_import(jfx_editor_scene3d(e),argv[2])!=JFX_SUCCESS) { fprintf(stderr,"pack rejected or mismatched: %s\n",argv[2]); goto import_cleanup; }
+        if (jfx_editor_save(e,buffer,JFX_PROJECT_MAX_BYTES,&n)!=JFX_SUCCESS) goto import_cleanup;
+        FILE *file=fopen(argv[3],"wb"); if (!file) { perror(argv[3]); goto import_cleanup; }
+        bool failed=fwrite(buffer,1,n,file)!=n; if (fclose(file)) failed=true; code=failed?1:0;
+import_cleanup:
+        tilly_free((tilly_allocator_t *)tilly_default_allocator(),buffer); jfx_editor_destroy(e); return code;
+    }
+    fprintf(stderr,"usage: joltfx iap info PACK | validate PACK | export SCENE.jfx OUT.iap [ASSET...] | import IN.jfx PACK OUT.jfx\n");
+    return 1;
 }
 int cmd_nle(int argc,char **argv) {
     if (argc<2) { print_command_help("nle"); return 1; }

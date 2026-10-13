@@ -1,5 +1,7 @@
 # Assets Resources
 
+
+Implemented for the JoltFX 3D tab: `joltfx_iap.ing` (minimal packable drive; export via the 3D tab, format in `src/include/jfx/jfx_iap.h`).
 Proposed Ingagi standard-library modules in this subsystem.
 
 ## `std.asset`

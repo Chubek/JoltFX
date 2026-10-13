@@ -52,3 +52,25 @@ with tempfile.TemporaryDirectory(prefix="jfx-3d-") as directory:
     assert [obj["name"] for obj in state["objects"]] == kinds
     run("3d", "render", "primitives.jfx", "primitives.png", "0")
     assert (root / "primitives.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    run("iap", "export", "animated.jfx", "anim.iap")
+    info = run("iap", "info", "anim.iap")
+    assert "objects=1" in info and "assets=0" in info
+    run("iap", "validate", "anim.iap")
+    run("iap", "export", "animated.jfx", "anim-asset.iap", "mesh.ply")
+    assert "assets=1" in run("iap", "info", "anim-asset.iap")
+    run("iap", "validate", "anim-asset.iap")
+    run("iap", "import", "scene.jfx", "anim.iap", "replayed.jfx")
+    state = json.loads(run("3d", "info", "replayed.jfx"))
+    assert len(state["objects"][0]["keys"]) == 2
+    run("3d", "render", "replayed.jfx", "replay0.png", "0")
+    run("3d", "render", "replayed.jfx", "replay1.png", "1")
+    assert (root / "replay0.png").read_bytes() != (root / "replay1.png").read_bytes()
+    (root / "sentinel.jfx").write_text("keep me")
+    run("iap", "import", "primitives.jfx", "anim.iap", "sentinel.jfx", success=False)
+    assert (root / "sentinel.jfx").read_text() == "keep me"
+    blob = bytearray((root / "anim.iap").read_bytes())
+    blob[-1] ^= 0xFF
+    (root / "corrupt.iap").write_bytes(bytes(blob))
+    run("iap", "validate", "corrupt.iap", success=False)
+    run("iap", "import", "scene.jfx", "corrupt.iap", "sentinel.jfx", success=False)
+    assert (root / "sentinel.jfx").read_text() == "keep me"

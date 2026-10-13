@@ -4,6 +4,32 @@ struct RenderVertex { glm::vec3 position,normal; };
 glm::vec3 unit_normal(const glm::vec3 &n) {
     float length=glm::length(n); return length>1e-20f?n/length:glm::vec3(0,1,0);
 }
+/* Shared by the CPU rasterizer and the Vulkan offload: lazily builds the
+ * immutable per-corner normal cache (smooth with crease preservation,
+ * metaball-aware), shared across candidate documents. */
+void ensure_normals(const Object &o) {
+    if (o.normals) return;
+    tilly::vector<glm::vec3> face_normals(o.triangles.size());
+    tilly::vector<tilly::vector<uint32_t>> adjacent(o.vertices.size());
+    for (uint32_t i=0;i<o.triangles.size();++i) {
+        auto &f=o.triangles[i]; face_normals[i]=glm::cross(gvec(o.vertices[f[1]])-gvec(o.vertices[f[0]]),gvec(o.vertices[f[2]])-gvec(o.vertices[f[0]]));
+        if (o.smooth) for (auto v:f) adjacent[v].push_back(i);
+    }
+    auto cached=std::allocate_shared<Object::Normals>(tilly::allocator<Object::Normals>{},o.triangles.size());
+    auto &normals=*cached;
+    for (size_t i=0;i<o.triangles.size();++i) for (unsigned j=0;j<3;++j) {
+        auto vertex=o.triangles[i][j]; auto n=face_normals[i];
+        if (o.smooth) {
+            if (o.generator==2) n=ball_normal(o,gvec(o.vertices[vertex]));
+            else {
+                n=glm::vec3(0); auto base=unit_normal(face_normals[i]);
+                for (auto face:adjacent[vertex]) if (glm::dot(base,unit_normal(face_normals[face]))>.65f) n+=face_normals[face];
+            }
+        }
+        normals[i][j]=unit_normal(n);
+    }
+    o.normals=std::move(cached);
+}
 jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_t h,uint8_t *out) {
     uint32_t sw=w*2,sh=h*2;
     tilly::vector<uint8_t> pixels(size_t(sw)*sh*4);
@@ -13,28 +39,7 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
     glm::quat view=glm::conjugate(d.orientation); float focal=float(sh)*.5f/std::tan(glm::radians(c[6])*.5f);
     glm::vec3 sun=glm::normalize(glm::vec3(.4f,.8f,.3f));
     for (auto &o:d.objects) if (o.visible) {
-        if (!o.normals) {
-        tilly::vector<glm::vec3> face_normals(o.triangles.size());
-        tilly::vector<tilly::vector<uint32_t>> adjacent(o.vertices.size());
-        for (uint32_t i=0;i<o.triangles.size();++i) {
-            auto &f=o.triangles[i]; face_normals[i]=glm::cross(gvec(o.vertices[f[1]])-gvec(o.vertices[f[0]]),gvec(o.vertices[f[2]])-gvec(o.vertices[f[0]]));
-            if (o.smooth) for (auto v:f) adjacent[v].push_back(i);
-        }
-        auto cached=std::allocate_shared<Object::Normals>(tilly::allocator<Object::Normals>{},o.triangles.size());
-        auto &normals=*cached;
-        for (size_t i=0;i<o.triangles.size();++i) for (unsigned j=0;j<3;++j) {
-            auto vertex=o.triangles[i][j]; auto n=face_normals[i];
-            if (o.smooth) {
-                if (o.generator==2) n=ball_normal(o,gvec(o.vertices[vertex]));
-                else {
-                    n=glm::vec3(0); auto base=unit_normal(face_normals[i]);
-                    for (auto face:adjacent[vertex]) if (glm::dot(base,unit_normal(face_normals[face]))>.65f) n+=face_normals[face];
-                }
-            }
-            normals[i][j]=unit_normal(n);
-        }
-        o.normals=std::move(cached);
-        }
+        ensure_normals(o);
         const auto &normals=*o.normals;
         for (uint32_t instance=0;instance<o.instances;++instance) {
             Transform t=sample_instance(o,instance,seconds,d.fps);

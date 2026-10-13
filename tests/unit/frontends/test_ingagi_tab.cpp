@@ -81,6 +81,36 @@ int main(int argc, char **argv) {
         assert(jfx_desktop_frontend_game_call(f, "count") == JFX_SUCCESS);
         assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "1"));
         assert(jfx_desktop_frontend_draw(f) == JFX_SUCCESS);
+        // 3D-tab Ingagi extensions: cloner, procedural/shader state, material.
+        assert(jfx_desktop_frontend_edit(f, "3d.new", 0, 0, 0, 0, "") == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_set_source(f,
+            "fn drive() { let id = engine_scene_add(0); engine_scene_cloner(id, 2, 6, 3.0); "
+            "engine_scene_color(id, 0, 0.5); return engine_scene_procedural(id, 1); } "
+            "fn real() { return engine_scene_cloner_real(0); } "
+            "fn bad_cloner() { engine_scene_cloner(0, 9, 1, 1.0); return 0; } "
+            "fn bad_color() { engine_scene_color(0, 5, 0.5); return 0; }") == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_load(f) == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_call(f, "drive") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "6"));
+        assert(jfx_desktop_frontend_game_call(f, "real") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "6"));
+        for (const char *entry : {"bad_cloner", "bad_color"}) {
+            assert(jfx_desktop_frontend_game_call(f, entry) != JFX_SUCCESS);
+            assert(jfx_desktop_frontend_game_error(f)[0]);
+        }
+        // Drive + .iap export share the scene document.
+        assert(jfx_desktop_frontend_drive_3d(f, "drive") == JFX_SUCCESS);
+        {
+            char iap_path[256];
+            std::snprintf(iap_path, sizeof(iap_path), "%s.iap", argv[1]);
+            assert(jfx_desktop_frontend_export_iap(f, iap_path, nullptr, 0) == JFX_SUCCESS);
+            uint32_t fps = 0, frames = 0, objects = 0, assets = 0;
+            assert(jfx_desktop_frontend_iap_info(iap_path, &fps, &frames, &objects, &assets) == JFX_SUCCESS);
+            assert(objects >= 1 && assets == 0 && fps >= 1);
+            assert(!std::remove(iap_path));
+            assert(jfx_desktop_frontend_export_iap(nullptr, iap_path, nullptr, 0) != JFX_SUCCESS);
+            assert(jfx_desktop_frontend_iap_info(nullptr, nullptr, nullptr, nullptr, nullptr) != JFX_SUCCESS);
+        }
         assert(jfx_desktop_frontend_game_set_source(f,
             "component SceneObject { object: i64; } "
             "fn main() { let e = spawn(); "

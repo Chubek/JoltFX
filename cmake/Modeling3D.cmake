@@ -74,9 +74,54 @@ endforeach()
 set(CMAKE_CXX_FLAGS_DEBUG "${jfx_saved_cxx_debug_flags}")
 target_link_libraries(BulletCollision PUBLIC LinearMath)
 target_link_libraries(BulletDynamics PUBLIC BulletCollision LinearMath)
-target_sources(jfx_core PRIVATE src/modeling3d.cpp)
+target_sources(jfx_core PRIVATE src/modeling3d.cpp src/osg_viewport.cpp src/iap.cpp)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(src/modeling3d.cpp PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-g1>")
+endif()
+# OpenSceneGraph blend (opt-in). The bridge compiles against GLM by default.
+# With JFX_USE_OSG=ON the vendored OSG 3.7.0 core library is configured and
+# built in isolation (ExternalProject, so its `uninstall` target and old
+# CMake floor never collide with this build) and jfx_core links the real
+# libosg: the trackball then runs osg::Quat and jfx_osg_have_osg() reports
+# 1. Only the `osg` (+ OpenThreads) core targets are ever built: no viewers,
+# plugins or applications. Costs nothing when OFF.
+option(JFX_USE_OSG "Blend third_party/openscenegraph headers into the 3D viewport bridge" OFF)
+if(JFX_USE_OSG)
+    include(ExternalProject)
+    cmake_host_system_information(RESULT jfx_osg_jobs QUERY NUMBER_OF_LOGICAL_CORES)
+    ExternalProject_Add(jfx_osg_vendored
+        SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/openscenegraph"
+        BINARY_DIR "${PROJECT_BINARY_DIR}/third_party/osg-vendored"
+        INSTALL_DIR "${PROJECT_BINARY_DIR}/third_party/osg-vendored/install"
+        CMAKE_ARGS
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+            -DCMAKE_BUILD_TYPE=Release
+            -DBUILD_OSG_APPLICATIONS=OFF
+            -DBUILD_OSG_EXAMPLES=OFF
+            -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>
+            --target osg OpenThreads --config Release -j ${jfx_osg_jobs}
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS
+            "<BINARY_DIR>/lib/libosg.so"
+            "<BINARY_DIR>/lib/libOpenThreads.so"
+        EXCLUDE_FROM_ALL
+    )
+    add_library(jfx_osg_core SHARED IMPORTED GLOBAL)
+    set_target_properties(jfx_osg_core PROPERTIES
+        IMPORTED_LOCATION
+            "${PROJECT_BINARY_DIR}/third_party/osg-vendored/lib/libosg.so"
+        INTERFACE_INCLUDE_DIRECTORIES
+            "${PROJECT_SOURCE_DIR}/third_party/openscenegraph/include;${PROJECT_BINARY_DIR}/third_party/osg-vendored/include")
+    add_dependencies(jfx_osg_core jfx_osg_vendored)
+    target_include_directories(jfx_core SYSTEM PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/openscenegraph/include"
+        "${PROJECT_BINARY_DIR}/third_party/osg-vendored/include")
+    target_link_libraries(jfx_core PRIVATE jfx_osg_core)
+    target_compile_definitions(jfx_core PUBLIC JFX_HAVE_OSG=1)
+    message(STATUS "3D viewport: OpenSceneGraph libosg enabled (JFX_HAVE_OSG)")
+else()
+    message(STATUS "3D viewport: OpenSceneGraph fallback (GLM trackball, no OSG link)")
 endif()
 target_include_directories(jfx_core SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/third_party/glm"
@@ -85,6 +130,12 @@ target_include_directories(jfx_core SYSTEM PRIVATE
     "${BULLET_PHYSICS_SOURCE_DIR}/src"
     "${PROJECT_SOURCE_DIR}/third_party/libigl/include"
     "${PROJECT_SOURCE_DIR}/third_party/tinyply/source")
+# The Vulkan offscreen scene renderer (jfx_scene3d_render_gpu) calls the
+# backend directly; the header is only visible when that backend is built.
+if(JFX_BACKEND_VULKAN)
+    target_include_directories(jfx_core PRIVATE
+        "${PROJECT_SOURCE_DIR}/backends/vulkan/include")
+endif()
 # CGAL's checkout is split into packages, each with its own include directory.
 file(GLOB cgal_packages "${PROJECT_SOURCE_DIR}/third_party/cgal/*/include")
 target_include_directories(jfx_core SYSTEM PRIVATE ${cgal_packages})

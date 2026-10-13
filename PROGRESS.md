@@ -1,5 +1,148 @@
 # Progress
 
+## Remaining work: GPU viewport + real libosg link (2026-10-13)
+
+- Vulkan offscreen mesh renderer (`backends/vulkan/src/vk_scene.c`,
+  `jvk_scene_render` in `vk_backend.h`): transient device, offscreen
+  `R8G8B8A8` + `D32` images, one graphics pipeline from GLSL compiled
+  offline (`vk_scene.vert/frag` → embedded SPIR-V in
+  `vk_scene_shaders.h`, `spirv-val` clean), per-draw UBOs, fence-waited
+  submit, host readback. Graphics ABI subset appended to `vk_minimal.h`
+  (verified value by value; one wrong constant,
+  `DEPTH_STENCIL_ATTACHMENT_BIT`, was caught by the fail-closed format
+  check) with the `vk_loader.c` table extended 48→67 in matching order.
+  Staging caps (4096 draws, ~1M verts) fail closed to the CPU path.
+- Core integration (`src/src/modeling3d.cpp`, Modeling API 1.3):
+  `jfx_scene3d_render_gpu` / `jfx_scene3d_write_png_gpu` flatten visible
+  instances to object-space triangles with model/normal matrices and a
+  y-down VP sharing the CPU camera/focal/0.05-near. Debugging caught a
+  transposed view matrix (empty frame, no Vulkan error); fixed and verified.
+  CLI `3d render ... gpu` plus a desktop "GPU viewport (Vulkan)" checkbox
+  (default off, per-frame CPU fallback with status note).
+- Real `libosg`: vendored OSG 3.7.0 configures (with
+  `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`) and its `osg` core target builds
+  clean under GCC 16. `JFX_USE_OSG=ON` builds it isolated via
+  `ExternalProject` (the `add_subdirectory` attempt collides on the
+  `uninstall` target with VTK; vendored tree is git-ignored so it stays
+  unpatched) and links it into `jfx_core`. Differential testing then caught
+  a genuine composition-order divergence (OSG multiplies reversed vs GLM):
+  fixed, and locked with reference constants both builds must satisfy.
+  Verified in-tree: `have_osg=1` passes; default OFF tree restored after.
+- Verification: `ctest` 10/10 (incl. new `test_vulkan_scene`: RX 580/RADV
+  coverage 0.205 vs 0.203, diff fraction 0.006, on-device), manual CLI GPU
+  PNG comparison, Go `iap`/`native_extension_api` suites, `git diff --check`
+  clean, zero new warnings. Remaining future work: `osgViewer` embedding
+  (needs a display; none here), pooled GPU device for sustained desktop
+  framerates, MSAA/instancing in the offload path.
+
+## .iap player loop: import/apply + headless CLI (2026-10-13)
+
+- Closed the `.iap` player loop with `jfx_iap_import` (`jfx_iap.h`) plus a
+  `3d.iap_import` scene command: validates the pack, requires matching
+  object counts, and replaces clock/cloner layouts/key streams per object
+  index on the `next` candidate, so failures leave the document and history
+  untouched and success commits exactly one undoable step. Meshes, base
+  transforms, materials and Joltscript drivers stay in place; names are
+  informational. Decoder is shared via private `src/src/iap_decode.h`
+  (asset payloads walked, not copied); `iap.cpp` now reuses it for
+  info/validate.
+- Headless pipeline: `joltfx iap info|validate PACK`,
+  `iap export SCENE.jfx OUT.iap [ASSET...]`,
+  `iap import IN.jfx PACK OUT.jfx` (`editor_commands.c`, `main.c`,
+  `commands.h`, help text, `frontends/AGENTS.md`). 3D tab gained an
+  "Import .iap" button next to Export.
+- Made `JFX_USE_OSG=ON` safe: vendored OSG ships no generated `osg/Config`,
+  so the option now warns and stays on the GLM fallback instead of breaking
+  the build; documented in `docs/osg_viewport.md`. Full `libosg` linkage
+  remains future work.
+- Local build note: cache had `JFX_ANDROID_JNI_HOST_TESTS=ON` pointing at a
+  wiped `/tmp` JDK with no system Java; reconfigured with the upstream
+  default `OFF` (that test cannot run here).
+- Verification: `test_iap` import round trips (exact sample equality across
+  scenes, count/CRC/missing failures touch nothing, undo/redo granularity),
+  `ctest -R "osg_viewport|^iap$|ingagi_tab|modeling3d"` 8/8 including the
+  extended `modeling3d_cli` headless pack round trip, manual CLI end to end
+  (`new` → keyed spin/cloner → export → import → renders at t=0/1.5
+  differ), Go `iap` suite passes, `git diff --check` clean.
+
+## OSG/Ingagi/.iap second pass (2026-10-13)
+
+- Wired the OSG bridge into the production orbit path: `3d.orbit` /
+  `3d.orbit_axis` in `src/src/modeling3d.cpp` now route through
+  `jfx_osg_trackball_orbit` / `jfx_osg_axis_orbit`, with the legacy inline
+  form as fallback for out-of-range gestures (identical semantics, so every
+  frontend shares the bridge math). Fixed `M_PI` portability in
+  `src/src/osg_viewport.cpp` (local `kPi`) and normalized-input validation
+  in `jfx_osg_axis_orbit`.
+- Viewport feel: hovered gimbal ring redraws thicker/brighter in a second
+  pass (the old "hovered draws thicker" comment was dead code), and
+  per-frame drag deltas clamp to 10px (≈4°/axis) so fast flicks stay smooth.
+- Hardened `.iap`: locale-independent `key` line parser (no `sscanf`),
+  cleaned redundant CRC read, two-object round trip in `test_iap`, Go
+  `Encode` mirroring the Core writer (`math.Float32frombits` cleanup) with
+  round-trip + corruption/ordering/clock/name rejection tests, and
+  `ingagi/native_extension_api/joltfx_3d_test.go` executing all six shipped
+  drives against a stub scene.
+- Extended `engine_scene_add` to the full 17-primitive catalog
+  (cube…metaball) with matching `ingagi/README.md` table; fixed the two
+  pre-existing reconfigure breaks (`sdk/`, `jfx_add_plugin` guards).
+- Verification: fresh `cmake` reconfigure succeeds; `test_osg_viewport`,
+  `test_iap`, `test_modeling3d`, extended `test_ingagi_tab` all pass, and
+  `ctest -R "osg_viewport|^iap$|ingagi_tab|modeling3d"` is 8/8 (includes UI,
+  frontend-conformance and CLI suites, so the orbit change is regression
+  free). Go `iap` + `native_extension_api` suites pass; all six `.ing`
+  drives parse clean; `git diff --check` clean. Remaining future work: full
+  `osgViewer` embedding, GPU shader linkage in the viewport, `.iap` player.
+
+## OSG viewport blend + Ingagi 3D drive + .iap pack (2026-10-13)
+
+- Blended `third_party/openscenegraph` into the 3D Modeling & Animation tab
+  through a new opt-in bridge (`src/include/jfx/jfx_osg_viewport.h`,
+  `src/src/osg_viewport.cpp`, API 1.0, `cmake/Modeling3D.cmake` `JFX_USE_OSG=OFF`
+  default). Without OSG it runs an identical GLM fallback; with
+  `-DJFX_USE_OSG=ON` it uses vendored `osg::Quat`/`osg::Vec3` math (no
+  osgViewer link, so preview/export stay deterministic). The bridge adds
+  OSG-style trackball/axis orbits, velocity damping, half-res drags via
+  `jfx_osg_preview_size`, sphere/frustum cloner culling and a 14px gimbal
+  pick radius. `modeling3d_panel.inc` now renders half-res while
+  `scene_navigation` is true (quarters the 4x-supersampled CPU work per
+  drag event, the main slow/jagged fix), shows
+  `Viewport WxH | OSG headers/fallback`, and keeps camera-only history
+  grouping. See `docs/osg_viewport.md`; `test_osg_viewport` covers math,
+  damping, adaptive sizes, culling and pick radius.
+- Wired Ingagi into the 3D tab for ECS/shader/animation/cloner work. Desktop
+  adds four scalar host callbacks through shared editor history
+  (`engine_scene_cloner/cloner_real/procedural/color`), a 3D-tab
+  "Ingagi drive" runner (`jfx_desktop_frontend_drive_3d`) and `.iap`
+  export/inspect (`jfx_desktop_frontend_export_iap/iAP_info`). New script
+  library in `ingagi/stdlib` (`ecs/joltfx_scene_ecs.ing`,
+  `shader/joltfx_material.ing`, `gameplay-animation-ui/joltfx_drive.ing`,
+  `assets-resources/joltfx_iap.ing`) plus runnable
+  `ingagi/examples/joltfx_3d_drive.ing` and `joltfx_iap_pack.ing`; all parse
+  (only expected undefined-host-function diagnostics, same as
+  `game_scene.ing`). `test_ingagi_tab.cpp` extended for cloner/procedural/
+  color/drive/export/info paths.
+- Implemented Ingagi Animation Pack (`.iap`, v1) for the animation event
+  stream plus packed assets: Core `src/include/jfx/jfx_iap.h` +
+  `src/src/iap.cpp` (validated export, atomic replace, CRC32, bounds mirror
+  `jfx_modeling3d.h`; `test_iap` covers export/validate/corrupt-CRC/assets),
+  Go mirror `ingagi/iap` for tooling/future player (`Decode/Load/Summary`
+  with identical checks), format doc `docs/iap.md`, 3D-tab Export/Inspect UI
+  and `docs/modeling3d.md` library row. C++→Go interop verified on a real
+  pack (fps/frames/objects/keys round-trip).
+- Also fixed two pre-existing build breaks that blocked reconfigure:
+  root `CMakeLists.txt` guards missing `sdk/`, and `tests/unit` guards
+  `jfx_add_plugin` (removed with `sdk/` in eb4adec).
+- Verification: `test_osg_viewport` passes standalone; `test_iap` passes
+  linked against the existing `build/bin/libjfx_core.a` vendor set;
+  C++→Go `.iap` interop passes; desktop frontend syntax-checks;
+  `ingagi` full Go suite passes; `go vet`/`gofmt`/`git diff --check` clean;
+  prebuilt `test_modeling3d` and `test_ingagi_tab` still pass. Full CMake
+  rebuild and updated `test_ingagi_tab` execution remain for CI (local
+  `build/` is a stale copy from `/home/chubak-edsac/joltfx` and still
+  configures that path). No `.iap` player yet, no `osgViewer` embedding,
+  no GPU shader linkage in the viewport — all documented as future work.
+
 ## Ingagi opcode verification and enum payload signatures (2026-10-13)
 
 - Finished the two pending validation items from `ingagi/AGENTS.md`. `TypeInfo`

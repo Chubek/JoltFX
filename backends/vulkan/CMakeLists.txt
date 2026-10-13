@@ -9,6 +9,7 @@ add_library(jfx_backend_vulkan STATIC
     src/vulkan_backend.c
     src/vk_loader.c
     src/vk_compute.c
+    src/vk_scene.c
 )
 
 target_include_directories(jfx_backend_vulkan PUBLIC

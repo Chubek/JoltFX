@@ -1,0 +1,23 @@
+// .iap pack example: the smallest animation that exercises the event stream.
+// Drive this, then use the 3D tab "Export .iap" to write animation.iap.
+// Inspect with jfx_iap_info/validate or the ingagi/iap Go package.
+
+component SceneObject {
+    object: i64;
+}
+
+fn drive() -> i64 {
+    let e = spawn();
+    let object = engine_scene_add(0);
+    add_component(e, "SceneObject", SceneObject { object: object });
+    let link = get_component(e, "SceneObject");
+    engine_scene_key(link.object, 4, 0, 0.0);
+    engine_scene_key(link.object, 4, 90, 360.0);
+    engine_scene_cloner(link.object, 2, 6, 3.0);
+    despawn(e);
+    return engine_scene_count();
+}
+
+fn main() -> i64 {
+    return drive();
+}

@@ -74,6 +74,20 @@ jfx_result_t jfx_desktop_frontend_game_call(jfx_desktop_frontend_t *frontend, co
 const char *jfx_desktop_frontend_game_output(const jfx_desktop_frontend_t *frontend);
 const char *jfx_desktop_frontend_game_error(const jfx_desktop_frontend_t *frontend);
 
+/* 3D-tab Ingagi drive + Ingagi Animation Pack (.iap) export.
+ * `drive_3d` loads the shared game source and calls `entry` (e.g. "drive")
+ * so Ingagi scripts can programmatically animate, clone, shade and manage
+ * ECS-linked scene objects. `export_iap` serializes the current scene's
+ * animation event stream plus packed asset bytes; `iap_info` inspects a pack
+ * without loading a scene. See docs/iap.md and ingagi/stdlib/joltfx_3d. */
+jfx_result_t jfx_desktop_frontend_drive_3d(jfx_desktop_frontend_t *frontend,
+    const char *entry);
+jfx_result_t jfx_desktop_frontend_export_iap(jfx_desktop_frontend_t *frontend,
+    const char *path, const char *const *asset_paths, size_t asset_count);
+jfx_result_t jfx_desktop_frontend_iap_info(const char *path,
+    uint32_t *out_fps, uint32_t *out_frames, uint32_t *out_objects,
+    uint32_t *out_assets);
+
 jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *frontend,
     jfx_desktop_workspace_t workspace);
 jfx_desktop_workspace_t jfx_desktop_frontend_workspace(const jfx_desktop_frontend_t *frontend);

@@ -28,6 +28,8 @@
 #ifdef JFX_DESKTOP_HAVE_INGAGI
 #include "Ingagi-Module.h"
 #endif
+#include "jfx/jfx_osg_viewport.h"
+#include "jfx/jfx_iap.h"
 #include "animation_drawing.h"
 #include <new>
 #include "imgui.h"
@@ -200,6 +202,7 @@ struct jfx_desktop_frontend {
     int scene_clone_mode,scene_clone_count;
     float scene_clone_spacing;
     bool scene_navigation;
+    bool scene_gpu;
     char scene_script[4097];
     char scene_script_path[512];
     char scene_mesh_path[512],scene_png_path[512];
@@ -297,6 +300,9 @@ struct jfx_desktop_frontend {
     char game_error[4096];
     char game_output[128];
     char game_entry[256];
+    /* 3D-tab Ingagi drive + .iap export. Bounded paths; owned by frontend. */
+    char iap_path[512];
+    char drive_entry[256];
 
     /* Preview buffers. Allocated once at the preview resolution and reused
      * every frame so playback does not churn the allocator. */
@@ -405,6 +411,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
         "// Ingagi game logic. engine_time() reads the shared transport clock.\n"
         "fn main() { return 42; }\n");
     std::snprintf(frontend->game_entry, sizeof(frontend->game_entry), "main");
+    std::snprintf(frontend->drive_entry, sizeof(frontend->drive_entry), "drive");
+    std::snprintf(frontend->iap_path, sizeof(frontend->iap_path), "animation.iap");
     frontend->scene_bake_frames=60;
     frontend->scene_segments=64;
     frontend->scene_clone_count=5;
@@ -1514,9 +1522,12 @@ static ingagi_status game_scene_add(void *userdata, const ingagi_value *args, ui
     ingagi_value *result, char *error, size_t capacity) {
     if (!userdata || !result || !args || argc != 1) return INGAGI_INVALID_ARGUMENT;
     uint32_t primitive;
-    const char *primitives[] = {"cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule"};
-    if (!game_scene_index(args[0], primitive) || primitive >= sizeof(primitives) / sizeof(primitives[0]))
-        return game_scene_error(error, capacity, "engine_scene_add expects a primitive index from 0 to 6");
+    static const char *primitives[] = {"cube", "sphere", "plane", "cylinder", "cone", "torus", "capsule",
+        "pyramid", "disk", "tube", "hemisphere", "wedge", "tetrahedron", "octahedron", "icosahedron",
+        "nurbs", "metaball"};
+    static const uint32_t primitive_count = uint32_t(sizeof(primitives) / sizeof(primitives[0]));
+    if (!game_scene_index(args[0], primitive) || primitive >= primitive_count)
+        return game_scene_error(error, capacity, "engine_scene_add expects a primitive index from 0 to 16");
     auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
     auto status = jfx_desktop_frontend_edit(f, "3d.add", 32, 0, 0, 0, primitives[primitive]);
     if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
@@ -1582,6 +1593,78 @@ static ingagi_status game_scene_write(void *userdata, const ingagi_value *args, 
     *result = {};
     return INGAGI_OK;
 }
+
+/* Ingagi 3D-tab extensions: cloner, procedural/shader metadata and color.
+ * All go through the shared editor so history, validation and rendering stay
+ * identical to hand edits. Scalar-only ABI: no strings cross the boundary. */
+static ingagi_status game_scene_cloner(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || argc != 4) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object, mode, count;
+    double spacing;
+    if (!game_scene_index(args[0], object) || !game_scene_index(args[1], mode) || mode > 3 ||
+        !game_scene_index(args[2], count) || count < 1 || count > 64 ||
+        !game_scene_number(args[3], spacing) || spacing < 0.01 || spacing > 1000.0)
+        return game_scene_error(error, capacity, "engine_scene_cloner expects (object, mode 0..3, count 1..64, spacing)");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto status = jfx_desktop_frontend_edit(f, "3d.cloner", object, mode, count, spacing, "");
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_cloner_make_real(void *userdata, const ingagi_value *args,
+    uint32_t argc, ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || argc != 1) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object;
+    if (!game_scene_index(args[0], object))
+        return game_scene_error(error, capacity, "engine_scene_cloner_real expects (object)");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto status = jfx_desktop_frontend_edit(f, "3d.cloner_make_real", object, 0, 0,
+        static_cast<jfx_desktop_frontend_t *>(userdata)->time_seconds, "");
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    result->kind = INGAGI_INT;
+    result->integer = jfx_scene3d_object_count(jfx_editor_scene3d(f->editor));
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_procedural(void *userdata, const ingagi_value *args,
+    uint32_t argc, ingagi_value *result, char *error, size_t capacity) {
+    /* engine_scene_procedural(object, field): field 0 generator, 1 instances,
+     * 2 cloner_mode, 3 smooth. Exposes shader-relevant state to scripts. */
+    if (!userdata || !result || !args || argc != 2) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object, field;
+    if (!game_scene_index(args[0], object) || !game_scene_index(args[1], field) || field > 3)
+        return game_scene_error(error, capacity, "engine_scene_procedural expects (object, field 0..3)");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    jfx_procedural3d_info_t info{};
+    info.size = sizeof(info);
+    if (jfx_scene3d_procedural_info(jfx_editor_scene3d(f->editor), object, &info) != JFX_SUCCESS)
+        return game_scene_error(error, capacity, "invalid scene object index");
+    *result = {};
+    result->kind = INGAGI_INT;
+    result->integer = field == 0 ? int64_t(info.generator) : field == 1 ? int64_t(info.instances)
+        : field == 2 ? int64_t(info.cloner_mode) : int64_t(info.smooth ? 1 : 0);
+    return INGAGI_OK;
+}
+
+static ingagi_status game_scene_color(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    /* engine_scene_color(object, channel, value): channel 0..2, value 0..1.
+     * Gives Ingagi shader/material control without string parameters. */
+    if (!userdata || !result || !args || argc != 3) return INGAGI_INVALID_ARGUMENT;
+    uint32_t object, channel;
+    double value;
+    if (!game_scene_index(args[0], object) || !game_scene_index(args[1], channel) || channel > 2 ||
+        !game_scene_number(args[2], value) || value < 0.0 || value > 1.0)
+        return game_scene_error(error, capacity, "engine_scene_color expects (object, channel 0..2, value 0..1)");
+    auto *f = static_cast<jfx_desktop_frontend_t *>(userdata);
+    auto status = jfx_desktop_frontend_edit(f, "3d.color", object, channel, 0, value, "");
+    if (status != JFX_SUCCESS) return game_scene_error(error, capacity, jfx_result_to_string(status));
+    *result = {};
+    return INGAGI_OK;
+}
 #endif
 
 extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f) {
@@ -1599,7 +1682,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f
             {"engine_scene_get", 16, 2, 0, game_scene_read, f},
             {"engine_scene_sample", 19, 3, 0, game_scene_read, f},
             {"engine_scene_set", 16, 3, 0, game_scene_write, f},
-            {"engine_scene_key", 16, 4, 0, game_scene_write, f}
+            {"engine_scene_key", 16, 4, 0, game_scene_write, f},
+            {"engine_scene_cloner", 19, 4, 0, game_scene_cloner, f},
+            {"engine_scene_cloner_real", 24, 1, 0, game_scene_cloner_make_real, f},
+            {"engine_scene_procedural", 23, 2, 0, game_scene_procedural, f},
+            {"engine_scene_color", 18, 3, 0, game_scene_color, f}
         };
         const ingagi_module module = {INGAGI_ABI_VERSION, uint32_t(sizeof(functions) / sizeof(functions[0])), functions};
         status = ingagi_register_module(f->game_session, &module, f->game_error, sizeof(f->game_error));
@@ -1646,6 +1733,34 @@ extern "C" const char *jfx_desktop_frontend_game_output(const jfx_desktop_fronte
 }
 extern "C" const char *jfx_desktop_frontend_game_error(const jfx_desktop_frontend_t *f) {
     return f ? f->game_error : "";
+}
+/* 3D-tab Ingagi drive + .iap export. Drive loads the shared game source and
+ * calls the named entry (default "drive"); export serializes the current
+ * scene's animation event stream plus optional asset paths into .iap. */
+extern "C" jfx_result_t jfx_desktop_frontend_drive_3d(jfx_desktop_frontend_t *f,
+    const char *entry) {
+    if (!f || !entry || !entry[0] || std::strlen(entry) > 255)
+        return JFX_ERROR_INVALID_ARGUMENT;
+    if (jfx_desktop_frontend_game_load(f) != JFX_SUCCESS) return JFX_ERROR_PLUGIN_FAILURE;
+    return jfx_desktop_frontend_game_call(f, entry);
+}
+extern "C" jfx_result_t jfx_desktop_frontend_export_iap(jfx_desktop_frontend_t *f,
+    const char *path, const char *const *assets, size_t asset_count) {
+    if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    if (asset_count > JFX_IAP_MAX_ASSETS) return JFX_ERROR_INVALID_ARGUMENT;
+    auto *scene = jfx_editor_scene3d(f->editor);
+    if (!scene) return JFX_ERROR_NOT_INITIALIZED;
+    auto r = jfx_iap_export(scene, assets, asset_count, path);
+    std::snprintf(f->status, sizeof(f->status), "%s",
+        r == JFX_SUCCESS ? "Wrote .iap animation pack." : jfx_result_to_string(r));
+    if (r == JFX_SUCCESS) f->preview_dirty = true;
+    return r;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_iap_info(const char *path,
+    uint32_t *out_fps, uint32_t *out_frames, uint32_t *out_objects,
+    uint32_t *out_assets) {
+    if (!path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    return jfx_iap_info(path, out_fps, out_frames, out_objects, out_assets, nullptr);
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;

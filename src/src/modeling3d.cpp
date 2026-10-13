@@ -1,10 +1,13 @@
 #include "jfx/jfx_modeling3d.h"
+#include "jfx/jfx_iap.h"
+#include "jfx/jfx_osg_viewport.h"
 #include "jfx/jfx_project.h"
 #include "tilly/memory.hpp"
 #include "tilly/memory.h"
 #include "joltscript/compiler.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <xsimd/xsimd.hpp>
 #include <CGAL/Simple_cartesian.h>
 #include <Eigen/Core>
@@ -40,6 +43,7 @@
 #include <windows.h>
 #endif
 
+#include "iap_decode.h"
 namespace {
 using Vec = std::array<float,3>;
 using Tri = std::array<uint32_t,3>;
@@ -450,13 +454,30 @@ jfx_result_t apply(Document &d,const char *op,uint32_t a,uint32_t b,uint32_t c,d
     }
     if (!std::strcmp(op,"3d.camera")) { require(a<7); d.camera[a]=float(value); if (a<2) d.orientation=legacy_camera(d.camera); return JFX_SUCCESS; }
     if (!std::strcmp(op,"3d.orbit")) {
-        auto v=glm::radians(read_xyz(text));
-        auto delta=glm::angleAxis(v.z,glm::vec3(0,0,1))*glm::angleAxis(v.x,glm::vec3(0,1,0))*glm::angleAxis(v.y,glm::vec3(1,0,0));
-        d.orientation=glm::normalize(d.orientation*delta); return JFX_SUCCESS;
+        glm::vec3 xyz=read_xyz(text); auto v=glm::radians(xyz);
+        /* Route through the OSG viewport bridge so the trackball math is
+         * shared with the desktop gimbal; fall back to the inline form if
+         * the bridge rejects an out-of-range gesture. */
+        float in_xyzw[4]={d.orientation.x,d.orientation.y,d.orientation.z,d.orientation.w},out_xyzw[4];
+        float axes[3]={xyz.x,xyz.y,xyz.z};
+        if (jfx_osg_trackball_orbit(in_xyzw,double(axes[0]),double(axes[1]),double(axes[2]),out_xyzw)==JFX_SUCCESS) {
+            d.orientation=glm::quat(out_xyzw[3],out_xyzw[0],out_xyzw[1],out_xyzw[2]);
+        } else {
+            auto delta=glm::angleAxis(v.z,glm::vec3(0,0,1))*glm::angleAxis(v.x,glm::vec3(0,1,0))*glm::angleAxis(v.y,glm::vec3(1,0,0));
+            d.orientation=glm::normalize(d.orientation*delta);
+        }
+        return JFX_SUCCESS;
     }
     if (!std::strcmp(op,"3d.orbit_axis")) {
         auto axis=read_xyz(text); require(glm::length(axis)>.0001f);
-        d.orientation=glm::normalize(glm::angleAxis(glm::radians(float(value)),glm::normalize(axis))*d.orientation); return JFX_SUCCESS;
+        float in_xyzw[4]={d.orientation.x,d.orientation.y,d.orientation.z,d.orientation.w},out_xyzw[4];
+        float xyz[3]={axis.x,axis.y,axis.z};
+        if (jfx_osg_axis_orbit(in_xyzw,xyz,value,out_xyzw)==JFX_SUCCESS) {
+            d.orientation=glm::quat(out_xyzw[3],out_xyzw[0],out_xyzw[1],out_xyzw[2]);
+        } else {
+            d.orientation=glm::normalize(glm::angleAxis(glm::radians(float(value)),glm::normalize(axis))*d.orientation);
+        }
+        return JFX_SUCCESS;
     }
     if (!std::strcmp(op,"3d.pan")) { auto v=d.orientation*read_xyz(text); for (unsigned i=0;i<3;++i) d.camera[3+i]+=v[int(i)]; return JFX_SUCCESS; }
     if (!std::strcmp(op,"3d.dolly")) { require(std::abs(value)<=10); d.camera[2]=std::clamp(d.camera[2]*float(std::exp(-value)),.1f,10000.f); return JFX_SUCCESS; }
@@ -466,6 +487,38 @@ jfx_result_t apply(Document &d,const char *op,uint32_t a,uint32_t b,uint32_t c,d
     }
     if (!std::strcmp(op,"3d.clock")) { require(a>=1 && a<=240 && b>=1 && b<=36000); d.fps=a; d.frames=b; return JFX_SUCCESS; }
     if (!std::strcmp(op,"3d.bake")) { bake(d,c); return JFX_SUCCESS; }
+    if (!std::strcmp(op,"3d.iap_import")) {
+        /* Player import path: replace clock, cloner layouts and key streams
+         * from a validated pack. Runs on the `next` candidate so any failure
+         * leaves the live document and its history untouched; the command
+         * layer commits it as a single undoable step. Per-channel Joltscript
+         * drivers stay in place (see jfx_iap_import). */
+        require(text && *text && std::strlen(text)<=1024);
+        std::ifstream in(text,std::ios::binary);
+        if (!in) return JFX_ERROR_NOT_FOUND;
+        in.seekg(0,std::ios::end); auto size=in.tellg();
+        require(size>0 && uint64_t(size)<=uint64_t(JFX_IAP_MAX_TOTAL_BYTES)+1024u*1024u);
+        in.seekg(0);
+        tilly::vector<uint8_t> blob;
+        blob.resize(size_t(size));
+        in.read(reinterpret_cast<char *>(blob.data()),size);
+        require(bool(in));
+        jfx_iap_detail::Pack pack;
+        require(jfx_iap_detail::decode(blob.data(),blob.size(),pack,
+            JFX_IAP_MAX_ASSETS,JFX_IAP_MAX_ASSET_BYTES,JFX_IAP_MAX_TOTAL_BYTES));
+        require(pack.objects.size()==d.objects.size());
+        d.fps=pack.fps; d.frames=pack.frames;
+        for (size_t i=0;i<pack.objects.size();++i) {
+            auto &po=pack.objects[i]; auto &o=d.objects[i];
+            require(po.cloner_mode<=3 && po.instances>=1 && po.instances<=64 &&
+                (po.cloner_mode==0)==(po.instances==1) &&
+                po.spacing>=.01f && po.spacing<=1000.f);
+            o.cloner_mode=po.cloner_mode; o.instances=po.instances; o.spacing=po.spacing;
+            o.keys.clear();
+            for (auto &k:po.keys) { require(k.frame<d.frames); put_key(o,k.channel,k.frame,k.value,k.interp); }
+        }
+        return JFX_SUCCESS;
+    }
     require(a<d.objects.size()); auto &o=d.objects[a];
     if (!std::strcmp(op,"3d.remove")) d.objects.erase(d.objects.begin()+a);
     else if (!std::strcmp(op,"3d.duplicate")) { require(d.objects.size()<JFX_3D_MAX_OBJECTS); Object copy=o; copy.name+=" copy"; d.objects.push_back(std::move(copy)); }
@@ -537,6 +590,71 @@ template<class Fn> jfx_result_t boundary(Fn fn) {
     catch (...) { return JFX_ERROR_INVALID_ARGUMENT; }
 }
 #include "modeling3d_renderer.inc"
+#ifdef JFX_BACKEND_VULKAN
+#include "jfx/vk_backend.h"
+/* GPU offload staging caps mirror vk_scene.c (SCENE_MAX_DRAWS/VERTS);
+ * larger scenes fail closed so the caller falls back to the CPU path. */
+constexpr uint32_t gpu_max_draws=4096u;
+constexpr size_t gpu_max_verts=1048576u;
+struct GpuDraw {
+    tilly::vector<float> verts;
+    glm::mat4 model=glm::mat4(1),nmat=glm::mat4(1);
+    glm::vec4 color=glm::vec4(1);
+};
+/* Flattens visible instances to object-space triangles plus column-major
+ * model/normal matrices and a y-down view-projection matrix, matching the
+ * CPU rasterizer's camera, focal length and near plane (0.05). */
+bool flatten_gpu(const Document &d,double seconds,uint32_t w,uint32_t h,
+    tilly::vector<GpuDraw> &draws,float vp_out[16]) {
+    auto &c=d.camera;
+    glm::vec3 target(c[3],c[4],c[5]);
+    glm::vec3 eye=target+d.orientation*glm::vec3(0,0,c[2]);
+    glm::mat3 R=glm::mat3_cast(d.orientation);
+    /* View rows are R-transpose rows, i.e. R's columns; depth is negated
+     * to forward-positive like the CPU path (p.z=-p.z). */
+    glm::vec3 row0(R[0][0],R[0][1],R[0][2]),row1(R[1][0],R[1][1],R[1][2]),row2(R[2][0],R[2][1],R[2][2]);
+    float V[4][4]={
+        {row0.x,row0.y,row0.z,-glm::dot(row0,eye)},
+        {row1.x,row1.y,row1.z,-glm::dot(row1,eye)},
+        {-row2.x,-row2.y,-row2.z,glm::dot(row2,eye)},
+        {0,0,0,1},
+    };
+    float focal=float(h)*.5f/std::tan(glm::radians(c[6])*.5f);
+    float fx=focal/(float(w)*.5f),fy=-focal/(float(h)*.5f);
+    constexpr double gpu_near=0.05,gpu_far=1e5;
+    float A=float(gpu_far/(gpu_far-gpu_near)),B=float(-gpu_far*gpu_near/(gpu_far-gpu_near));
+    float P[4][4]={{fx,0,0,0},{0,fy,0,0},{0,0,A,B},{0,0,1,0}};
+    for (int col=0;col<4;++col) for (int row=0;row<4;++row) {
+        float sum=0; for (int k=0;k<4;++k) sum+=P[row][k]*V[k][col];
+        vp_out[col*4+row]=sum;
+    }
+    size_t total_verts=0; uint32_t total_draws=0;
+    for (auto &o:d.objects) if (o.visible) {
+        ensure_normals(o); const auto &normals=*o.normals;
+        for (uint32_t instance=0;instance<o.instances;++instance) {
+            if (total_draws>=gpu_max_draws) return false;
+            Transform t=sample_instance(o,instance,seconds,d.fps);
+            glm::quat rot=rotation(t);
+            glm::vec3 s(t[6],t[7],t[8]);
+            GpuDraw draw;
+            draw.model=glm::translate(glm::mat4(1),glm::vec3(t[0],t[1],t[2]))*
+                glm::mat4_cast(rot)*glm::scale(glm::mat4(1),s);
+            draw.nmat=glm::mat4_cast(rot)*
+                glm::scale(glm::mat4(1),glm::vec3(1/s.x,1/s.y,1/s.z));
+            draw.color=glm::vec4(o.color[0],o.color[1],o.color[2],1);
+            draw.verts.reserve(o.triangles.size()*18);
+            for (size_t ti=0;ti<o.triangles.size();++ti) for (unsigned j=0;j<3;++j) {
+                uint32_t vi=o.triangles[ti][j];
+                auto &vv=o.vertices[vi]; auto &nn=normals[ti][j];
+                draw.verts.insert(draw.verts.end(),{vv[0],vv[1],vv[2],nn.x,nn.y,nn.z});
+                if (++total_verts>gpu_max_verts) return false;
+            }
+            draws.push_back(std::move(draw)); ++total_draws;
+        }
+    }
+    return true;
+}
+#endif
 } // namespace
 
 struct jfx_scene3d {
@@ -650,6 +768,13 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
         return JFX_SUCCESS;
     });
 }
+extern "C" jfx_result_t jfx_iap_import(jfx_scene3d_t *s,const char *path) {
+    /* Player import: one undoable `3d.iap_import` step. Null/empty paths
+     * fail before touching the scene; every other failure mode is handled
+     * inside the command (no commit, no history entry). */
+    if (!s || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    return jfx_scene3d_command(s,"3d.iap_import",0,0,0,0,path);
+}
 extern "C" jfx_result_t jfx_scene3d_load(jfx_scene3d_t *s,const char *text,size_t length,char *err,size_t cap) {
     if (!s || !text) return JFX_ERROR_INVALID_ARGUMENT;
     auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false; return JFX_SUCCESS; });
@@ -701,11 +826,49 @@ extern "C" jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *s,double seconds
         return render_document(s->document,seconds,w,h,out);
     });
 }
+extern "C" jfx_result_t jfx_scene3d_render_gpu(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
+    if (!s || !out || !w || !h || w>2048 || h>2048 || cap<size_t(w)*h*4 || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
+#ifdef JFX_BACKEND_VULKAN
+    return boundary([&] {
+        tilly::vector<GpuDraw> draws;
+        float vp[16];
+        if (!flatten_gpu(s->document,seconds,w,h,draws,vp) || draws.empty()) return JFX_ERROR_BACKEND_FAILURE;
+        tilly::vector<jvk_scene_draw_t> jd;
+        jd.reserve(draws.size());
+        for (auto &d:draws) {
+            jvk_scene_draw_t one;
+            one.vertices=d.verts.data(); one.vertex_count=uint32_t(d.verts.size()/6);
+            std::memcpy(one.model,&d.model[0][0],64); std::memcpy(one.nmat,&d.nmat[0][0],64);
+            std::memcpy(one.color,&d.color[0],16);
+            jd.push_back(one);
+        }
+        glm::vec3 sun=glm::normalize(glm::vec3(.4f,.8f,.3f));
+        const float sunv[3]={sun.x,sun.y,sun.z};
+        const float clear[3]={22/255.f,26/255.f,34/255.f};
+        if (!jvk_scene_render(jd.data(),uint32_t(jd.size()),vp,sunv,clear,w,h,out)) return JFX_ERROR_BACKEND_FAILURE;
+        return JFX_SUCCESS;
+    });
+#else
+    (void)s; (void)seconds; (void)w; (void)h; (void)out; (void)cap;
+    return JFX_ERROR_NOT_IMPLEMENTED;
+#endif
+}
 extern "C" jfx_result_t jfx_scene3d_write_png(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,const char *path) {
     if (!s || !path || !*path || !w || !h || w>2048 || h>2048) return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] {
         tilly::vector<uint8_t> pixels(size_t(w)*h*4);
         auto r=jfx_scene3d_render(s,seconds,w,h,pixels.data(),pixels.size()); if (r!=JFX_SUCCESS) return r;
+        ExportFile output(path); if (!output.file) return JFX_ERROR_BACKEND_FAILURE;
+        auto write=[](void *context,void *data,int size) { std::fwrite(data,1,size_t(size),static_cast<FILE *>(context)); };
+        bool ok=stbi_write_png_to_func(write,output.file,int(w),int(h),4,pixels.data(),int(w*4))!=0 && output.commit(path);
+        return ok?JFX_SUCCESS:JFX_ERROR_BACKEND_FAILURE;
+    });
+}
+extern "C" jfx_result_t jfx_scene3d_write_png_gpu(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,const char *path) {
+    if (!s || !path || !*path || !w || !h || w>2048 || h>2048) return JFX_ERROR_INVALID_ARGUMENT;
+    return boundary([&] {
+        tilly::vector<uint8_t> pixels(size_t(w)*h*4);
+        auto r=jfx_scene3d_render_gpu(s,seconds,w,h,pixels.data(),pixels.size()); if (r!=JFX_SUCCESS) return r;
         ExportFile output(path); if (!output.file) return JFX_ERROR_BACKEND_FAILURE;
         auto write=[](void *context,void *data,int size) { std::fwrite(data,1,size_t(size),static_cast<FILE *>(context)); };
         bool ok=stbi_write_png_to_func(write,output.file,int(w),int(h),4,pixels.data(),int(w*4))!=0 && output.commit(path);

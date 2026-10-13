@@ -19,6 +19,7 @@ int cmd_edit(int argc, char **argv);
 int cmd_nle(int argc, char **argv);
 int cmd_compose(int argc, char **argv);
 int cmd_scene3d(int argc,char **argv);
+int cmd_iap(int argc,char **argv);
 int cmd_media_export(int argc, char **argv);
 int cmd_color(int argc, char **argv, int calibration);
 int cmd_project(int argc, char **argv);

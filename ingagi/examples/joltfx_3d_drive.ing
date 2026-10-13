@@ -1,0 +1,34 @@
+// JoltFX 3D-tab drive example: ECS + animation + cloner + material in one
+// import-free source. Paste into the Game Engine workspace or the 3D tab's
+// "Ingagi drive" entry, then Run drive and Export .iap.
+// Covers: spawn/add_component/get_component/despawn (std.ecs),
+// engine_scene_* (scene/ECS linkage), procedural/color (shader/material),
+// keys (animation event stream serialized by .iap).
+
+component SceneObject {
+    object: i64;
+}
+
+fn drive() -> i64 {
+    let e = spawn();
+    let object = engine_scene_add(1);
+    add_component(e, "SceneObject", SceneObject { object: object });
+    let link = get_component(e, "SceneObject");
+    engine_scene_set(link.object, 0, 1.5);
+    engine_scene_key(link.object, 4, 0, 0.0);
+    engine_scene_key(link.object, 4, 90, 360.0);
+    engine_scene_key(link.object, 1, 0, 0.0);
+    engine_scene_key(link.object, 1, 45, 2.0);
+    engine_scene_key(link.object, 1, 90, 0.0);
+    engine_scene_cloner(link.object, 2, 6, 3.0);
+    engine_scene_color(link.object, 0, 0.32);
+    engine_scene_color(link.object, 1, 0.65);
+    engine_scene_color(link.object, 2, 0.9);
+    let instances = engine_scene_procedural(link.object, 1);
+    despawn(e);
+    return instances;
+}
+
+fn main() -> i64 {
+    return drive();
+}

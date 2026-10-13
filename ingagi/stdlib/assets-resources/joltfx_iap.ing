@@ -1,0 +1,33 @@
+// std.asset binding: Ingagi Animation Pack (.iap) workflow.
+// The scalar embedding ABI cannot transfer binary blobs, so Ingagi authors
+// the animation event stream (keys/cloners/materials) and the desktop 3D tab
+// "Export .iap" serializes it plus packed assets. This file is the canonical
+// drive that the pack test fixtures replay before export.
+// Format: see src/include/jfx/jfx_iap.h ("IAP1", version 1, fps/frames,
+// per-object keys sorted by (channel, frame), asset table, CRC32).
+// Player: future work; use `jfx_iap_info/validate` (or ingagi/iap Go) to inspect.
+
+component SceneObject {
+    object: i64;
+}
+
+// Minimal packable animation: one cube, one spin, one radial cloner.
+fn iap_packable() -> i64 {
+    let e = spawn();
+    let object = engine_scene_add(0);
+    add_component(e, "SceneObject", SceneObject { object: object });
+    let link = get_component(e, "SceneObject");
+    engine_scene_key(link.object, 4, 0, 0.0);
+    engine_scene_key(link.object, 4, 90, 360.0);
+    engine_scene_cloner(link.object, 2, 6, 3.0);
+    despawn(e);
+    return engine_scene_count();
+}
+
+fn drive() -> i64 {
+    return iap_packable();
+}
+
+fn main() -> i64 {
+    return iap_packable();
+}

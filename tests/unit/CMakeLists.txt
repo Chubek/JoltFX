@@ -30,6 +30,10 @@ jfx_test_target(test_modeling3d SOURCES core/test_modeling3d.cpp LIBRARIES jfx_c
 add_test(NAME modeling3d COMMAND test_modeling3d)
 jfx_test_target(test_modeling3d_tools SOURCES core/test_modeling3d_tools.cpp LIBRARIES jfx_core)
 add_test(NAME modeling3d_tools COMMAND test_modeling3d_tools)
+jfx_test_target(test_osg_viewport SOURCES core/test_osg_viewport.cpp LIBRARIES jfx_core)
+add_test(NAME osg_viewport COMMAND test_osg_viewport)
+jfx_test_target(test_iap SOURCES core/test_iap.cpp LIBRARIES jfx_core)
+add_test(NAME iap COMMAND test_iap)
 jfx_test_target(test_cpu_numeric SOURCES core/test_cpu_numeric.cpp LIBRARIES jfx_core)
 target_include_directories(test_cpu_numeric PRIVATE "${PROJECT_SOURCE_DIR}/src/src")
 add_test(NAME cpu_numeric COMMAND test_cpu_numeric)
@@ -79,6 +83,8 @@ add_custom_target(validate_kernels COMMAND $<TARGET_FILE:test_effects> DEPENDS t
 if(JFX_BACKEND_VULKAN)
     jfx_test_target(test_vulkan_backend SOURCES backends/test_vulkan_backend.c
         LIBRARIES jfx_backend_vulkan)
+    jfx_test_target(test_vulkan_scene SOURCES backends/test_vulkan_scene.cpp
+        LIBRARIES jfx_core jfx_backend_vulkan)
 endif()
 
 # The portable CPU-path adapters. One conformance run covers whichever built.
@@ -181,7 +187,7 @@ jfx_register_test(test_core test_core)
 jfx_register_test(test_animation test_animation)
 jfx_register_test(test_scheduler test_scheduler)
 jfx_register_test(plugin_host test_plugin_host $<TARGET_FILE:test_plugin_module>)
-if(NOT EMSCRIPTEN)
+if(NOT EMSCRIPTEN AND COMMAND jfx_add_plugin AND EXISTS "${PROJECT_SOURCE_DIR}/sdk/examples/tint/tint.c")
     if(NOT TARGET jfx_example_plugin)
         jfx_add_plugin(jfx_example_plugin SOURCES "${PROJECT_SOURCE_DIR}/sdk/examples/tint/tint.c")
     endif()
@@ -227,6 +233,7 @@ set_property(TEST kernel_color_conformance APPEND PROPERTY LABELS conformance)
 
 if(JFX_BACKEND_VULKAN)
     jfx_register_test(test_vulkan_backend test_vulkan_backend)
+    jfx_register_test(test_vulkan_scene test_vulkan_scene)
 endif()
 if(JFX_FALLBACK_BACKEND_TARGETS)
     jfx_register_test(backend_fallback_conformance test_fallback_backends)

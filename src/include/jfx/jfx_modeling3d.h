@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 2
+#define JFX_MODELING3D_API_MINOR 3
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
@@ -70,7 +70,18 @@ jfx_result_t jfx_scene3d_sample_instance(const jfx_scene3d_t *scene,uint32_t obj
  * and near-plane clipping. Output remains untouched on error. Max dimension 2048. */
 jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *scene,double seconds,uint32_t width,
     uint32_t height,uint8_t *out_rgba,size_t capacity);
+/* Vulkan offscreen rasterizer for the same scene (API 1.3): object-space
+ * triangles with per-draw model/normal matrices run through real
+ * vertex/fragment shaders with depth testing into an offscreen image.
+ * Single-sampled (no 4x SSAA), so edges differ slightly from the CPU path.
+ * Returns BACKEND_FAILURE without touching output when no driver, queue,
+ * format or budget is available (caller falls back to CPU), or
+ * NOT_IMPLEMENTED when built without the Vulkan backend. Max dimension 2048. */
+jfx_result_t jfx_scene3d_render_gpu(const jfx_scene3d_t *scene,double seconds,uint32_t width,
+    uint32_t height,uint8_t *out_rgba,size_t capacity);
 jfx_result_t jfx_scene3d_write_png(const jfx_scene3d_t *scene,double seconds,
+    uint32_t width,uint32_t height,const char *path);
+jfx_result_t jfx_scene3d_write_png_gpu(const jfx_scene3d_t *scene,double seconds,
     uint32_t width,uint32_t height,const char *path);
 #ifdef __cplusplus
 }
