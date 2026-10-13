@@ -2,6 +2,14 @@
 
 ## Overview
 
+`filament/` is an optional scene-rendering adapter, built with `JFX_FILAMENT`,
+not a compute HAL backend. Its standalone C++20 SDK build and private C bridge
+are configured by `cmake/Filament.cmake`. Use engine allocator callbacks for
+upload/readback storage, serialize each engine's API calls on its owning worker,
+and drain/destroy the SDK before freeing borrowed buffers. Keep vendor code
+unchanged, preserve optional-off builds, and run `filament_scene` /
+`filament_ui_tests` with a real EGL/Metal runtime. See `filament/README.md`.
+
 The JoltFX backend layer provides platform-specific GPU and compute implementations. Each backend translates the engine's abstract rendering and execution commands into the native graphics API for a given platform. This guide covers contributing to existing backends and adding new ones.
 
 ---

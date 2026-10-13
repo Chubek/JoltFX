@@ -1,5 +1,109 @@
 # Progress
 
+## Optional Filament 3D renderer (2026-10-13)
+
+- Implemented optional `JFX_FILAMENT` vendored SDK build, private C bridge,
+  sampled mesh/normal/quaternion-camera conversion, desktop selector, and
+  PNG/video renderer snapshot dispatch. Added scene/GPU and ImGui/export checks.
+- Bridge C++20 syntax passes Clang `-Wall -Wextra -Werror`; private C header
+  compiles independently, material embedding script compiles, and diff whitespace
+  checks pass.
+- Multiple server restarts erased `/tmp/opencode` build artifacts. Recreated
+  `/tmp/opencode/joltfx-filament` using serial builds and reduced debug data.
+- Built the SDK and bridge; the real GPU smoke check exposed desktop-vs-ES
+  material mismatch on headless Linux EGL. Corrected the Linux shader profile
+  and private GLES dispatch linkage. Disabled the SDK's optional parallel shader
+  compiler pool to keep frame-scoped shared-context teardown ordered (Mesa
+  crashed during compiler-context release with the pool enabled).
+- Vendored matc successfully compiled the surface material. Modeling3D syntax
+  checks also pass with Filament/no-Vulkan and optional-off/no-Vulkan defines.
+- Verification complete on Linux: Clang Debug ASAN/UBSan passed `filament_scene`
+  and `filament_ui_tests`, including actual GPU output, vertical orientation,
+  animation, cloners/camera, exact PNG readback and lossless video snapshots.
+  Desktop headless smoke passed. Seven modeling/UI/frontend/backend-fallback
+  regressions passed. Both Filament tests also passed with `JFX_FILAMENT=OFF`.
+  Restored the final build to `JFX_FILAMENT=ON` and reran both GPU tests successfully.
+  macOS Metal runtime remains untested on this Linux host.
+
+## MonkeyTrace desktop 3D integration (2026-10-13)
+
+- Added native MonkeyTrace ABI 1.0 and the optional `JFX_MONKEYTRACE` CMake build,
+  enabled by default on supported Linux/macOS hosts with Go. Desktop 1.9 selects
+  MonkeyTrace CPU in the 3D workspace, with raster/Vulkan alternatives and ray
+  sample, reflection-depth and mirror-fraction controls.
+- Modeling3D 1.4 converts sampled visible mesh/cloner triangles and quaternion
+  camera state into owned Ingagi ECS scenes. Render output is failure-atomic;
+  native tracing uses a deadline and preserves the 4096-primitive bound.
+- Preview/PNG jobs own scene clones on scheduler workers. Revision checks discard
+  stale previews; navigation/playback reduce quality and idle restores it. Defer
+  scheduler-draining engine ticks during these heap-owned jobs to keep UI frames
+  responsive. Preview failures report raster fallback; exports fail explicitly.
+- Export 1.2 copies renderer quality into video snapshots before the first step.
+  Desktop video jobs serialize scheduler frame steps and defer cancel/destruction
+  until the active step completes. PNG/video publication remains atomic.
+- Verification: full Go suites and MonkeyTrace `go vet` passed; Go suites also
+  passed with CGO disabled. Clang Debug
+  ASAN/UBSan passed scene/PNG/capacity/driver/camera checks, real ImGui renderer
+  controls, animated snapshot video decoded to exact RGBA, modeling tools and
+  portable frontend conformance. Eight registered UI/media checks passed.
+  `JFX_MONKEYTRACE=OFF` passed scene, renderer UI and modeling UI checks.
+  Final ASAN/UBSan build with both `JFX_MONKEYTRACE=ON` and `JFX_INGAGI=ON`
+  passed MonkeyTrace scene/UI and Ingagi tab checks; desktop headless smoke
+  completed successfully. Changes are uncommitted and unpushed.
+- Host recovery: a restart cleared temporary builds and exposed partial writes
+  on a full root filesystem. Freed the Go build cache, repaired affected files
+  and rebuilt externally. GCC 16 hit a vendored optimizer ICE; Clang's initial
+  sanitizer build passed. A later vendored Clang crash cleared on a lower-
+  parallelism retry; optional-off sanitizer checks passed as well.
+
+## MonkeyTrace BVH acceleration (2026-10-13)
+
+- Implemented a deterministic median-split, preorder-threaded BVH in owned ECS
+  snapshots. CPU and Ingagi compute shader traversal are stackless; closest-hit
+  ties preserve entity-ID ordering and shadow queries exit early. Conservative
+  bounds include both CPU and quantized GPU geometry, with outward rounding and
+  explicit parallel slab handling. Added BVH storage binding 3 and raised scene
+  capacity to 4096 primitives / 8191 nodes.
+- Added `many_spheres.ing`, a budgeted 1026-primitive procedural scene. Tests
+  compare 2000 randomized closest-hit/shadow queries against brute force, cover
+  empty/inside/parallel/planar/coincident rays, validate full-capacity skip links
+  and check primitive pruning. Added an allocation-free query microbenchmark:
+  on this host, 4096-sphere BVH queries took 356.7 ns vs 31820 ns brute force
+  (~89x for that workload, not a full-frame speedup).
+- Full-capacity browser testing caught a fixed-origin-bias precision issue at
+  large world coordinates. CPU and shader now share a scale-aware secondary-ray
+  offset; added a float32 regression and explicit opt-in Go browser integration.
+- Verification: full Go suites passed with/without CGO; the native NovoParse
+  script and final focused tagged MonkeyTrace suite passed. Actual tracer SPIR-V
+  validation and Naga WGSL round trips passed. Chromium 134 / SwiftShader passed
+  empty/demo/procedural/full-capacity traversal and repeat-readback tests: 17x9
+  empty/demo images matched exactly, the 1026-primitive scene had mean byte
+  difference 0.0343 (0.49% of channels differing by more than 2), and the
+  4096-primitive large-coordinate scene had mean 0.00163 / maximum 1 byte.
+
+## MonkeyTrace ray-tracing engine (2026-10-13)
+
+- Implemented `ingagi/monkeytrace`: owned Ingagi ECS scene snapshots, spheres
+  and triangle meshes, diffuse/emissive materials, directional hard shadows,
+  bounded mirror reflections, deterministic supersampling and tone mapping.
+  IngagiVM scene authoring (`demo.ing`, `LoadScene`, CLI `-scene`) creates real
+  ECS handles through typed host functions with instruction/frame budgets.
+  Added a portable CPU reference backend, PNG/shader/export CLI, and an Ingagi
+  compute shader with a dedicated self-contained WebGPU browser host (dispatch,
+  aligned readback, canvas presentation, repeat rendering and resource teardown).
+- Added bounded fixed-size arrays to shader struct/buffer fields using existing
+  grammar syntax. Published layout/API/run documentation and optional browser
+  CPU/GPU pixel comparison coverage under `monkeytrace/scripts`.
+- Verification: full Go suites passed with CGO and without CGO; the native
+  NovoParse script and focused tagged shader/MonkeyTrace suites passed. Actual
+  MonkeyTrace SPIR-V validates, WGSL round-trips through Naga 29.0.4 and
+  `spirv-val`, and a 320x180/16-sample CPU demo PNG renders successfully.
+  Chromium 134 / SwiftShader executed the exported 17x9/4-sample shader with
+  exact CPU pixel parity (mean/max difference 0) and a successful second
+  dispatch/readback. CLI checks also confirmed failed renders preserve existing
+  output and remove temporary files. VM-authored and Go-authored demo pixels
+  match; returned handles work with Ingagi's `despawn` builtin.
+
 ## Joltscript Phase 4 tests (2026-10-13)
 
 - Completed the Phase 4 test roadmap. Added `joltscript/tests/integration/test_kernels.c`

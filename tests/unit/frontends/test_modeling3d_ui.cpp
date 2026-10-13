@@ -31,6 +31,8 @@ int main() {
     jfx_desktop_frontend_config_t config={}; config.size=sizeof(config); config.width=1440; config.height=1000; config.backend_name=jfx_test_backend();
     jfx_desktop_frontend_t *f=nullptr; assert(jfx_desktop_frontend_create(&config,&f)==JFX_SUCCESS);
     ImGui::GetIO().IniFilename=nullptr;
+    jfx_scene3d_render_options_t raster={}; raster.size=sizeof(raster); raster.renderer=JFX_SCENE3D_RENDER_RASTER;
+    assert(jfx_desktop_frontend_set_scene3d_render_options(f,&raster)==JFX_SUCCESS);
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_MODELING3D)==JFX_SUCCESS); draw(f); draw(f); draw(f);
     click(f,"Add cube");
     char state[16384]; assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS);

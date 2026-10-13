@@ -375,6 +375,8 @@ are `local_size` (x), `local_size_x`, `local_size_y`, `local_size_z`, defaulting
 one. Stage builtins use their GLSL names, such as `gl_GlobalInvocationID` and
 `gl_Position`.
 
+Fixed one-dimensional `[element; literal_length]` arrays (1..65536 elements)
+are supported in shader structs and uniform/storage buffer fields.
 Geometry and tessellation stages accept explicit layout options; storage images
 use floating `rgba32f` texels. Unsupported host statements, inferred local types, resource/field attributes,
 stage options and shader types fail with source-positioned errors. GLSL emission
@@ -412,6 +414,17 @@ running `build-shader-tools.sh` to install the pinned CLI through Cargo; its loc
 crate dependencies are downloaded on the first build. Tests reparse emitted WGSL
 and validate its SPIR-V round trip. Shader artifacts do not imply working renderer
 adapters.
+
+### MonkeyTrace ray-tracing renderer
+
+[`monkeytrace`](monkeytrace/README.md) builds ECS-backed scenes, renders headless
+PNGs with a portable CPU backend, and exports a self-contained WebGPU browser
+host that executes an Ingagi compute shader. It supports spheres/triangles,
+directional hard shadows, mirror reflections, emissive materials and bounded
+supersampling. Run `go run ./monkeytrace/cmd/monkeytrace -o scene.png` with
+`GOROOT=/usr/lib/go`; use `-backend webgpu -o scene.html` for GPU browser export
+(glslang and Naga required). This dedicated renderer does not implement general
+Ingagi pipeline dispatch or desktop GPU linkage.
 
 ### Desktop Game Engine workspace
 

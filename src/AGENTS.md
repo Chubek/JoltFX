@@ -161,6 +161,20 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Modeling3D 1.5 adds the optional Filament scene renderer. Reuse sampled GPU mesh
+staging, smooth normals and quaternion camera state, with an independent
+6,291,456-vertex bound. Native Filament types/C++20 remain behind the private
+descriptor ABI in backends/filament; buffer storage uses engine callbacks and
+survives driver completion. Availability means compiled support, not a driver
+probe. Explicit exports report failures; only previews use raster fallback.
+
+Modeling3D 1.4 adds owned scene clones and explicit raster/MonkeyTrace/Vulkan
+render options. JFX_MONKEYTRACE links the Go CPU bridge on native Linux/macOS;
+preserve optional-off stubs and failure-atomic output. Flatten sampled visible
+instances and quaternion camera state, with a 4096-triangle bound. Export 1.2
+copies renderer options before stepping its scene snapshot. Desktop workers own
+copies and serialize frame steps; never borrow the live scene across threads.
+
 Modeling3D API 1.2 (`jfx_modeling3d.h`) and editor 1.8 append a scene document
 kind. Scene `3d.*` commands validate and commit transactionally with independent
 32-step/32-MiB history. Embedded `scene3d 1` documents validate before load; keys

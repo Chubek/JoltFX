@@ -12,6 +12,7 @@
 #include "jfx/jfx_export.h"
 #include "jfx/jfx_plugin_sdk.h"
 #include "jfx/jfx_animation.h"
+#include "jfx/jfx_modeling3d.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,7 +42,7 @@ typedef enum {
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 8
+#define JFX_DESKTOP_API_MINOR 10
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -68,6 +69,14 @@ typedef enum {
  * Output/error strings are borrowed until the next load/call or destruction.
  * Script print output is discarded by the native embedding ABI. */
 bool jfx_desktop_frontend_game_available(void);
+/* 3D viewport, explicit RGBA renders and PNG/video exports share this selection.
+ * Defaults to MonkeyTrace CPU when available, otherwise the rasterizer. UI
+ * previews use scheduler-owned scene copies; synchronous render calls remain
+ * failure-atomic and report unavailable/over-budget renderers directly. */
+jfx_result_t jfx_desktop_frontend_set_scene3d_render_options(jfx_desktop_frontend_t *frontend,
+    const jfx_scene3d_render_options_t *options);
+jfx_result_t jfx_desktop_frontend_scene3d_render_options(const jfx_desktop_frontend_t *frontend,
+    jfx_scene3d_render_options_t *out_options);
 jfx_result_t jfx_desktop_frontend_game_set_source(jfx_desktop_frontend_t *frontend, const char *source);
 jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *frontend);
 jfx_result_t jfx_desktop_frontend_game_call(jfx_desktop_frontend_t *frontend, const char *entry);

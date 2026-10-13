@@ -5,12 +5,39 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 3
+#define JFX_MODELING3D_API_MINOR 5
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
 #define JFX_3D_MAX_KEYS 4096u
 typedef struct jfx_scene3d jfx_scene3d_t;
+typedef enum {
+    JFX_SCENE3D_RENDER_RASTER = 0,
+    JFX_SCENE3D_RENDER_MONKEYTRACE = 1,
+    JFX_SCENE3D_RENDER_VULKAN = 2,
+    JFX_SCENE3D_RENDER_FILAMENT = 3
+} jfx_scene3d_renderer_t;
+typedef struct {
+    size_t size;
+    jfx_scene3d_renderer_t renderer;
+    uint32_t samples, bounces, timeout_ms; /* samples 0: 4; timeout 0: 30000 ms */
+    float reflectivity;                  /* global mirror fraction, 0..1 */
+} jfx_scene3d_render_options_t;
+/* Build availability, not a GPU-driver probe. MonkeyTrace is the native CPU
+ * backend, gated by JFX_MONKEYTRACE; limits are 4096 visible instance triangles,
+ * 64 samples and 8 reflected continuations. Raster/Vulkan/Filament ignore ray
+ * quality fields. Filament is gated by JFX_FILAMENT and uses a private GPU SDK
+ * bridge (OpenGL ES/EGL on Linux, Metal on macOS), with 4096 visible instances and
+ * 6,291,456 expanded vertices. Availability is a build check, not a driver probe. */
+bool jfx_scene3d_renderer_available(jfx_scene3d_renderer_t renderer);
+/* Owned document copy with independent lifetime and no history. Create on the
+ * scene's owner thread; its new owner may then render it on a scheduler worker. */
+jfx_scene3d_t *jfx_scene3d_clone(const jfx_scene3d_t *scene);
+jfx_result_t jfx_scene3d_render_ex(const jfx_scene3d_t *scene,double seconds,
+    uint32_t width,uint32_t height,const jfx_scene3d_render_options_t *options,
+    uint8_t *out_rgba,size_t capacity);
+jfx_result_t jfx_scene3d_write_png_ex(const jfx_scene3d_t *scene,double seconds,
+    uint32_t width,uint32_t height,const jfx_scene3d_render_options_t *options,const char *path);
 typedef struct {
     size_t size;
     char name[128];

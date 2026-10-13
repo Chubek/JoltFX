@@ -282,19 +282,20 @@ void daw_panel(jfx_desktop_frontend_t *f) {
         if (ImGui::BeginTabItem("Mixdown")) {
             ImGui::InputText("Stereo WAV output",f->audio_export_path,sizeof(f->audio_export_path));
             ImGui::TextWrapped("48 kHz, stereo 32-bit float WAV. Includes track inserts, latency compensation and master gain; retains unclipped headroom.");
-            bool running=f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING;
+            bool running=desktop_export_running(f);
             ImGui::BeginDisabled(running || !*f->audio_export_path);
             if (ImGui::Button("Bounce stereo WAV")) {
                 finish_audio(f); editor_result(f,native_sync(f,true)); jfx_export_destroy(f->export_job); f->export_job=nullptr;
                 jfx_export_options_t options{}; options.size=sizeof(options); options.path=f->audio_export_path; options.container="wav"; options.audio=true;
                 editor_result(f,jfx_export_begin(f->editor,&options,&f->export_job));
+                f->export_worker_scene=false;
             }
             ImGui::EndDisabled();
             if (running) {
-                ImGui::ProgressBar((float)((double)jfx_export_completed_frames(f->export_job)/(double)jfx_export_total_frames(f->export_job)));
-                if (ImGui::Button("Cancel mixdown")) jfx_export_cancel(f->export_job);
+                ImGui::ProgressBar((float)((double)desktop_export_completed(f)/(double)desktop_export_total(f)));
+                if (ImGui::Button("Cancel mixdown")) desktop_export_cancel(f);
             }
-            if (f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_COMPLETE) ImGui::TextUnformatted("Mixdown complete.");
+            if (!f->scene_export_step && f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_COMPLETE) ImGui::TextUnformatted("Mixdown complete.");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

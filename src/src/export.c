@@ -5,6 +5,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <math.h>
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -22,6 +23,8 @@ struct jfx_export_job {
     bool sequence,audio_only;
     jfx_export_state_t state;
     jfx_result_t result;
+    bool scene_renderer;
+    jfx_scene3d_render_options_t scene_options;
 };
 static void *allocate(size_t n) { return tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),n,_Alignof(max_align_t)); }
 static void release(void *p) { tilly_free((tilly_allocator_t *)tilly_default_allocator(),p); }
@@ -141,6 +144,15 @@ jfx_result_t jfx_export_begin(const jfx_editor_t *editor,const jfx_export_option
 fail:
     jfx_export_destroy(j); return result;
 }
+jfx_result_t jfx_export_set_scene3d_render_options(jfx_export_job_t *j,const jfx_scene3d_render_options_t *o) {
+    if (!j || !o || o->size<sizeof(*o) || jfx_editor_kind(j->editor)!=JFX_PROJECT_KIND_SCENE3D ||
+        o->renderer<JFX_SCENE3D_RENDER_RASTER || o->renderer>JFX_SCENE3D_RENDER_FILAMENT ||
+        (o->renderer==JFX_SCENE3D_RENDER_MONKEYTRACE && (o->samples>64 || o->bounces>8 || o->timeout_ms>60000 ||
+        !isfinite(o->reflectivity) || o->reflectivity<0 || o->reflectivity>1))) return JFX_ERROR_INVALID_ARGUMENT;
+    if (j->state!=JFX_EXPORT_RUNNING || j->completed) return JFX_ERROR_BUSY;
+    if (!jfx_scene3d_renderer_available(o->renderer)) return JFX_ERROR_NOT_IMPLEMENTED;
+    j->scene_options=*o; j->scene_renderer=true; return JFX_SUCCESS;
+}
 jfx_result_t jfx_export_step(jfx_export_job_t *j,uint32_t max_frames) {
     if (!j || !max_frames || max_frames>1024) return JFX_ERROR_INVALID_ARGUMENT;
     if (j->state==JFX_EXPORT_COMPLETE) return JFX_SUCCESS;
@@ -150,7 +162,9 @@ jfx_result_t jfx_export_step(jfx_export_job_t *j,uint32_t max_frames) {
     for (uint32_t i=0;i<max_frames && j->completed<j->total;++i) {
         uint64_t frame=j->start+j->completed;
         if (!j->audio_only) {
-            r=j->sequence?jfx_editor_render_frame(j->editor,frame,j->width,j->height,j->pixels,(size_t)j->width*j->height*4)
+            r=j->scene_renderer?jfx_scene3d_render_ex(jfx_editor_scene3d(j->editor),(double)frame*j->fps_den/j->fps_num,
+                j->width,j->height,&j->scene_options,j->pixels,(size_t)j->width*j->height*4)
+                :j->sequence?jfx_editor_render_frame(j->editor,frame,j->width,j->height,j->pixels,(size_t)j->width*j->height*4)
                 :jfx_editor_render(j->editor,(double)frame*j->fps_den/j->fps_num,j->width,j->height,j->pixels,(size_t)j->width*j->height*4);
             if (r!=JFX_SUCCESS) goto failed;
             r=mapped(jolt_media_writer_video(j->writer,j->pixels)); if (r!=JFX_SUCCESS) goto failed;

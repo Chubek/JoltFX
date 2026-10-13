@@ -19,5 +19,15 @@ if(@JFX_PACKAGE_FFMPEG@ AND NOT TARGET PkgConfig::JFX_FFMPEG)
     pkg_check_modules(JFX_FFMPEG REQUIRED IMPORTED_TARGET
         libavformat libavcodec libavutil libswscale libswresample)
 endif()
+if(@JFX_MONKEYTRACE@ AND NOT TARGET monkeytrace_native)
+    add_library(monkeytrace_native SHARED IMPORTED)
+    set_target_properties(monkeytrace_native PROPERTIES
+        IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@/libmonkeytrace@CMAKE_SHARED_LIBRARY_SUFFIX@")
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/JoltFXTargets.cmake")
+if(@JFX_FILAMENT@ AND NOT TARGET jfx_filament_native)
+    add_library(jfx_filament_native SHARED IMPORTED)
+    set_target_properties(jfx_filament_native PROPERTIES
+        IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@/libjfx_filament@CMAKE_SHARED_LIBRARY_SUFFIX@")
+endif()
 check_required_components(JoltFX)

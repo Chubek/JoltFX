@@ -85,6 +85,8 @@ target_include_directories(jfx_api INTERFACE
 add_subdirectory(tilly)
 add_subdirectory(joltscript)
 add_subdirectory(backends)
+include(cmake/MonkeyTrace.cmake)
+include(cmake/Filament.cmake)
 add_subdirectory(src)
 if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/CMakeLists.txt")
   add_subdirectory(sdk)

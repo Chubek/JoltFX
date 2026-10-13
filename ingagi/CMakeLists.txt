@@ -46,7 +46,8 @@ endif()
 file(GLOB_RECURSE ingagi_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.go" "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cc" "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.sexp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.sexp" "${CMAKE_CURRENT_SOURCE_DIR}/*.ing"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.html")
 file(GLOB_RECURSE ingagi_math_headers CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glm/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glm/*.inl"

@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 #define JFX_EXPORT_API_MAJOR 1
-#define JFX_EXPORT_API_MINOR 1
+#define JFX_EXPORT_API_MINOR 2
 #define JFX_EXPORT_API_PATCH 0
 typedef struct {
     size_t size;
@@ -35,6 +35,11 @@ bool jfx_export_codec_available(const char *codec, bool audio);
  * video/codec settings, and works without FFmpeg. RIFF payload is <4 GiB. */
 jfx_result_t jfx_export_begin(const jfx_editor_t *editor,
     const jfx_export_options_t *options, jfx_export_job_t **out_job);
+/* Select the renderer for an owned 3D export snapshot before its first step.
+ * The options are copied; later UI/scene changes cannot alter the export.
+ * Errors fail the export rather than silently changing the selected renderer. */
+jfx_result_t jfx_export_set_scene3d_render_options(jfx_export_job_t *job,
+    const jfx_scene3d_render_options_t *options);
 jfx_result_t jfx_export_step(jfx_export_job_t *job, uint32_t max_frames);
 void jfx_export_cancel(jfx_export_job_t *job);
 void jfx_export_destroy(jfx_export_job_t *job);

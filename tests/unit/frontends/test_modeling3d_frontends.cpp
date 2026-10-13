@@ -33,6 +33,8 @@ int main() {
     assert(jfx_desktop_frontend_open_project(desktop,"modeling3d-conformance.jfx")==JFX_SUCCESS);
     assert(jfx_desktop_frontend_workspace(desktop)==JFX_DESKTOP_WORKSPACE_MODELING3D);
     assert(jfx_desktop_frontend_seek(desktop,.5)==JFX_SUCCESS);
+    jfx_scene3d_render_options_t raster={}; raster.size=sizeof(raster); raster.renderer=JFX_SCENE3D_RENDER_RASTER;
+    assert(jfx_desktop_frontend_set_scene3d_render_options(desktop,&raster)==JFX_SUCCESS);
     assert(jfx_desktop_frontend_render_rgba8(desktop,128,128,actual.data(),actual.size())==JFX_SUCCESS); assert(actual==expected);
     assert(jfx_desktop_frontend_scene3d_state(desktop,state,sizeof(state))==JFX_SUCCESS && std::strstr(state,"\"active\":true"));
     jfx_desktop_frontend_destroy(desktop);

@@ -9,6 +9,51 @@ scene state and renderer.
 
 ## Workflow
 
+### Optional Filament renderer
+
+Build with `-DJFX_FILAMENT=ON` to add **Filament (GPU rasterizer)** to Rendering
+engine. It renders the same sampled animation, procedural meshes, cloner
+instances, smooth normals and quaternion camera through vendored Filament.
+Lit PBR surfaces, directional shadows, diffuse ambient lighting, tone mapping
+and FXAA are provided by Filament. PNG/video exports capture the selection;
+preview jobs retain the existing scene-snapshot and raster-fallback workflow.
+
+The native bridge uses OpenGL ES/EGL on Linux and Metal on macOS. It is OFF by
+default and needs Clang 17+, CMake 3.22+ and Python 3. The isolated C++20 SDK build
+does not change the Core's C/C++17 API. It supports 4,096 visible instances and
+6,291,456 expanded vertices. MonkeyTrace's ray-quality controls are specific to
+that renderer. See `backends/filament/README.md` for build and GPU test details.
+
+### MonkeyTrace desktop rendering
+
+The desktop selects **MonkeyTrace (CPU ray tracing)** by default when its native
+bridge is built. Choose it in **Rendering engine** alongside the raster viewport
+and Vulkan rasterizer. **Ray samples**, **Reflections**, and **Mirror fraction**
+control antialiasing and mirror shading. MonkeyTrace supplies directional hard
+shadows, a gradient environment and tone mapping.
+
+The bridge converts visible meshes, generator tessellations and cloner instances
+to owned Ingagi ECS geometry after evaluating keys and Joltscript drivers at the
+current scene time. Camera target, quaternion orientation (including roll),
+distance and vertical FOV are preserved. It uses flat triangle normals and
+supports **4,096 visible instance triangles**, 64 samples and eight reflected
+continuations. Over-budget or unavailable previews show a raster fallback status;
+explicit renders and exports report failure instead.
+
+Preview and PNG work runs on scheduler workers over independent scene snapshots.
+Edits invalidate stale results. Playback/navigation use one sample and at most
+one reflection; idle previews return to selected quality. PNG and encoded video
+exports capture both scene and quality. Video advances one frame per scheduler
+job; cancellation takes effect after the active bounded frame. Successful exports
+atomically replace the destination.
+
+Configure native Linux/macOS builds with `-DJFX_MONKEYTRACE=ON` and, if needed,
+`-DJFX_MONKEYTRACE_GOROOT=/path/to/go`. This requires Go 1.21+ and a C/C++ toolchain,
+but no runtime shader compiler. Detection enables the bridge by default on
+supported hosts. `-DJFX_MONKEYTRACE=OFF` retains raster rendering; cross builds
+default to OFF. Desktop uses the CPU backend; the WebGPU shader browser host is
+documented in `ingagi/monkeytrace/README.md`.
+
 1. Open the 3D workspace and add a primitive or import a PLY mesh. **More
    primitives** includes cylinders, cones, tori, capsules, pyramids, disks,
    NURBS surfaces and metaballs, plus tubes, hemispheres, wedges, tetrahedra,

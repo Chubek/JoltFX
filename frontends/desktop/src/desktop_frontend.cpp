@@ -30,6 +30,8 @@
 #endif
 #include "jfx/jfx_osg_viewport.h"
 #include "jfx/jfx_iap.h"
+#include "jfx/jfx_scheduler.h"
+#include <atomic>
 #include "animation_drawing.h"
 #include <new>
 #include "imgui.h"
@@ -184,6 +186,44 @@ const char *imgui_ini_path(void) {
 
 } // namespace
 
+struct ScenePreviewJob {
+    std::atomic<bool> done{false};
+    jfx_scene3d_t *scene=nullptr;
+    jfx_scene3d_render_options_t options{};
+    tilly::vector<uint8_t> pixels;
+    tilly::string path;
+    double seconds=0;
+    uint64_t revision=0;
+    uint32_t width=0,height=0;
+    jfx_result_t result=JFX_ERROR_BACKEND_FAILURE;
+    bool fallback=false;
+    ~ScenePreviewJob() { jfx_scene3d_destroy(scene); }
+};
+struct SceneExportStep {
+    std::atomic<bool> done{false};
+    jfx_export_job_t *job=nullptr;
+    jfx_result_t result=JFX_ERROR_BACKEND_FAILURE;
+};
+static void scene_export_step_task(void *userdata) {
+    auto *step=static_cast<SceneExportStep *>(userdata);
+    step->result=jfx_export_step(step->job,1);
+    step->done.store(true,std::memory_order_release);
+}
+static void scene_preview_render_task(void *userdata) {
+    auto *job=static_cast<ScenePreviewJob *>(userdata);
+    if (!job->path.empty()) {
+        job->result=jfx_scene3d_write_png_ex(job->scene,job->seconds,job->width,job->height,&job->options,job->path.c_str());
+        job->done.store(true,std::memory_order_release); return;
+    }
+    job->result=jfx_scene3d_render_ex(job->scene,job->seconds,job->width,job->height,
+        &job->options,job->pixels.data(),job->pixels.size());
+    if (job->result==JFX_ERROR_BACKEND_FAILURE || job->result==JFX_ERROR_NOT_IMPLEMENTED) {
+        job->fallback=true;
+        job->result=jfx_scene3d_render(job->scene,job->seconds,job->width,job->height,job->pixels.data(),job->pixels.size());
+    }
+    job->done.store(true,std::memory_order_release);
+}
+
 struct jfx_desktop_frontend {
     jfx_engine_t *engine;
     jfx_editor_t *editor;
@@ -202,7 +242,13 @@ struct jfx_desktop_frontend {
     int scene_clone_mode,scene_clone_count;
     float scene_clone_spacing;
     bool scene_navigation;
-    bool scene_gpu;
+    jfx_scene3d_render_options_t scene_render_options;
+    uint64_t scene_revision;
+    ScenePreviewJob *scene_preview_job;
+    ScenePreviewJob *scene_png_job;
+    SceneExportStep *scene_export_step;
+    bool export_worker_scene,export_cancel_pending;
+    uint64_t export_completed_snapshot,export_total_snapshot;
     char scene_script[4097];
     char scene_script_path[512];
     char scene_mesh_path[512],scene_png_path[512];
@@ -329,6 +375,51 @@ static void reset_audio(jfx_desktop_frontend_t *f) {
     jfx_desktop_window_clear_audio(f->window);
     f->audio_peak[0]=f->audio_peak[1]=0;
 }
+static bool desktop_export_running(const jfx_desktop_frontend_t *f) {
+    return f->scene_export_step || (f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING);
+}
+static uint64_t desktop_export_completed(const jfx_desktop_frontend_t *f) {
+    return f->scene_export_step?f->export_completed_snapshot:jfx_export_completed_frames(f->export_job);
+}
+static uint64_t desktop_export_total(const jfx_desktop_frontend_t *f) {
+    return f->scene_export_step?f->export_total_snapshot:jfx_export_total_frames(f->export_job);
+}
+static void desktop_export_cancel(jfx_desktop_frontend_t *f) {
+    if (f->scene_export_step) f->export_cancel_pending=true;
+    else jfx_export_cancel(f->export_job);
+}
+static void desktop_export_advance(jfx_desktop_frontend_t *f) {
+    if (f->scene_export_step) {
+        if (!f->scene_export_step->done.load(std::memory_order_acquire)) return;
+        tilly::destroy(f->scene_export_step); f->scene_export_step=nullptr;
+    }
+    if (!f->export_job) return;
+    if (f->export_cancel_pending) { jfx_export_cancel(f->export_job); f->export_cancel_pending=false; }
+    if (jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING) {
+        if (f->export_worker_scene) {
+            auto *step=tilly::create<SceneExportStep>();
+            if (!step) { jfx_export_cancel(f->export_job); }
+            else {
+                step->job=f->export_job;
+                f->export_completed_snapshot=jfx_export_completed_frames(f->export_job);
+                f->export_total_snapshot=jfx_export_total_frames(f->export_job);
+                if (scheduler_submit(scene_export_step_task,step,-1)) { f->scene_export_step=step; return; }
+                tilly::destroy(step); return;
+            }
+        } else {
+            auto result=jfx_export_step(f->export_job,1);
+            std::snprintf(f->status,sizeof(f->status),"%s: %llu / %llu frames",result==JFX_SUCCESS?"Video export":"Video export failed",
+                (unsigned long long)jfx_export_completed_frames(f->export_job),(unsigned long long)jfx_export_total_frames(f->export_job));
+        }
+    }
+    if (jfx_export_state(f->export_job)!=JFX_EXPORT_RUNNING) {
+        auto state=jfx_export_state(f->export_job);
+        std::snprintf(f->status,sizeof(f->status),"Video export %s: %llu / %llu frames",
+            state==JFX_EXPORT_COMPLETE?"complete":state==JFX_EXPORT_CANCELLED?"cancelled":"failed",
+            (unsigned long long)jfx_export_completed_frames(f->export_job),(unsigned long long)jfx_export_total_frames(f->export_job));
+        jfx_export_destroy(f->export_job); f->export_job=nullptr; f->export_worker_scene=false;
+    }
+}
 namespace {
 void finish_grading(jfx_desktop_frontend_t *f); void finish_audio(jfx_desktop_frontend_t *f);
 jfx_result_t native_sync(jfx_desktop_frontend_t *f,bool finish);
@@ -414,6 +505,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     std::snprintf(frontend->drive_entry, sizeof(frontend->drive_entry), "drive");
     std::snprintf(frontend->iap_path, sizeof(frontend->iap_path), "animation.iap");
     frontend->scene_bake_frames=60;
+    frontend->scene_render_options.size=sizeof(frontend->scene_render_options);
+    frontend->scene_render_options.renderer=jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_MONKEYTRACE)?
+        JFX_SCENE3D_RENDER_MONKEYTRACE:JFX_SCENE3D_RENDER_RASTER;
+    frontend->scene_render_options.samples=4; frontend->scene_render_options.bounces=3;
+    frontend->scene_render_options.reflectivity=.15f; frontend->scene_render_options.timeout_ms=5000;
     frontend->scene_segments=64;
     frontend->scene_clone_count=5;
     frontend->scene_clone_spacing=3;
@@ -552,6 +648,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
 }
 
 extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
+    if (frontend && (frontend->scene_preview_job || frontend->scene_png_job || frontend->scene_export_step)) {
+        scheduler_wait_idle(); tilly::destroy(frontend->scene_preview_job); frontend->scene_preview_job=nullptr;
+        tilly::destroy(frontend->scene_png_job); frontend->scene_png_job=nullptr;
+        tilly::destroy(frontend->scene_export_step); frontend->scene_export_step=nullptr;
+    }
     if (frontend) {
 #ifdef JFX_DESKTOP_HAVE_INGAGI
         if (frontend->game_session) ingagi_destroy(frontend->game_session, nullptr, 0);
@@ -636,7 +737,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
         reset_audio(frontend);
         frontend->editing = true; frontend->selected_track = frontend->selected_clip = frontend->selected_node = 0;
         frontend->node_preview_selected=false; frontend->node_drag=0; frontend->node_wiring=false;
-        frontend->time_seconds = 0; frontend->preview_dirty = true;
+        frontend->time_seconds = 0; frontend->preview_dirty = true; ++frontend->scene_revision;
         jfx_desktop_frontend_set_workspace(frontend,jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_GRAPH?
             JFX_DESKTOP_WORKSPACE_COMPOSITING:jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_SCENE3D?
             JFX_DESKTOP_WORKSPACE_MODELING3D:JFX_DESKTOP_WORKSPACE_NLE);
@@ -687,6 +788,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_play(jfx_desktop_frontend_t *fronte
     if (!frontend) return JFX_ERROR_INVALID_ARGUMENT;
     if (frontend->recording) return JFX_ERROR_BUSY;
     frontend->playing = true;
+    frontend->preview_dirty=true; ++frontend->scene_revision;
     jfx_animation_tab_set_playing(frontend->animation_tab, true);
     return JFX_SUCCESS;
 }
@@ -695,6 +797,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_pause(jfx_desktop_frontend_t *front
     if (!frontend) return JFX_ERROR_INVALID_ARGUMENT;
     reset_audio(frontend);
     frontend->playing = false;
+    frontend->preview_dirty=true; ++frontend->scene_revision;
     jfx_animation_tab_set_playing(frontend->animation_tab, false);
     return JFX_SUCCESS;
 }
@@ -705,6 +808,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_seek(jfx_desktop_frontend_t *fronte
         return JFX_ERROR_INVALID_ARGUMENT;
     }
     reset_audio(frontend); frontend->time_seconds = time_seconds;
+    ++frontend->scene_revision;
     jfx_animation_tab_set_time(frontend->animation_tab, time_seconds);
     frontend->preview_dirty = true;
     return JFX_SUCCESS;
@@ -743,6 +847,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_render_rgba8(jfx_desktop_frontend_t
     if (out_size < pixels * 4u) return JFX_ERROR_INVALID_ARGUMENT;
 
     if (frontend->editing) {
+        if (jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_SCENE3D)
+            return jfx_scene3d_render_ex(jfx_editor_scene3d(frontend->editor),frontend->time_seconds,
+                width,height,&frontend->scene_render_options,out_rgba,out_size);
         if (frontend->node_preview_selected && jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_GRAPH)
             return jfx_editor_render_graph(frontend->editor,frontend->selected_node,frontend->time_seconds,width,height,out_rgba,out_size);
         return jfx_editor_render(frontend->editor, frontend->time_seconds, width, height, out_rgba, out_size);
@@ -1130,11 +1237,11 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             }
         ImGui::EndCombo();
     }
-    if (frontend->export_job && jfx_export_state(frontend->export_job)==JFX_EXPORT_RUNNING) {
+    if (desktop_export_running(frontend)) {
         ImGui::SetNextItemWidth(260);
-        ImGui::ProgressBar((float)((double)jfx_export_completed_frames(frontend->export_job)/(double)jfx_export_total_frames(frontend->export_job)));
+        ImGui::ProgressBar((float)((double)desktop_export_completed(frontend)/(double)desktop_export_total(frontend)));
         ImGui::SameLine();
-        if (ImGui::Button("Cancel export")) jfx_export_cancel(frontend->export_job);
+        if (ImGui::Button("Cancel export")) desktop_export_cancel(frontend);
     } else ImGui::TextDisabled("%s",frontend->status);
     } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":"Vector animation",frontend->status);
     ImGui::Separator();
@@ -1260,18 +1367,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             frontend->duration_seconds = (double)jfx_timeline_duration(jfx_editor_timeline(frontend->editor)) / jfx_timeline_fps(jfx_editor_timeline(frontend->editor));
         else if (frontend->editing && jfx_editor_kind(frontend->editor)!=JFX_PROJECT_KIND_SCENE3D) frontend->duration_seconds=JFX_DESKTOP_DEFAULT_DURATION;
         compose_ui(frontend);
-        if (frontend->export_job && jfx_export_state(frontend->export_job)==JFX_EXPORT_RUNNING) {
-            auto r=jfx_export_step(frontend->export_job,1);
-            std::snprintf(frontend->status,sizeof(frontend->status),r==JFX_SUCCESS?"Video export: %llu / %llu frames":"Video export failed: %llu / %llu frames",
-                (unsigned long long)jfx_export_completed_frames(frontend->export_job),(unsigned long long)jfx_export_total_frames(frontend->export_job));
-        }
-        if (frontend->export_job && jfx_export_state(frontend->export_job)!=JFX_EXPORT_RUNNING) {
-            auto state=jfx_export_state(frontend->export_job);
-            std::snprintf(frontend->status,sizeof(frontend->status),"Video export %s: %llu / %llu frames",
-                state==JFX_EXPORT_COMPLETE?"complete":state==JFX_EXPORT_CANCELLED?"cancelled":"failed",
-                (unsigned long long)jfx_export_completed_frames(frontend->export_job),(unsigned long long)jfx_export_total_frames(frontend->export_job));
-            jfx_export_destroy(frontend->export_job); frontend->export_job=nullptr;
-        }
+        desktop_export_advance(frontend);
         if (!frontend->playing || !frontend->editing || jfx_editor_kind(frontend->editor)!=JFX_PROJECT_KIND_SEQUENCE) reset_audio(frontend);
         else if (frontend->window) {
             if (frontend->audio_mixer && std::fabs((double)frontend->audio_sample/48000.0-frontend->time_seconds)>0.4) reset_audio(frontend);
@@ -1302,6 +1398,15 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             ImGui::Render();
         }
         frontend->frame_count++;
+        /* Engine ticks drain the scheduler at the frame boundary. These 3D
+         * jobs own heap snapshots, not frame-arena data; defer that boundary
+         * while they run so the UI loop never waits for a ray-traced frame. */
+#if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__)
+        if ((frontend->scene_preview_job && !frontend->scene_preview_job->done.load(std::memory_order_acquire)) ||
+            (frontend->scene_png_job && !frontend->scene_png_job->done.load(std::memory_order_acquire)) ||
+            (frontend->scene_export_step && !frontend->scene_export_step->done.load(std::memory_order_acquire)))
+            return JFX_SUCCESS;
+#endif
         return jfx_engine_tick(frontend->engine);
     }
 
@@ -1408,7 +1513,7 @@ extern "C" uint64_t jfx_desktop_frontend_frame_count(const jfx_desktop_frontend_
 
 /* Public panel operations delegate to the shared editor models. */
 static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
-    if (f && r == JFX_SUCCESS) { reset_audio(f); f->editing = true; f->preview_dirty = true; }
+    if (f && r == JFX_SUCCESS) { reset_audio(f); f->editing = true; f->preview_dirty = true; ++f->scene_revision; }
     return r;
 }
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
@@ -1446,14 +1551,36 @@ extern "C" jfx_result_t jfx_desktop_frontend_sequence_state(jfx_desktop_frontend
 extern "C" jfx_result_t jfx_desktop_frontend_scene3d_state(jfx_desktop_frontend_t *f,char *out,size_t cap) {
     return f?jfx_editor_scene3d_state(f->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
 }
+extern "C" jfx_result_t jfx_desktop_frontend_set_scene3d_render_options(jfx_desktop_frontend_t *f,const jfx_scene3d_render_options_t *o) {
+    if (!f || !o || o->size<sizeof(*o) || o->renderer<JFX_SCENE3D_RENDER_RASTER || o->renderer>JFX_SCENE3D_RENDER_FILAMENT ||
+        (o->renderer==JFX_SCENE3D_RENDER_MONKEYTRACE && (o->samples>64 || o->bounces>8 || o->timeout_ms>60000 ||
+        !std::isfinite(o->reflectivity) || o->reflectivity<0 || o->reflectivity>1))) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!jfx_scene3d_renderer_available(o->renderer)) return JFX_ERROR_NOT_IMPLEMENTED;
+    f->scene_render_options=*o;
+    if (!f->scene_render_options.samples) f->scene_render_options.samples=4;
+    if (!f->scene_render_options.timeout_ms) f->scene_render_options.timeout_ms=5000;
+    f->preview_dirty=true; ++f->scene_revision; return JFX_SUCCESS;
+}
+extern "C" jfx_result_t jfx_desktop_frontend_scene3d_render_options(const jfx_desktop_frontend_t *f,jfx_scene3d_render_options_t *out) {
+    if (!f || !out || out->size<sizeof(*out)) return JFX_ERROR_INVALID_ARGUMENT;
+    *out=f->scene_render_options; return JFX_SUCCESS;
+}
 extern "C" jfx_result_t jfx_desktop_frontend_write_frame(jfx_desktop_frontend_t *f,uint64_t frame,const char *path) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
     auto *t=jfx_editor_timeline(f->editor);
     return jfx_editor_write_frame(f->editor,frame,jfx_timeline_width(t),jfx_timeline_height(t),path);
 }
 extern "C" jfx_result_t jfx_desktop_frontend_export_begin(jfx_desktop_frontend_t *f,const jfx_export_options_t *o,jfx_export_job_t **out) {
-    if (f) { auto r=native_sync(f,true); if (r!=JFX_SUCCESS) return r; }
-    return jfx_export_begin(f?f->editor:nullptr,o,out);
+    if (!f || !out) return JFX_ERROR_INVALID_ARGUMENT;
+    auto r=native_sync(f,true); if (r!=JFX_SUCCESS) return r;
+    jfx_export_job_t *job=nullptr;
+    r=jfx_export_begin(f->editor,o,&job); if (r!=JFX_SUCCESS) return r;
+    if (jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_SCENE3D) {
+        auto options=f->scene_render_options; options.timeout_ms=60000;
+        r=jfx_export_set_scene3d_render_options(job,&options);
+        if (r!=JFX_SUCCESS) { jfx_export_destroy(job); return r; }
+    }
+    *out=job; return JFX_SUCCESS;
 }
 extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t *f,uint32_t rate,jfx_audio_mixer_t **out) {
     return jfx_audio_mixer_create(f?jfx_editor_timeline(f->editor):nullptr,rate,out);
@@ -1779,6 +1906,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; }
     if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;
+    ++f->scene_revision;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
     f->creative_dirty = true;
     f->nle_drag=f->node_drag=0; f->node_wiring=false;

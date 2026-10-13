@@ -102,7 +102,7 @@ func CompileGLSL(s *fe.ShaderDecl, stage string) (string, error) {
 			if len(f.Attrs) > 0 {
 				e.fail(f.Span, "field attributes are unsupported")
 			}
-			e.line("%s %s;", e.typ(f.Type, f.Span), e.ident(f.Name, f.Span))
+			e.line("%s;", e.field(f.Type, f.Name, f.Span))
 		}
 		e.indent--
 		e.line("};")
@@ -167,7 +167,7 @@ func CompileGLSL(s *fe.ShaderDecl, stage string) (string, error) {
 				if len(f.Attrs) > 0 {
 					e.fail(f.Span, "buffer field attributes are unsupported")
 				}
-				e.line("%s %s;", e.typ(f.Type, f.Span), e.ident(f.Name, f.Span))
+				e.line("%s;", e.field(f.Type, f.Name, f.Span))
 			}
 			e.indent--
 			suffix := ""
@@ -455,6 +455,25 @@ func (e *glslEmitter) typ(t string, sp fe.Span) string {
 	}
 	e.fail(sp, "unsupported GPU type %q", t)
 	return "invalid"
+}
+
+// Fixed one-dimensional arrays in structs/buffers use Ingagi's existing
+// [element; length] syntax. Bound literal sizes; host expressions and nested
+// arrays require layout/constant evaluation that this emitter does not provide.
+func (e *glslEmitter) field(t, name string, sp fe.Span) string {
+	if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+		parts := strings.Split(t[1:len(t)-1], ";")
+		if len(parts) == 2 {
+			size, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+			elem := strings.TrimSpace(parts[0])
+			if err == nil && size > 0 && size <= 65536 && elem != "void" && elem != "" {
+				return fmt.Sprintf("%s %s[%d]", e.typ(elem, sp), e.ident(name, sp), size)
+			}
+		}
+		e.fail(sp, "GPU array requires an element type and literal length in 1..65536")
+		return "invalid"
+	}
+	return e.typ(t, sp) + " " + e.ident(name, sp)
 }
 func (e *glslEmitter) signature(fn fe.ShaderFunc) string {
 	var params []string

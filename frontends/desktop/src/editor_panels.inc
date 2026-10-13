@@ -1,6 +1,6 @@
 /* Included in the UI namespace: widgets edit the public models and surface errors. */
 void editor_result(jfx_desktop_frontend_t *f, jfx_result_t r) {
-    if (r == JFX_SUCCESS) { reset_audio(f); f->editing = true; f->preview_dirty = true; f->status[0]=0; }
+    if (r == JFX_SUCCESS) { reset_audio(f); f->editing = true; f->preview_dirty = true; ++f->scene_revision; f->status[0]=0; }
     else std::snprintf(f->status, sizeof(f->status), "%s", jfx_result_to_string(r));
 }
 void encoded_export(jfx_desktop_frontend_t *f) {
@@ -9,7 +9,7 @@ void encoded_export(jfx_desktop_frontend_t *f) {
     ImGui::InputScalar("Export start frame",ImGuiDataType_U64,&f->video_start);
     ImGui::InputScalar("Export frames (0: sequence)",ImGuiDataType_U64,&f->video_frames);
     ImGui::Checkbox("Include mixed audio",&f->video_audio);
-    bool running=f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING;
+    bool running=desktop_export_running(f);
     ImGui::BeginDisabled(running);
     if (ImGui::Button("Export encoded video")) {
         jfx_export_destroy(f->export_job); f->export_job=nullptr;
@@ -17,12 +17,13 @@ void encoded_export(jfx_desktop_frontend_t *f) {
         options.video_codec=*f->video_codec?f->video_codec:nullptr; options.start_frame=f->video_start;
         options.frame_count=f->video_frames?f->video_frames:jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?300:0;
         options.audio=f->video_audio;
-        editor_result(f,jfx_export_begin(f->editor,&options,&f->export_job));
+        editor_result(f,jfx_desktop_frontend_export_begin(f,&options,&f->export_job));
+        f->export_worker_scene=f->export_job && jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_SCENE3D;
     }
     ImGui::EndDisabled();
     if (running) {
-        ImGui::ProgressBar((float)((double)jfx_export_completed_frames(f->export_job)/(double)jfx_export_total_frames(f->export_job)));
-        if (ImGui::Button("Cancel video export")) jfx_export_cancel(f->export_job);
+        ImGui::ProgressBar((float)((double)desktop_export_completed(f)/(double)desktop_export_total(f)));
+        if (ImGui::Button("Cancel video export")) desktop_export_cancel(f);
     }
 }
 void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {

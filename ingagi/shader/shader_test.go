@@ -46,6 +46,29 @@ func TestCompileShader(t *testing.T) {
 	}
 }
 
+func TestBufferArrays(t *testing.T) {
+	s := parseShaderTest(t, `shader Array { storage buffer Data { values: [vec4; 256]; } data; compute { data.values[0] = vec4(1.0); } }`)
+	glsl, err := CompileGLSL(s, "compute")
+	if err != nil || !strings.Contains(glsl, "vec4 values[256];") {
+		t.Fatalf("%s: %v", glsl, err)
+	}
+	if compiler, err := exec.LookPath("glslangValidator"); err == nil {
+		if _, err := CompileSPIRV(context.Background(), s, "compute", compiler); err != nil {
+			t.Fatal(err)
+		}
+		st := parseShaderTest(t, `shader StructArray { struct Item { values: [vec4; 2]; } storage buffer Data { item: Item; } data; compute { data.item.values[1] = vec4(2.0); } }`)
+		if _, err := CompileSPIRV(context.Background(), st, "compute", compiler); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, typ := range []string{"[vec4;0]", "[vec4;65537]", "[vec4;2+2]", "[void;4]"} {
+		bad := parseShaderTest(t, `shader Bad { storage buffer Data { values: `+typ+`; } data; compute {} }`)
+		if _, err := CompileGLSL(bad, "compute"); err == nil {
+			t.Fatalf("accepted %s", typ)
+		}
+	}
+}
+
 func TestSPIRVValidation(t *testing.T) {
 	compiler, err := exec.LookPath("glslangValidator")
 	if err != nil {

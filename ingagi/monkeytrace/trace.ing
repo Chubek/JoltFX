@@ -1,0 +1,158 @@
+// All scene data comes from an owned Ingagi ECS snapshot. Four vec4s per
+// primitive: center/radius (radius=0 for triangles), B/reflectivity,
+// C/reserved, albedo/emission. No hardware ray-tracing extension required.
+shader MonkeyTrace {
+ @set(0) @binding(0) read storage buffer Geometry {
+  values: [vec4; 16384];
+ } sceneData;
+ @set(0) @binding(1) uniform Params {
+  eye: vec4;
+  forward: vec4;
+  right: vec4;
+  up: vec4;
+  skyLow: vec4;
+  skyHigh: vec4;
+  light: vec4;
+  config: vec4;
+  sampling: vec4;
+ } params;
+ @set(0) @binding(2) storage_image texture2d outputImage: write;
+ @set(0) @binding(3) read storage buffer Acceleration {
+  nodes: [vec4; 16382];
+ } acceleration;
+
+ fn distanceTo(index: int, eye: vec3, direction: vec3) -> float {
+  let a: vec4 = sceneData.values[index * 4];
+  if a.w > 0.0 {
+   let oc: vec3 = eye - a.xyz;
+   let b: float = dot(oc, direction);
+   let disc: float = b * b - dot(oc, oc) + a.w * a.w;
+   if disc < 0.0 { return 1e30; }
+   let root: float = sqrt(disc);
+   let t: float = -b - root;
+   if t <= 0.0001 { t = -b + root; }
+   if t > 0.0001 { return t; }
+   return 1e30;
+  }
+  let e1: vec3 = sceneData.values[index * 4 + 1].xyz - a.xyz;
+  let e2: vec3 = sceneData.values[index * 4 + 2].xyz - a.xyz;
+  let h: vec3 = cross(direction, e2);
+  let det: float = dot(e1, h);
+  if abs(det) < 1e-8 { return 1e30; }
+  let s: vec3 = eye - a.xyz;
+  let u: float = dot(s, h) / det;
+  if u < 0.0 || u > 1.0 { return 1e30; }
+  let q: vec3 = cross(s, e1);
+  let v: float = dot(direction, q) / det;
+  if v < 0.0 || u + v > 1.0 { return 1e30; }
+  let t: float = dot(e2, q) / det;
+  if t > 0.0001 { return t; }
+  return 1e30;
+ }
+
+ // Preorder BVH: min.w skips a complete subtree, max.w names a primitive
+ // or -1 for internal nodes. Parallel slabs are handled without 0 * infinity.
+ fn boxHit(low: vec3, high: vec3, eye: vec3, direction: vec3, limit: float) -> bool {
+  let nearDistance: float = 0.0001;
+  let farDistance: float = limit;
+  let axis: int = 0;
+  while axis < 3 {
+   let d: float = direction[axis];
+   if d == 0.0 {
+    if eye[axis] < low[axis] || eye[axis] > high[axis] { return false; }
+   } else {
+    let a: float = (low[axis] - eye[axis]) / d;
+    let b: float = (high[axis] - eye[axis]) / d;
+    nearDistance = max(nearDistance, min(a, b));
+    farDistance = min(farDistance, max(a, b));
+    if nearDistance > farDistance { return false; }
+   }
+   axis += 1;
+  }
+  return true;
+ }
+
+ fn findHit(eye: vec3, direction: vec3, anyHit: bool) -> vec2 {
+  let best: float = 1e30;
+  let hit: int = -1;
+  let nodeIndex: int = 0;
+  while nodeIndex < int(params.sampling.y) {
+   let low: vec4 = acceleration.nodes[nodeIndex * 2];
+   let high: vec4 = acceleration.nodes[nodeIndex * 2 + 1];
+   if !boxHit(low.xyz, high.xyz, eye, direction, best) {
+    nodeIndex = int(low.w);
+    continue;
+   }
+   let primitiveIndex: int = int(high.w);
+   if primitiveIndex >= 0 {
+    let distance: float = distanceTo(primitiveIndex, eye, direction);
+    if distance < best || (distance == best && distance < 1e30 && primitiveIndex < hit) {
+     best = distance;
+     hit = primitiveIndex;
+     if anyHit { return vec2(best, float(hit)); }
+    }
+   }
+   nodeIndex += 1;
+  }
+  return vec2(best, float(hit));
+ }
+
+ fn radiance(initialEye: vec3, initialDirection: vec3) -> vec3 {
+  let eye: vec3 = initialEye;
+  let direction: vec3 = initialDirection;
+  let result: vec3 = vec3(0.0);
+  let throughput: vec3 = vec3(1.0);
+  let bounce: int = 0;
+  while bounce <= int(params.config.w) {
+   let found: vec2 = findHit(eye, direction, false);
+   let best: float = found.x;
+   let hit: int = int(found.y);
+   if hit < 0 {
+    let skyFactor: float = 0.5 * (direction.y + 1.0);
+    return result + throughput * mix(params.skyLow.xyz, params.skyHigh.xyz, skyFactor);
+   }
+   let a: vec4 = sceneData.values[hit * 4];
+   let b: vec4 = sceneData.values[hit * 4 + 1];
+   let c: vec4 = sceneData.values[hit * 4 + 2];
+   let material: vec4 = sceneData.values[hit * 4 + 3];
+   let pos: vec3 = eye + direction * best;
+   let normal: vec3 = cross(b.xyz - a.xyz, c.xyz - a.xyz);
+   if a.w > 0.0 { normal = pos - a.xyz; }
+   normal = normalize(normal);
+   if dot(normal, direction) > 0.0 { normal = -normal; }
+   let worldScale: float = max(abs(pos.x), max(abs(pos.y), abs(pos.z)));
+   eye = pos + normal * (0.0004 + worldScale * 1e-6);
+   let illumination: float = max(0.0, dot(normal, params.light.xyz)) * params.light.w;
+   if illumination > 0.0 {
+    let blocker: vec2 = findHit(eye, params.light.xyz, true);
+    if blocker.y >= 0.0 { illumination = 0.0; }
+   }
+   result += throughput * material.xyz * (material.w + (1.0 - b.w) * (0.08 + illumination));
+   throughput *= material.xyz * b.w;
+   if max(throughput.x, max(throughput.y, throughput.z)) < 0.001 { break; }
+   direction = normalize(reflect(direction, normal));
+   bounce += 1;
+  }
+  return result;
+ }
+
+ compute(local_size_x: 8, local_size_y: 8) {
+  let pixel: ivec2 = ivec2(gl_GlobalInvocationID.xy);
+  if pixel.x >= int(params.config.x) || pixel.y >= int(params.config.y) { return; }
+  let grid: int = int(ceil(sqrt(params.sampling.x)));
+  let color: vec3 = vec3(0.0);
+  let sampleIndex: int = 0;
+  while sampleIndex < int(params.sampling.x) {
+   let offset: vec2 = (vec2(float(sampleIndex % grid), float(sampleIndex / grid)) + vec2(0.5)) / float(grid);
+   let uv: vec2 = (vec2(pixel) + offset) / params.config.xy;
+   let px: float = (2.0 * uv.x - 1.0) * params.right.w * params.forward.w;
+   let py: float = (1.0 - 2.0 * uv.y) * params.forward.w;
+   let direction: vec3 = normalize(params.forward.xyz + params.right.xyz * px + params.up.xyz * py);
+   color += radiance(params.eye.xyz, direction);
+   sampleIndex += 1;
+  }
+  color = max(color / params.sampling.x, vec3(0.0));
+  color = pow(color / (vec3(1.0) + color), vec3(1.0 / 2.2));
+  imageStore(outputImage, pixel, vec4(color, 1.0));
+ }
+}

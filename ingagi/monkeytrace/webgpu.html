@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MonkeyTrace · Ingagi WebGPU</title>
+<style>
+ body { margin: 2rem; background: #12151b; color: #e5e8ef; font: 16px system-ui; }
+ canvas { max-width: 100%; height: auto; background: #000; border-radius: 8px; }
+ button { padding: .6rem 1rem; margin: .5rem .5rem .5rem 0; cursor: pointer; }
+ #status { white-space: pre-wrap; }
+</style>
+<h1>MonkeyTrace</h1>
+<p>Ingagi ECS → Ingagi compute shader → WebGPU</p>
+<canvas id="image"></canvas>
+<p id="status">Initializing WebGPU…</p>
+<button id="render" disabled>Render again</button>
+<button id="save" disabled>Save PNG</button>
+<script id="scene" type="application/json">__MONKEYTRACE_DATA__</script>
+<script type="module">
+const data = JSON.parse(document.getElementById('scene').textContent);
+const canvas = document.getElementById('image');
+const status = document.getElementById('status');
+const renderButton = document.getElementById('render');
+const saveButton = document.getElementById('save');
+canvas.width = data.width; canvas.height = data.height;
+const context = canvas.getContext('2d');
+let device, texture, readback, pipeline, bindGroup;
+let lost = false;
+let resources = [];
+let completed = false;
+const rowBytes = Math.ceil(data.width * 16 / 256) * 256;
+function fail(error) {
+  status.textContent = `WebGPU error: ${error.message || error}`;
+  canvas.dataset.state = 'error';
+}
+function release() {
+  for (const resource of resources) resource.destroy();
+  resources = [];
+}
+function buffer(values, usage, label) {
+  const bytes = new Float32Array(values);
+  const result = device.createBuffer({label, size: bytes.byteLength, usage: usage | GPUBufferUsage.COPY_DST});
+  resources.push(result);
+  device.queue.writeBuffer(result, 0, bytes);
+  return result;
+}
+async function render() {
+  if (lost) return;
+  renderButton.disabled = true; saveButton.disabled = true;
+  canvas.dataset.state = 'rendering';
+  status.textContent = 'Tracing rays on WebGPU…';
+  const start = performance.now();
+  device.pushErrorScope('validation');
+  let error;
+  try {
+    const encoder = device.createCommandEncoder({label: 'MonkeyTrace frame'});
+    const pass = encoder.beginComputePass({label: 'MonkeyTrace ray tracing'});
+    pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(data.width / 8), Math.ceil(data.height / 8));
+    pass.end();
+    encoder.copyTextureToBuffer({texture}, {buffer: readback, bytesPerRow: rowBytes, rowsPerImage: data.height}, [data.width, data.height]);
+    device.queue.submit([encoder.finish()]);
+    await readback.mapAsync(GPUMapMode.READ);
+    try {
+      const values = new Float32Array(readback.getMappedRange());
+      const image = context.createImageData(data.width, data.height);
+      for (let y = 0; y < data.height; y++) {
+        for (let x = 0; x < data.width; x++) {
+          const source = y * (rowBytes / 4) + x * 4;
+          const target = (y * data.width + x) * 4;
+          for (let c = 0; c < 3; c++) image.data[target + c] = Math.round(Math.max(0, Math.min(1, values[source + c])) * 255);
+          image.data[target + 3] = 255;
+        }
+      }
+      context.putImageData(image, 0, 0);
+    } finally { readback.unmap(); }
+  } catch (e) { error = e; }
+  const validation = await device.popErrorScope();
+  if (error || validation) throw error || validation;
+  if (lost) throw new Error('device lost');
+  completed = true;
+  canvas.dataset.state = 'complete';
+  status.textContent = `${data.width} × ${data.height} · ${data.params[30]} primitives · ${data.params[32]} samples · ${(performance.now() - start).toFixed(1)} ms (dispatch + readback)`;
+  renderButton.disabled = false; saveButton.disabled = false;
+}
+async function initialize() {
+  if (!navigator.gpu) throw new Error('WebGPU unavailable. Serve this page on localhost or HTTPS in a WebGPU-capable browser.');
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error('No WebGPU adapter available');
+  device = await adapter.requestDevice();
+  device.lost.then(info => {
+    lost = true; renderButton.disabled = true; saveButton.disabled = true;
+    if (info.reason !== 'destroyed') fail(new Error(`device lost: ${info.message}`));
+    release();
+  });
+  device.addEventListener('uncapturederror', event => fail(event.error));
+  if (data.width > device.limits.maxTextureDimension2D || data.height > device.limits.maxTextureDimension2D || rowBytes * data.height > device.limits.maxBufferSize) throw new Error('Scene exceeds adapter resource limits');
+  if (data.geometry.length * 4 > device.limits.maxStorageBufferBindingSize || data.bvh.length * 4 > device.limits.maxStorageBufferBindingSize) throw new Error('Geometry exceeds adapter storage-buffer limits');
+  device.pushErrorScope('validation');
+  let error;
+  try {
+    const module = device.createShaderModule({label: 'Ingagi MonkeyTrace shader', code: data.wgsl});
+    const info = await module.getCompilationInfo();
+    const errors = info.messages.filter(m => m.type === 'error');
+    if (errors.length) throw new Error(errors.map(m => `${m.lineNum}:${m.linePos} ${m.message}`).join('\n'));
+    pipeline = await device.createComputePipelineAsync({label: 'MonkeyTrace', layout: 'auto', compute: {module, entryPoint: 'main'}});
+    const geometry = buffer(data.geometry, GPUBufferUsage.STORAGE, 'ECS geometry snapshot');
+    const params = buffer(data.params, GPUBufferUsage.UNIFORM, 'Camera and render parameters');
+    const bvh = buffer(data.bvh, GPUBufferUsage.STORAGE, 'ECS snapshot BVH');
+    texture = device.createTexture({label: 'MonkeyTrace output', size: [data.width, data.height], format: 'rgba32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC});
+    resources.push(texture);
+    readback = device.createBuffer({label: 'MonkeyTrace readback', size: rowBytes * data.height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    resources.push(readback);
+    bindGroup = device.createBindGroup({layout: pipeline.getBindGroupLayout(0), entries: [
+      {binding: 0, resource: {buffer: geometry}},
+      {binding: 1, resource: {buffer: params}},
+      {binding: 2, resource: texture.createView()},
+      {binding: 3, resource: {buffer: bvh}}
+    ]});
+  } catch (e) { error = e; }
+  const validation = await device.popErrorScope();
+  if (error || validation) throw error || validation;
+  await render();
+}
+renderButton.addEventListener('click', () => render().catch(fail));
+saveButton.addEventListener('click', () => {
+  if (!completed) return;
+  canvas.toBlob(blob => {
+    if (!blob) return;
+    const link = document.createElement('a'); link.download = 'monkeytrace.png'; link.href = URL.createObjectURL(blob);
+    link.click(); URL.revokeObjectURL(link.href);
+  });
+});
+window.addEventListener('pagehide', () => { release(); if (device) device.destroy(); });
+initialize().catch(error => { fail(error); release(); if (device) device.destroy(); });
+</script>
+</html>

@@ -33,6 +33,12 @@
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
+#ifdef JFX_HAVE_MONKEYTRACE
+#include "monkeytrace.h"
+#endif
+#ifdef JFX_HAVE_FILAMENT
+#include "../../backends/filament/renderer.h"
+#endif
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -592,6 +598,8 @@ template<class Fn> jfx_result_t boundary(Fn fn) {
 #include "modeling3d_renderer.inc"
 #ifdef JFX_BACKEND_VULKAN
 #include "jfx/vk_backend.h"
+#endif
+#if defined(JFX_BACKEND_VULKAN) || defined(JFX_HAVE_FILAMENT)
 /* GPU offload staging caps mirror vk_scene.c (SCENE_MAX_DRAWS/VERTS);
  * larger scenes fail closed so the caller falls back to the CPU path. */
 constexpr uint32_t gpu_max_draws=4096u;
@@ -605,7 +613,7 @@ struct GpuDraw {
  * model/normal matrices and a y-down view-projection matrix, matching the
  * CPU rasterizer's camera, focal length and near plane (0.05). */
 bool flatten_gpu(const Document &d,double seconds,uint32_t w,uint32_t h,
-    tilly::vector<GpuDraw> &draws,float vp_out[16]) {
+    tilly::vector<GpuDraw> &draws,float vp_out[16],size_t vertex_limit=gpu_max_verts) {
     auto &c=d.camera;
     glm::vec3 target(c[3],c[4],c[5]);
     glm::vec3 eye=target+d.orientation*glm::vec3(0,0,c[2]);
@@ -647,7 +655,7 @@ bool flatten_gpu(const Document &d,double seconds,uint32_t w,uint32_t h,
                 uint32_t vi=o.triangles[ti][j];
                 auto &vv=o.vertices[vi]; auto &nn=normals[ti][j];
                 draw.verts.insert(draw.verts.end(),{vv[0],vv[1],vv[2],nn.x,nn.y,nn.z});
-                if (++total_verts>gpu_max_verts) return false;
+                if (++total_verts>vertex_limit) return false;
             }
             draws.push_back(std::move(draw)); ++total_draws;
         }
@@ -678,6 +686,13 @@ extern "C" jfx_scene3d_t *jfx_scene3d_create() {
     (void)configured; return tilly::create<jfx_scene3d>();
 }
 extern "C" void jfx_scene3d_destroy(jfx_scene3d_t *s) { tilly::destroy(s); }
+extern "C" jfx_scene3d_t *jfx_scene3d_clone(const jfx_scene3d_t *s) {
+    if (!s) return nullptr;
+    jfx_scene3d_t *copy=nullptr;
+    try { copy=tilly::create<jfx_scene3d>(); if (copy) copy->document=s->document; }
+    catch (...) { tilly::destroy(copy); return nullptr; }
+    return copy;
+}
 extern "C" uint32_t jfx_scene3d_object_count(const jfx_scene3d_t *s) { return s?uint32_t(s->document.objects.size()):0; }
 extern "C" uint32_t jfx_scene3d_fps(const jfx_scene3d_t *s) { return s?s->document.fps:0; }
 extern "C" uint32_t jfx_scene3d_frames(const jfx_scene3d_t *s) { return s?s->document.frames:0; }
@@ -869,6 +884,105 @@ extern "C" jfx_result_t jfx_scene3d_write_png_gpu(const jfx_scene3d_t *s,double 
     return boundary([&] {
         tilly::vector<uint8_t> pixels(size_t(w)*h*4);
         auto r=jfx_scene3d_render_gpu(s,seconds,w,h,pixels.data(),pixels.size()); if (r!=JFX_SUCCESS) return r;
+        ExportFile output(path); if (!output.file) return JFX_ERROR_BACKEND_FAILURE;
+        auto write=[](void *context,void *data,int size) { std::fwrite(data,1,size_t(size),static_cast<FILE *>(context)); };
+        bool ok=stbi_write_png_to_func(write,output.file,int(w),int(h),4,pixels.data(),int(w*4))!=0 && output.commit(path);
+        return ok?JFX_SUCCESS:JFX_ERROR_BACKEND_FAILURE;
+    });
+}
+
+extern "C" bool jfx_scene3d_renderer_available(jfx_scene3d_renderer_t renderer) {
+    if (renderer==JFX_SCENE3D_RENDER_RASTER) return true;
+#ifdef JFX_HAVE_MONKEYTRACE
+    if (renderer==JFX_SCENE3D_RENDER_MONKEYTRACE) return true;
+#endif
+#ifdef JFX_BACKEND_VULKAN
+    if (renderer==JFX_SCENE3D_RENDER_VULKAN) return true;
+#endif
+#ifdef JFX_HAVE_FILAMENT
+    if (renderer==JFX_SCENE3D_RENDER_FILAMENT) return true;
+#endif
+    return false;
+}
+extern "C" jfx_result_t jfx_scene3d_render_ex(const jfx_scene3d_t *s,double seconds,
+    uint32_t w,uint32_t h,const jfx_scene3d_render_options_t *options,uint8_t *out,size_t cap) {
+    if (!s || !options || options->size<sizeof(*options) || !out || !w || !h || w>2048 || h>2048 ||
+        cap<size_t(w)*h*4 || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
+    if (options->renderer==JFX_SCENE3D_RENDER_RASTER) return jfx_scene3d_render(s,seconds,w,h,out,cap);
+    if (options->renderer==JFX_SCENE3D_RENDER_VULKAN) return jfx_scene3d_render_gpu(s,seconds,w,h,out,cap);
+    if (options->renderer==JFX_SCENE3D_RENDER_FILAMENT) {
+#ifdef JFX_HAVE_FILAMENT
+        return boundary([&] {
+            tilly::vector<GpuDraw> draws;
+            float vp[16];
+            if (!flatten_gpu(s->document,seconds,w,h,draws,vp,6u*1024u*1024u)) return JFX_ERROR_BACKEND_FAILURE;
+            tilly::vector<jfx_filament_draw_t> packed; packed.reserve(draws.size());
+            for (const auto &draw:draws) {
+                jfx_filament_draw_t entry={}; entry.vertices=draw.verts.data(); entry.vertex_count=uint32_t(draw.verts.size()/6);
+                std::memcpy(entry.model,&draw.model[0][0],sizeof(entry.model));
+                for (unsigned i=0;i<3;++i) entry.color[i]=draw.color[int(i)];
+                packed.push_back(entry);
+            }
+            jfx_filament_desc_t desc={}; desc.size=sizeof(desc); desc.draws=packed.data(); desc.draw_count=uint32_t(packed.size());
+            desc.width=w; desc.height=h; desc.allocate=tilly_mem_alloc; desc.release=tilly_mem_free;
+            const auto &c=s->document.camera;
+            glm::vec3 target(c[3],c[4],c[5]),eye=target+s->document.orientation*glm::vec3(0,0,c[2]);
+            glm::vec3 up=s->document.orientation*glm::vec3(0,1,0);
+            for (unsigned i=0;i<3;++i) { desc.eye[i]=eye[int(i)]; desc.target[i]=target[int(i)]; desc.up[i]=up[int(i)]; }
+            desc.vertical_fov=c[6];
+            return static_cast<jfx_result_t>(jfx_filament_render(&desc,out,cap));
+        });
+#else
+        return JFX_ERROR_NOT_IMPLEMENTED;
+#endif
+    }
+    if (options->renderer!=JFX_SCENE3D_RENDER_MONKEYTRACE || options->samples>64 || options->bounces>8 ||
+        options->timeout_ms>60000 || !std::isfinite(options->reflectivity) || options->reflectivity<0 || options->reflectivity>1)
+        return JFX_ERROR_INVALID_ARGUMENT;
+#ifdef JFX_HAVE_MONKEYTRACE
+    return boundary([&] {
+        tilly::vector<monkeytrace_triangle_t> triangles;
+        size_t count=0;
+        for (const auto &o:s->document.objects) if (o.visible) count+=o.triangles.size()*o.instances;
+        if (count>MONKEYTRACE_NATIVE_MAX_TRIANGLES) return JFX_ERROR_BACKEND_FAILURE;
+        triangles.reserve(count);
+        for (const auto &o:s->document.objects) if (o.visible) {
+            for (uint32_t instance=0;instance<o.instances;++instance) {
+                auto t=sample_instance(o,instance,seconds,s->document.fps);
+                auto rot=rotation(t); glm::vec3 scale(t[6],t[7],t[8]),translate(t[0],t[1],t[2]);
+                for (const auto &face:o.triangles) {
+                    monkeytrace_triangle_t triangle={};
+                    for (unsigned j=0;j<3;++j) {
+                        auto v=rot*(gvec(o.vertices[face[j]])*scale)+translate;
+                        for (unsigned axis=0;axis<3;++axis) triangle.xyz[j*3+axis]=v[int(axis)];
+                    }
+                    std::copy(o.color.begin(),o.color.end(),triangle.albedo);
+                    triangles.push_back(triangle);
+                }
+            }
+        }
+        const auto &c=s->document.camera;
+        glm::vec3 target(c[3],c[4],c[5]);
+        glm::vec3 eye=target+s->document.orientation*glm::vec3(0,0,c[2]);
+        glm::vec3 up=s->document.orientation*glm::vec3(0,1,0);
+        monkeytrace_render_desc_t desc={}; desc.size=sizeof(desc);
+        desc.triangles=triangles.data(); desc.triangle_count=uint32_t(triangles.size());
+        desc.width=w; desc.height=h; desc.samples=options->samples?options->samples:4;
+        desc.bounces=options->bounces; desc.timeout_ms=options->timeout_ms?options->timeout_ms:30000;
+        desc.vertical_fov=c[6]; desc.reflectivity=options->reflectivity;
+        for (unsigned axis=0;axis<3;++axis) { desc.eye[axis]=eye[int(axis)]; desc.target[axis]=target[int(axis)]; desc.up[axis]=up[int(axis)]; }
+        return monkeytrace_render(&desc,out,cap)==MONKEYTRACE_SUCCESS?JFX_SUCCESS:JFX_ERROR_BACKEND_FAILURE;
+    });
+#else
+    return JFX_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+extern "C" jfx_result_t jfx_scene3d_write_png_ex(const jfx_scene3d_t *s,double seconds,
+    uint32_t w,uint32_t h,const jfx_scene3d_render_options_t *options,const char *path) {
+    if (!s || !options || !path || !*path || !w || !h || w>2048 || h>2048) return JFX_ERROR_INVALID_ARGUMENT;
+    return boundary([&] {
+        tilly::vector<uint8_t> pixels(size_t(w)*h*4);
+        auto r=jfx_scene3d_render_ex(s,seconds,w,h,options,pixels.data(),pixels.size()); if (r!=JFX_SUCCESS) return r;
         ExportFile output(path); if (!output.file) return JFX_ERROR_BACKEND_FAILURE;
         auto write=[](void *context,void *data,int size) { std::fwrite(data,1,size_t(size),static_cast<FILE *>(context)); };
         bool ok=stbi_write_png_to_func(write,output.file,int(w),int(h),4,pixels.data(),int(w*4))!=0 && output.commit(path);

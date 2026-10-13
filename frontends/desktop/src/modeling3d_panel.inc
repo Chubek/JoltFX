@@ -2,6 +2,58 @@
  * Viewport rendering blends third_party/openscenegraph concepts through
  * jfx_osg_viewport.h: OSG-style trackball math, a wider gimbal pick radius,
  * and half-resolution drags so orbiting stays smooth instead of jagged. */
+void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
+    if (f->scene_png_job && f->scene_png_job->done.load(std::memory_order_acquire)) {
+        if (f->scene_png_job->result==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),"3D PNG exported: %.160s",f->scene_png_job->path.c_str());
+        else editor_result(f,f->scene_png_job->result);
+        tilly::destroy(f->scene_png_job); f->scene_png_job=nullptr;
+    }
+    if (f->scene_preview_job && f->scene_preview_job->done.load(std::memory_order_acquire)) {
+        auto *job=f->scene_preview_job;
+        if (job->revision==f->scene_revision && job->width==f->scene_width && job->height==f->scene_height &&
+            job->options.renderer==f->scene_render_options.renderer) {
+            if (job->result==JFX_SUCCESS) {
+                std::memcpy(f->scene_rgba,job->pixels.data(),job->pixels.size());
+                const char *name=job->options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE?"MonkeyTrace CPU":
+                    job->options.renderer==JFX_SCENE3D_RENDER_FILAMENT?"Filament":"Vulkan";
+                if (job->fallback) std::snprintf(f->status,sizeof(f->status),"%s render failed; raster fallback",name);
+                else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",name,job->width,job->height);
+            } else editor_result(f,job->result);
+            f->preview_dirty=f->playing || f->time_seconds!=job->seconds;
+        }
+        tilly::destroy(job); f->scene_preview_job=nullptr;
+    }
+    if (!f->scene_rgba || f->scene_preview_job || (!f->preview_dirty && !f->playing)) return;
+    if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_RASTER) {
+        auto r=jfx_desktop_frontend_render_rgba8(f,f->scene_width,f->scene_height,f->scene_rgba,size_t(f->scene_width)*f->scene_height*4);
+        if (r==JFX_SUCCESS) f->preview_dirty=false; else editor_result(f,r);
+        return;
+    }
+    ScenePreviewJob *job=nullptr;
+    try {
+        job=tilly::create<ScenePreviewJob>();
+        if (!job) throw std::bad_alloc();
+        job->scene=jfx_scene3d_clone(scene); if (!job->scene) throw std::bad_alloc();
+        job->width=f->scene_width; job->height=f->scene_height;
+        job->seconds=f->time_seconds; job->revision=f->scene_revision; job->options=f->scene_render_options;
+        if (f->scene_navigation || f->playing) { job->options.samples=1; job->options.bounces=std::min(job->options.bounces,1u); }
+        job->pixels.resize(size_t(job->width)*job->height*4);
+        if (!scheduler_submit(scene_preview_render_task,job,0)) { tilly::destroy(job); editor_result(f,JFX_ERROR_BUSY); return; }
+        f->scene_preview_job=job; f->preview_dirty=false;
+    } catch (...) { tilly::destroy(job); editor_result(f,JFX_ERROR_OUT_OF_MEMORY); }
+}
+void modeling3d_png(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
+    ScenePreviewJob *job=nullptr;
+    try {
+        job=tilly::create<ScenePreviewJob>(); if (!job) throw std::bad_alloc();
+        job->scene=jfx_scene3d_clone(scene); if (!job->scene) throw std::bad_alloc();
+        job->width=960; job->height=540; job->seconds=f->time_seconds;
+        job->options=f->scene_render_options; job->options.timeout_ms=60000; job->path=f->scene_png_path;
+        if (job->path.empty()) { tilly::destroy(job); editor_result(f,JFX_ERROR_INVALID_ARGUMENT); return; }
+        if (!scheduler_submit(scene_preview_render_task,job,0)) { tilly::destroy(job); editor_result(f,JFX_ERROR_BUSY); return; }
+        f->scene_png_job=job;
+    } catch (...) { tilly::destroy(job); editor_result(f,JFX_ERROR_OUT_OF_MEMORY); }
+}
 void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     auto command=[&](const char *op,double value=0,const char *text="") {
         auto r=jfx_desktop_frontend_edit(f,op,0,0,0,value,text); editor_result(f,r); return r==JFX_SUCCESS;
@@ -20,25 +72,10 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
         auto *buffer=static_cast<uint8_t *>(tilly_mem_alloc(size_t(rw)*rh*4));
         if (buffer) {
             std::memset(buffer,0,size_t(rw)*rh*4); tilly_mem_free(f->scene_rgba); f->scene_rgba=buffer;
-            f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true;
+            f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true; ++f->scene_revision;
         } else editor_result(f,JFX_ERROR_OUT_OF_MEMORY);
     }
-    if (f->scene_rgba && (f->preview_dirty || f->playing)) {
-        jfx_result_t r=JFX_ERROR_BACKEND_FAILURE;
-        if (f->scene_gpu) {
-            /* Opt-in Vulkan viewport: same scene/time as the CPU path, with
-             * automatic fallback so a missing driver never blanks preview. */
-            r=jfx_scene3d_render_gpu(scene,f->time_seconds,f->scene_width,f->scene_height,
-                f->scene_rgba,size_t(f->scene_width)*f->scene_height*4);
-            if (r!=JFX_SUCCESS) {
-                r=jfx_desktop_frontend_render_rgba8(f,f->scene_width,f->scene_height,f->scene_rgba,size_t(f->scene_width)*f->scene_height*4);
-                if (r==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),"GPU viewport unavailable, CPU fallback");
-            }
-        } else {
-            r=jfx_desktop_frontend_render_rgba8(f,f->scene_width,f->scene_height,f->scene_rgba,size_t(f->scene_width)*f->scene_height*4);
-        }
-        if (r==JFX_SUCCESS) f->preview_dirty=false; else editor_result(f,r);
-    }
+    modeling3d_preview(f,scene);
     ImGui::InvisibleButton("##3D navigation",size,ImGuiButtonFlags_MouseButtonLeft|ImGuiButtonFlags_MouseButtonRight|ImGuiButtonFlags_MouseButtonMiddle);
     auto *draw=ImGui::GetWindowDrawList(); ImVec2 end(origin.x+width,origin.y+height);
     draw->AddRectFilled(origin,end,IM_COL32(22,26,34,255));
@@ -242,7 +279,9 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         if (ImGui::Button("Import PLY")) command("3d.import_ply",0,0,0,0,f->scene_mesh_path);
         ImGui::SameLine(); if (ImGui::Button("Export PLY")) command("3d.export_ply",selected,0,0,0,f->scene_mesh_path);
         ImGui::InputText("PNG path",f->scene_png_path,sizeof(f->scene_png_path));
-        if (ImGui::Button("Export 3D PNG")) editor_result(f,jfx_scene3d_write_png(scene,f->time_seconds,960,540,f->scene_png_path));
+        ImGui::BeginDisabled(f->scene_png_job!=nullptr);
+        if (ImGui::Button("Export 3D PNG")) modeling3d_png(f,scene);
+        ImGui::EndDisabled(); if (f->scene_png_job) ImGui::TextUnformatted("Exporting 3D PNG snapshot...");
         if (ImGui::Button("Export 3D video...")) ImGui::OpenPopup("3D encoded export");
         if (ImGui::BeginPopupModal("3D encoded export",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
             encoded_export(f); ImGui::TextWrapped("%s",f->status);
@@ -294,15 +333,41 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             if (i%2==0 && i<6) ImGui::SameLine(); }
         const char *views[]={"Front","Right","Top","Back","Left","Bottom"};
         for (unsigned i=0;i<6;++i) { if (i) ImGui::SameLine(); if (ImGui::SmallButton(views[i])) command("3d.view",i); }
-        ImGui::SameLine(); ImGui::Checkbox("GPU viewport (Vulkan)",&f->scene_gpu);
+        const char *renderers[]={"Raster viewport","MonkeyTrace (CPU ray tracing)","Vulkan rasterizer","Filament (GPU rasterizer)"};
+        int renderer=int(f->scene_render_options.renderer);
+        ImGui::SetNextItemWidth(250);
+        if (ImGui::BeginCombo("Rendering engine",renderers[renderer])) {
+            for (int i=0;i<4;++i) {
+                bool available=jfx_scene3d_renderer_available(jfx_scene3d_renderer_t(i));
+                ImGui::BeginDisabled(!available);
+                if (ImGui::Selectable(renderers[i],i==renderer)) {
+                    auto options=f->scene_render_options; options.renderer=jfx_scene3d_renderer_t(i);
+                    editor_result(f,jfx_desktop_frontend_set_scene3d_render_options(f,&options));
+                }
+                ImGui::EndDisabled();
+            }
+            ImGui::EndCombo();
+        }
+        if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE) {
+            auto options=f->scene_render_options;
+            int samples=int(options.samples),bounces=int(options.bounces);
+            ImGui::SetNextItemWidth(115); bool changed=ImGui::SliderInt("Ray samples",&samples,1,64);
+            ImGui::SameLine(); ImGui::SetNextItemWidth(115); changed=ImGui::SliderInt("Reflections",&bounces,0,8)||changed;
+            ImGui::SetNextItemWidth(200); changed=ImGui::SliderFloat("Mirror fraction",&options.reflectivity,0,1)||changed;
+            if (changed) { options.samples=uint32_t(samples); options.bounces=uint32_t(bounces); editor_result(f,jfx_desktop_frontend_set_scene3d_render_options(f,&options)); }
+            ImGui::TextWrapped("MonkeyTrace CPU / Ingagi ECS / BVH. Up to 4096 visible instance triangles; flat normals. Navigation/playback use 1 sample and at most 1 reflection; idle/export use the selected quality.");
+        }
+        if (f->scene_preview_job) ImGui::TextUnformatted("Rendering scene snapshot...");
+        if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_FILAMENT)
+            ImGui::TextWrapped("Filament: lit PBR surfaces, smooth normals, directional shadows and FXAA. Up to 4096 visible instances / 6,291,456 expanded vertices. Preview and exports share the selected renderer.");
         ImGui::TextWrapped("Drag: orbit | Middle/right or Shift-drag: pan | Wheel: zoom | Alt-drag: roll. Drag the colored gimbal rings to rotate each axis. Escape cancels a drag.");
         modeling3d_viewport(f,scene);
         ImGui::Text("Viewport %ux%u%s | OSG %s | pick %.0fpx",f->scene_width,f->scene_height,
             f->scene_navigation?" (drag: half-res)":"",jfx_osg_have_osg()?"headers":"fallback",double(jfx_osg_gimbal_pick_px()));
         ImGui::TextWrapped("%s",f->status);
-        if (f->export_job && jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING) {
-            ImGui::Text("Exported %llu frames",(unsigned long long)jfx_export_completed_frames(f->export_job));
-            if (ImGui::Button("Cancel 3D export")) jfx_export_cancel(f->export_job);
+        if (desktop_export_running(f)) {
+            ImGui::Text("Exported %llu frames",(unsigned long long)desktop_export_completed(f));
+            if (ImGui::Button("Cancel 3D export")) desktop_export_cancel(f);
         }
     }
     ImGui::EndChild(); if (table) ImGui::EndTable();

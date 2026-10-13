@@ -1,5 +1,18 @@
 # JoltFX desktop frontend
 
+`-DJFX_FILAMENT=ON` adds **Filament (GPU rasterizer)** to the 3D workspace's
+Rendering engine selector, with lit PBR surfaces, smooth normals, shadows and
+FXAA. It shares animated scene/camera inputs and PNG/video export snapshots.
+See [Filament build and runtime requirements](../../backends/filament/README.md).
+
+The **3D Modeling & Animation** tab uses **MonkeyTrace (CPU ray tracing)** when
+built with `JFX_MONKEYTRACE=ON` (auto-enabled on supported Linux/macOS hosts with
+Go). Its Rendering engine selector provides raster/Vulkan alternatives and ray
+sample, reflection-depth and mirror controls. Scene animation, procedural meshes,
+cloners and camera navigation feed owned Ingagi ECS snapshots. Preview and PNG/
+video export run through scheduler jobs. See [3D rendering](../../docs/modeling3d.md)
+for quality, build options and the 4,096-visible-triangle limit.
+
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
 **Creative Programming**, **Game Engine**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,

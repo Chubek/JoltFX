@@ -54,6 +54,14 @@ target_include_directories(jfx_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_include_directories(jfx_core SYSTEM PRIVATE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/stb>)
 target_link_libraries(jfx_core PRIVATE ${CMAKE_DL_LIBS})
+if(JFX_MONKEYTRACE)
+    target_link_libraries(jfx_core PRIVATE monkeytrace_native)
+    target_compile_definitions(jfx_core PUBLIC JFX_HAVE_MONKEYTRACE=1)
+endif()
+if(JFX_FILAMENT)
+    target_link_libraries(jfx_core PRIVATE jfx_filament_native)
+    target_compile_definitions(jfx_core PUBLIC JFX_HAVE_FILAMENT=1)
+endif()
 set_target_properties(jfx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Engine owns backend selection (see engine.c); the backends must not link back

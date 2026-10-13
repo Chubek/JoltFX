@@ -88,6 +88,26 @@
 - Standalone embedding checks: configure/build `ingagi/CMakeLists.txt`, then run
   CTest. Optional D/Rust/Python/Java smoke tests run when compilers are available.
   Read `README.md` and `native_extension_api/README.md` before describing support.
+- `monkeytrace` snapshots Ingagi ECS geometry/material values and compiles
+  `trace.ing` through the shader package. Its CPU reference and dedicated browser
+  WebGPU host share a fixed std430/std140 scene layout. Preserve shader/CPU
+  parity, owned snapshots, edge-invocation guards and 256-byte readback padding.
+  `LoadScene` uses a fresh budgeted IngagiVM with typed `trace_*` hosts and real
+  ECS handles; scene errors must not publish a partially authored world.
+  Snapshot BVHs are deterministic preorder trees with conservative float32
+  bounds and skip links. Closest-hit ties preserve primitive/entity-ID order;
+  shadow rays exit early. Keep capacity constants, Ingagi arrays, binding 3 and
+  the node count in `sampling.y` synchronized (4096 primitives / 8191 nodes).
+  Secondary-ray offsets are scale-aware to survive float32 rounding; preserve
+  CPU/shader parity. `MONKEYTRACE_WEBGPU_TEST=1` opts into real browser tests for
+  empty, demo, procedural and full-capacity large-coordinate scenes.
+  Fixed GPU arrays are bounded literal fields, not general host array lowering.
+  Browser integration is optional via `monkeytrace/scripts/test-webgpu.mjs`;
+  other shader targets and general Ingagi GPU dispatch remain separate work.
+- `monkeytrace/native` exposes native ABI 1.0 for synchronous CPU rendering of
+  borrowed C triangle/camera descriptors. Copy inputs into an owned ECS world,
+  retain no C pointers, and publish RGBA only on success. JFX_MONKEYTRACE builds
+  this bridge independently of the scripting tab; no shader tools are required.
 - Desktop API 1.8's Game Engine tab links the native ABI conditionally through
   JFX_INGAGI. It owns handles until frontend destruction and borrows frontend state
   synchronously in engine_time callbacks. Keep optional builds and ingagi_tab tests

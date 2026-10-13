@@ -1093,6 +1093,21 @@ Validate loaded documents before replacement, preserve load undo, and extend
 
 ### 3D modeling and animation
 
+Desktop 1.10 / Modeling3D 1.5 appends Filament renderer value 3, gated by
+JFX_FILAMENT (OFF by default). Preserve prior renderer IDs/defaults. Filament
+selection shares preview/PNG/video snapshots; private SDK types stay in the
+isolated C++20 bridge. Keep no-Vulkan and optional-off builds working. Enabled
+`filament_scene` / `filament_ui_tests` require an actual GPU/EGL runtime and
+cover frame orientation, animation, camera, cloners and export snapshots.
+
+Desktop 1.9 / Modeling3D 1.4 selects MonkeyTrace CPU when JFX_MONKEYTRACE is
+enabled. Owned scene clones cross scheduler boundaries; workers never borrow
+the live editor. Publish preview results only for the current revision/size.
+PNG/video snapshots copy renderer quality; export 1.2 selects a renderer before
+the first step. Poll/cancel/destroy video jobs only after worker completion.
+Keep OFF/cross builds and `monkeytrace_scene` / `monkeytrace_ui_tests` working.
+The native bridge is independent of JFX_INGAGI and limited to 4096 flat triangles.
+
 The desktop API 1.6 appends a 3D workspace/panel; `modeling3d_panel.inc` uses the
 shared editor 1.8 scene document and `3d.*` commands. Web/Android have named 3D
 sections, iOS has `JFXModeling3DViewController`, CLI has `3d new/edit/info/render`,
