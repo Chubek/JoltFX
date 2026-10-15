@@ -1,5 +1,29 @@
 # Progress
 
+## 3D viewport stability and shading (2026-10-15)
+
+- Found a feedback loop: conditional render-progress text changes the requested
+  viewport size, invalidates the worker revision and clears its display buffer.
+- Added a regression that fails on the original render-status size oscillation;
+  stable status height/scrollbar width now passes it. All preview renderers use
+  owned scheduler snapshots and retain the prior completed frame on resize,
+  stale results or failure, publishing pixels and dimensions together.
+- Added viewport-local Rendered/Gouraud/Wireframe selection and Modeling3D 1.6
+  CPU shading API, retaining render-options ABI and production export behavior.
+- Actual OpenGL texture readback verifies stable idle frames, retention during
+  pending/stale/failed renders, exact Gouraud/wireframe pixels, half-resolution
+  navigation and full-quality restoration. Run this SDL test offscreen so the
+  physical desktop cursor cannot interfere with injected ImGui input.
+- Verification: all 18 main-build modeling/rendering, UI, frontend/CLI and
+  desktop smoke checks passed. Clang Debug ASAN/UBSan (with Vulkan disabled,
+  leak detection enabled) passed all 10 focused engine, shading, UI, native
+  OpenGL, frontend conformance and desktop smoke checks. All four focused
+  sanitizer checks also passed with MonkeyTrace/Vulkan/Filament disabled.
+  Main-build window/MonkeyTrace regressions passed three consecutive runs;
+  the rebuilt main desktop retains MonkeyTrace.
+- New C API header compiles as strict C11; the optimized/SIMD renderer path
+  passes Clang syntax checks. Existing unrelated warnings remain in other code.
+
 ## Optional Filament 3D renderer (2026-10-13)
 
 - Implemented optional `JFX_FILAMENT` vendored SDK build, private C bridge,

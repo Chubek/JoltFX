@@ -56,6 +56,13 @@ int main() {
     }
     unsigned char before[128*128*4],after[sizeof(before)];
     assert(jfx_desktop_frontend_render_rgba8(f,128,128,before,sizeof(before))==JFX_SUCCESS);
+    // Inspection shading is viewport-local, not an object edit or an export
+    // renderer change. Drive the actual combo rather than a test-only setter.
+    for (auto mode:{1,2,0}) {
+        click(f,"Viewport shading","3D viewport");
+        click(f,mode==1?"Gouraud Shading":mode==2?"Wireframe Shading":"Rendered","##Combo_",mode);
+        assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS && std::memcmp(before,after,sizeof(before))==0);
+    }
     click(f,"Undo 3D"); assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS); assert(std::strstr(state,"\"objects\":[]"));
     assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS); assert(std::memcmp(before,after,sizeof(before))!=0);
     click(f,"Redo 3D"); assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS); assert(std::strstr(state,"\"name\":\"cube\""));

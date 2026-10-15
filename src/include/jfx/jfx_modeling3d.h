@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 5
+#define JFX_MODELING3D_API_MINOR 6
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
@@ -97,6 +97,18 @@ jfx_result_t jfx_scene3d_sample_instance(const jfx_scene3d_t *scene,uint32_t obj
  * and near-plane clipping. Output remains untouched on error. Max dimension 2048. */
 jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *scene,double seconds,uint32_t width,
     uint32_t height,uint8_t *out_rgba,size_t capacity);
+typedef enum {
+    JFX_SCENE3D_SHADING_PHONG = 0,
+    JFX_SCENE3D_SHADING_GOURAUD = 1,
+    JFX_SCENE3D_SHADING_WIREFRAME = 2
+} jfx_scene3d_shading_t;
+/* CPU inspection modes, independent of the selected production renderer.
+ * Gouraud interpolates vertex lighting; wireframe shows all triangle edges
+ * (including rear edges), not filled surfaces. Same limits, clipping, animation,
+ * 4-sample antialiasing and failure-atomic output as jfx_scene3d_render. */
+jfx_result_t jfx_scene3d_render_shaded(const jfx_scene3d_t *scene,double seconds,
+    uint32_t width,uint32_t height,jfx_scene3d_shading_t shading,
+    uint8_t *out_rgba,size_t capacity);
 /* Vulkan offscreen rasterizer for the same scene (API 1.3): object-space
  * triangles with per-draw model/normal matrices run through real
  * vertex/fragment shaders with depth testing into an offscreen image.

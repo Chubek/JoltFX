@@ -1,6 +1,6 @@
 /* Four coverage samples per output pixel; perspective-correct normals and
  * depth. Clip before projection so navigating through a mesh stays stable. */
-struct RenderVertex { glm::vec3 position,normal; };
+struct RenderVertex { glm::vec3 position,normal; float light; };
 glm::vec3 unit_normal(const glm::vec3 &n) {
     float length=glm::length(n); return length>1e-20f?n/length:glm::vec3(0,1,0);
 }
@@ -30,7 +30,7 @@ void ensure_normals(const Object &o) {
     }
     o.normals=std::move(cached);
 }
-jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_t h,uint8_t *out) {
+jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_t h,uint8_t *out,jfx_scene3d_shading_t shading) {
     uint32_t sw=w*2,sh=h*2;
     tilly::vector<uint8_t> pixels(size_t(sw)*sh*4);
     tilly::vector<float> depth(size_t(sw)*sh,std::numeric_limits<float>::infinity());
@@ -38,9 +38,35 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
     auto &c=d.camera; glm::vec3 eye=glm::vec3(c[3],c[4],c[5])+d.orientation*glm::vec3(0,0,c[2]);
     glm::quat view=glm::conjugate(d.orientation); float focal=float(sh)*.5f/std::tan(glm::radians(c[6])*.5f);
     glm::vec3 sun=glm::normalize(glm::vec3(.4f,.8f,.3f));
+    auto wire_edge=[&](glm::vec3 a,glm::vec3 b,const std::array<float,3> &color) {
+        // Clip in screen space before stepping: a near-plane crossing may
+        // project far outside the image. Work is bounded by the viewport size.
+        double lo=0,hi=1,dx=double(b.x)-double(a.x),dy=double(b.y)-double(a.y);
+        auto clip=[&](double start,double delta,double maximum) {
+            if (delta==0) return start>=-1 && start<=maximum;
+            double t0=(-1-start)/delta,t1=(maximum-start)/delta;
+            if (t0>t1) std::swap(t0,t1);
+            lo=std::max(lo,t0); hi=std::min(hi,t1); return lo<=hi;
+        };
+        if (!clip(double(a.x),dx,double(sw)) || !clip(double(a.y),dy,double(sh))) return;
+        double x=double(a.x)+lo*dx,y=double(a.y)+lo*dy,ex=double(a.x)+hi*dx,ey=double(a.y)+hi*dy;
+        unsigned steps=unsigned(std::ceil(std::max(std::abs(ex-x),std::abs(ey-y))));
+        for (unsigned i=0;i<=steps;++i) {
+            double u=steps?double(i)/steps:0,t=lo+(hi-lo)*u;
+            float z=float(1/((1-t)/double(a.z)+t/double(b.z)));
+            int px=int(std::floor(x+(ex-x)*u)),py=int(std::floor(y+(ey-y)*u));
+            for (int sy=py;sy<=py+1;++sy) for (int sx=px;sx<=px+1;++sx) {
+                if (sx<0 || sy<0 || sx>=int(sw) || sy>=int(sh)) continue;
+                size_t pixel=size_t(sy)*sw+size_t(sx);
+                if (z>=depth[pixel]) continue;
+                depth[pixel]=z;
+                for (size_t ch=0;ch<3;++ch) pixels[pixel*4+ch]=uint8_t(std::clamp((.35f+.65f*color[ch])*255.f,0.f,255.f));
+            }
+        }
+    };
     for (auto &o:d.objects) if (o.visible) {
-        ensure_normals(o);
-        const auto &normals=*o.normals;
+        const Object::Normals *normals=nullptr;
+        if (shading!=JFX_SCENE3D_SHADING_WIREFRAME) { ensure_normals(o); normals=o.normals.get(); }
         for (uint32_t instance=0;instance<o.instances;++instance) {
             Transform t=sample_instance(o,instance,seconds,d.fps);
             glm::quat rot=rotation(t);
@@ -51,15 +77,28 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
             }
             for (size_t index=0;index<o.triangles.size();++index) {
                 std::array<RenderVertex,5> source,clipped;
-                for (unsigned j=0;j<3;++j) source[j]={positions[o.triangles[index][j]],unit_normal(rot*(normals[index][j]/scale))};
+                for (unsigned j=0;j<3;++j) {
+                    auto n=normals?unit_normal(rot*((*normals)[index][j]/scale)):glm::vec3(0,1,0);
+                    source[j]={positions[o.triangles[index][j]],n,.25f+.75f*std::abs(glm::dot(n,sun))};
+                }
                 unsigned count=0;
                 for (unsigned j=0;j<3;++j) {
                     auto a=source[j],b=source[(j+1)%3]; bool ain=a.position.z>=.05f,bin=b.position.z>=.05f;
                     if (ain) clipped[count++]=a;
                     if (ain!=bin) {
                         float alpha=(.05f-a.position.z)/(b.position.z-a.position.z);
-                        clipped[count++]={glm::mix(a.position,b.position,alpha),glm::mix(a.normal,b.normal,alpha)};
+                        clipped[count++]={glm::mix(a.position,b.position,alpha),glm::mix(a.normal,b.normal,alpha),glm::mix(a.light,b.light,alpha)};
                     }
+                }
+                if (shading==JFX_SCENE3D_SHADING_WIREFRAME) {
+                    // Draw the clipped polygon boundary, never the artificial
+                    // diagonal introduced by fan triangulation at the near plane.
+                    for (unsigned j=0;j<count;++j) {
+                        auto project=[&](const RenderVertex &v) { return glm::vec3(float(sw)*.5f+focal*v.position.x/v.position.z,
+                            float(sh)*.5f-focal*v.position.y/v.position.z,v.position.z); };
+                        wire_edge(project(clipped[j]),project(clipped[(j+1)%count]),o.color);
+                    }
+                    continue;
                 }
                 for (unsigned triangle=1;triangle+1<count;++triangle) {
                     RenderVertex v[3]={clipped[0],clipped[triangle],clipped[triangle+1]}; glm::vec3 p[3];
@@ -77,7 +116,7 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
                         alignas(64) float lanes[B::size],zs[B::size],lights[B::size];
                         for (size_t lane=0;lane<B::size;++lane) lanes[lane]=float(lane)+.5f;
                         const auto offsets=B::load_unaligned(lanes);
-                        for (;x1-x+1>=int(B::size);x+=int(B::size)) {
+                        for (;shading==JFX_SCENE3D_SHADING_PHONG && x1-x+1>=int(B::size);x+=int(B::size)) {
                             auto xx=B(float(x))+offsets,yy=B(float(y)+.5f);
                             auto edge_batch=[&](const glm::vec3 &a,const glm::vec3 &b) { return (xx-B(a.x))*B(b.y-a.y)-(yy-B(a.y))*B(b.x-a.x); };
                             auto wa=edge_batch(p[1],p[2])/B(area),wb=edge_batch(p[2],p[0])/B(area),wc=B(1)-wa-wb;
@@ -106,8 +145,13 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
                         if (wa<0 || wb<0 || wc<0) continue;
                         wa/=p[0].z; wb/=p[1].z; wc/=p[2].z; float z=1/(wa+wb+wc); size_t pixel=size_t(y)*sw+size_t(x);
                         if (z>=depth[pixel]) continue;
-                        depth[pixel]=z; glm::vec3 n=unit_normal(v[0].normal*wa+v[1].normal*wb+v[2].normal*wc);
-                        float light=.25f+.75f*std::abs(glm::dot(n,sun));
+                        depth[pixel]=z;
+                        float light;
+                        if (shading==JFX_SCENE3D_SHADING_GOURAUD) light=z*(v[0].light*wa+v[1].light*wb+v[2].light*wc);
+                        else {
+                            glm::vec3 n=unit_normal(v[0].normal*wa+v[1].normal*wb+v[2].normal*wc);
+                            light=.25f+.75f*std::abs(glm::dot(n,sun));
+                        }
                         for (size_t ch=0;ch<3;++ch) pixels[pixel*4+ch]=uint8_t(std::clamp(o.color[ch]*light*255.f,0.f,255.f));
                         }
                     }

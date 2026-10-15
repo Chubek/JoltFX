@@ -190,6 +190,7 @@ struct ScenePreviewJob {
     std::atomic<bool> done{false};
     jfx_scene3d_t *scene=nullptr;
     jfx_scene3d_render_options_t options{};
+    jfx_scene3d_shading_t shading=JFX_SCENE3D_SHADING_PHONG;
     tilly::vector<uint8_t> pixels;
     tilly::string path;
     double seconds=0;
@@ -215,7 +216,10 @@ static void scene_preview_render_task(void *userdata) {
         job->result=jfx_scene3d_write_png_ex(job->scene,job->seconds,job->width,job->height,&job->options,job->path.c_str());
         job->done.store(true,std::memory_order_release); return;
     }
-    job->result=jfx_scene3d_render_ex(job->scene,job->seconds,job->width,job->height,
+    if (job->shading!=JFX_SCENE3D_SHADING_PHONG)
+        job->result=jfx_scene3d_render_shaded(job->scene,job->seconds,job->width,job->height,
+            job->shading,job->pixels.data(),job->pixels.size());
+    else job->result=jfx_scene3d_render_ex(job->scene,job->seconds,job->width,job->height,
         &job->options,job->pixels.data(),job->pixels.size());
     if (job->result==JFX_ERROR_BACKEND_FAILURE || job->result==JFX_ERROR_NOT_IMPLEMENTED) {
         job->fallback=true;
@@ -355,7 +359,8 @@ struct jfx_desktop_frontend {
     float *preview_input;
     float *preview_float;
     uint8_t *preview_rgba;
-    uint8_t *scene_rgba;
+    ScenePreviewJob *scene_display;
+    int scene_shading;
     uint32_t scene_width,scene_height;
     bool preview_dirty;
     void *preview_texture; /* host-owned handle for ImGui::Image */
@@ -683,7 +688,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_input);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_float);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_rgba);
-    tilly_mem_free(frontend->scene_rgba);
+    tilly::destroy(frontend->scene_display);
     jfx_editor_destroy(frontend->editor);
     jfx_plugin_host_destroy(frontend->plugins);
     jfx_lut_destroy(frontend->grade_lut);

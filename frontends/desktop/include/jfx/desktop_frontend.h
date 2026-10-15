@@ -70,6 +70,7 @@ typedef enum {
  * Script print output is discarded by the native embedding ABI. */
 bool jfx_desktop_frontend_game_available(void);
 /* 3D viewport, explicit RGBA renders and PNG/video exports share this selection.
+ * Viewport-local Gouraud/wireframe inspection overrides only the preview.
  * Defaults to MonkeyTrace CPU when available, otherwise the rasterizer. UI
  * previews use scheduler-owned scene copies; synchronous render calls remain
  * failure-atomic and report unavailable/over-budget renderers directly. */

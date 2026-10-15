@@ -1093,6 +1093,15 @@ Validate loaded documents before replacement, preserve load undo, and extend
 
 ### 3D modeling and animation
 
+Modeling3D 1.6 adds CPU Gouraud/wireframe inspection through
+`jfx_scene3d_render_shaded`, separate from production render options/exports.
+Desktop shading is viewport-local. Every preview owns a scheduler snapshot;
+publish completed pixels and dimensions together, retaining the previous frame
+on resize, stale results or failure. Keep render-status layout height and
+scrollbar width stable to prevent resize/revision feedback loops. Extend
+`modeling3d_shading`, `monkeytrace_ui_tests` and the Linux OpenGL readback test
+`modeling3d_viewport_window` when changing these paths.
+
 Desktop 1.10 / Modeling3D 1.5 appends Filament renderer value 3, gated by
 JFX_FILAMENT (OFF by default). Preserve prior renderer IDs/defaults. Filament
 selection shares preview/PNG/video snapshots; private SDK types stay in the

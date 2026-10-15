@@ -836,9 +836,15 @@ extern "C" jfx_result_t jfx_scene3d_sample_instance(const jfx_scene3d_t *s,uint3
     return boundary([&] { auto t=sample_instance(s->document.objects[object],instance,seconds,s->document.fps); std::copy(t.begin(),t.end(),out); return JFX_SUCCESS; });
 }
 extern "C" jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
+    return jfx_scene3d_render_shaded(s,seconds,w,h,JFX_SCENE3D_SHADING_PHONG,out,cap);
+}
+extern "C" jfx_result_t jfx_scene3d_render_shaded(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,
+    jfx_scene3d_shading_t shading,uint8_t *out,size_t cap) {
     if (!s || !out || !w || !h || w>2048 || h>2048 || cap<size_t(w)*h*4 || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
+    if (shading!=JFX_SCENE3D_SHADING_PHONG && shading!=JFX_SCENE3D_SHADING_GOURAUD && shading!=JFX_SCENE3D_SHADING_WIREFRAME)
+        return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] {
-        return render_document(s->document,seconds,w,h,out);
+        return render_document(s->document,seconds,w,h,out,shading);
     });
 }
 extern "C" jfx_result_t jfx_scene3d_render_gpu(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {

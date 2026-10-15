@@ -117,6 +117,11 @@ edit control points/weights or ball centers/radii; cloners arrange instances in
 lines, rings or grids. **Joltscript animation** assigns a source or `.jolt` file
 to a transform channel, with time/frame/index/keyed-value inputs.
 The viewport uses smooth shading and four-sample antialiasing at its display size.
+**Viewport shading** selects **Rendered**, **Gouraud Shading** (interpolated
+vertex lighting), or **Wireframe Shading** (triangle edges, including rear edges).
+Inspection modes use the CPU without changing materials, undo history or the
+renderer used for PNG/video exports. The last completed frame remains visible
+while the next snapshot renders, including during resize and navigation.
 Drag to orbit, Shift/middle/right-drag to pan, wheel to zoom and Alt-drag to roll.
 Drag the GLM quaternion gimbal rings to rotate individual world axes. Escape
 cancels; release commits one undo step. Numeric target/distance/FOV and axis-view

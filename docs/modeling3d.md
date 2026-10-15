@@ -9,6 +9,28 @@ scene state and renderer.
 
 ## Workflow
 
+### Viewport shading
+
+The desktop **Viewport shading** selector offers:
+
+- **Rendered**: preview using the selected **Rendering engine**.
+- **Gouraud Shading**: CPU raster preview with lighting evaluated at mesh
+  vertices and perspective-correct interpolation across each triangle.
+- **Wireframe Shading**: antialiased triangle edges, including rear edges, with
+  no filled surfaces, for inspecting mesh topology.
+
+Inspection modes preserve animation, cloners, visibility and camera navigation.
+They are local preview settings: they do not edit materials, add undo steps, or
+change the rendering engine used for explicit renders and PNG/video exports.
+The Core exposes the same CPU modes through Modeling3D 1.6's
+`jfx_scene3d_render_shaded`; the existing render/options layouts are unchanged.
+
+All desktop 3D previews render owned snapshots on scheduler workers. The last
+completed image stays visible during rendering, navigation, resize and failed
+renders. Only a successful result matching the current scene revision, size and
+shading selection replaces it. Progress messages occupy fixed layout space so
+their appearance cannot repeatedly resize and invalidate the preview.
+
 ### Optional Filament renderer
 
 Build with `-DJFX_FILAMENT=ON` to add **Filament (GPU rasterizer)** to Rendering

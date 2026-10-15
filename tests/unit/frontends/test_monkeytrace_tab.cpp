@@ -12,6 +12,19 @@
 #include <cfloat>
 
 static void draw(jfx_desktop_frontend_t *f) { assert(jfx_desktop_frontend_draw(f)==JFX_SUCCESS); }
+static ImRect navigation(jfx_desktop_frontend_t *f) {
+ draw(f);
+ ImGuiWindow *w=nullptr;
+ for (auto *candidate:ImGui::GetCurrentContext()->Windows)
+  if (candidate->Active && std::strstr(candidate->Name,"3D viewport")) { w=candidate; break; }
+ assert(w);
+ ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
+ for (auto &v:w->DrawList->VtxBuffer) if (v.col==IM_COL32(22,26,34,255)) {
+  lo.x=std::fmin(lo.x,v.pos.x); lo.y=std::fmin(lo.y,v.pos.y);
+  hi.x=std::fmax(hi.x,v.pos.x); hi.y=std::fmax(hi.y,v.pos.y);
+ }
+ assert(lo.x<=hi.x); return ImRect(lo,hi);
+}
 static ImGuiWindow *window(const char *part) {
  for (auto *w:ImGui::GetCurrentContext()->Windows) if (w->Active && std::strstr(w->Name,part)) return w;
  assert(false); return nullptr;
@@ -55,6 +68,16 @@ int main(int argc,char **argv) {
   assert(jfx_desktop_frontend_render_rgba8(f,64,48,b.data(),b.size())==JFX_SUCCESS && a!=b);
   assert(jfx_desktop_frontend_set_scene3d_render_options(f,&saved)==JFX_SUCCESS);
   draw(f); // A worker owns a snapshot while edits/seek affect the live document.
+  // Pending/completed render messages must not resize the image and invalidate
+  // the very snapshot we are waiting for. Test at a height-limited window size.
+  assert(jfx_desktop_frontend_resize(f,1440,800)==JFX_SUCCESS);
+  draw(f); draw(f); draw(f);
+  auto pending=navigation(f);
+  for (unsigned i=0;i<8;++i) {
+   scheduler_wait_idle(); auto completed=navigation(f);
+   assert(std::fabs(pending.GetHeight()-completed.GetHeight())<1);
+   assert(std::fabs(pending.GetWidth()-completed.GetWidth())<1);
+  }
   assert(jfx_desktop_frontend_edit(f,"3d.key",0,0,0,0,"")==JFX_SUCCESS);
   assert(jfx_desktop_frontend_edit(f,"3d.key",0,0,30,3,"")==JFX_SUCCESS);
   assert(jfx_desktop_frontend_seek(f,1)==JFX_SUCCESS);

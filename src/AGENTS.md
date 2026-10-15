@@ -161,6 +161,13 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Modeling3D 1.6 adds `jfx_scene3d_render_shaded` without changing render-options
+layouts or renderer IDs. Gouraud evaluates lighting before clipping and
+perspective-correct interpolation; wireframe draws clipped polygon boundaries
+without fan-triangulation diagonals and shows rear triangle edges. Keep output
+failure-atomic, line stepping viewport-bounded and legacy Phong pixels unchanged.
+`modeling3d_shading` covers the shared CPU modes and invalid arguments.
+
 Modeling3D 1.5 adds the optional Filament scene renderer. Reuse sampled GPU mesh
 staging, smooth normals and quaternion camera state, with an independent
 6,291,456-vertex bound. Native Filament types/C++20 remain behind the private

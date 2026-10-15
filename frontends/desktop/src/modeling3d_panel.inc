@@ -11,24 +11,26 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     if (f->scene_preview_job && f->scene_preview_job->done.load(std::memory_order_acquire)) {
         auto *job=f->scene_preview_job;
         if (job->revision==f->scene_revision && job->width==f->scene_width && job->height==f->scene_height &&
-            job->options.renderer==f->scene_render_options.renderer) {
+            job->options.renderer==f->scene_render_options.renderer && int(job->shading)==f->scene_shading) {
             if (job->result==JFX_SUCCESS) {
-                std::memcpy(f->scene_rgba,job->pixels.data(),job->pixels.size());
-                const char *name=job->options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE?"MonkeyTrace CPU":
-                    job->options.renderer==JFX_SCENE3D_RENDER_FILAMENT?"Filament":"Vulkan";
+                // Publish the complete owned frame, including its dimensions.
+                // Never clear the previous image on resize, edit or failure.
+                tilly::destroy(f->scene_display); f->scene_display=job;
+                jfx_scene3d_destroy(job->scene); job->scene=nullptr;
+                const char *name=job->shading==JFX_SCENE3D_SHADING_GOURAUD?"Gouraud":
+                    job->shading==JFX_SCENE3D_SHADING_WIREFRAME?"Wireframe":
+                    job->options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE?"MonkeyTrace CPU":
+                    job->options.renderer==JFX_SCENE3D_RENDER_FILAMENT?"Filament":
+                    job->options.renderer==JFX_SCENE3D_RENDER_RASTER?"Raster":"Vulkan";
                 if (job->fallback) std::snprintf(f->status,sizeof(f->status),"%s render failed; raster fallback",name);
                 else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",name,job->width,job->height);
             } else editor_result(f,job->result);
             f->preview_dirty=f->playing || f->time_seconds!=job->seconds;
         }
-        tilly::destroy(job); f->scene_preview_job=nullptr;
+        if (job!=f->scene_display) tilly::destroy(job);
+        f->scene_preview_job=nullptr;
     }
-    if (!f->scene_rgba || f->scene_preview_job || (!f->preview_dirty && !f->playing)) return;
-    if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_RASTER) {
-        auto r=jfx_desktop_frontend_render_rgba8(f,f->scene_width,f->scene_height,f->scene_rgba,size_t(f->scene_width)*f->scene_height*4);
-        if (r==JFX_SUCCESS) f->preview_dirty=false; else editor_result(f,r);
-        return;
-    }
+    if (!f->scene_width || !f->scene_height || f->scene_preview_job || (!f->preview_dirty && !f->playing)) return;
     ScenePreviewJob *job=nullptr;
     try {
         job=tilly::create<ScenePreviewJob>();
@@ -36,6 +38,7 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
         job->scene=jfx_scene3d_clone(scene); if (!job->scene) throw std::bad_alloc();
         job->width=f->scene_width; job->height=f->scene_height;
         job->seconds=f->time_seconds; job->revision=f->scene_revision; job->options=f->scene_render_options;
+        job->shading=jfx_scene3d_shading_t(f->scene_shading);
         if (f->scene_navigation || f->playing) { job->options.samples=1; job->options.bounces=std::min(job->options.bounces,1u); }
         job->pixels.resize(size_t(job->width)*job->height*4);
         if (!scheduler_submit(scene_preview_render_task,job,0)) { tilly::destroy(job); editor_result(f,JFX_ERROR_BUSY); return; }
@@ -69,18 +72,15 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     uint32_t rw=want_w,rh=want_h;
     if (jfx_osg_preview_size(f->scene_navigation?1:0,want_w,want_h,&rw,&rh)!=JFX_SUCCESS) { rw=want_w; rh=want_h; }
     if (f->scene_width!=rw || f->scene_height!=rh) {
-        auto *buffer=static_cast<uint8_t *>(tilly_mem_alloc(size_t(rw)*rh*4));
-        if (buffer) {
-            std::memset(buffer,0,size_t(rw)*rh*4); tilly_mem_free(f->scene_rgba); f->scene_rgba=buffer;
-            f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true; ++f->scene_revision;
-        } else editor_result(f,JFX_ERROR_OUT_OF_MEMORY);
+        f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true; ++f->scene_revision;
     }
     modeling3d_preview(f,scene);
     ImGui::InvisibleButton("##3D navigation",size,ImGuiButtonFlags_MouseButtonLeft|ImGuiButtonFlags_MouseButtonRight|ImGuiButtonFlags_MouseButtonMiddle);
     auto *draw=ImGui::GetWindowDrawList(); ImVec2 end(origin.x+width,origin.y+height);
     draw->AddRectFilled(origin,end,IM_COL32(22,26,34,255));
-    if (f->window && f->scene_rgba) {
-        auto texture=jfx_desktop_window_upload_rgba8(f->window,f->scene_width,f->scene_height,f->scene_rgba);
+    if (f->window && f->scene_display) {
+        const auto *frame=f->scene_display;
+        auto texture=jfx_desktop_window_upload_rgba8(f->window,frame->width,frame->height,frame->pixels.data());
         if (texture) draw->AddImage((ImTextureID)(intptr_t)texture,origin,end);
     }
     float xyzw[4]; jfx_scene3d_camera_quaternion(scene,xyzw); glm::quat q(xyzw[3],xyzw[0],xyzw[1],xyzw[2]);
@@ -325,7 +325,9 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     }
     ImGui::EndChild();
     if (table) ImGui::TableNextColumn();
-    if (ImGui::BeginChild("3D viewport",ImVec2(0,0))) {
+    // Reserve scrollbar width even when status/help text crosses a line. Its
+    // appearance must not resize and invalidate the requested render target.
+    if (ImGui::BeginChild("3D viewport",ImVec2(0,0),ImGuiChildFlags_None,ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
         float camera[7]; jfx_scene3d_camera(scene,camera);
         const char *labels[]={"Orbit yaw","Orbit pitch","Camera distance","Target X","Target Y","Target Z","Field of view"};
         for (uint32_t i=0;i<7;++i) { ImGui::SetNextItemWidth(115);
@@ -333,6 +335,11 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             if (i%2==0 && i<6) ImGui::SameLine(); }
         const char *views[]={"Front","Right","Top","Back","Left","Bottom"};
         for (unsigned i=0;i<6;++i) { if (i) ImGui::SameLine(); if (ImGui::SmallButton(views[i])) command("3d.view",i); }
+        ImGui::SetNextItemWidth(250);
+        if (ImGui::Combo("Viewport shading",&f->scene_shading,"Rendered\0Gouraud Shading\0Wireframe Shading\0")) {
+            f->preview_dirty=true; ++f->scene_revision;
+        }
+        ImGui::TextDisabled("Inspection modes use CPU; exports use Rendering engine.");
         const char *renderers[]={"Raster viewport","MonkeyTrace (CPU ray tracing)","Vulkan rasterizer","Filament (GPU rasterizer)"};
         int renderer=int(f->scene_render_options.renderer);
         ImGui::SetNextItemWidth(250);
@@ -357,14 +364,16 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             if (changed) { options.samples=uint32_t(samples); options.bounces=uint32_t(bounces); editor_result(f,jfx_desktop_frontend_set_scene3d_render_options(f,&options)); }
             ImGui::TextWrapped("MonkeyTrace CPU / Ingagi ECS / BVH. Up to 4096 visible instance triangles; flat normals. Navigation/playback use 1 sample and at most 1 reflection; idle/export use the selected quality.");
         }
-        if (f->scene_preview_job) ImGui::TextUnformatted("Rendering scene snapshot...");
+        // Always occupy one line: conditional text here caused a resize/render
+        // feedback loop that discarded completed snapshots and flashed black.
+        ImGui::TextUnformatted(f->scene_preview_job?"Rendering scene snapshot...":"Preview ready");
         if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_FILAMENT)
             ImGui::TextWrapped("Filament: lit PBR surfaces, smooth normals, directional shadows and FXAA. Up to 4096 visible instances / 6,291,456 expanded vertices. Preview and exports share the selected renderer.");
         ImGui::TextWrapped("Drag: orbit | Middle/right or Shift-drag: pan | Wheel: zoom | Alt-drag: roll. Drag the colored gimbal rings to rotate each axis. Escape cancels a drag.");
         modeling3d_viewport(f,scene);
         ImGui::Text("Viewport %ux%u%s | OSG %s | pick %.0fpx",f->scene_width,f->scene_height,
             f->scene_navigation?" (drag: half-res)":"",jfx_osg_have_osg()?"headers":"fallback",double(jfx_osg_gimbal_pick_px()));
-        ImGui::TextWrapped("%s",f->status);
+        ImGui::TextUnformatted(f->status);
         if (desktop_export_running(f)) {
             ImGui::Text("Exported %llu frames",(unsigned long long)desktop_export_completed(f));
             if (ImGui::Button("Cancel 3D export")) desktop_export_cancel(f);
