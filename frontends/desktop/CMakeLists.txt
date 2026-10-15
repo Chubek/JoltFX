@@ -57,6 +57,33 @@ target_include_directories(jfx_desktop_frontend PUBLIC
 target_include_directories(jfx_desktop_frontend PRIVATE ${JFX_IMGUI_DIR})
 target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/glm")
 target_link_libraries(jfx_desktop_frontend PUBLIC jfx_core jolt_effects)
+
+# NovoGFX presents a CPU-rasterized editor directly through DRM/KMS. SDL is
+# used only as a software rasterizer/audio library on this path, never to open
+# a window or graphics context. Input is native libinput + xkbcommon.
+set(JFX_DESKTOP_NOVOGFX_ENABLED OFF)
+if(JFX_BACKEND_NOVOGFX AND JFX_DESKTOP_WINDOW_ENABLED)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(JFX_CONSOLE_INPUT QUIET IMPORTED_TARGET libinput>=1.19 xkbcommon)
+    endif()
+    if(JFX_CONSOLE_INPUT_FOUND)
+        set(JFX_DESKTOP_NOVOGFX_ENABLED ON)
+        target_sources(jfx_desktop_frontend PRIVATE
+            src/novogfx_host.cpp src/software_ui.cpp
+            ${JFX_IMGUI_DIR}/backends/imgui_impl_sdlrenderer2.cpp)
+        target_include_directories(jfx_desktop_frontend PRIVATE
+            "${PROJECT_SOURCE_DIR}/backends/novogfx/jfx/src")
+        target_link_libraries(jfx_desktop_frontend PRIVATE jfx_backend_novogfx PkgConfig::JFX_CONSOLE_INPUT)
+        target_compile_definitions(jfx_desktop_frontend PRIVATE JFX_DESKTOP_HAVE_NOVOGFX=1)
+        set_source_files_properties(${JFX_IMGUI_DIR}/backends/imgui_impl_sdlrenderer2.cpp PROPERTIES
+            COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion;-Wno-format-nonliteral;-Wno-null-dereference")
+        message(STATUS "Desktop NovoGFX: direct DRM/KMS output with software ImGui and libinput")
+    else()
+        message(WARNING "NovoGFX desktop output disabled: install libinput and xkbcommon development packages")
+    endif()
+endif()
+set_property(GLOBAL PROPERTY JFX_DESKTOP_NOVOGFX_ENABLED ${JFX_DESKTOP_NOVOGFX_ENABLED})
 if(JFX_INGAGI)
     target_link_libraries(jfx_desktop_frontend PRIVATE ingagi_embed)
     target_compile_definitions(jfx_desktop_frontend PRIVATE JFX_DESKTOP_HAVE_INGAGI=1)

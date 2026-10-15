@@ -67,6 +67,48 @@ cmake --build build --target jfx_desktop
 ./build/frontends/desktop/jfx_desktop
 ```
 
+## NovoGFX direct-display editor (Linux)
+
+`--backend novogfx` displays the **whole editor** directly through NovoGFX
+DRM/KMS. ImGui geometry, fonts, cursor and preview textures are rasterized on the
+CPU using SDL's software renderer; NovoGFX owns scanout and page flips. This is
+not GPU shader acceleration and does not create an SDL window or OpenGL context.
+The regular desktop build still links its SDL/OpenGL dependencies.
+
+Build with Rust 1.82+, libdrm development headers, SDL2 2.0.19+, libinput 1.19+
+and xkbcommon development packages installed:
+
+```sh
+cmake -S . -B build -DJFX_BACKEND_NOVOGFX=ON -DJFX_DESKTOP_WINDOW=ON
+cmake --build build --target jfx_desktop
+# Run from a logged-in, active text VT with DRM/input permissions:
+JFX_NOVOGFX_DEVICE=/dev/dri/card1 ./build/frontends/desktop/jfx_desktop --backend novogfx
+```
+
+Choose the actual card node for your display; omitting `JFX_NOVOGFX_DEVICE`
+opens the first available card. The card must support atomic KMS, XRGB8888 dumb
+buffers and page flips, and have a connected output already configured (normally
+by fbcon). The editor uses that output's existing mode, not `--width/--height`.
+DRM master must be available: an X11/Wayland compositor may need to release it.
+SSH sessions, pseudoterminals and inactive VTs are rejected before modesetting.
+Do not launch this from a terminal window inside your graphical desktop.
+
+Keyboard, UTF-8 text, mouse, wheel and a software cursor use libinput/xkbcommon.
+`XKB_DEFAULT_LAYOUT` and the other XKB default environment settings select the
+keymap. Quit through File → Quit or **Ctrl+Alt+Escape**. SIGINT/SIGTERM/SIGHUP
+and external VT-release requests cause orderly exit; normal teardown restores
+the saved CRTC/connectors, terminal and keyboard modes. SIGKILL/crashes cannot
+run restoration. Native VST3 windows, system clipboard/IME, input hotplug and
+multi-seat/multi-monitor management are not provided by this console host;
+connect the keyboard and pointer before launch.
+
+`auto` never opts into direct-display output. `--backend novogfx
+--headless-smoke` still works without a console and performs no modesetting.
+Missing dependencies, input permissions or DRM master produce an explicit error,
+not a silent OpenGL fallback. Tests `novogfx_display_conformance` (fake DRM) and
+`novogfx_desktop_pixels` (real software pixels/full editor) require no display
+takeover; physical output must additionally be checked on a dedicated VT.
+
 ## Game Engine / Ingagi
 
 Build with `JFX_INGAGI=ON` to enable Ingagi source execution in the **Game Engine**

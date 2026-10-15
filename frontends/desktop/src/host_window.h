@@ -8,8 +8,8 @@
 
 /* Host window for the desktop frontend.
  *
- * Owns everything platform-specific: the OS window, the OpenGL context, the
- * ImGui platform and renderer backends, the input queue and the preview
+ * Owns everything platform-specific: the OS window/OpenGL context or explicit
+ * NovoGFX console, the ImGui platform/renderer, input queue and the preview
  * texture. The frontend never includes an SDL or GL header, so it builds and
  * runs (headless) on hosts with no SDL2 and no display server. */
 
@@ -20,17 +20,17 @@ typedef struct {
     uint32_t height;
     const char *title;
     bool resizable;
+    bool novogfx; /* Explicit direct-to-display output, never chosen by auto. */
 } jfx_desktop_window_config_t;
 
 /* True when this build has a windowing backend compiled in. */
 bool jfx_desktop_window_available(void);
 
-/* Name of the windowing backend ("sdl2", or "none" when compiled without it). */
-const char *jfx_desktop_window_backend_name(void);
+/* Host backend: "sdl2", "novogfx", or "none". */
+const char *jfx_desktop_window_backend_name(const jfx_desktop_window_t *window);
 
-/* Creates the window and initializes SDL, OpenGL and the ImGui backends.
- * Returns NULL and writes a human-readable reason to out_error (static
- * storage, valid until the next call) when no display or context is available. */
+/* Creates the selected host and ImGui backends. Returns NULL and writes a
+ * human-readable reason into the caller's buffer when output is unavailable. */
 jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_t *config,
     char *out_error, size_t out_error_size);
 
@@ -50,9 +50,11 @@ bool jfx_desktop_window_plugin_visible(jfx_desktop_window_t *window);
 /* Pumps OS events, feeds them to ImGui and opens a new ImGui frame. Returns
  * false once the user has asked to close the window. */
 bool jfx_desktop_window_begin_frame(jfx_desktop_window_t *window);
+/* Distinguish orderly close from a fatal platform/input error. */
+jfx_result_t jfx_desktop_window_status(const jfx_desktop_window_t *window);
 
 /* Rasterizes the current ImGui draw data and presents. */
-void jfx_desktop_window_end_frame(jfx_desktop_window_t *window);
+jfx_result_t jfx_desktop_window_end_frame(jfx_desktop_window_t *window);
 
 /* Drawable size in pixels, which differs from the window size on HiDPI. */
 uint32_t jfx_desktop_window_drawable_width(const jfx_desktop_window_t *window);

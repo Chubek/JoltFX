@@ -127,6 +127,16 @@ endif()
 if(JFX_BACKEND_NOVOGFX)
     jfx_test_target(test_novogfx_backend SOURCES backends/test_novogfx_backend.c
         LIBRARIES jfx_backend_novogfx)
+    jfx_test_target(test_novogfx_display SOURCES backends/test_novogfx_display.c
+        "${PROJECT_SOURCE_DIR}/backends/novogfx/jfx/src/novogfx_display.c" LIBRARIES tilly jfx_api)
+    target_include_directories(test_novogfx_display PRIVATE
+        "${PROJECT_SOURCE_DIR}/backends/novogfx/jfx/src"
+        "${PROJECT_SOURCE_DIR}/backends/novogfx/capi/novogfx-c")
+    # pkg-config variables from the backend directory are not visible here.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(JFX_TEST_DRM REQUIRED libdrm)
+    target_include_directories(test_novogfx_display PRIVATE ${JFX_TEST_DRM_INCLUDE_DIRS})
+    add_test(NAME novogfx_display_conformance COMMAND test_novogfx_display)
 endif()
 
 if(JFX_EXT_LUA AND JFX_EXT_MRUBY)
@@ -144,6 +154,14 @@ if(JFX_EXT_WASM)
 endif()
 
 if(JFX_FRONTEND_DESKTOP)
+    get_property(JFX_DESKTOP_NOVOGFX_ENABLED GLOBAL PROPERTY JFX_DESKTOP_NOVOGFX_ENABLED)
+    if(JFX_DESKTOP_NOVOGFX_ENABLED)
+        jfx_test_target(test_novogfx_desktop SOURCES frontends/test_novogfx_desktop.cpp
+            LIBRARIES jfx_desktop_frontend)
+        target_include_directories(test_novogfx_desktop PRIVATE
+            "${PROJECT_SOURCE_DIR}/frontends/desktop/src" "${PROJECT_SOURCE_DIR}/third_party/imgui")
+        add_test(NAME novogfx_desktop_pixels COMMAND test_novogfx_desktop)
+    endif()
     jfx_test_target(test_desktop_frontend SOURCES frontends/test_desktop_frontend.cpp
         LIBRARIES jfx_desktop_frontend)
     target_include_directories(test_desktop_frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

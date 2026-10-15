@@ -5,6 +5,13 @@ backend library built on top of `libdrm` for Linux.
 
 NovoGFX is shipped with a C wrapper. The main purpose for NovoGFX is its use in the JoltFX system.
 
+The JoltFX adapter's private `jfx/src/novogfx_display.*` presents whole-editor
+frames through NovoGFX dumb buffers and page flips. It uses libdrm only for
+master ownership and the full legacy CRTC restoration snapshot. Never modeset
+from engine probing or automated tests on a host's active monitor. Root JoltFX
+tests provide fake-DRM conformance and real software ImGui pixel checks; physical
+validation runs separately on a dedicated VT. See the desktop README.
+
 You can find `libdrm` in `third_party`. But if an up-to-date Rust bindings exist, use that instead.
 
 ---

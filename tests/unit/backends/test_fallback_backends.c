@@ -3,13 +3,19 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(JFX_TEST_BACKEND_D3D12) && JFX_TEST_BACKEND_D3D12
 #include "jfx/d3d12_backend.h"
+#endif
+#if defined(JFX_TEST_BACKEND_METAL) && JFX_TEST_BACKEND_METAL
 #include "jfx/mtl_backend.h"
+#endif
 #if defined(JFX_TEST_BACKEND_NOVOGFX) && JFX_TEST_BACKEND_NOVOGFX
 #include "jfx/novogfx_backend.h"
 #endif
 #include "jfx/software_backend.h"
+#if defined(JFX_TEST_BACKEND_WEBGPU) && JFX_TEST_BACKEND_WEBGPU
 #include "jfx/wgpu_backend.h"
+#endif
 
 static const char kBrightness[] =
     "(defkernel brightness [r g b a amount] (rgba (* r amount) (* g amount) (* b amount) a))";

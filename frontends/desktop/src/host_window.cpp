@@ -29,6 +29,9 @@
 #include "backends/imgui_impl_sdl2.h"
 #include "imgui.h"
 #include "tilly/allocator.h"
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+#include "novogfx_host.h"
+#endif
 
 namespace {
 
@@ -41,6 +44,9 @@ void copy_error(char *out_error, size_t out_error_size, const char *reason) {
 } // namespace
 
 struct jfx_desktop_window {
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    jfx_novogfx_host *novogfx;
+#endif
     SDL_AudioDeviceID audio;
     SDL_AudioDeviceID capture;
     SDL_Window *plugin_window;
@@ -91,6 +97,9 @@ void jfx_desktop_window_plugin_close(jfx_desktop_window_t *w) {
 bool jfx_desktop_window_plugin_visible(jfx_desktop_window_t *w) { return w && w->plugin_window; }
 jfx_result_t jfx_desktop_window_plugin_open(jfx_desktop_window_t *w,jfx_vst3_instance_t *plugin,const char *title) {
     if (!w || !plugin) return JFX_ERROR_INVALID_ARGUMENT;
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (w->novogfx) return JFX_ERROR_NOT_IMPLEMENTED; // No native plugin window on a DRM console.
+#endif
     jfx_desktop_window_plugin_close(w);
     uint32_t width,height; auto r=jfx_vst3_editor_size(plugin,&width,&height); if (r!=JFX_SUCCESS) return r;
     w->plugin_window=SDL_CreateWindow(title?title:"VST3",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,(int)width,(int)height,SDL_WINDOW_RESIZABLE);
@@ -123,7 +132,14 @@ bool jfx_desktop_window_queue_audio(jfx_desktop_window_t *w,const float *pcm,uin
 uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *w) { return w && w->audio?SDL_GetQueuedAudioSize(w->audio):0; }
 void jfx_desktop_window_clear_audio(jfx_desktop_window_t *w) { if (w && w->audio) SDL_ClearQueuedAudio(w->audio); }
 
-const char *jfx_desktop_window_backend_name(void) { return "sdl2"; }
+const char *jfx_desktop_window_backend_name(const jfx_desktop_window_t *w) {
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (w && w->novogfx) return "novogfx";
+#else
+    (void)w;
+#endif
+    return "sdl2";
+}
 
 jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_t *config,
     char *out_error, size_t out_error_size) {
@@ -134,6 +150,21 @@ jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_
         return nullptr;
     }
     std::memset(window, 0, sizeof(*window));
+
+    if (config->novogfx) {
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+        window->novogfx = jfx_novogfx_host_create(out_error, out_error_size);
+        if (window->novogfx) {
+            window->width = jfx_novogfx_host_width(window->novogfx);
+            window->height = jfx_novogfx_host_height(window->novogfx);
+            return window;
+        }
+#else
+        copy_error(out_error, out_error_size, "NovoGFX desktop output is not built (needs NovoGFX, SDL2, libinput and xkbcommon)");
+#endif
+        tilly_free((tilly_allocator_t *)tilly_default_allocator(), window);
+        return nullptr;
+    }
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         char reason[256];
@@ -220,6 +251,14 @@ void jfx_desktop_window_destroy(jfx_desktop_window_t *window) {
     if (!window) {
         return;
     }
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (window->novogfx) {
+        jfx_novogfx_host_destroy(window->novogfx);
+        SDL_Quit(); // Also release audio/timer subsystems used without a window.
+        tilly_free((tilly_allocator_t *)tilly_default_allocator(), window);
+        return;
+    }
+#endif
     /* Delete the preview texture while the GL context is still current, then
      * shut the backends down exactly once each. */
     if (window->preview_texture) {
@@ -248,10 +287,14 @@ bool jfx_desktop_window_begin_frame(jfx_desktop_window_t *window) {
     if (!window) {
         return false;
     }
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (window->novogfx) return jfx_novogfx_host_begin(window->novogfx);
+#endif
     SDL_Event event;
+    bool open = true;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
-            return false;
+            open = false;
         }
         uint32_t id=event.type==SDL_WINDOWEVENT?event.window.windowID:event.type==SDL_KEYDOWN || event.type==SDL_KEYUP?event.key.windowID:event.type==SDL_MOUSEWHEEL?event.wheel.windowID:0;
         if (window->plugin_window && id==SDL_GetWindowID(window->plugin_window)) {
@@ -329,13 +372,25 @@ bool jfx_desktop_window_begin_frame(jfx_desktop_window_t *window) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
-    return true;
+    return open;
 }
 
-void jfx_desktop_window_end_frame(jfx_desktop_window_t *window) {
+jfx_result_t jfx_desktop_window_status(const jfx_desktop_window_t *window) {
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (window && window->novogfx) return jfx_novogfx_host_result(window->novogfx);
+#else
+    (void)window;
+#endif
+    return JFX_SUCCESS;
+}
+
+jfx_result_t jfx_desktop_window_end_frame(jfx_desktop_window_t *window) {
     if (!window) {
-        return;
+        return JFX_ERROR_INVALID_ARGUMENT;
     }
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (window->novogfx) return jfx_novogfx_host_end(window->novogfx);
+#endif
     ImGui::Render();
     int drawable_width = 0;
     int drawable_height = 0;
@@ -345,6 +400,7 @@ void jfx_desktop_window_end_frame(jfx_desktop_window_t *window) {
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     SDL_GL_SwapWindow(window->sdl_window);
+    return JFX_SUCCESS;
 }
 
 uint32_t jfx_desktop_window_drawable_width(const jfx_desktop_window_t *window) {
@@ -360,6 +416,9 @@ void *jfx_desktop_window_upload_rgba8(jfx_desktop_window_t *window, uint32_t wid
     if (!window || !width || !height || !rgba) {
         return nullptr;
     }
+#if defined(JFX_DESKTOP_HAVE_NOVOGFX)
+    if (window->novogfx) return jfx_novogfx_host_upload(window->novogfx, width, height, rgba);
+#endif
     if (!window->preview_texture) {
         glGenTextures(1, &window->preview_texture);
     }
@@ -395,7 +454,7 @@ void copy_error(char *out_error, size_t out_error_size, const char *reason) {
 
 bool jfx_desktop_window_available(void) { return false; }
 
-const char *jfx_desktop_window_backend_name(void) { return "none"; }
+const char *jfx_desktop_window_backend_name(const jfx_desktop_window_t *) { return "none"; }
 
 jfx_desktop_window_t *jfx_desktop_window_create(const jfx_desktop_window_config_t *,
     char *out_error, size_t out_error_size) {
@@ -419,8 +478,9 @@ uint32_t jfx_desktop_window_queued_audio(jfx_desktop_window_t *) { return 0; }
 void jfx_desktop_window_clear_audio(jfx_desktop_window_t *) {}
 
 bool jfx_desktop_window_begin_frame(jfx_desktop_window_t *) { return false; }
+jfx_result_t jfx_desktop_window_status(const jfx_desktop_window_t *) { return JFX_ERROR_NOT_INITIALIZED; }
 
-void jfx_desktop_window_end_frame(jfx_desktop_window_t *) {}
+jfx_result_t jfx_desktop_window_end_frame(jfx_desktop_window_t *) { return JFX_ERROR_NOT_INITIALIZED; }
 
 uint32_t jfx_desktop_window_drawable_width(const jfx_desktop_window_t *) { return 0u; }
 

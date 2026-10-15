@@ -60,19 +60,14 @@ target_include_directories(novogfx_c INTERFACE "${NOVOGFX_CAPI_DIR}")
 # The Rust staticlib carries its own Rust std objects; its system needs are
 # pthread/dl/m plus libdrm, which novogfx-sys links for the ioctls.
 find_package(Threads REQUIRED)
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
-    pkg_check_modules(JFX_LIBDRM QUIET libdrm)
-endif()
-if(JFX_LIBDRM_FOUND)
-    target_link_libraries(novogfx_c INTERFACE ${JFX_LIBDRM_LINK_LIBRARIES})
-    target_link_directories(novogfx_c INTERFACE ${JFX_LIBDRM_LIBRARY_DIRS})
-else()
-    target_link_libraries(novogfx_c INTERFACE drm)
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JFX_LIBDRM REQUIRED libdrm)
+target_link_libraries(novogfx_c INTERFACE ${JFX_LIBDRM_LINK_LIBRARIES})
+target_link_directories(novogfx_c INTERFACE ${JFX_LIBDRM_LIBRARY_DIRS})
 target_link_libraries(novogfx_c INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
 
-add_library(jfx_backend_novogfx STATIC jfx/src/novogfx_backend.c)
+add_library(jfx_backend_novogfx STATIC jfx/src/novogfx_backend.c jfx/src/novogfx_display.c)
+target_include_directories(jfx_backend_novogfx PRIVATE ${JFX_LIBDRM_INCLUDE_DIRS})
 
 target_include_directories(jfx_backend_novogfx PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/jfx/include>

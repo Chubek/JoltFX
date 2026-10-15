@@ -21,6 +21,31 @@ env:
   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
 jobs:
+  novogfx-desktop:
+    name: NovoGFX editor (software pixels + fake DRM, ASan/UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install display and input build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang libdrm-dev libsdl2-dev libgl1-mesa-dev libinput-dev libxkbcommon-dev libboost-dev
+      - name: Configure NovoGFX-only execution and desktop output
+        run: >-
+          cmake -S . -B build-novogfx -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DJFX_ASAN=ON -DJFX_UBSAN=ON -DJFX_BACKEND_NOVOGFX=ON
+          -DJFX_BACKEND_VULKAN=OFF -DJFX_BACKEND_METAL=OFF
+          -DJFX_BACKEND_D3D12=OFF -DJFX_BACKEND_WEBGPU=OFF
+          -DJFX_EXT_MRUBY=OFF -DJFX_AUDIO_VST3=OFF
+          -DJFX_VIDEO_FFMPEG=OFF -DJFX_COLOR_OCIO=OFF -DJFX_MONKEYTRACE=OFF
+      - name: Build focused tests and editor
+        run: cmake --build build-novogfx --target test_novogfx_display test_novogfx_desktop test_novogfx_backend test_core jfx_desktop --parallel 2
+      - name: Verify without modesetting the runner
+        run: ctest --test-dir build-novogfx -R 'novogfx|desktop_headless|^test_core$' --output-on-failure
+
   build-test:
     name: build+test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

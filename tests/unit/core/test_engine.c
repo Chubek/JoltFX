@@ -79,7 +79,8 @@ int main(void) {
     assert(strcmp(jfx_engine_backend_name(engine), "vulkan") == 0 ||
         strcmp(jfx_engine_backend_name(engine), "metal") == 0 ||
         strcmp(jfx_engine_backend_name(engine), "d3d12") == 0 ||
-        strcmp(jfx_engine_backend_name(engine), "webgpu") == 0);
+        strcmp(jfx_engine_backend_name(engine), "webgpu") == 0 ||
+        strcmp(jfx_engine_backend_name(engine), "novogfx") == 0);
     /* Exercise the retained auto handle even on CPU-only configurations. */
     const float input[] = {0.125f, 0.25f, 0.5f, 1};
     float output[4] = {0};
@@ -115,6 +116,13 @@ int main(void) {
     named.backend_name = "webgpu";
     assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
         strcmp(jfx_engine_backend_name(engine), "webgpu") == 0);
+    jfx_engine_shutdown(engine);
+    ++named_checked;
+#endif
+#if defined(JFX_BACKEND_NOVOGFX)
+    named.backend_name = "novogfx";
+    assert(jfx_engine_init(&named, &engine) == JFX_SUCCESS &&
+        strcmp(jfx_engine_backend_name(engine), "novogfx") == 0);
     jfx_engine_shutdown(engine);
     ++named_checked;
 #endif

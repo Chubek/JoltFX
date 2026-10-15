@@ -2,6 +2,13 @@
 
 ## Overview
 
+`novogfx/` also owns a private whole-editor scanout bridge in `jfx/src/`.
+Explicit desktop `--backend novogfx` uses software ImGui plus native Linux input,
+not OpenGL. Keep engine probes master-free, native DRM types below this bridge,
+double-buffer reuse completion-driven, and restore the CRTC/console on teardown.
+Run `novogfx_display_conformance` / `novogfx_desktop_pixels`; physical KMS checks
+require a dedicated active VT. See the desktop README for console limitations.
+
 `filament/` is an optional scene-rendering adapter, built with `JFX_FILAMENT`,
 not a compute HAL backend. Its standalone C++20 SDK build and private C bridge
 are configured by `cmake/Filament.cmake`. Use engine allocator callbacks for

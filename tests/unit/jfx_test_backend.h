@@ -19,6 +19,8 @@
 #define JFX_TEST_BACKEND_NAME "metal"
 #elif defined(JFX_BACKEND_D3D12)
 #define JFX_TEST_BACKEND_NAME "d3d12"
+#elif defined(JFX_BACKEND_NOVOGFX)
+#define JFX_TEST_BACKEND_NAME "novogfx"
 #else
 #error "no backend enabled"
 #endif

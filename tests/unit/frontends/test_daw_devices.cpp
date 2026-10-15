@@ -8,7 +8,7 @@
 int main(int argc,char **argv) {
     assert(argc==3);
     ImGui::CreateContext();
-    jfx_desktop_window_config_t config{320,240,"DAW device integration",true}; char error[512];
+    jfx_desktop_window_config_t config{320,240,"DAW device integration",true,false}; char error[512];
     auto *window=jfx_desktop_window_create(&config,error,sizeof(error));
     if (!window) { std::fprintf(stderr,"Window unavailable: %s\n",error); ImGui::DestroyContext(); return 77; }
     jfx_vst3_class_t classes[8]; size_t count=0; assert(jfx_vst3_classes(argv[1],classes,8,&count)==JFX_SUCCESS);

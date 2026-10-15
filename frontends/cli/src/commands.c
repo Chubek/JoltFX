@@ -172,7 +172,7 @@ void print_command_help(const char *command) {
         printf("through the Core engine, so --backend selects the real execution path.\n");
         printf("Defaults: --effect brightness --width 64 --height 64 -o render.ppm\n");
         printf("Backend NAME is one the engine was built with: vulkan, metal, d3d12,\n");
-        printf("webgpu or auto.\n");
+        printf("webgpu, novogfx (Linux) or auto.\n");
     }
     if (command == NULL || strcmp(command, "export") == 0) {
         printf("Usage: joltfx export [--effect NAME] [--param VALUE]\n");

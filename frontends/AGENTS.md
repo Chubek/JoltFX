@@ -186,6 +186,16 @@ typedef struct jfx_frontend_t {
 
 ### Desktop (Dear ImGui + SDL2 + OpenGL)
 
+Explicit `--backend novogfx` selects a Linux direct-display host instead of the
+SDL/OpenGL window. `novogfx_host.cpp` owns active-VT checks/restoration, libinput
+and XKB; `software_ui.cpp` rasterizes ImGui/fonts/preview textures without a GL
+context. Scanout stays behind the private NovoGFX bridge. Do not change `auto`
+into implicit modesetting or silently fall back on explicit NovoGFX failures.
+Preserve balanced ImGui frames on quit and propagate presentation errors. Run
+`novogfx_desktop_pixels` / `novogfx_display_conformance` without monitor takeover;
+physical display/input tests require a dedicated VT. Console limitations are
+listed in `desktop/README.md`.
+
 **The Qt6 design below is not what the code does.** The desktop frontend is
 implemented with Dear ImGui, SDL2 and an OpenGL 3.3 core context; see
 `frontends/desktop/README.md` for the working build and run instructions, and

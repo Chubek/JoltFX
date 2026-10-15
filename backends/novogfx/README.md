@@ -15,6 +15,29 @@ coherent graphics backend. It is the display backend for [JoltFX](../README.md).
 - **C ABI.** `capi/novogfx-c` implements the surface in `NovoGFX-API.idl`
   (`novogfx.h` + DSLtk-based `novogfx.hpp`).
 
+## JoltFX integration
+
+The repository-root `JFX_BACKEND_NOVOGFX` option builds the CPU execution adapter
+and a private DRM/KMS scanout bridge (`jfx/src/novogfx_display.*`). Engine probes
+release their device immediately, so they do not retain DRM master. Explicit
+desktop `--backend novogfx` uses the bridge to present the whole software-rendered
+ImGui editor. See [desktop setup, permissions and limitations](../../frontends/desktop/README.md#novogfx-direct-display-editor-linux).
+
+Scanout uses two pitch-aware XRGB8888 dumb buffers. Completion events retire a
+buffer before reuse; presentation is nonblocking, with a two-second lost-flip
+watchdog. An initial TEST_ONLY atomic commit validates the mode; teardown restores
+the previous CRTC and connector routing before releasing scanout storage. libdrm
+is used privately for master ownership and the legacy CRTC restoration snapshot,
+which the NovoGFX C API cannot fully represent (including origin/clone routing).
+Native handles do not cross the private descriptor boundary. This does not add
+GPU compute capabilities: `used_gpu` remains false.
+
+JoltFX tests `novogfx_display_conformance` and `novogfx_desktop_pixels` verify
+fake-DRM lifecycle/failure paths and actual software-rasterized editor pixels.
+They do not claim physical KMS conformance; run the editor on a dedicated VT to
+check your driver's modeset/page-flip/restore behavior. The standalone Rust/C API
+build and ABI are unchanged.
+
 ## Layout
 
 See `AGENTS.md §2` for the full tree. Crates live in `crates/`, the C wrapper

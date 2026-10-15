@@ -1,12 +1,13 @@
 /* NovoGFX backend.
  *
- * NovoGFX is JoltFX's Linux DRM/KMS backend: it owns the display-device
- * lifecycle and capability reporting through the Rust novogfx-c API, and
+ * NovoGFX is JoltFX's Linux DRM/KMS backend: it probes display devices and
+ * reports capabilities through the Rust novogfx-c API, and
  * dispatches execution through the shared CPU path in jfx_software_adapter.
  * KMS owns scanout, not shader dispatch, so `used_gpu` always reports the
- * CPU path truthfully even when a DRM device is held.
+ * CPU path truthfully. Explicit desktop output owns scanout separately in
+ * novogfx_display.c; probes close their fd so they never retain DRM master.
  *
- * Probing walks /dev/dri/cardN and keeps the first node that opens and
+ * Probing walks /dev/dri/cardN and describes the first node that opens and
  * enumerates KMS resources; permission failures are expected on seat-less
  * sessions and simply skip the node. When no device probes, the backend
  * still creates and reports the software fallback, exactly like the other
@@ -24,7 +25,7 @@
 
 struct jfx_novogfx_backend {
     jfx_software_adapter_t *adapter;
-    novogfx_device_t *device; /* NULL when no DRM/KMS device probed. */
+    bool device_found; /* Probes never retain DRM master or a display fd. */
     char device_name[256];
     uint32_t api_version;
 };
@@ -96,16 +97,18 @@ jfx_result_t jfx_novogfx_backend_create(const jfx_novogfx_backend_config_t *conf
         return JFX_ERROR_OUT_OF_MEMORY;
     }
     backend->adapter = adapter;
-    backend->device = NULL;
+    backend->device_found = false;
     backend->device_name[0] = '\0';
     backend->api_version = 0;
 
     const bool probe = !config || config->probe_gpu;
     if (probe) {
-        backend->device = novogfx_probe();
-        if (backend->device) {
-            novogfx_describe_device(backend->device, backend->device_name,
+        novogfx_device_t *device = novogfx_probe();
+        if (device) {
+            backend->device_found = true;
+            novogfx_describe_device(device, backend->device_name,
                 sizeof(backend->device_name), &backend->api_version);
+            novogfx_device_destroy(device);
         }
     }
     *out_backend = backend;
@@ -115,9 +118,6 @@ jfx_result_t jfx_novogfx_backend_create(const jfx_novogfx_backend_config_t *conf
 void jfx_novogfx_backend_destroy(jfx_novogfx_backend_t *backend) {
     if (!backend) {
         return;
-    }
-    if (backend->device) {
-        novogfx_device_destroy(backend->device);
     }
     jfx_software_adapter_destroy(backend->adapter);
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), backend);
@@ -131,7 +131,7 @@ void jfx_novogfx_query_caps(const jfx_novogfx_backend_t *backend,
     /* The adapter fills the truthful execution-side caps (CPU path, used_gpu,
      * fallback name); a probed device upgrades the report in place. */
     jfx_software_adapter_query_caps(backend ? backend->adapter : NULL, out_caps);
-    if (backend && backend->device) {
+    if (backend && backend->device_found) {
         out_caps->gpu_available = true;
         out_caps->api_version = backend->api_version;
         snprintf(out_caps->device_name, sizeof(out_caps->device_name), "%s",

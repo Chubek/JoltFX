@@ -1,5 +1,35 @@
 # Progress
 
+## NovoGFX whole-editor display (2026-10-15)
+
+- Existing NovoGFX engine registration only probes DRM and executes CPU kernels;
+  it does not present frames. User confirmed whole-editor DRM/KMS output.
+- Implemented explicit `jfx_desktop --backend novogfx`: the entire editor uses
+  software ImGui rasterization (fonts, cursor and independent preview textures)
+  and NovoGFX atomic initialization / completion-driven double-buffered scanout.
+  The private bridge converts RGBA to pitch-aware XRGB8888 and restores CRTC /
+  connector routing. Engine probes now release their fd/master immediately.
+- Native libinput/XKB handles keyboard, UTF-8 text/repeat, mouse and scrolling.
+  Active-VT validation prevents graphical-terminal/SSH takeover. Console/keyboard
+  state is restored on normal exit, handled signals and VT-release requests;
+  presentation/input failures propagate. `auto` never opts into console output.
+- Added deterministic fake-DRM lifecycle/pixel/error conformance, actual software
+  font/clipping/multiple-texture and full-editor pixel tests, and a forced non-VT
+  rejection test. Added a NovoGFX-only sanitizer CI lane and fixed older backend
+  selection/header assumptions exposed by this configuration. No public HAL or
+  standalone NovoGFX ABI changes; no vendored Rust changes.
+- Verification: 14 focused main-build GUI/backend/desktop checks passed, including
+  real SDL/OpenGL viewport and DAW window/capture regressions. Main engine and
+  fallback conformance also pass. Clang Debug ASan/UBSan with leak detection passed
+  seven NovoGFX-only engine/backend/editor checks, and four checks with NovoGFX and
+  SDL windows disabled. Explicit NovoGFX CLI PPM rendering succeeds; non-VT desktop
+  startup rejects safely without an OpenGL fallback. New bridge/host sources build
+  without warnings; unrelated existing warnings remain elsewhere.
+- A restart cleared the interrupted temporary sanitizer build; recreated it in
+  `build/novogfx-san`. Physical modeset/flip/restoration and input remain untested:
+  no takeover of the active monitor was attempted. Desktop README documents VT,
+  permissions, dependencies and current single-output / preconnected-input limits.
+
 ## 3D viewport stability and shading (2026-10-15)
 
 - Found a feedback loop: conditional render-progress text changes the requested

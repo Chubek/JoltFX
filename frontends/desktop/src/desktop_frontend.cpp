@@ -229,6 +229,7 @@ static void scene_preview_render_task(void *userdata) {
 }
 
 struct jfx_desktop_frontend {
+    bool novogfx_output;
     jfx_engine_t *engine;
     jfx_editor_t *editor;
     jfx_plugin_host_t *plugins;
@@ -486,6 +487,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
         alignof(jfx_desktop_frontend_t)));
     if (!frontend) return JFX_ERROR_OUT_OF_MEMORY;
     std::memset(frontend, 0, sizeof(*frontend));
+    frontend->novogfx_output = config && config->backend_name &&
+        std::strcmp(config->backend_name, "novogfx") == 0;
 
     frontend->width = (config && config->width) ? config->width : JFX_DESKTOP_DEFAULT_WIDTH;
     frontend->height = (config && config->height) ? config->height : JFX_DESKTOP_DEFAULT_HEIGHT;
@@ -1330,7 +1333,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
         ImGuiIO &io = ImGui::GetIO();
         io.DisplaySize = ImVec2((float)frontend->width, (float)frontend->height);
         io.DeltaTime = 1.0f / 60.0f;
-        if (!io.Fonts->IsBuilt()) {
+        if (!io.Fonts->IsBuilt() && !(io.BackendFlags & ImGuiBackendFlags_RendererHasTextures)) {
             io.Fonts->Build();
         }
         ImGui::NewFrame();
@@ -1398,7 +1401,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
         frontend->layout_initialized = true;
 
         if (frontend->window) {
-            jfx_desktop_window_end_frame(frontend->window);
+            const auto presented = jfx_desktop_window_end_frame(frontend->window);
+            if (presented != JFX_SUCCESS) return presented;
         } else {
             ImGui::Render();
         }
@@ -1417,9 +1421,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
 
     /* The window was closed by the user: close out the ImGui frame cleanly so
      * the backends stay balanced, then let the runner stop. */
+    frontend->quit_requested = true;
     ImGui::Render();
     frontend->frame_count++;
-    return JFX_SUCCESS;
+    return jfx_desktop_window_status(frontend->window);
 }
 
 extern "C" bool jfx_desktop_frontend_should_quit(const jfx_desktop_frontend_t *frontend) {
@@ -1440,7 +1445,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_run(jfx_desktop_frontend_t *fronten
     window_config.height = frontend->height;
     window_config.title = "JoltFX";
     window_config.resizable = true;
+    window_config.novogfx = frontend->novogfx_output;
     char error[256] = { 0 };
+    ImGui::SetCurrentContext(frontend->imgui);
     frontend->window = jfx_desktop_window_create(&window_config, error, sizeof(error));
     if (!frontend->window) {
         std::fprintf(stderr, "failed to open a window: %s\n", error);
@@ -1449,7 +1456,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_run(jfx_desktop_frontend_t *fronten
 
     ImGui::SetCurrentContext(frontend->imgui);
     std::snprintf(frontend->status, sizeof(frontend->status), "window open (%s)",
-        jfx_desktop_window_backend_name());
+        jfx_desktop_window_backend_name(frontend->window));
     frontend->preview_dirty = true;
     frontend->quit_requested = false;
     /* Apply the default panel geometry once the real surface size is known. */
