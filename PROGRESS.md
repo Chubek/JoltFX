@@ -1950,3 +1950,14 @@ Follow-on from the plan audit above. Two changes, both additive.
 - Updated `JOLTSCRIPT_PLAN.md`, `joltscript/AGENTS.md`, and
   `joltscript/docs/tools.md` so the repository no longer describes Phase 3 tools
   as pending/preliminary.
+
+## 2026-10-17 — 3D viewport OSG bridge
+
+- Fixed the vendored OpenSceneGraph build integration so `-DJFX_USE_OSG=ON`
+  configures successfully: create the generated include directory before the
+  imported `jfx_osg_core` target references it.
+- Enabled OpenSceneGraph by default for the 3D viewport bridge and added a
+  build/install RPATH to `jfx_core` so OSG-enabled tests and frontends can
+  locate `libosg` without manual environment setup.
+- Verified `osg_viewport`, `modeling3d_shading`, `modeling3d_ui_tests` and
+  `modeling3d_viewport_window` pass with OSG enabled.

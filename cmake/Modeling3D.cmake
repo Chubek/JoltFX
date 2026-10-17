@@ -85,7 +85,7 @@ endif()
 # libosg: the trackball then runs osg::Quat and jfx_osg_have_osg() reports
 # 1. Only the `osg` (+ OpenThreads) core targets are ever built: no viewers,
 # plugins or applications. Costs nothing when OFF.
-option(JFX_USE_OSG "Blend third_party/openscenegraph headers into the 3D viewport bridge" OFF)
+option(JFX_USE_OSG "Blend third_party/openscenegraph headers into the 3D viewport bridge" ON)
 if(JFX_USE_OSG)
     include(ExternalProject)
     cmake_host_system_information(RESULT jfx_osg_jobs QUERY NUMBER_OF_LOGICAL_CORES)
@@ -107,6 +107,7 @@ if(JFX_USE_OSG)
             "<BINARY_DIR>/lib/libOpenThreads.so"
         EXCLUDE_FROM_ALL
     )
+    file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/third_party/osg-vendored/include")
     add_library(jfx_osg_core SHARED IMPORTED GLOBAL)
     set_target_properties(jfx_osg_core PROPERTIES
         IMPORTED_LOCATION
@@ -119,6 +120,9 @@ if(JFX_USE_OSG)
         "${PROJECT_BINARY_DIR}/third_party/osg-vendored/include")
     target_link_libraries(jfx_core PRIVATE jfx_osg_core)
     target_compile_definitions(jfx_core PUBLIC JFX_HAVE_OSG=1)
+    set_target_properties(jfx_core PROPERTIES
+        BUILD_RPATH "${PROJECT_BINARY_DIR}/third_party/osg-vendored/lib"
+        INSTALL_RPATH "${PROJECT_BINARY_DIR}/third_party/osg-vendored/lib")
     message(STATUS "3D viewport: OpenSceneGraph libosg enabled (JFX_HAVE_OSG)")
 else()
     message(STATUS "3D viewport: OpenSceneGraph fallback (GLM trackball, no OSG link)")
