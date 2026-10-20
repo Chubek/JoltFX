@@ -1,0 +1,164 @@
+#!/usr/bin/env python
+
+# Copyright Contributors to the OpenImageIO project.
+# SPDX-License-Identifier: Apache-2.0
+# https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+
+
+############################################################################
+# This file contains code examples from the ImageOutput chapter of the
+# main OpenImageIO documentation.
+#
+# To add an additional test, replicate the section below. Change
+# "example1" to a helpful short name that identifies the example.
+
+
+# BEGIN-imageoutput-example1
+import OpenImageIO as oiio
+import numpy as np
+
+def example1() -> None:
+    #
+    # Example code fragment from the docs goes here.
+    #
+    # It probably should generate either some text output (which will show up
+    # in "out.txt" that captures each test's output), or it should produce a
+    # (small) image file that can be compared against a reference image that
+    # goes in the ref/ subdirectory of this test.
+    #
+    return
+
+# END-imageoutput-example1
+
+#
+############################################################################
+
+
+
+# BEGIN-imageoutput-simple
+import OpenImageIO as oiio
+import numpy as np
+
+def simple_write() -> None:
+    filename = "simple.tif"
+    xres = 320
+    yres = 240
+    channels = 3  # RGB
+    pixels = np.zeros((yres, xres, channels), dtype=np.uint8)
+
+    out = oiio.ImageOutput.create (filename)
+    if out:
+        spec = oiio.ImageSpec(xres, yres, channels, 'uint8')
+        out.open (filename, spec)
+        out.write_image (pixels)
+        out.close ()
+# END-imageoutput-simple
+
+
+def scanlines_write() -> None:
+    filename = "scanlines.tif"
+    xres = 320
+    yres = 240
+    channels = 3  # RGB
+    spec = oiio.ImageSpec(xres, yres, channels, 'uint8')
+
+    out = oiio.ImageOutput.create (filename)
+    if out:
+        # BEGIN-imageoutput-scanlines
+        z = 0   # Always zero for 2D images
+        out.open (filename, spec)
+        for y in range(yres) :
+            # Generate pixel array for one scanline.
+            # As an example, we are just making a zero-filled scanline
+            scanline = np.zeros((xres, channels), dtype=np.uint8)
+            out.write_scanline (y, z, scanline)
+        out.close ()
+        # END-imageoutput-scanlines
+
+
+def tiles_write() -> None:
+    filename = "tiles.tif"
+    xres = 320
+    yres = 240
+    channels = 3  # RGB
+    tilesize = 64
+    spec = oiio.ImageSpec(xres, yres, channels, 'uint8')
+    spec.tile_width = tilesize
+    spec.tile_height = tilesize
+
+    out = oiio.ImageOutput.create (filename)
+    if out:
+        # BEGIN-imageoutput-tiles
+        z = 0   # Always zero for 2D images
+        out.open (filename, spec)
+        for y in range(0, yres, tilesize) :
+            for x in range(0, xres, tilesize) :
+                # Generate pixel array for one tile.
+                # As an example, we are just making a zero-filled tile
+                tile = np.zeros((tilesize, tilesize, channels), dtype=np.uint8)
+                out.write_tile (x, y, z, tile)
+        out.close ()
+        # END-imageoutput-tiles
+
+
+def copy_write() -> None:
+    from OpenImageIO import ImageInput, ImageOutput
+
+    # BEGIN-imageoutput-copy
+    # Open the input file
+    inp = ImageInput.open("input.exr")
+
+    # Make an output spec, identical to the input except for metadata
+    out_spec = inp.spec()
+    out_spec.attribute("ImageDescription", "My Title")
+
+    # Create the output file and copy the image
+    out = ImageOutput.create("output.exr")
+    out.open("output.exr", out_spec)
+    out.copy_image(inp)
+
+    # Clean up
+    out.close()
+    inp.close()
+    # END-imageoutput-copy
+
+
+def channel_names_basic() -> None:
+    print('example_channel_names_basic')
+    width = 320
+    length = 240
+    
+    # BEGIN-imageoutput-channelnamesbasic
+    channels = 3  # RGB
+    spec = oiio.ImageSpec(width, length, channels, 'uint8')
+    spec.channelnames = ('R', 'G', 'B')
+    # END-imageoutput-channelnamesbasic
+    print(' '.join(spec.channelnames))
+
+
+def channel_names_8() -> None:
+    print('example_channel_names_8')
+    width = 320
+    length = 240
+
+    # BEGIN-imageoutput-channelnames8
+    channels = 8
+    spec = oiio.ImageSpec(width, length, channels, 'uint8')
+    spec.channelnames = ('R', 'G', 'B', 'opacityR', 'opacityG', 'opacityB',
+                        'texture_s', 'texture_t')
+    # END-imageoutput-channelnames8
+    print(spec.nchannels)
+    print(' '.join(spec.channelnames))
+
+
+if __name__ == '__main__':
+    print("docs-examples-imageoutput.py")
+    # Each example function needs to get called here, or it won't execute
+    # as part of the test.
+    simple_write()
+    scanlines_write()
+    tiles_write()
+    copy_write()
+    channel_names_basic()
+    channel_names_8()

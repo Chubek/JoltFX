@@ -1,0 +1,290 @@
+WARNING: --ch: Unknown channel name "Z", filling with 0 (actual channels: "R,G,B")
+WARNING: --ch: Unknown channel name "R", filling with 0 (actual channels: "Z")
+WARNING: --ch: Unknown channel name "G", filling with 0 (actual channels: "Z")
+WARNING: --ch: Unknown channel name "B", filling with 0 (actual channels: "Z")
+chrbg.exr            :   64 x   64, 3 channel, half openexr
+Reading allhalf.exr
+allhalf.exr          :   38 x   38, 5 channel, half openexr
+    SHA-1: 1C71682E8D8F6DCDC2A7A7B23842DFEEC51438F2
+    channel list: R, G, B, A, Z
+    full/display size: 40 x 40
+    full/display origin: 0, 0
+    compression: "zips"
+    Orientation: 1 (normal)
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading rgbahalf-zfloat.exr
+rgbahalf-zfloat.exr  :   38 x   38, 5 channel, half/half/half/half/float openexr
+    SHA-1: 9324AFD44451321A8D87E09F656C7B86E827E5CD
+    channel list: R (half), G (half), B (half), A (half), Z (float)
+    full/display size: 40 x 40
+    full/display origin: 0, 0
+    compression: "zips"
+    Orientation: 1 (normal)
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading sub-formats.exr
+    3 subimages: 64x64 [h,h,h], 64x64 [h,f,h], 64x64 [h,h,h,h]
+    oiio:subimages: 3
+    oiio:subimages: 3
+    oiio:subimages: 3
+Reading sub-formats2.exr
+    3 subimages: 64x64 [h,h,h], 64x64 [f,f,f], 64x64 [h,h,h,h]
+    oiio:subimages: 3
+    oiio:subimages: 3
+    oiio:subimages: 3
+Reading sub-formats3.exr
+    3 subimages: 64x64 [h,h,h], 64x64 [f,f,f], 64x64 [h,h,h]
+    oiio:subimages: 3
+    oiio:subimages: 3
+    oiio:subimages: 3
+explicit -d uint save result: 
+uint8.tif            :  128 x  128, 3 channel, uint8 tiff
+    tile size: 16 x 16
+
+unmodified copy result: 
+tmp.tif              :  128 x  128, 3 channel, uint8 tiff
+    tile size: 16 x 16
+
+copy with explicit -d uint16 result: 
+copy_uint16.tif      :  128 x  128, 3 channel, uint16 tiff
+    tile size: 16 x 16
+
+copy with -o:type=uint16 result: 
+ 128 x  128, 3 channel, uint16 tiff
+copy with -o:datatype=uint16 result: 
+ 128 x  128, 3 channel, uint16 tiff
+siappend result: 
+tmp.tif              :  128 x  128, 3 channel, uint8 tiff
+    tile size: 16 x 16
+ subimage  1:  128 x  128, 3 channel, uint16 tiff
+    tile size: 16 x 16
+
+combining images result: 
+tmp.tif              :  128 x  128, 3 channel, uint8 tiff
+    tile size: 16 x 16
+
+oiiotool WARNING: -o : Can't save 4 channels to png... saving only channels R,G,B
+Reading chname.exr
+chname.exr           :   38 x   38, 5 channel, float openexr
+    SHA-1: 6EB25E53358BF3ECDFECD04F662D335DE647A1A6
+    channel list: Red, G, B, A, Depth
+    full/display size: 40 x 40
+    full/display origin: 0, 0
+    compression: "zips"
+    Orientation: 1 (normal)
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+rgb.tif              :   64 x   64, 3 channel, uint8 tiff
+    SHA-1: 0A989C358454065E07E7375FCAD8064FEEB54256
+justblue.tif         :   64 x   64, 3 channel, uint8 tiff
+    SHA-1: E664F311950331458E61F0281A311A96D9068EF6
+bgra.tif             :   64 x   64, 4 channel, uint8 tiff
+    SHA-1: 3F9154AE01632D66C4792D770CDC9BF031EDF918
+rgb.exr              :   64 x   64, 3 channel, half openexr
+    SHA-1: 33C471A3638AB1286B97F5D27A977077E8FEE802
+rgba.tif             :   64 x   64, 4 channel, uint8 tiff
+    SHA-1: 7DF6F499949D5B0847BCAD56D0FEBEF16A13A581
+rgbaz.exr            :   64 x   64, 5 channel, half openexr
+    SHA-1: E75770A20AF2FDCAD410A4FA02841388123E6583
+Reading green.exr
+green.exr            :   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    hair: "black"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading greenmeta-replace.exr
+greenmeta-replace.exr :   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    eyes: 2
+    hair: "brown"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    weight: 20.5
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading greenmeta-merge.exr
+greenmeta-merge.exr  :   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    eyes: 2
+    hair: "black"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    weight: 20.5
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading greenmeta-merge-override.exr
+greenmeta-merge-override.exr :   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    eyes: 2
+    hair: "brown"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    weight: 20.5
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading greenmeta-merge-camera.exr
+greenmeta-merge-camera.exr :   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    hair: "black"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading greenmeta-merge-2.exr
+greenmeta-merge-2.exr :   64 x   64, 3 channel, half openexr
+    3 subimages: 64x64 [h,h,h], 64x64 [h,h,h], 64x64 [h,h,h]
+ subimage  0:   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    eyes: 2
+    hair: "black"
+    name: "subimage00"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    weight: 20.5
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimagename: "subimage00"
+    oiio:subimages: 3
+    openexr:chunkCount: 4
+    openexr:lineOrder: "increasingY"
+ subimage  1:   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    eyes: 2
+    hair: "black"
+    name: "subimage01"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    weight: 20.5
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimagename: "subimage01"
+    oiio:subimages: 3
+    openexr:chunkCount: 4
+    openexr:lineOrder: "increasingY"
+ subimage  2:   64 x   64, 3 channel, half openexr
+    SHA-1: 8B61993247469F3C208CA894D71856727B11606A
+    channel list: R, G, B
+    compression: "zip"
+    eyes: 2
+    hair: "black"
+    name: "subimage02"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    weight: 20.5
+    camera:lens: "AX30"
+    camera:shutter: 0.0125
+    oiio:RowsPerChunk: 16
+    oiio:subimagename: "subimage02"
+    oiio:subimages: 3
+    openexr:chunkCount: 4
+    openexr:lineOrder: "increasingY"
+Reading nometamerge.exr
+nometamerge.exr      :   64 x   64, 6 channel, float openexr
+    SHA-1: 9F13A523321C66208E90D45F87FA0CD9B370E111
+    channel list: R, G, B, A, Z, channel3
+    a: 3
+    compression: "zip"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Reading metamerge.exr
+metamerge.exr        :   64 x   64, 6 channel, float openexr
+    SHA-1: 9F13A523321C66208E90D45F87FA0CD9B370E111
+    channel list: R, G, B, A, Z, channel3
+    a: 3
+    b: 1
+    compression: "zip"
+    PixelAspectRatio: 1
+    screenWindowCenter: 0, 0
+    screenWindowWidth: 1
+    oiio:RowsPerChunk: 16
+    oiio:subimages: 1
+    openexr:lineOrder: "increasingY"
+Testing -o with no image
+oiiotool WARNING: -o : out.tif did not have any current image to output.
+Comparing "rgonly.exr" and "ref/rgonly.exr"
+PASS
+Comparing "ch-err.exr" and "ref/ch-err.exr"
+PASS
+Comparing "ch-err2.exr" and "ref/ch-err2.exr"
+PASS
+Comparing "allhalf.exr" and "ref/allhalf.exr"
+PASS
+Comparing "rgbahalf-zfloat.exr" and "ref/rgbahalf-zfloat.exr"
+PASS
+Comparing "chanshuffle.tif" and "ref/chanshuffle.tif"
+PASS
+Comparing "ch-rgba.exr" and "ref/ch-rgba.exr"
+PASS
+Comparing "ch-z.exr" and "ref/ch-z.exr"
+PASS
+Comparing "chappend-rgbaz.exr" and "ref/chappend-rgbaz.exr"
+PASS
+Comparing "chname.exr" and "ref/chname.exr"
+PASS
+Comparing "crop.tif" and "ref/crop.tif"
+PASS
+Comparing "cut.tif" and "ref/cut.tif"
+PASS
+Comparing "pasted.tif" and "ref/pasted.tif"
+PASS
+Comparing "mosaic.tif" and "ref/mosaic.tif"
+PASS
+Comparing "mosaicfit.tif" and "ref/mosaicfit.tif"
+PASS
+Comparing "greenmeta-replace.exr" and "ref/greenmeta-replace.exr"
+PASS
+Comparing "chappend-3images.exr" and "ref/chappend-3images.exr"
+PASS

@@ -1,0 +1,17 @@
+# Copyright Contributors to the OpenImageIO project.
+# SPDX-License-Identifier: Apache-2.0
+# https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+# Helpful documentation:
+# - https://github.com/github-linguist/linguist/blob/main/docs/overrides.md
+# - https://github.com/github-linguist/linguist/blob/main/docs/troubleshooting.md
+
+
+*.h linguist-language=C++
+src/libOpenImageIO/bluenoise.h linguist-generated
+
+# Image test fixtures are binary and must never be CRLF-converted on
+# checkout. Some (e.g. tiny/corrupt HDR files) are mostly ASCII and would
+# otherwise be misdetected as text, breaking byte-exact reader tests.
+*.hdr binary
+*.rgbe binary

@@ -1,0 +1,287 @@
+This is a list of all the contributors to OpenImageIO, sorted alphabetically
+by first name.
+
+If you know of somebody that I missed or have corrections, please contact
+the project.
+
+* Aamir Raza
+* Aaron Colwell
+* Adam Mains
+* Akihiro Yamasaki
+* Alan Jones
+* Alejandro Conty
+* Alejandro Aguirre
+* Aleksandr Motsjonov
+* Alex Fuller
+* Alex Guirre
+* Alex Hughes
+* Alex Schworer
+* Alexander Kuleshov
+* Alexander Murashko
+* Alexandre Gauthier
+* Alexis Oblet
+* Alexy Pawlow
+* Alister Chowdhury
+* Aman Shah
+* Ananth Garre
+* Anders Langlands
+* Andy Chan
+* Anthony Roberts
+* AngryLoki
+* Angus Davis
+* Ankit Sinha
+* Anton Dukhovnikov
+* Anthony Nemoff
+* Aras Pranckevičius
+* Arkady Shapkin
+* Asish Kumar
+* Basile Fraboni
+* Basileios Anastasatos
+* Bastien Montagne
+* Ben De Luca
+* Bernhard Rosenkraenzer
+* Biswapriyo Nath
+* Blair Tennessy
+* Blazej Floch
+* Brad Smith
+* Bram Stolk
+* Brecht Van Lommel
+* Brent Davis
+* Brian Hall
+* Brian R Hanke
+* Brice Gros
+* Campbell Barton
+* Carine Touraille
+* Carl Rand
+* Cassian Andrei
+* Chad Dombrova
+* Changlin Hsieh
+* Chaitanya Sharma
+* Chris Crosetto
+* Chris Foster
+* Chris Hellmuth
+* Chris Kulla
+* Chris Whalen
+* Christoph Willing
+* Clément Champetier
+* Cliff Stein
+* Connie Chang
+* Curtis Black
+* D-Spirits
+* Dalai Felinto
+* Dan Wexler
+* Daniel Dresser
+* Daniel Flehner Heen
+* Daniel Wyatt
+* Danielle Imogu
+* Danny Greenstein
+* Darby Johnston
+* Dharshan Vishwanatha
+* David Adler
+* David Aguilar
+* David Gordon
+* Deepak Gopinath
+* Dennis Schridde
+* Dieter De Baets
+* Dinko Galetik
+* Dominik Bartkiewicz
+* Dominik Wójt
+* Don Olmstead
+* Dongju Lee
+* Doug Walker
+* Duncan Chan
+* Dustin Rodrigues
+* Edgar Velazquez-Armendariz
+* Eloi Du Bois
+* Elvic Liang
+* Emil Dohne
+* Fabien Castan
+* Fabien Servant
+* Faisal
+* Fredrik Averpil
+* Frédéric Devernay
+* Gaurav Bansal
+* Gerrard Tai
+* Gerdya
+* Ghislain Antony Vaillant
+* Gonzalo Garramuño
+* Gregor Mueckl
+* Grégoire De Lillo
+* Guillaume Chatelet
+* Hannah Gulka
+* Hanspeter Niederstrasser
+* Harry Mallon
+* Heiko Becker
+* Henri Fousse
+* Hugh Macdonald
+* Hunter
+* Imarz
+* Irena Damsky
+* Ismael Cortes
+* Jackson Sun
+* Jan Hettenkofer
+* Jan Honsbrok
+* Jens Lindgren
+* Jep Hill
+* Jeph Alapat
+* Jeremy Retailleau
+* Jeremy Rose
+* Jeremy Selan
+* Jesse Yurkovich
+* Jim Hourihan
+* Jinnie Kim
+* Joachim Reichel
+* Johannes Unterguggenberger
+* John Burnett
+* John Fea
+* John Haddon
+* Jonathan Brown
+* Jonathan Hearn
+* Jonathan Scruggs
+* Joris Nijs
+* Joseph Goldstone
+* Julien Enche
+* Justin Israel
+* Justina Mikonyte
+* Kaarrot
+* Kazuki Takahashi
+* Ken McGaugh
+* Kevin Brightwell
+* Kimball Thurston
+* Konrad Kleine
+* Krzysztof Blicharski
+* Larry Gritz (project leader)
+* LazyDodo
+* Leonid Onokhov
+* Leszek Godlewski
+* Li Ji
+* Loïc Vital
+* Lucas Panian
+* Lucille Caillaud
+* Lukas Schrangl
+* Lukasz Maliszewski
+* Luke Emrose
+* Lumina Wang
+* Luna Kim
+* Lydia Zheng
+* M Joonas Pihlaja
+* Malcolm Humphreys
+* Manuel Gamito
+* Manuel Leonhardt
+* Marcos Fajardo
+* Marie Fetiveau
+* Marta Feriani
+* Mariusz Szczepanczyk
+* Mark Boorer
+* Mark Visser
+* Massimo Paladin
+* Matt Van Horn
+* Matteo F. Vescovi
+* Matthew E. Levine
+* Max Liani
+* Mixie / Maxi741cv
+* Maxwell Iverson
+* Mel Massadian
+* Merwan Achibet
+* Michael Cho
+* Michael Oliver
+* Michel Lerenard
+* Michel Normand
+* Mikael Sundell
+* Mike Root
+* Morteza Ramezanali
+* Nandan Dubey
+* Nathan Gray
+* Nathan Rusch
+* Nicholas Yue
+* Nick Black
+* Nick D'Ademo
+* Nicolas Burtnyk
+* Nixon Kwok
+* Noah Rahm (designer of our logo!)
+* Northon Patrick
+* Nuno Cardoso
+* Oktay Comu
+* Ole Gulbrandsen
+* omcaif
+* Ott Tinn
+* Pascal Lecocq
+* Patrick Hodoul
+* Patrick Piché
+* Paul Franz
+* Paul Melis
+* Paul Molodowitch
+* Pavan Madduri
+* Pavel Karneliuk
+* Pete Larabell
+* Peter Horvath
+* Peter Kovář
+* Philip Nemec
+* Pino Toscano
+* Povilas Kanapickas
+* Puneet Jain
+* Qi-fly
+* Radu Arjocu
+* Ramon Montoya
+* Ray Molenkamp
+* Rémi Achard
+* Richard Shaw
+* Robert Matusewicz
+* Roeland Schoukens
+* Roman Zulak
+* rose413
+* Rui Chen
+* Rui Li
+* Russell Greene
+* Ryen
+* Saket Jalan
+* Sam Richards
+* Samuel Nicholas
+* Scott Milner
+* Scott Wilson
+* Sebastian Elsner
+* SebTV
+* Seifeddine Dridi
+* Sergey Sharybin
+* Sergio Rojas
+* Shane Ambler
+* Shane Smith
+* Shashvat K. Singh
+* Simon Boorer
+* Solomon Boulos
+* SRHMorris
+* Stefan Bruens
+* Stefan Stavrev
+* Thiago Ize
+* Thomas Dinges
+* Thomas Klausner
+* Thomas Mansencal
+* Till Dechent
+* Tim D. Smith
+* Tim Grant
+* Todica Ionut
+* Tom Knowles
+* TomRoyls
+* Troy James Sobotka
+* Valery Angelique
+* Vanessa Valderrama
+* Vic P
+* Vinod Khare
+* Vishal Agrawal
+* Vitor Franchi
+* Vlad (Kuzmin) Erium
+* Wayne Arnold
+* Will Rosecrans
+* William Krick
+* Wormszer
+* Xo Wang
+* Yang Yang
+* Yann Lanthony
+* Zach Lewis
+* Ziad Khouri
+* Zitong Yang
+* zomgrolf
+
+
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+<!-- Copyright Contributors to the OpenImageIO Project. -->

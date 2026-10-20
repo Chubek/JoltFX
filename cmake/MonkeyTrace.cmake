@@ -31,7 +31,7 @@ if(JFX_MONKEYTRACE)
         COMMAND ${CMAKE_COMMAND} -E env "GOROOT=${JFX_MONKEYTRACE_GOROOT}" "GOTOOLCHAIN=local"
             "GOPROXY=off" "GOCACHE=${PROJECT_BINARY_DIR}/monkeytrace/gocache"
             "CGO_ENABLED=1" "CC=${CMAKE_C_COMPILER}" "CXX=${CMAKE_CXX_COMPILER}"
-            ${JFX_MONKEYTRACE_GO} build -buildmode=c-shared -o "${monkeytrace_library}" ./monkeytrace/native
+            ${JFX_MONKEYTRACE_GO} build -tags=monkeytrace_native -buildmode=c-shared -o "${monkeytrace_library}" ./monkeytrace/native
         DEPENDS ${monkeytrace_sources} ${monkeytrace_math_headers} "${PROJECT_SOURCE_DIR}/ingagi/go.mod"
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/ingagi"
         COMMENT "Building MonkeyTrace native CPU renderer" VERBATIM)

@@ -1,0 +1,39 @@
+*~
+*.bak
+branches/
+build/
+dist/
+ext/
+wheelhouse/
+_coverage/
+.python-version
+.idea
+.vs
+.vscode
+.cache
+.cproject
+.project
+.DS_Store
+*.pyc
+/*.lock
+gastest.o
+
+# Exclude test files I tend to leave around at the top level. The leading
+# slash ensures that files with these extensions within subdirectories are not
+# ignored.
+/*.exr
+/*.tif
+/*.jpg
+/*.png
+/*.jxl
+/*.tx
+/*.log
+
+# AI coding tool directories — generated locally by .agents/setup-agent
+.claude/
+.codex/
+.cursor/
+.opencode/
+.github/copilot-instructions.md
+
+

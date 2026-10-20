@@ -1,0 +1,57 @@
+Reading ref/norle-8.sgi
+ref/norle-8.sgi      :  100 x   63, 4 channel, uint8 sgi
+    SHA-1: AB45F4C8F7DC146D019C1B6C5FCF45EB86884C81
+    channel list: R, G, B, A
+    ImageDescription: "...rnold_SGI_Texture_Crash_Bugreport_01\Default_Pass_Main.1.sgi"
+Comparing "ref/norle-8.sgi" and "norle-8.sgi"
+PASS
+Reading ref/rle-8.sgi
+ref/rle-8.sgi        :  100 x   63, 4 channel, uint8 sgi
+    SHA-1: AB45F4C8F7DC146D019C1B6C5FCF45EB86884C81
+    channel list: R, G, B, A
+    compression: "rle"
+    ImageDescription: "...rnold_SGI_Texture_Crash_Bugreport_01\Default_Pass_Main.1.sgi"
+Comparing "ref/rle-8.sgi" and "rle-8.sgi"
+PASS
+Reading ref/norle-16.sgi
+ref/norle-16.sgi     :  100 x   63, 4 channel, uint16 sgi
+    SHA-1: 883A9F68264340CD10BDCC2D12E487E36EDCFC64
+    channel list: R, G, B, A
+    ImageDescription: "...rnold_SGI_Texture_Crash_Bugreport_01\Default_Pass_Main.1.sgi"
+Comparing "ref/norle-16.sgi" and "norle-16.sgi"
+PASS
+Reading ref/rle-16.sgi
+ref/rle-16.sgi       :  100 x   63, 4 channel, uint16 sgi
+    SHA-1: 6F0B94D6649760B785381A551E5F08C72712D02D
+    channel list: R, G, B, A
+    compression: "rle"
+    ImageDescription: "...rnold_SGI_Texture_Crash_Bugreport_01\Default_Pass_Main.1.sgi"
+Comparing "ref/rle-16.sgi" and "rle-16.sgi"
+PASS
+src/broken01.sgi :    8 x    2, 1 channel, uint8 sgi
+    SHA-1: Corrupt RLE data
+    channel list: Y
+    compression: "rle"
+iinfo ERROR: "src/broken01.sgi" : Corrupt RLE data
+iinfo ERROR: "src/broken02.sgi" : Read error: hit end of file in sgi reader
+src/broken03.sgi :   16 x   48, 1 channel, uint8 sgi
+    SHA-1: Corrupt RLE offset/length table
+    channel list: Y
+    compression: "rle"
+iinfo ERROR: "src/broken03.sgi" : Corrupt RLE offset/length table
+src/broken04.sgi :   64 x   49, 3 channel, uint16 sgi
+    SHA-1: Corrupt RLE offset/length table
+    channel list: R, G, B
+    compression: "rle"
+iinfo ERROR: "src/broken04.sgi" : Corrupt RLE offset/length table
+src/broken_rle16_len1.sgi :    1 x    1, 1 channel, uint16 sgi
+    SHA-1: Corrupt RLE data
+    channel list: Y
+    compression: "rle"
+iinfo ERROR: "src/broken_rle16_len1.sgi" : Corrupt RLE data
+iinfo ERROR: "src/bomb-65535.sgi" : sgi header claims a 16383 MB image from a 512 byte file; probably a corrupt or malicious header
+src/broken_rle8_run.sgi :    1 x    1, 1 channel, uint8 sgi
+    SHA-1: Corrupt RLE data
+    channel list: Y
+    compression: "rle"
+iinfo ERROR: "src/broken_rle8_run.sgi" : Corrupt RLE data

@@ -5,15 +5,20 @@ table. The public header is `jfx/jfx_plugin_sdk.h`; C11 and C++17 modules can us
 without linking the engine. The desktop **Plugins** tab and **Extensions** menu,
 the terminal editor and the CLI all use the same host.
 
+The installed package is **JoltFXSDK**, sourced from `JoltFX-SDK/`. It packages
+the existing image-plugin ABI alongside the new, separate renderer ABI. See
+[`JoltFX-SDK/README.md`](../JoltFX-SDK/README.md) and
+[`plugins/JoltRenderer/README.md`](../plugins/JoltRenderer/README.md).
+
 ## Build and load the example
 
 From the repository:
 
 ```sh
 cmake --preset default
-cmake --build build --target jfx_desktop joltfx_cli jfx_example_plugin
-build/frontends/desktop/jfx_desktop --plugin "$PWD/build/sdk/jfx_example_plugin.so"
-build/frontends/cli/joltfx plugins inspect "$PWD/build/sdk/jfx_example_plugin.so"
+cmake --build build --target jfx_desktop joltfx_cli jfx_sdk_gain
+build/frontends/desktop/jfx_desktop --plugin "$PWD/build/bin/jfx_sdk_gain.so"
+build/frontends/cli/joltfx plugins inspect "$PWD/build/bin/jfx_sdk_gain.so"
 ```
 
 Use the module filename produced by your platform (`.so` on Linux, usually `.so`
@@ -21,17 +26,13 @@ for CMake MODULE libraries on macOS, `.dll` on Windows). `--plugin` is repeatabl
 and modules load before `--project`. A `.jfx` file stores stable effect identifiers
 and parameter values; load its modules before opening it.
 
-The example in `sdk/examples/tint/tint.c` registers:
-
-- **Warm Tint**, a native straight-RGBA image effect, `org.joltfx.example.tint`;
-- **Kernel Invert**, a compiled Joltscript image kernel, `org.joltfx.example.invert`;
-- **Apply Warm Tint**, an editor action, `org.joltfx.example.apply`;
-- an owned frame-end event subscription and a host-allocated instance state.
+The example in `JoltFX-SDK/examples/gain/gain.c` registers **SDK Gain**, a native
+straight-RGBA image effect, `org.example.gain`, with a scalar gain control.
 
 In the desktop, select a clip in NLE or the shared clip selector, open **Plugins**,
-enter the module path and click **Load module**. Click **Apply Warm Tint** there or
-in **Extensions**. Its parameters are available in **Color Grading**. Both
-operators also appear in the node library and Layer Effects catalog.
+enter the module path and click **Load module**. Its parameters are available in
+**Color Grading**; the effect also appears in the node library and Layer Effects
+catalog. The API additionally supports transactional actions, kernels and events.
 
 ## Installed SDK and standalone builds
 
@@ -39,9 +40,9 @@ Install a built JoltFX tree to a prefix:
 
 ```sh
 cmake --install build --prefix "$HOME/.local/joltfx"
-cmake -S "$HOME/.local/joltfx/share/joltfx/plugin-sdk/examples/tint" \
-      -B tint-build -DCMAKE_PREFIX_PATH="$HOME/.local/joltfx"
-cmake --build tint-build
+cmake -S "$HOME/.local/joltfx/share/joltfx/sdk/examples/gain" \
+      -B gain-build -DCMAKE_PREFIX_PATH="$HOME/.local/joltfx"
+cmake --build gain-build
 ```
 
 For your own module, create this `CMakeLists.txt`:
@@ -49,14 +50,15 @@ For your own module, create this `CMakeLists.txt`:
 ```cmake
 cmake_minimum_required(VERSION 3.20)
 project(MyJoltFXPlugin VERSION 1.0.0 LANGUAGES C) # or CXX
-find_package(JoltFXPluginSDK 1.0 CONFIG REQUIRED)
-jfx_add_plugin(my_plugin SOURCES my_plugin.c)
+find_package(JoltFXSDK 1.0 CONFIG REQUIRED)
+joltfx_sdk_add_plugin(my_plugin my_plugin.c)
 ```
 
-`JoltFX::plugin_sdk` is an interface target carrying the public include directory.
-`jfx_add_plugin` creates a hidden-visibility MODULE target, selects C11/C++17 and
+`JoltFXSDK::plugins` is an interface target carrying the public include directory.
+`joltfx_sdk_add_plugin` creates a hidden-visibility MODULE target, selects C11/C++17 and
 exports only explicitly marked symbols. ELF modules are linked with undefined
-symbol checks, so an accidental direct engine call fails at link time. The SDK
+symbol checks (except instrumented sanitizer modules, whose runtime is supplied
+by the host), so an accidental direct engine call fails at link time. The SDK
 package has no engine, ImGui, SDL, FFmpeg or GPU-library link dependencies.
 
 ## Entry point and initialization
@@ -109,7 +111,7 @@ Supported SDK capabilities:
 Requests for types, assets, backends or IO registration return
 `JFX_ERROR_NOT_IMPLEMENTED` in this SDK version. The legacy loader remains
 available for modules exporting `jfx_plugin_init`; its API version stays **1**.
-The additive Plugin API is **1.1**, Editor API **1.5**, Desktop API **1.1** and the
+The additive Plugin API is **1.1**, Desktop API **1.11**, and the
 host-service SDK has its own **1.0** version negotiation.
 
 ## Native image effects
@@ -195,7 +197,8 @@ owner thread. Do not load/unload plugins or mutate subscriptions inside callback
 definition from statically linked code, using the same initialization/services:
 
 ```cmake
-jfx_add_plugin(my_static_plugin STATIC SOURCES my_plugin.c)
+add_library(my_static_plugin STATIC my_plugin.c)
+target_link_libraries(my_static_plugin PRIVATE JoltFXSDK::plugins)
 target_link_libraries(my_application PRIVATE my_static_plugin)
 ```
 
@@ -237,6 +240,12 @@ before parsing, renders an exact sequence frame (or graph time `FRAME/30`) and
 writes binary PPM.
 
 ## Verification
+
+`sdk_installed_consumer` installs/relocates the SDK and builds C11/C++17 consumers
+and standalone plugins. `sdk_gain_plugin` loads and renders the packaged image
+example. `renderer_sdk` / `renderer_sdk_scalar` cover native/static renderer
+loading, callback reentry, errors and SIMD/scalar pixel behavior;
+`jolt_renderer_scene` / `jolt_renderer_ui_tests` cover scene/animation exports.
 
 `plugin_sdk` covers registration rollback, version/capability validation, copied
 metadata, native/Joltscript pixels, transactional actions, owned events and

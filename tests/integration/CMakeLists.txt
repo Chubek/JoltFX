@@ -1,5 +1,11 @@
 # Integration tests: the CLI contract, the Hello World example, and the
 # desktop frontend's real frame loop.
+if(NOT CMAKE_CROSSCOMPILING AND UNIX)
+    add_test(NAME sdk_installed_consumer COMMAND "${CMAKE_COMMAND}"
+        "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}" "-DTEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/sdk-install-test"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/sdk/test_install.cmake")
+    set_tests_properties(sdk_installed_consumer PROPERTIES LABELS "integration;sdk;cmake" TIMEOUT 120)
+endif()
 
 if(TARGET joltfx_cli)
 add_test(

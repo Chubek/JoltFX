@@ -146,8 +146,8 @@ fail:
 }
 jfx_result_t jfx_export_set_scene3d_render_options(jfx_export_job_t *j,const jfx_scene3d_render_options_t *o) {
     if (!j || !o || o->size<sizeof(*o) || jfx_editor_kind(j->editor)!=JFX_PROJECT_KIND_SCENE3D ||
-        o->renderer<JFX_SCENE3D_RENDER_RASTER || o->renderer>JFX_SCENE3D_RENDER_FILAMENT ||
-        (o->renderer==JFX_SCENE3D_RENDER_MONKEYTRACE && (o->samples>64 || o->bounces>8 || o->timeout_ms>60000 ||
+        o->renderer<JFX_SCENE3D_RENDER_RASTER || o->renderer>JFX_SCENE3D_RENDER_JOLT_GPU ||
+        ((o->renderer==JFX_SCENE3D_RENDER_MONKEYTRACE || o->renderer==JFX_SCENE3D_RENDER_JOLT_CPU || o->renderer==JFX_SCENE3D_RENDER_JOLT_GPU) && (o->samples>64 || o->bounces>8 || o->timeout_ms>60000 ||
         !isfinite(o->reflectivity) || o->reflectivity<0 || o->reflectivity>1))) return JFX_ERROR_INVALID_ARGUMENT;
     if (j->state!=JFX_EXPORT_RUNNING || j->completed) return JFX_ERROR_BUSY;
     if (!jfx_scene3d_renderer_available(o->renderer)) return JFX_ERROR_NOT_IMPLEMENTED;

@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 6
+#define JFX_MODELING3D_API_MINOR 7
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
@@ -15,7 +15,9 @@ typedef enum {
     JFX_SCENE3D_RENDER_RASTER = 0,
     JFX_SCENE3D_RENDER_MONKEYTRACE = 1,
     JFX_SCENE3D_RENDER_VULKAN = 2,
-    JFX_SCENE3D_RENDER_FILAMENT = 3
+    JFX_SCENE3D_RENDER_FILAMENT = 3,
+    JFX_SCENE3D_RENDER_JOLT_CPU = 4,
+    JFX_SCENE3D_RENDER_JOLT_GPU = 5
 } jfx_scene3d_renderer_t;
 typedef struct {
     size_t size;
@@ -30,6 +32,9 @@ typedef struct {
  * bridge (OpenGL ES/EGL on Linux, Metal on macOS), with 4096 visible instances and
  * 6,291,456 expanded vertices. Availability is a build check, not a driver probe. */
 bool jfx_scene3d_renderer_available(jfx_scene3d_renderer_t renderer);
+/* Jolt Renderer is an SDK module: CPU uses Ingagi/MonkeyTrace, GPU uses Vulkan.
+ * Each requires that backend at build time and an available driver at render
+ * time. Its optional xsimd stage resolves pixels, not ray intersections. */
 /* Owned document copy with independent lifetime and no history. Create on the
  * scene's owner thread; its new owner may then render it on a scheduler worker. */
 jfx_scene3d_t *jfx_scene3d_clone(const jfx_scene3d_t *scene);

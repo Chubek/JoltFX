@@ -1,0 +1,60 @@
+# Copyright Contributors to the OpenImageIO project.
+# SPDX-License-Identifier: Apache-2.0
+# https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+######################################################################
+# OpenColorIO by hand!
+######################################################################
+
+set_cache (OpenColorIO_BUILD_VERSION 2.5.1 "OpenColorIO version for local builds")
+set (OpenColorIO_GIT_REPOSITORY "https://github.com/AcademySoftwareFoundation/OpenColorIO")
+set (OpenColorIO_GIT_TAG "v${OpenColorIO_BUILD_VERSION}")
+set (OpenColorIO_GIT_COMMIT "004f80009653fa322c1133ba2c57b8ed526599c9")
+set_cache (OpenColorIO_BUILD_SHARED_LIBS  OFF
+           DOC "Should a local OpenColorIO build, if necessary, build shared libraries" ADVANCED)
+# We would prefer to build a static OCIO, but haven't figured out how to make
+# it all work with the static dependencies, it just makes things complicated
+# downstream.
+
+checked_find_package(pystring VERSION_MIN 1.1.3)
+checked_find_package(expat REQUIRED VERSION_MIN 2.6)
+checked_find_package(yaml-cpp REQUIRED VERSION_MIN 0.8.0)
+checked_find_package(minizip-ng REQUIRED VERSION_MIN 4.0.10)
+
+string (MAKE_C_IDENTIFIER ${OpenColorIO_BUILD_VERSION} OpenColorIO_VERSION_IDENT)
+
+build_dependency_with_cmake(OpenColorIO
+    VERSION         ${OpenColorIO_BUILD_VERSION}
+    GIT_REPOSITORY  ${OpenColorIO_GIT_REPOSITORY}
+    GIT_TAG         ${OpenColorIO_GIT_TAG}
+    GIT_COMMIT      ${OpenColorIO_GIT_COMMIT}
+    CMAKE_ARGS
+        -D BUILD_SHARED_LIBS=${OpenColorIO_BUILD_SHARED_LIBS}
+        -D CMAKE_POSITION_INDEPENDENT_CODE=ON
+        -D CMAKE_INSTALL_LIBDIR=lib
+        # Don't built unnecessary parts of OCIO
+        -D OCIO_BUILD_APPS=OFF
+        -D OCIO_BUILD_GPU_TESTS=OFF
+        -D OCIO_BUILD_PYTHON=OFF
+        -D OCIO_BUILD_TESTS=OFF
+        -D OCIO_USE_OIIO_FOR_APPS=OFF
+        -D OCIO_INSTALL_DOCS=OFF
+        # Make OCIO build all its dependencies statically
+        -D OCIO_INSTALL_EXT_PACKAGES=MISSING
+        # Give the library a custom name and symbol namespace so it can't
+        # conflict with any others in the system or linked into the same app.
+        # -D OCIO_NAMESPACE=${OpenColorIO_VERSION_IDENT}_${PROJ_NAME}
+        -D OCIO_LIBNAME_SUFFIX=_v${OpenColorIO_VERSION_IDENT}_${PROJ_NAME}
+        # Fix for yaml-cpp breaking against cmake 4.0.
+        # Remove when yaml-cpp is fixed to declare its own minimum high enough.
+        -D CMAKE_POLICY_VERSION_MINIMUM=3.5
+    )
+
+# Signal to caller that we need to find again at the installed location
+set (OpenColorIO_REFIND TRUE)
+set (OpenColorIO_REFIND_VERSION ${OpenColorIO_BUILD_VERSION})
+set (OpenColorIO_REFIND_ARGS EXACT CONFIG)
+
+if (OpenColorIO_BUILD_SHARED_LIBS)
+    install_local_dependency_libs (OpenColorIO OpenColorIO)
+endif ()

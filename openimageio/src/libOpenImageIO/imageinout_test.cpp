@@ -1,0 +1,1036 @@
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+/////////////////////////////////////////////////////////////////////////
+// Tests related to ImageInput and ImageOutput
+/////////////////////////////////////////////////////////////////////////
+
+#include <iostream>
+
+#if defined(__linux__)
+#    include <fenv.h>  // For feenableexcept()
+#endif
+
+#include <OpenImageIO/argparse.h>
+#include <OpenImageIO/benchmark.h>
+#include <OpenImageIO/filesystem.h>
+#include <OpenImageIO/imagebuf.h>
+#include <OpenImageIO/imagebufalgo.h>
+#include <OpenImageIO/imageio.h>
+#include <OpenImageIO/unittest.h>
+
+using namespace OIIO;
+
+
+static std::string onlyformat = Sysutil::getenv("IMAGEINOUTTEST_ONLY_FORMAT");
+static bool nodelete          = false;  // Don't delete the test files
+static bool enable_fpe        = false;  // Throw exceptions on FP errors.
+
+static int ntrials    = 5;
+static int iterations = 1;
+
+
+
+static void
+getargs(int argc, char* argv[])
+{
+    // clang-format off
+    ArgParse ap;
+    ap.intro("imageinout_test -- unit test and benchmarks for image formats\n"
+             OIIO_INTRO_STRING)
+      .usage("imageinout_test [options]");
+
+    ap.arg("--no-delete", &nodelete)
+      .help("Don't delete temporary test files");
+    ap.arg("--enable-fpe", &enable_fpe)
+      .help("Enable floating point exceptions.");
+    ap.arg("--onlyformat %s:FORMAT", &onlyformat)
+      .help("Test only one format");
+    ap.arg("--iterations %d", &iterations)
+      .help(Strutil::format("Number of benchmark iterations per trial (default: {})", iterations));
+    ap.arg("--trials %d", &ntrials).help("Number of benchmark trials");
+
+    ap.parse_args(argc, (const char**)argv);
+    // clang-format on
+}
+
+
+
+// Generate a small test image appropriate to the given format
+static ImageBuf
+make_test_image(string_view formatname)
+{
+    ImageBuf buf;
+    auto out = ImageOutput::create(formatname);
+    OIIO_DASSERT(out);
+    ImageSpec spec(64, 64, 4, TypeFloat);
+    float pval = 1.0f;
+    // Fill with 0 for lossy HEIF
+    if (formatname == "heif")
+        pval = 0.0f;
+
+    // Accommodate limited numbers of channels
+    if (formatname == "zfile" || formatname == "fits")
+        spec.nchannels = 1;  // these formats are single channel
+    else if (!out->supports("alpha"))
+        spec.nchannels = std::min(spec.nchannels, 3);
+
+    // Webp library seems to automatically truncate alpha when it's 1.0,
+    // botching our comparisons. Just ease the headache of tests by sticking
+    // to RGB.
+    if (formatname == "webp")
+        spec.nchannels = 3;
+
+    // Force a fixed datetime metadata so it can't differ between writes
+    // and make different file patterns for these tests.
+    spec.attribute("DateTime", "01/01/2000 00:00:00");
+
+    buf.reset(spec);
+    ImageBufAlgo::fill(buf, { pval, pval, pval, 1.0f });
+    return buf;
+}
+
+
+
+#define CHECKED(obj, call)                                    \
+    if (!obj->call) {                                         \
+        if (do_asserts)                                       \
+            OIIO_CHECK_ASSERT(false && #call);                \
+        if (errmsg)                                           \
+            *errmsg = obj->geterror();                        \
+        else                                                  \
+            std::cout << "      " << obj->geterror() << "\n"; \
+        return false;                                         \
+    }
+
+
+static bool
+checked_write(ImageOutput* out, string_view filename, const ImageSpec& spec,
+              TypeDesc type, image_span<const std::byte> data,
+              bool do_asserts = true, std::string* errmsg = nullptr,
+              Filesystem::IOProxy* ioproxy = nullptr)
+{
+    if (errmsg)
+        *errmsg = "";
+    std::unique_ptr<ImageOutput> out_local;
+    if (!out) {
+        out_local = ImageOutput::create(filename, ioproxy);
+        out       = out_local.get();
+    }
+    OIIO_CHECK_ASSERT(out && "Failed to create output");
+    if (!out) {
+        if (errmsg)
+            *errmsg = OIIO::geterror();
+        else
+            print("      {}\n", OIIO::geterror());
+        return false;
+    }
+
+    CHECKED(out, open(filename, spec));
+    CHECKED(out, write_image(type, data));
+    CHECKED(out, close());
+    return true;
+}
+
+
+
+static bool
+checked_read(ImageInput* in, string_view filename,
+             std::vector<unsigned char>& data, TypeDesc datatype = TypeFloat,
+             bool already_opened = false, bool do_asserts = true,
+             std::string* errmsg = nullptr)
+{
+    if (errmsg)
+        *errmsg = "";
+    std::unique_ptr<ImageInput> in_local;
+    if (!in) {
+        in_local       = ImageInput::create(filename);
+        in             = in_local.get();
+        already_opened = false;
+    }
+    OIIO_CHECK_ASSERT(in && "Failed to create input");
+    if (!already_opened) {
+        ImageSpec spec;
+        CHECKED(in, open(filename, spec));
+    }
+    data.resize(in->spec().image_pixels() * in->spec().nchannels
+                * datatype.size());
+    CHECKED(in,
+            read_image(0, 0, 0, in->spec().nchannels, datatype, data.data()));
+    CHECKED(in, close());
+    return true;
+}
+
+
+
+// Helper for test_all_formats: write the pixels in buf to an in-memory
+// IOProxy, make sure it matches byte for byte the file named by disk_filename.
+static bool
+test_write_proxy(string_view formatname, string_view extension,
+                 const std::string& disk_filename, ImageBuf& buf)
+{
+    std::cout << "    Writing Proxy " << formatname << " ... ";
+    std::cout.flush();
+    bool ok = true;
+    Sysutil::Term term(stdout);
+
+    // Use ImageOutput.write_image interface to write to outproxy
+    Filesystem::IOVecOutput outproxy;
+    ok = checked_write(nullptr, disk_filename, buf.spec(), buf.spec().format,
+                       buf.localpixels_as_writable_byte_image_span(), true,
+                       nullptr, &outproxy);
+
+    // Use ImageBuf.write interface to write to outproxybuf
+    Filesystem::IOVecOutput outproxybuf;
+    buf.set_write_ioproxy(&outproxybuf);
+    buf.write(disk_filename);
+
+    if (nodelete) {
+        // Debugging -- dump the proxies to disk
+        Filesystem::write_binary_file(Strutil::fmt::format("outproxy.{}",
+                                                           extension),
+                                      outproxy.buffer());
+        Filesystem::write_binary_file(Strutil::fmt::format("outproxybuf.{}",
+                                                           extension),
+                                      outproxybuf.buffer());
+    }
+    // Now read back in the actual disk file we wrote earlier.
+    uint64_t bytes_written = Filesystem::file_size(disk_filename);
+    std::vector<unsigned char> readbuf(bytes_written);
+    size_t bread = Filesystem::read_bytes(disk_filename, readbuf.data(),
+                                          bytes_written);
+
+    // OK, now we have three vectors:
+    //   - readbuf contains the bytes we actually wrote to disk
+    //   - outproxy.buffer() contains the bytes we wrote to the proxy using
+    //     ImageOutput.write_image().
+    //   - outproxybuf.buffer() contains the bytes we wrote to the proxy using
+    //     ImageBuf.write().
+    // These should all match, byte-for-byte.
+    ok = (bread == bytes_written && outproxy.buffer() == readbuf
+          && outproxybuf.buffer() == readbuf);
+    OIIO_CHECK_ASSERT(bread == bytes_written
+                      && "Bytes read didn't match bytes written");
+    OIIO_CHECK_ASSERT(outproxy.buffer() == readbuf
+                      && "Write proxy via ImageOutput didn't match write file");
+    if (outproxy.buffer() != readbuf) {
+        Strutil::print("Write proxy via ImageBuf didn't match write file\n");
+        Strutil::print("Sizes outproxy {} vs readbuf {}\n",
+                       outproxy.buffer().size(), readbuf.size());
+#if 0
+        for (size_t i = 0, e = std::min(outproxy.buffer().size(), readbuf.size());
+             i < e; ++i) {
+            Strutil::print(" {0:2d}: {1:02x} '{1:c}' vs {2:02x} '{2:c}'\n",
+                           i, outproxy.buffer()[i], readbuf[i]);
+            if (outproxy.buffer()[i] != readbuf[i]) {
+                Strutil::print("  Mismatch at byte {} outproxy {} vs readbuf {}\n",
+                               i, outproxy.buffer()[i], readbuf[i]);
+                break;
+            }
+        }
+#endif
+    }
+    OIIO_CHECK_ASSERT(outproxybuf.buffer() == readbuf
+                      && "Write proxy via ImageBuf didn't match write file");
+    if (ok)
+        std::cout << term.ansi("green", "OK\n");
+    return ok;
+}
+
+
+
+bool
+test_pixel_match(cspan<float> a, cspan<float> b, float eps = 1.0e-6f)
+{
+    if (a.size() != b.size())
+        return false;
+    int printed   = 0;
+    bool ok       = true;
+    float maxdiff = 0.0f;
+    for (size_t i = 0, e = a.size(); i < e; ++i) {
+        float diff = fabsf(a[i] - b[i]);
+        if (diff > eps) {
+            maxdiff = std::max(maxdiff, diff);
+            ok      = false;
+            if (printed++ < 16)
+                print("\t[{}] {} {}, diff = {}\n", i, a[i], b[i], diff);
+        }
+    }
+    if (!ok)
+        print("\tmax diff = {}\n", maxdiff);
+    return ok;
+}
+
+
+
+// Helper for test_all_formats: read the pixels of the given disk file into
+// a buffer, then use an IOProxy to read the "file" from the buffer, and
+// the pixels ought to match those of ImageBuf buf.
+static bool
+test_read_proxy(string_view formatname, string_view extension,
+                const std::string& disk_filename, const ImageBuf& buf)
+{
+    bool ok = true;
+    Sysutil::Term term(stdout);
+    std::cout << "    Reading Proxy " << formatname << " ... ";
+    std::cout.flush();
+
+    auto nvalues = span_size_t(buf.spec().image_pixels()
+                               * buf.spec().nchannels);
+    float eps    = 0.0f;
+    // Allow lossy formats to have a little more error
+    if (formatname == "heif" || formatname == "jpegxl")
+        eps = 0.001f;
+
+    // Read the disk file into readbuf as a blob -- just a byte-for-byte
+    // copy of the file, but in memory.
+    uint64_t bytes_written = Filesystem::file_size(disk_filename);
+    std::vector<unsigned char> readbuf(bytes_written);
+    Filesystem::read_bytes(disk_filename, readbuf.data(), bytes_written);
+
+    // Read the in-memory file using an ioproxy, with ImageInput
+    Filesystem::IOMemReader inproxy(readbuf);
+    std::string memname = Strutil::concat("mem.", extension);
+    auto in             = ImageInput::open(memname, nullptr, &inproxy);
+    OIIO_CHECK_ASSERT(in && "Failed to open input with proxy");
+    if (in) {
+        std::vector<unsigned char> readpixels;
+        ok &= checked_read(in.get(), memname, readpixels, TypeFloat, true);
+        OIIO_ASSERT(readpixels.size() == nvalues * sizeof(float));
+        ok &= test_pixel_match({ (const float*)readpixels.data(), nvalues },
+                               { (const float*)buf.localpixels(), nvalues },
+                               eps);
+        OIIO_CHECK_ASSERT(
+            ok && "Read proxy with ImageInput didn't match original");
+    } else {
+        ok = false;
+        std::cout << "Error was: " << OIIO::geterror() << "\n";
+    }
+
+    // Read the in-memory file using an ioproxy again, but with ImageInput
+    Filesystem::IOMemReader inproxybuf(readbuf);
+    ImageBuf inbuf(memname, 0, 0, nullptr, nullptr, &inproxybuf);
+    bool ok2 = inbuf.read(0, 0, /*force*/ true, TypeFloat);
+    if (!ok2) {
+        std::cout << "Read failed: " << inbuf.geterror() << "\n";
+        OIIO_CHECK_ASSERT(ok2);
+        return false;
+    }
+    OIIO_ASSERT(inbuf.localpixels());
+    OIIO_ASSERT(buf.localpixels());
+    OIIO_CHECK_EQUAL(buf.spec().format, inbuf.spec().format);
+    OIIO_CHECK_EQUAL(buf.spec().image_bytes(), inbuf.spec().image_bytes());
+    ok2 &= test_pixel_match({ (const float*)inbuf.localpixels(), nvalues },
+                            { (const float*)buf.localpixels(), nvalues }, eps);
+    OIIO_CHECK_ASSERT(ok2 && "Read proxy with ImageBuf didn't match original");
+    ok &= ok2;
+
+    if (ok)
+        std::cout << term.ansi("green", "OK\n");
+    return ok;
+}
+
+
+
+// Test writer's ability to detect and recover from errors when asked to
+// write an unwritable file (such as in a nonexistent directory).
+static bool
+test_write_unwritable(string_view extension, const ImageBuf& buf)
+{
+    bool ok = true;
+    Sysutil::Term term(stdout);
+    std::string bad_filename = Strutil::concat("bad/bad.", extension);
+    std::cout << "    Writing bad to " << bad_filename << " ... ";
+    auto badout = ImageOutput::create(bad_filename);
+    if (badout) {
+        std::string errmsg;
+        ok = checked_write(badout.get(), bad_filename, buf.spec(),
+                           buf.spec().format,
+                           buf.localpixels_as_byte_image_span(),
+                           /*do_asserts=*/false, &errmsg);
+        if (!ok)
+            std::cout << term.ansi("green", "OK") << " ("
+                      << errmsg.substr(0, 60) << ")\n";
+        else
+            OIIO_CHECK_ASSERT(0 && "Bad write should not have 'succeeded'");
+    } else {
+        OIIO_CHECK_ASSERT(badout);
+        ok = false;
+    }
+    return ok;
+}
+
+
+
+static void
+test_all_formats()
+{
+    Sysutil::Term term(stdout);
+    std::cout << "Testing formats:\n";
+    auto all_fmts
+        = Strutil::splitsv(OIIO::get_string_attribute("extension_list"), ";");
+    for (auto& e : all_fmts) {
+        auto fmtexts           = Strutil::splitsv(e, ":");
+        string_view formatname = fmtexts[0];
+        // Skip "formats" that aren't amenable to this kind of testing
+        if (formatname == "null" || formatname == "term")
+            continue;
+        float eps = 0.0f;
+        // Allow lossy formats to have a little more error
+        if (formatname == "heif" || formatname == "jpegxl")
+            eps = 0.001f;
+
+        if (onlyformat.size() && formatname != onlyformat)
+            continue;
+
+        auto extensions = Strutil::splitsv(fmtexts[1], ",");
+        bool ok         = true;
+
+        //
+        // Try writing the file
+        //
+        std::string filename = Strutil::fmt::format("imageinout_test-{}.{}",
+                                                    formatname, extensions[0]);
+        auto out             = ImageOutput::create(filename);
+        if (!out) {
+            std::cout << "  [skipping " << formatname << " -- no writer]\n";
+            (void)OIIO::geterror();  // discard error
+            continue;
+        }
+        bool ioproxy_write_supported = out->supports("ioproxy");
+        std::cout << "  " << formatname << " ("
+                  << Strutil::join(extensions, ", ") << "):\n";
+
+        ImageBuf buf             = make_test_image(formatname);
+        const float* orig_pixels = (const float*)buf.localpixels();
+
+        std::cout << "    Writing " << filename << " ... ";
+        ok = checked_write(out.get(), filename, buf.spec(), buf.spec().format,
+                           buf.localpixels_as_writable_byte_image_span());
+        if (ok)
+            std::cout << term.ansi("green", "OK\n");
+
+        //
+        // Try reading the file, and make sure it matches what we wrote
+        //
+        std::vector<unsigned char> pixels;
+        auto in = ImageInput::create(filename);
+        OIIO_CHECK_ASSERT(in && "Could not create reader");
+        bool ioproxy_read_supported = in && in->supports("ioproxy");
+        if (in) {
+            std::cout << "    Reading " << filename << " ... ";
+            ok = checked_read(in.get(), filename, pixels);
+            if (!ok)
+                continue;
+            auto nvalues = span_size_t(buf.spec().image_pixels()
+                                       * buf.spec().nchannels);
+            ok = test_pixel_match({ orig_pixels, nvalues },
+                                  { (const float*)pixels.data(), nvalues },
+                                  eps);
+            if (ok)
+                std::cout << term.ansi("green", "OK\n");
+            OIIO_CHECK_ASSERT(ok && "Failed read/write comparison");
+        } else {
+            (void)OIIO::geterror();  // discard error
+        }
+        if (!ok)
+            continue;
+
+        //
+        // If this format supports proxies, round trip through memory
+        //
+        if (ioproxy_write_supported)
+            test_write_proxy(formatname, extensions[0], filename, buf);
+        if (ioproxy_read_supported)
+            test_read_proxy(formatname, extensions[0], filename, buf);
+
+        //
+        // Test what happens when we write to an unwritable or nonexistent
+        // directory. It should not crash! But appropriately return some
+        // error.
+        //
+        test_write_unwritable(extensions[0], buf);
+
+        if (!nodelete)
+            Filesystem::remove(filename);
+    }
+    std::cout << "\n";
+}
+
+
+
+// A format that can't embed a thumbnail must not write the thumbnail_*
+// attributes, where they'd describe a thumbnail that isn't in the file.
+void
+test_thumbnail_attribs()
+{
+    std::cout << "Testing that thumbnail attributes don't leak:\n";
+    for (auto& e :
+         Strutil::splitsv(OIIO::get_string_attribute("extension_list"), ";")) {
+        auto fmtexts           = Strutil::splitsv(e, ":");
+        string_view formatname = fmtexts[0];
+        if (formatname == "term")
+            continue;  // writes to the terminal, not a file
+        if (onlyformat.size() && formatname != onlyformat)
+            continue;
+        std::string filename
+            = Strutil::fmt::format("imageinout_test_thumb-{}.{}", formatname,
+                                   Strutil::splitsv(fmtexts[1], ",")[0]);
+        auto out = ImageOutput::create(filename);
+        if (!out) {
+            (void)OIIO::geterror();
+            continue;
+        }
+        if (out->supports("thumbnail"))
+            continue;
+
+        // Write an image whose spec claims a thumbnail it doesn't have - the lie.
+        ImageBuf buf   = make_test_image(formatname);
+        ImageSpec spec = buf.spec();
+        spec.attribute("thumbnail_width", 16);
+        spec.attribute("thumbnail_height", 12);
+        spec.attribute("thumbnail_nchannels", 3);
+        std::string errmsg;
+        if (!checked_write(out.get(), filename, spec, spec.format,
+                           buf.localpixels_as_writable_byte_image_span(),
+                           false /*do_asserts*/, &errmsg))
+            continue;  // can't write this image at all - not our problem
+
+        auto in = ImageInput::open(filename);
+        OIIO_CHECK_ASSERT(in && "could not reopen the file we just wrote");
+        if (in) {
+            std::cout << "    " << formatname << "\n";
+            const ImageSpec& s(in->spec());
+            OIIO_CHECK_EQUAL(s.get_int_attribute("thumbnail_width"), 0);
+            OIIO_CHECK_EQUAL(s.get_int_attribute("thumbnail_height"), 0);
+            OIIO_CHECK_EQUAL(s.get_int_attribute("thumbnail_nchannels"), 0);
+        } else {
+            (void)OIIO::geterror();
+        }
+        if (!nodelete)
+            Filesystem::remove(filename);
+    }
+    std::cout << "\n";
+}
+
+
+
+// JPEG XL encodes and writes the whole file in close(), so close() must
+// report a failed write or encode.
+void
+test_jxl_close_write_error()
+{
+    if (!is_imageio_format_name("jpegxl")
+        || (onlyformat.size() && onlyformat != "jpegxl"))
+        return;
+    print("Testing that jpegxl close() reports write and encode errors\n");
+    // An output proxy that can't write anything, like a full disk.
+    struct IOFailWrite final : public Filesystem::IOVecOutput {
+        size_t write(const void*, size_t) override { return 0; }
+    } proxy;
+    ImageBuf buf = make_test_image("jpegxl");
+    std::string errmsg;
+    bool ok = checked_write(nullptr, "fail.jxl", buf.spec(), buf.spec().format,
+                            buf.localpixels_as_byte_image_span(),
+                            /*do_asserts=*/false, &errmsg, &proxy);
+    print("    {}\n\n", errmsg);
+    OIIO_CHECK_ASSERT(!ok && errmsg.size());
+
+    // libjxl can't parse this ICC profile, which leaves the encoder with an
+    // invalid color encoding, so JxlEncoderProcessOutput fails.
+    ImageSpec spec                = buf.spec();
+    const unsigned char junk[128] = {};
+    spec.attribute("ICCProfile", TypeDesc(TypeDesc::UINT8, 128), junk);
+    Filesystem::IOVecOutput memproxy;
+    ok = checked_write(nullptr, "fail.jxl", spec, spec.format,
+                       buf.localpixels_as_byte_image_span(),
+                       /*do_asserts=*/false, &errmsg, &memproxy);
+    print("    {}\n\n", errmsg);
+    OIIO_CHECK_ASSERT(!ok
+                      && Strutil::contains(errmsg, "JxlEncoderProcessOutput"));
+
+    // close() must report, not encode, when fewer pixels were written than
+    // the spec declares: it hands libjxl the whole image either way, so an
+    // empty buffer aborts libjxl 0.10.1 and a partial one is read past its
+    // end. ~JxlOutput() calls close(), so abandoning the writer must also be
+    // survivable.
+    const ImageSpec& spec2 = buf.spec();
+    auto open_short        = [&](Filesystem::IOProxy* p) {
+        auto out = ImageOutput::create("short.jxl", p);
+        OIIO_CHECK_ASSERT(out && out->open("short.jxl", spec2));
+        return out;
+    };
+    Filesystem::IOVecOutput emptyproxy;
+    if (auto out = open_short(&emptyproxy)) {
+        OIIO_CHECK_ASSERT(!out->close());
+        errmsg = out->geterror();
+        print("    {}\n\n", errmsg);
+        OIIO_CHECK_ASSERT(errmsg.size());
+    }
+    Filesystem::IOVecOutput abandonproxy;
+    open_short(&abandonproxy);  // destroyed without close(): must not crash
+    Filesystem::IOVecOutput partialproxy;
+    if (auto out = open_short(&partialproxy)) {
+        int yhalf = spec2.height / 2;
+        auto half = image_span<const float>((const float*)buf.localpixels(),
+                                            spec2.nchannels, spec2.width,
+                                            yhalf);
+        OIIO_CHECK_ASSERT(out->write_scanlines(0, yhalf, spec2.format,
+                                               as_image_span_bytes(half)));
+        OIIO_CHECK_ASSERT(!out->close());
+        errmsg = out->geterror();
+        print("    {}\n\n", errmsg);
+        OIIO_CHECK_ASSERT(errmsg.size());
+    }
+
+    // The same goes for a reused ImageOutput: after one whole file, a next
+    // file left unwritten or half written must fail too, and must not come
+    // out holding the previous file's image.
+    if (auto out = ImageOutput::create("reuse.jxl")) {
+        for (int rows : { 0, spec2.height / 2 }) {
+            Filesystem::IOVecOutput wholeproxy, nextproxy;
+            out->set_ioproxy(&wholeproxy);
+            OIIO_CHECK_ASSERT(
+                checked_write(out.get(), "reuse.jxl", spec2, spec2.format,
+                              buf.localpixels_as_byte_image_span()));
+            out->set_ioproxy(&nextproxy);
+            OIIO_CHECK_ASSERT(out->open("reuse.jxl", spec2));
+            if (rows) {
+                auto part
+                    = image_span<const float>((const float*)buf.localpixels(),
+                                              spec2.nchannels, spec2.width,
+                                              rows);
+                OIIO_CHECK_ASSERT(
+                    out->write_scanlines(0, rows, spec2.format,
+                                         as_image_span_bytes(part)));
+            }
+            OIIO_CHECK_ASSERT(!out->close());
+            errmsg = out->geterror();
+            print("    {}\n\n", errmsg);
+            OIIO_CHECK_ASSERT(errmsg.size() && nextproxy.buffer().empty());
+        }
+    }
+}
+
+
+
+// This tests a particular troublesome case where we got the logic wrong.
+// Read 1-channel float exr into 4-channel uint8 buffer with 4-byte xstride.
+// The correct behavior is to translate the one channel from float to uint8
+// and put it in channel 0, leaving channels 1-3 untouched. The bug was that
+// because the buffer stride and native stride were both 4 bytes, it was
+// incorrectly doing a straight data copy.
+void
+test_read_tricky_sizes()
+{
+    // Make 4x4 1-channel float source image, value 0.5, write it.
+    char srcfilename[] = "tmp_f1.exr";
+    ImageSpec fsize1(4, 4, 1, TypeFloat);
+    ImageBuf src(fsize1);
+    ImageBufAlgo::fill(src, 0.5f);
+    src.write(srcfilename);
+
+    // Make a 4x4 4-channel uint8 buffer, initialize with 0
+    unsigned char buf[4][4][4];
+    memset(buf, 0, 4 * 4 * 4);
+
+    // Read in, make sure it's right, several different ways
+    {
+        auto imgin = ImageInput::open(srcfilename);
+        OIIO_ASSERT(imgin);
+        bool ok = imgin->read_image(0, 0, 0, 4, TypeUInt8, buf,
+                                    4 /* xstride */);
+        OIIO_ASSERT(ok);
+        OIIO_CHECK_EQUAL(int(buf[0][0][0]), 128);
+        OIIO_CHECK_EQUAL(int(buf[0][0][1]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][2]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][3]), 0);
+    }
+    {
+        memset(buf, 0, 4 * 4 * 4);
+        auto imgin = ImageInput::open(srcfilename);
+        bool ok    = imgin->read_scanlines(0, 0, 0, 4, 0, 0, 4, TypeUInt8, buf,
+                                           /*xstride=*/4);
+        OIIO_ASSERT(ok);
+        OIIO_CHECK_EQUAL(int(buf[0][0][0]), 128);
+        OIIO_CHECK_EQUAL(int(buf[0][0][1]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][2]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][3]), 0);
+    }
+    {
+        memset(buf, 0, 4 * 4 * 4);
+        auto imgin = ImageInput::open(srcfilename);
+        OIIO_ASSERT(imgin);
+        bool ok = true;
+        for (int y = 0; y < 4; ++y)
+            ok &= imgin->read_scanline(y, 0, TypeUInt8, buf, /*xstride=*/4);
+        OIIO_ASSERT(ok);
+        OIIO_CHECK_EQUAL(int(buf[0][0][0]), 128);
+        OIIO_CHECK_EQUAL(int(buf[0][0][1]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][2]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][3]), 0);
+    }
+    // And repeat for tiled
+    src.set_write_tiles(2, 2);
+    src.write(srcfilename);
+    {
+        memset(buf, 0, 4 * 4 * 4);
+        auto imgin = ImageInput::open(srcfilename);
+        OIIO_ASSERT(imgin);
+        bool ok = imgin->read_image(0, 0, 0, 4, TypeUInt8, buf,
+                                    4 /* xstride */);
+        OIIO_ASSERT(ok);
+        OIIO_CHECK_EQUAL(int(buf[0][0][0]), 128);
+        OIIO_CHECK_EQUAL(int(buf[0][0][1]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][2]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][3]), 0);
+    }
+    {
+        memset(buf, 0, 4 * 4 * 4);
+        auto imgin = ImageInput::open(srcfilename);
+        OIIO_ASSERT(imgin);
+        bool ok = imgin->read_tiles(0, 0, 0, 4, 0, 4, 0, 1, 0, 4, TypeUInt8,
+                                    buf,
+                                    /*xstride=*/4);
+        OIIO_ASSERT(ok);
+        OIIO_CHECK_EQUAL(int(buf[0][0][0]), 128);
+        OIIO_CHECK_EQUAL(int(buf[0][0][1]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][2]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][3]), 0);
+    }
+    {
+        memset(buf, 0, 4 * 4 * 4);
+        auto imgin = ImageInput::open(srcfilename);
+        OIIO_ASSERT(imgin);
+        bool ok = imgin->read_tile(0, 0, 0, TypeUInt8, buf, /*xstride=*/4);
+        OIIO_CHECK_EQUAL(int(buf[0][0][0]), 128);
+        OIIO_ASSERT(ok);
+        OIIO_CHECK_EQUAL(int(buf[0][0][1]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][2]), 0);
+        OIIO_CHECK_EQUAL(int(buf[0][0][3]), 0);
+    }
+
+    // Clean up
+    Filesystem::remove(srcfilename);
+}
+
+
+
+// In-memory 2-channel uint8 reader whose data window ends exactly at
+// INT_MAX, to exercise the generic read_scanlines/read_tiles loops near the
+// int limit. Requests outside the data window are counted as bad.
+class LimitInput final : public ImageInput {
+public:
+    LimitInput(bool tiled) : m_tiled(tiled) {}
+    const char* format_name() const override { return "limit"; }
+    int supports(string_view feature) const override
+    {
+        return feature == "origin";
+    }
+    bool open(const std::string& /*name*/, ImageSpec& newspec) override
+    {
+        m_spec = ImageSpec(3, 3, 2, TypeUInt8);
+        if (m_tiled)
+            m_spec.tile_width = m_spec.tile_height = 2;
+        m_spec.x = std::numeric_limits<int>::max() - m_spec.width;
+        m_spec.y = std::numeric_limits<int>::max() - m_spec.height;
+        newspec  = m_spec;
+        return check_open(m_spec);
+    }
+    bool close() override { return true; }
+    bool read_native_scanline(int /*subimage*/, int /*miplevel*/, int y,
+                              int /*z*/, void* data) override
+    {
+        if (y < m_spec.y || y - m_spec.y >= m_spec.height) {
+            ++nbad;
+            return false;
+        }
+        auto p = (unsigned char*)data;
+        for (int x = 0; x < m_spec.width; ++x)
+            for (int c = 0; c < 2; ++c)
+                *p++ = value(x, y - m_spec.y, c);
+        return true;
+    }
+    bool read_native_tile(int /*subimage*/, int /*miplevel*/, int x, int y,
+                          int /*z*/, void* data) override
+    {
+        if (x < m_spec.x || x - m_spec.x >= m_spec.width || y < m_spec.y
+            || y - m_spec.y >= m_spec.height) {
+            ++nbad;
+            return false;
+        }
+        auto p = (unsigned char*)data;
+        for (int j = 0; j < m_spec.tile_height; ++j)
+            for (int i = 0; i < m_spec.tile_width; ++i)
+                for (int c = 0; c < 2; ++c)
+                    *p++ = value(x - m_spec.x + i, y - m_spec.y + j, c);
+        return true;
+    }
+    static unsigned char value(int xo, int yo, int c)
+    {
+        return (unsigned char)(1 + xo + 4 * yo + 16 * c);
+    }
+    int nbad = 0;
+
+private:
+    bool m_tiled;
+};
+
+
+
+void
+test_read_near_int_limit()
+{
+    print("Testing reads of a data window ending at INT_MAX\n");
+    for (bool tiled : { false, true }) {
+        LimitInput in(tiled);
+        ImageSpec spec;
+        OIIO_ASSERT(in.open("limit", spec));
+        const int w = spec.width, h = spec.height;
+        // Native, converted, and channel subset reads
+        std::vector<unsigned char> u8(w * h * 2), sub(w * h);
+        std::vector<float> f(w * h * 2);
+        OIIO_CHECK_ASSERT(in.read_image(0, 0, 0, 2, TypeUInt8, u8.data()));
+        OIIO_CHECK_ASSERT(in.read_image(0, 0, 0, 2, TypeFloat, f.data()));
+        OIIO_CHECK_ASSERT(in.read_image(0, 0, 1, 2, TypeUInt8, sub.data()));
+        // A scanline range starting before the data window must fail
+        // cleanly rather than overflow computing its length.
+        // Same for the image_span overloads, and for tile ranges.
+        const int imin = std::numeric_limits<int>::min();
+        image_span<std::byte> fspan(reinterpret_cast<std::byte*>(f.data()), 2,
+                                    w, h, 1, sizeof(float));
+        OIIO_CHECK_ASSERT(!in.read_scanlines(0, 0, imin, spec.y + h, 0, 0, 2,
+                                             TypeFloat, f.data()));
+        OIIO_CHECK_ASSERT(
+            !in.read_scanlines(0, 0, imin, spec.y + h, 0, 2, TypeFloat, fspan));
+        OIIO_CHECK_ASSERT(!in.read_tiles(0, 0, imin, spec.x + w, spec.y,
+                                         spec.y + h, 0, 1, 0, 2, TypeFloat,
+                                         fspan));
+        OIIO_CHECK_ASSERT(!in.read_tiles(0, 0, imin, spec.x + w, spec.y,
+                                         spec.y + h, 0, 1, 0, 2, TypeFloat,
+                                         f.data()));
+        (void)in.geterror();
+        if (tiled) {
+            // Base class read_native_tiles with a partial edge tile
+            std::vector<unsigned char> nt(w * h * 2, 0), ntsub(w * h, 0);
+            OIIO_CHECK_ASSERT(in.read_native_tiles(0, 0, spec.x, spec.x + w,
+                                                   spec.y, spec.y + h, 0, 1,
+                                                   nt.data()));
+            OIIO_CHECK_ASSERT(in.read_native_tiles(0, 0, spec.x, spec.x + w,
+                                                   spec.y, spec.y + h, 0, 1, 1,
+                                                   2, ntsub.data()));
+            OIIO_CHECK_ASSERT(nt == u8);
+            OIIO_CHECK_ASSERT(ntsub == sub);
+        }
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+                for (int c = 0; c < 2; ++c) {
+                    int i = (y * w + x) * 2 + c;
+                    OIIO_CHECK_EQUAL(u8[i], LimitInput::value(x, y, c));
+                    OIIO_CHECK_EQUAL_THRESH(f[i],
+                                            LimitInput::value(x, y, c) / 255.0f,
+                                            1.0e-6f);
+                }
+        for (int i = 0; i < w * h; ++i)
+            OIIO_CHECK_EQUAL(sub[i], u8[i * 2 + 1]);
+        OIIO_CHECK_EQUAL(in.nbad, 0);
+    }
+}
+
+
+
+void
+benchmark_tile_sizes(string_view extension, TypeDesc datatype,
+                     int tilestart = 4)
+{
+    const int test_res = 4096;
+    std::vector<int> tile_sizes;
+    for (int ts = tilestart; ts <= test_res / 2; ts *= 2)
+        tile_sizes.push_back(ts);
+    ImageSpec test_image_spec(4096, 2048, 4, datatype);
+    ImageBuf buf(test_image_spec);
+    static float colors[4][4] = { { 0.1f, 0.1f, 0.1f, 1.0f },
+                                  { 1.0f, 0.0f, 0.0f, 1.0f },
+                                  { 0.0f, 1.0f, 0.0f, 1.0f },
+                                  { 0.0f, 0.0f, 1.0f, 1.0f } };
+    // ImageBufAlgo::fill(buf, make_cspan(colors[1], 4));
+    ImageBufAlgo::fill(buf, colors[0], colors[1], colors[2], colors[3]);
+    buf.write(Strutil::format("test.{}", extension));
+
+    Benchmarker bench;
+    bench.units(Benchmarker::Unit::ms);
+    bench.trials(ntrials);
+    bench.iterations(iterations);
+    print("\nBenchmarking write/read for {} under different tile sizes\n",
+          extension);
+
+    // Write a scanline file
+    auto scanline_filename = Strutil::format("test_scanline.{}", extension);
+    bench(Strutil::format("  write {} scanline ", extension), [&]() {
+        checked_write(nullptr, scanline_filename, test_image_spec, datatype,
+                      buf.localpixels_as_byte_image_span());
+    });
+
+    // Write tiled files of different sizes
+    for (auto ts : tile_sizes) {
+        test_image_spec.tile_width  = ts;
+        test_image_spec.tile_height = ts;
+        test_image_spec.tile_depth  = ts ? 1 : 0;
+        auto filename = Strutil::format("test_tile_{:04}.{}", ts, extension);
+        bench(Strutil::format("  write {} tile {}", extension, ts), [&]() {
+            checked_write(nullptr, filename, test_image_spec, datatype,
+                          buf.localpixels_as_byte_image_span());
+        });
+    }
+
+    // read the scanline file (and delete it when we're done)
+    std::vector<unsigned char> readbuffer(test_image_spec.image_bytes());
+    bench(Strutil::format("  read {} scanline ", extension), [&]() {
+        checked_read(nullptr, scanline_filename, readbuffer, datatype);
+    });
+    Filesystem::remove(scanline_filename);
+
+    // read the tiled files of different sizes (and delete when done)
+    for (auto ts : tile_sizes) {
+        auto filename = Strutil::format("test_tile_{:04}.{}", ts, extension);
+        bench(Strutil::format("  read {} tile {}", extension, ts),
+              [&]() { checked_read(nullptr, filename, readbuffer, datatype); });
+        Filesystem::remove(filename);
+    }
+}
+
+
+
+// Exercise the image_span ImageInput/ImageOutput methods on images whose
+// data window origin is not (0,0), for both scanline and tiled files.
+static void
+test_span_nonzero_origin()
+{
+    print("\ntesting image_span I/O with nonzero data window origin\n");
+    const int W = 40, H = 24, NC = 3, X0 = 7, Y0 = 11;
+    for (int tiled = 0; tiled < 2; ++tiled) {
+        ImageSpec spec(W, H, NC, TypeFloat);
+        spec.x           = X0;
+        spec.y           = Y0;
+        spec.full_x      = 0;
+        spec.full_y      = 0;
+        spec.full_width  = W + 2 * X0;
+        spec.full_height = H + 2 * Y0;
+        if (tiled) {
+            spec.tile_width  = 16;
+            spec.tile_height = 8;
+            spec.tile_depth  = 1;
+        }
+        std::vector<float> pixels(size_t(W) * H * NC);
+        for (size_t i = 0; i < pixels.size(); ++i)
+            pixels[i] = float(i);
+        std::string filename = tiled ? "span_origin_tiled.exr"
+                                     : "span_origin_scan.exr";
+        {
+            auto out = ImageOutput::create(filename);
+            OIIO_CHECK_ASSERT(out);
+            OIIO_CHECK_ASSERT(out->open(filename, spec));
+            image_span<const std::byte> ispan(
+                reinterpret_cast<const std::byte*>(pixels.data()), NC, W, H, 1,
+                sizeof(float));
+            if (!tiled) {
+                // Write two ranges to exercise write_scanlines bounds check
+                OIIO_CHECK_ASSERT(
+                    out->write_scanlines(Y0, Y0 + 10, TypeFloat,
+                                         ispan.subspan(0, W, 0, 10)));
+                OIIO_CHECK_ASSERT(
+                    out->write_scanlines(Y0 + 10, Y0 + H, TypeFloat,
+                                         ispan.subspan(0, W, 10, H)));
+            } else {
+                OIIO_CHECK_ASSERT(out->write_image(TypeFloat, ispan));
+            }
+            OIIO_CHECK_ASSERT(out->close());
+        }
+        auto in = ImageInput::open(filename);
+        OIIO_CHECK_ASSERT(in);
+        if (!in)
+            continue;
+        OIIO_CHECK_EQUAL(in->spec().x, X0);
+        OIIO_CHECK_EQUAL(in->spec().y, Y0);
+
+        // Whole-image span read
+        std::vector<float> rb(pixels.size(), -1.0f);
+        image_span<std::byte> rspan(reinterpret_cast<std::byte*>(rb.data()), NC,
+                                    W, H, 1, sizeof(float));
+        OIIO_CHECK_ASSERT(in->read_image(0, 0, 0, NC, TypeFloat, rspan));
+        OIIO_CHECK_ASSERT(rb == pixels);
+
+        if (!tiled) {
+            // Partial scanline range span read
+            std::vector<float> sb(size_t(W) * 5 * NC, -1.0f);
+            image_span<std::byte> sspan(reinterpret_cast<std::byte*>(sb.data()),
+                                        NC, W, 5, 1, sizeof(float));
+            OIIO_CHECK_ASSERT(in->read_scanlines(0, 0, Y0 + 3, Y0 + 8, 0, NC,
+                                                 TypeFloat, sspan));
+            OIIO_CHECK_ASSERT(std::equal(sb.begin(), sb.end(),
+                                         pixels.begin() + size_t(3) * W * NC));
+        } else {
+            // Non-square tile range span read (x range != y range)
+            std::vector<float> tb(size_t(16) * 8 * NC, -1.0f);
+            image_span<std::byte> tspan(reinterpret_cast<std::byte*>(tb.data()),
+                                        NC, 16, 8, 1, sizeof(float));
+            OIIO_CHECK_ASSERT(in->read_tiles(0, 0, X0 + 16, X0 + 32, Y0 + 8,
+                                             Y0 + 16, 0, 1, 0, NC, TypeFloat,
+                                             tspan));
+            bool match = true;
+            for (int y = 0; y < 8; ++y)
+                for (int x = 0; x < 16; ++x)
+                    for (int c = 0; c < NC; ++c)
+                        match &= tb[(y * 16 + x) * NC + c]
+                                 == pixels[((8 + y) * W + 16 + x) * NC + c];
+            OIIO_CHECK_ASSERT(match);
+        }
+        in->close();
+        if (!nodelete)
+            Filesystem::remove(filename);
+    }
+}
+
+
+
+int
+main(int argc, char* argv[])
+{
+#if !defined(NDEBUG) || defined(OIIO_CI) || defined(OIIO_CODE_COVERAGE)
+    // For the sake of test time, reduce the default number of benchmark
+    // trials for DEBUG, CI, and code coverage builds. Explicit use of
+    // --trials or --iterations will override this, since it comes before the
+    // getargs() call.
+    ntrials = 1;
+#endif
+#if !defined(NDEBUG)
+    // For debug+CI combination runs, reduce to truly one iteration.
+    if (Strutil::stoi(Sysutil::getenv("OpenImageIO_CI")) != 0)
+        iterations = 1;
+#endif
+
+    getargs(argc, argv);
+
+    if (enable_fpe) {
+#if defined(__GLIBC__)
+        fprintf(stderr, "Enable floating point exceptions.\n");
+        feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);
+#else
+        fprintf(
+            stderr,
+            "Warning - floating point exceptions not yet implemented for this platorm.\n");
+#endif
+    }
+
+    test_all_formats();
+    test_thumbnail_attribs();
+    test_jxl_close_write_error();
+    test_read_tricky_sizes();
+    test_span_nonzero_origin();
+    test_read_near_int_limit();
+    benchmark_tile_sizes("exr", TypeHalf, 4);
+    benchmark_tile_sizes("tif", TypeUInt16, 16);
+
+    return unit_test_failures;
+}

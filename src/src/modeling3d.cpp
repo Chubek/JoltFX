@@ -33,6 +33,11 @@
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
+#ifdef JFX_HAVE_JOLT_RENDERER
+#include <joltfx/sdk/renderer.h>
+#include "tilly/allocator.h"
+extern "C" jfx_result_t jfx_jolt_renderer_entry(uint32_t,uint32_t,jfx_renderer_definition_t *);
+#endif
 #ifdef JFX_HAVE_MONKEYTRACE
 #include "monkeytrace.h"
 #endif
@@ -908,12 +913,49 @@ extern "C" bool jfx_scene3d_renderer_available(jfx_scene3d_renderer_t renderer) 
 #ifdef JFX_HAVE_FILAMENT
     if (renderer==JFX_SCENE3D_RENDER_FILAMENT) return true;
 #endif
+#ifdef JFX_HAVE_JOLT_RENDERER
+    if (renderer==JFX_SCENE3D_RENDER_JOLT_CPU) return jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_MONKEYTRACE);
+    if (renderer==JFX_SCENE3D_RENDER_JOLT_GPU) return jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_VULKAN);
+#endif
     return false;
 }
+#ifdef JFX_HAVE_JOLT_RENDERER
+namespace {
+void *renderer_allocate(void *,size_t bytes,size_t alignment) {
+    return tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),bytes,alignment);
+}
+void renderer_release(void *,void *p) { tilly_free((tilly_allocator_t *)tilly_default_allocator(),p); }
+bool renderer_available(void *,jfx_renderer_backend_t backend) {
+    return jfx_scene3d_renderer_available(backend==JFX_RENDERER_BACKEND_INGAGI?
+        JFX_SCENE3D_RENDER_MONKEYTRACE:JFX_SCENE3D_RENDER_VULKAN);
+}
+jfx_result_t renderer_scene(void *,const jfx_renderer_frame_t *f,jfx_renderer_backend_t backend,uint8_t *out,size_t cap) {
+    jfx_scene3d_render_options_t options={}; options.size=sizeof(options);
+    options.renderer=backend==JFX_RENDERER_BACKEND_INGAGI?JFX_SCENE3D_RENDER_MONKEYTRACE:JFX_SCENE3D_RENDER_VULKAN;
+    options.samples=f->samples; options.bounces=f->bounces; options.timeout_ms=f->timeout_ms; options.reflectivity=f->reflectivity;
+    return jfx_scene3d_render_ex(static_cast<const jfx_scene3d_t *>(f->scene),f->seconds,f->width,f->height,&options,out,cap);
+}
+}
+#endif
 extern "C" jfx_result_t jfx_scene3d_render_ex(const jfx_scene3d_t *s,double seconds,
     uint32_t w,uint32_t h,const jfx_scene3d_render_options_t *options,uint8_t *out,size_t cap) {
     if (!s || !options || options->size<sizeof(*options) || !out || !w || !h || w>2048 || h>2048 ||
         cap<size_t(w)*h*4 || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
+    if (options->renderer==JFX_SCENE3D_RENDER_JOLT_CPU || options->renderer==JFX_SCENE3D_RENDER_JOLT_GPU) {
+#ifdef JFX_HAVE_JOLT_RENDERER
+        jfx_renderer_host_t host={sizeof(host),JFX_RENDERER_ABI_MAJOR,JFX_RENDERER_ABI_MINOR,nullptr,
+            renderer_allocate,renderer_release,renderer_available,renderer_scene};
+        jfx_renderer_frame_t frame={}; frame.size=sizeof(frame); frame.scene=s; frame.seconds=seconds;
+        frame.width=w; frame.height=h; frame.device=options->renderer==JFX_SCENE3D_RENDER_JOLT_CPU?JFX_RENDERER_DEVICE_CPU:JFX_RENDERER_DEVICE_GPU;
+        frame.samples=options->samples; frame.bounces=options->bounces;
+        frame.timeout_ms=options->timeout_ms; frame.reflectivity=options->reflectivity;
+        jfx_renderer_definition_t definition={}; definition.size=sizeof(definition);
+        auto result=jfx_jolt_renderer_entry(JFX_RENDERER_ABI_MAJOR,JFX_RENDERER_ABI_MINOR,&definition);
+        return result==JFX_SUCCESS?definition.render(&host,&frame,out,cap):result;
+#else
+        return JFX_ERROR_NOT_IMPLEMENTED;
+#endif
+    }
     if (options->renderer==JFX_SCENE3D_RENDER_RASTER) return jfx_scene3d_render(s,seconds,w,h,out,cap);
     if (options->renderer==JFX_SCENE3D_RENDER_VULKAN) return jfx_scene3d_render_gpu(s,seconds,w,h,out,cap);
     if (options->renderer==JFX_SCENE3D_RENDER_FILAMENT) {

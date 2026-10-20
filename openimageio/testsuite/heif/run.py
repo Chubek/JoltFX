@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+
+# Copyright Contributors to the OpenImageIO project.
+# SPDX-License-Identifier: Apache-2.0
+# https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+imagedir = "ref/"
+files = [ "IMG_7702_small.heic", "Chimera-AV1-8bit-162.avif", "test-10bit.avif" ]
+for f in files:
+    command = command + info_command (os.path.join(imagedir, f))
+
+command += oiiotool (os.path.join(imagedir, "test-10bit.avif") +
+                     " -d uint10 --cicp \"9,16,9,1\" -o cicp_pq.avif" )
+command += info_command ("cicp_pq.avif", safematch=True)
+
+
+command += oiiotool (os.path.join(imagedir, "test-10bit.avif") +
+                     " -d uint10 --attrib oiio:ColorSpace hlg_rec2020_display -o colorspace_hlg.avif" )
+command += info_command ("colorspace_hlg.avif", safematch=True)
+
+files = [ "greyhounds-looking-for-a-table.heic", "sewing-threads.heic" ]
+for f in files:
+    command = command + info_command (os.path.join(OIIO_TESTSUITE_IMAGEDIR, f))
+
+command += oiiotool("--pattern checker:color1=1:color2=0 64x64 1 -o mono-8bit.avif")
+command += info_command("mono-8bit.avif", safematch=True)
+
+command += oiiotool("--pattern checker:color1=1:color2=0 64x64 1 -d uint10 -o mono-10bit.avif")
+command += info_command("mono-10bit.avif", safematch=True)
+
+# Test non-multiple-of-64 dimensions
+command += oiiotool("--pattern fill:color=0.5,0.5,0.5 47x31 3 -o odd-size.avif")
+command += info_command("odd-size.avif", safematch=True)
+
+# Test reading an irot-transformed image with oiio:reorient=0, which asks
+# for the raw stored pixels without applying the transformation. The spec
+# must describe the stored (unrotated) plane, the orientation must be
+# reported via the "Orientation" attribute, and rotating the raw pixels
+# back must reproduce the default auto-reoriented read exactly. The test
+# image is a deliberately asymmetric pattern (see oiiotool-xform and
+# orientation1.tif) so that a wrong rotation direction is plainly visible
+# when the files are viewed or compared.
+rotated = os.path.join(imagedir, "rotated-90cw.heic")
+
+###############
+# redirect this section of commands to out-reorient.txt
+redirect_push("out-reorient.txt")
+command += oiiotool("--info -v --no-metamatch \"DateTime|Software|ImageHistory|CICP\" --iconfig oiio:reorient 0 " + rotated)
+command += oiiotool("--iconfig oiio:reorient 0 " + rotated + " -d uint8 -o reorient0.tif")
+command += oiiotool(rotated + " -d uint8 -o oriented.tif")
+command += oiiotool("reorient0.tif --rotate90 -o reorient0-rotated.tif")
+command += oiiotool("--info -v --no-metamatch \"DateTime|Software|ImageHistory|CICP\" reorient0.tif")
+command += oiiotool("reorient0-rotated.tif oriented.tif --diff")
+redirect_pop()
+###############
+
+# Damaged file: test-10bit.avif with the ipma entry for item 1 renumbered,
+# so the primary item has no properties. libheif's C++ wrapper throws from
+# get_image_handle(), which used to escape open() and abort.
+# https://github.com/AcademySoftwareFoundation/OpenImageIO/issues/5550
+redirect_push("out-damaged.txt")
+redirect += " 2>&1 "    # the error goes to stderr
+command += info_command(os.path.join(imagedir, "damaged-noprops.avif"),
+                        failureok=True)
+redirect_pop()
+
+# avif conversion is expected to fail if libheif is built without AV1 support
+failureok = 1

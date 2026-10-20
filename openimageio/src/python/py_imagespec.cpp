@@ -1,0 +1,304 @@
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+#include "py_oiio.h"
+
+namespace PyOpenImageIO {
+
+
+// Accessor for channelformats, converts a vector<TypeDesc> to a tuple.
+static py::tuple
+ImageSpec_get_channelformats(const ImageSpec& spec, bool allow_empty = true)
+{
+    std::vector<TypeDesc> formats;
+    if (spec.channelformats.size() || !allow_empty)
+        spec.get_channelformats(formats);
+    return C_to_tuple(cspan<TypeDesc>(formats));
+}
+
+// Mutator for channelformats, initialized using a tuple or list whose int
+// entries give the BASETYPE values.
+static void
+ImageSpec_set_channelformats(ImageSpec& spec,
+                             const py::object& py_channelformats)
+{
+    spec.channelformats.clear();
+    py_to_stdvector(spec.channelformats, py_channelformats);
+}
+
+
+static py::tuple
+ImageSpec_get_channelnames(const ImageSpec& spec)
+{
+    return C_to_tuple(cspan<std::string>(spec.channelnames));
+}
+
+static void
+ImageSpec_set_channelnames(ImageSpec& spec, const py::object& py_channelnames)
+{
+    spec.channelnames.clear();
+    py_to_stdvector(spec.channelnames, py_channelnames);
+}
+
+
+static py::object
+ImageSpec_getattribute_typed(const ImageSpec& spec, const std::string& name,
+                             TypeDesc type = TypeUnknown)
+{
+    ParamValue tmpparam;
+    const ParamValue* p = spec.find_attribute(name, tmpparam, type);
+    if (!p)
+        return py::none();
+    return make_pyobject(p->data(), p->type(), p->nvalues());
+}
+
+
+
+void
+declare_imagespec(py_module& m)
+{
+    py::class_<ImageSpec>(m, "ImageSpec")
+        .OIIO_PY_RW("x", &ImageSpec::x)
+        .OIIO_PY_RW("y", &ImageSpec::y)
+        .OIIO_PY_RW("z", &ImageSpec::z)
+        .OIIO_PY_RW("width", &ImageSpec::width)
+        .OIIO_PY_RW("height", &ImageSpec::height)
+        .OIIO_PY_RW("depth", &ImageSpec::depth)
+        .OIIO_PY_RW("full_x", &ImageSpec::full_x)
+        .OIIO_PY_RW("full_y", &ImageSpec::full_y)
+        .OIIO_PY_RW("full_z", &ImageSpec::full_z)
+        .OIIO_PY_RW("full_width", &ImageSpec::full_width)
+        .OIIO_PY_RW("full_height", &ImageSpec::full_height)
+        .OIIO_PY_RW("full_depth", &ImageSpec::full_depth)
+        .OIIO_PY_RW("tile_width", &ImageSpec::tile_width)
+        .OIIO_PY_RW("tile_height", &ImageSpec::tile_height)
+        .OIIO_PY_RW("tile_depth", &ImageSpec::tile_depth)
+        .OIIO_PY_RW("nchannels", &ImageSpec::nchannels)
+        .OIIO_PY_RW("format", &ImageSpec::format)
+        .OIIO_PY_PROP_RW(
+            "channelformats",
+            [](const ImageSpec& spec) {
+                return ImageSpec_get_channelformats(spec);
+            },
+            &ImageSpec_set_channelformats)
+        .OIIO_PY_PROP_RW("channelnames", &ImageSpec_get_channelnames,
+                         &ImageSpec_set_channelnames)
+        .OIIO_PY_RW("alpha_channel", &ImageSpec::alpha_channel)
+        .OIIO_PY_RW("z_channel", &ImageSpec::z_channel)
+        .OIIO_PY_RW("deep", &ImageSpec::deep)
+        .OIIO_PY_RW("extra_attribs", &ImageSpec::extra_attribs)
+
+        .OIIO_PY_PROP_RW("roi", &ImageSpec::roi, &ImageSpec::set_roi)
+        .OIIO_PY_PROP_RW("roi_full", &ImageSpec::roi_full,
+                         &ImageSpec::set_roi_full)
+
+        .def(py::init<>())
+        .def(py::init<int, int, int, TypeDesc>())
+        .def(py::init<const ROI&, TypeDesc>())
+        .def(py::init<TypeDesc>())
+        .def(py::init<const ImageSpec&>())
+        .def("copy", [](const ImageSpec& self) { return ImageSpec(self); })
+        .def("set_format",
+             [](ImageSpec& self, TypeDesc t) { self.set_format(t); })
+        .def("default_channel_names", &ImageSpec::default_channel_names)
+        .def("channel_bytes",
+             [](const ImageSpec& spec) { return spec.channel_bytes(); })
+        .def(
+            "channel_bytes",
+            [](const ImageSpec& spec, int chan, bool native) {
+                return spec.channel_bytes(chan, native);
+            },
+            "channel"_a, "native"_a = false)
+        .def(
+            "pixel_bytes",
+            [](const ImageSpec& spec, bool native) {
+                return spec.pixel_bytes(native);
+            },
+            "native"_a = false)
+        .def(
+            "pixel_bytes",
+            [](const ImageSpec& spec, int chbegin, int chend, bool native) {
+                return spec.pixel_bytes(chbegin, chend, native);
+            },
+            "chbegin"_a, "chend"_a, "native"_a = false)
+        .def(
+            "scanline_bytes",
+            [](const ImageSpec& spec, bool native) {
+                return spec.scanline_bytes(native);
+            },
+            "native"_a = false)
+        .def("scanline_bytes",
+             [](const ImageSpec& spec, TypeDesc type) {
+                 return spec.scanline_bytes(type);
+             })
+        .def(
+            "tile_bytes",
+            [](const ImageSpec& spec, bool native) {
+                return spec.tile_bytes(native);
+            },
+            "native"_a = false)
+        .def("tile_bytes", [](const ImageSpec& spec,
+                              TypeDesc type) { return spec.tile_bytes(type); })
+        .def(
+            "image_bytes",
+            [](const ImageSpec& spec, bool native) {
+                return spec.image_bytes(native);
+            },
+            "native"_a = false)
+        .def(
+            "image_bytes",
+            [](const ImageSpec& spec, TypeDesc datatype) {
+                return spec.image_bytes(datatype);
+            },
+            "native"_a = false)
+        .def("tile_pixels", &ImageSpec::tile_pixels)
+        .def("image_pixels", &ImageSpec::image_pixels)
+        .def("size_t_safe", &ImageSpec::size_t_safe)
+        .def("channelformat", [](const ImageSpec& spec,
+                                 int chan) { return spec.channelformat(chan); })
+        .def("channel_name",
+             [](const ImageSpec& spec, int chan) {
+                 return py_str_escaped(spec.channel_name(chan));
+             })
+        .def("channelindex",
+             [](const ImageSpec& spec, const std::string& name) {
+                 return spec.channelindex(name);
+             })
+        .def("get_channelformats",
+             [](const ImageSpec& spec) {
+                 return ImageSpec_get_channelformats(spec, false);
+             })
+
+        // For now, do not expose auto_stride.  It's not obvious that
+        // anybody will want to do pointer work and strides from Python.
+
+        .def("attribute",
+             [](ImageSpec& spec, const std::string& name,
+                const py::object& obj) { attribute_onearg(spec, name, obj); })
+        .def("attribute",
+             [](ImageSpec& spec, const std::string& name, TypeDesc type,
+                const py::object& obj) {
+                 attribute_typed(spec, name, type, obj);
+             })
+        // .def("attribute", [](ImageSpec &spec, const std::string &name, TypeDesc type, const py::list &obj) {
+        //         attribute_typed (spec, name, type, obj);
+        //     })
+        .def(
+            "get_int_attribute",
+            [](const ImageSpec& spec, const std::string& name, int def) {
+                return spec.get_int_attribute(name, def);
+            },
+            "name"_a, "defaultval"_a = 0)
+        .def(
+            "get_float_attribute",
+            [](const ImageSpec& spec, const std::string& name, float def) {
+                return spec.get_float_attribute(name, def);
+            },
+            "name"_a, "defaultval"_a = 0.0f)
+        .def(
+            "get_string_attribute",
+            [](const ImageSpec& spec, const std::string& name,
+               const std::string& def) {
+                return py_str_escaped(spec.get_string_attribute(name, def));
+            },
+            "name"_a, "defaultval"_a = "")
+        .def(
+            "get_bytes_attribute",
+            [](const ImageSpec& spec, const std::string& name,
+               const std::string& def) {
+                std::string s(spec.get_string_attribute(name, def));
+                return py::bytes(s.data(), s.size());
+            },
+            "name"_a, "defaultval"_a = "")
+        .def("getattribute", &ImageSpec_getattribute_typed, "name"_a,
+             "type"_a = TypeUnknown)
+        .def(
+            "get",
+            [](const ImageSpec& self, const std::string& key, py::object def) {
+                ParamValue tmpparam;
+                auto p = self.find_attribute(key, tmpparam);
+                return p ? make_pyobject(p->data(), p->type(), 1, def)
+                         : oiio_py::return_object(def);
+            },
+            "key"_a, "default"_a = py::none())
+        .def(
+            "erase_attribute",
+            [](ImageSpec& spec, const std::string& name, TypeDesc type,
+               bool casesensitive = false) {
+                return spec.erase_attribute(name, type, casesensitive);
+            },
+            "name"_a = "", "type"_a = TypeUnknown, "casesensitive"_a = false)
+
+        .def_static(
+            "metadata_val",
+            [](const ParamValue& p, bool human) {
+                return py_str_escaped(ImageSpec::metadata_val(p, human));
+            },
+            "param"_a, "human"_a = false)
+        .def(
+            "serialize",
+            [](const ImageSpec& spec, const std::string& format,
+               const std::string& verbose) {
+                ImageSpec::SerialFormat fmt = ImageSpec::SerialText;
+                if (Strutil::iequals(format, "xml"))
+                    fmt = ImageSpec::SerialXML;
+                ImageSpec::SerialVerbose verb = ImageSpec::SerialDetailed;
+                if (Strutil::iequals(verbose, "brief"))
+                    verb = ImageSpec::SerialBrief;
+                else if (Strutil::iequals(verbose, "detailed"))
+                    verb = ImageSpec::SerialDetailed;
+                else if (Strutil::iequals(verbose, "detailedhuman"))
+                    verb = ImageSpec::SerialDetailedHuman;
+                return py_str_escaped(spec.serialize(fmt, verb));
+            },
+            "format"_a = "text", "verbose"_a = "detailed")
+        .def("to_xml",
+             [](const ImageSpec& spec) { return py_str_escaped(spec.to_xml()); })
+        .def("from_xml",
+             [](ImageSpec& self, const std::string& xml) {
+                 self.from_xml(xml.c_str());
+             })
+        .def(
+            "valid_tile_range",
+            [](ImageSpec& self, int xbegin, int xend, int ybegin, int yend,
+               int zbegin, int zend) {
+                return self.valid_tile_range(xbegin, xend, ybegin, yend, zbegin,
+                                             zend);
+            },
+            "xbegin"_a, "xend"_a, "ybegin"_a, "yend"_a, "zbegin"_a = 0,
+            "zend"_a = 1)
+        .def("copy_dimensions", &ImageSpec::copy_dimensions, "other"_a)
+        .def(
+            "set_colorspace",
+            [](ImageSpec& self, const std::string& cs) {
+                self.set_colorspace(cs);
+            },
+            "name"_a)
+        // __getitem__ is the dict-like `ImageSpec[key]` lookup
+        .def("__getitem__",
+             [](const ImageSpec& self, const std::string& key) {
+                 ParamValue tmpparam;
+                 auto p = self.find_attribute(key, tmpparam);
+                 if (p == nullptr)
+                     oiio_py::throw_key_error("key '" + key
+                                              + "' does not exist");
+                 return make_pyobject(p->data(), p->type());
+             })
+        // __setitem__ is the dict-like `ImageSpec[key] = value` assignment
+        .def("__setitem__",
+             [](ImageSpec& self, const std::string& key, py::object val) {
+                 delegate_setitem(self, key, val);
+             })
+        // __delitem__ is the dict-like `del ImageSpec[key]`
+        .def("__delitem__",
+             [](ImageSpec& self, const std::string& key) {
+                 self.erase_attribute(key);
+             })
+        // __contains__ is the dict-like `key in ImageSpec`
+        .def("__contains__", [](const ImageSpec& self, const std::string& key) {
+            return self.extra_attribs.contains(key);
+        });
+}
+
+}  // namespace PyOpenImageIO

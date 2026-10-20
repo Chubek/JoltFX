@@ -161,6 +161,13 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Modeling3D 1.7 appends SDK-based Jolt Renderer CPU/GPU values 4/5. The plugin
+receives an immutable borrowed snapshot and host allocator/backend services;
+callbacks dispatch only to the base Ingagi/MonkeyTrace or Vulkan renderer, never
+recursively into the plugin. Preserve failure-atomic output and optional-off
+builds. `JoltFX-SDK` packages existing APIs plus separate renderer ABI 1.0 and a
+serialized native/static loader; renderer modules are not image-effect modules.
+
 Modeling3D 1.6 adds `jfx_scene3d_render_shaded` without changing render-options
 layouts or renderer IDs. Gouraud evaluates lighting before clipping and
 perspective-correct interpolation; wireframe draws clipped polygon boundaries
@@ -371,7 +378,7 @@ mutation inside callbacks. Use exact-userdata event cleanup for shared relays.
 Editor 1.5 transactions group gestures/plugin actions into one history step and
 reserve restoration models before edits so cancel needs no allocation. Undo,
 cancel, load and reset invalidate borrowed document handles; reacquire them.
-See `docs/plugins.md`, `sdk/examples/tint`, `plugin_sdk` and
+See `docs/plugins.md`, `JoltFX-SDK/examples/gain`, `plugin_sdk` and
 `plugin_cli_integration` for the service and lifetime contracts.
 
 ---

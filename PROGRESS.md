@@ -1,5 +1,102 @@
 # Progress
 
+## Ingagi shader interfaces and validation (2026-10-17)
+
+- Implemented milestone 2's baseline: explicit location-based vertex/fragment
+  interfaces, bounded std140/std430 declared-resource reflection, direct graphics
+  stage-link checks and compiler capability reporting. Interfaces preserve their
+  AST identity; lowering validates location ranges, interpolation, integer flat
+  varyings, read-only inputs and reserved namespaces. Matrix/array I/O is bounded.
+- Added `Reflect`, `LinkGraphics`, `ReflectPipeline` and compatibility exports;
+  CLI supports `-emit reflect`, `-pipeline NAME` and `shader-capabilities`.
+  Static analysis emits E0402 layout/interface and E0403 graphics-link diagnostics.
+  Reflection includes nested offsets, matrix/array strides, descriptor kinds,
+  access, specialization IDs, compute local sizes and required source features.
+  Reports describe declared source, not optimized resources or device limits;
+  fixed-function state is explicitly unvalidated. General GPU dispatch, mesh/task
+  lowering and geometry/tessellation interface links remain unfinished.
+- Fixed NovoParse's missing shader-interface production, added compute pipeline
+  stage references to both grammars, disambiguated compute references/state and
+  regenerated the checked-in C/sexp artifacts. Module loading keeps shader-local
+  resource/helper/interface names independent from host name qualification.
+- Added `ingagi/examples/shader_interfaces.ing`, documentation, negative-link,
+  namespace, ownership, recursion-budget and real-tool tests. Verification passes:
+  full Go suites with CGO, without CGO, with race detection, and mandatory
+  NovoParse recognition/deterministic regeneration; `go vet ./...` and
+  `git diff --check`. Five-second interface fuzzing passed 120,409 inputs.
+  Real glslang/spirv-val compile/link tests pass, and reflected std140/std430
+  offsets/strides match SPIR-V decorations. All six available embedding CTests
+  and five desktop/renderer integration checks pass. Optional external-tool
+  cases still skip when their tools are unavailable. No public C ABI changes.
+
+## Ingagi unfinished subsystems (2026-10-17)
+
+- Restored full-tree Go builds/tests: added sixteen validated target manifests,
+  repaired stale shader imports with a compatibility facade over `monkeyshade`,
+  and made reserved source scaffolds syntactically safe. Only IngagiVM/QBE/WASM
+  are advertised as execution backends; thirteen adapters remain planned.
+  Prior SDK/renderer changes are preserved.
+- Implemented immutable seeded improved-Perlin noise, normalized bounded fBm
+  and strict JSON profiles. Added owned/validated mesh data, bounds, area-weighted
+  normals, failure-atomic transforms and welded outward cube/plane/UV-sphere
+  generators. VM builtins expose noise2/noise3/fbm3 and mesh creation/normals/
+  bounds/translation with argument, coordinate and collection bounds. Ordinary
+  mesh values round-trip through snapshots without aliases or host handles.
+- Added bounded standalone shader parsing/compilation over the existing shared
+  grammar. Reject duplicate/ambiguous names, imports/modules and host declarations.
+  Static analysis recognizes new builtins and respects local callable shadows.
+  Example: `GOROOT=/usr/lib/go go run ./cmd run examples/procedural.ing` in Ingagi.
+- `ingagi/DEVELOPMENT.md` records the remaining general engine/GPU resource
+  dispatch, shader interfaces, advanced geometry/skinning, native float/aggregate
+  lowering, C ABI resource marshalling, Joltscript interop and stdlib work.
+  Reserved files expose no fake successful operations.
+- Verification: full Go suites pass with and without CGO, with `-race`, and with
+  mandatory NovoParse recognition/deterministic grammar regeneration; `go vet`
+  passes. Real glslang/spirv-val validate vertex/fragment/compute and buffer-array
+  shaders. Five-second fuzz checks passed 52,721 noise-profile and 43,957 primitive
+  inputs. Standalone embedding CTest passes all six available Go/C/C++/Python/Rust/D
+  checks. QBE/Keystone and SPIRV-Cross/Naga-dependent cases still skip when their
+  optional tools are absent; Java 22 is not available here.
+- Root build now succeeds with `JFX_INGAGI=ON`; desktop Ingagi tab, Jolt Renderer
+  scene/UI, MonkeyTrace UI and desktop headless tests all pass. No grammar changes,
+  public C ABI layout changes or vendored source changes were needed.
+
+## SDK, Jolt Renderer and 3D sub-tabs (2026-10-17)
+
+- Desktop 1.11 retains one 3D workspace with separate Modeling/Animation sub-tabs.
+  Geometry, generators, cloners and PLY live in Modeling; transport, keys,
+  scripts, physics baking and Ingagi packs live in Animation. Selection, scene,
+  history, camera, viewport and exports stay shared; switches finish navigation.
+- Implemented installable `JoltFX-SDK` 1.0: existing public API facets, native
+  image-plugin helpers/example, renderer ABI 1.0 and an allocator-backed,
+  reentry-guarded native/static module loader. Relocated C11/C++17 consumers and
+  standalone plugins need no engine linkage when using the service tables.
+- `plugins/JoltRenderer` builds both a native SDK module and the same builtin
+  implementation. Modeling3D 1.7 appends CPU/GPU renderer IDs 4/5 without changing
+  earlier IDs/defaults or option layouts. CPU uses Ingagi ECS/MonkeyTrace BVH;
+  GPU uses real Vulkan rasterization. Optional vendored xsimd accelerates the
+  exposure/pixel resolve, NOT the Go ray-intersection kernel. Explicit errors
+  remain failure-atomic; preview/PNG/video share owned snapshots and quality.
+- The existing native CPU build pulled in missing `ingagi/shader` and compiler
+  target metadata even though it uses neither. Added a `monkeytrace_native`
+  build tag excluding VM-authoring/shader/browser tools only for the native
+  bridge. Its CPU/ECS tests pass with and without CGO, and `go vet` passes.
+  The ordinary full Ingagi suite still requires the missing shader/target files;
+  no fake compiler/shader implementations were added.
+- Verification: all 14 focused main-build tests pass, including actual ImGui
+  sub-tab/key/history interactions, real OpenGL viewport retention, animated
+  Jolt Renderer snapshot/video export, PNG parity, Vulkan render parity, native
+  module/reentry/error tests, SIMD/scalar behavior, gain-plugin loading/rendering,
+  and relocated installed SDK consumers. CLI inspection loads the gain module;
+  the standalone renderer has no unresolved engine symbols. New SDK/plugin C/C++
+  sources pass Clang `-Wall -Wextra -Werror` syntax checks.
+- Clang Debug ASAN/UBSan with leak detection: eight enabled-renderer checks pass
+  (the direct-display configuration skips the physical/window viewport check);
+  five optional-off checks also pass with Jolt Renderer/MonkeyTrace/Vulkan off.
+  Main build retains Jolt Renderer/MonkeyTrace/Vulkan enabled. The repository-wide
+  memory-policy check fails on pre-existing std containers in NovoGFX and Ingagi
+  desktop code, outside the changed sections; those were left untouched.
+
 ## NovoGFX whole-editor display (2026-10-15)
 
 - Existing NovoGFX engine registration only probes DRM and executes CPU kernels;

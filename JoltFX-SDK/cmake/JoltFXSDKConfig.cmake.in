@@ -1,0 +1,7 @@
+@PACKAGE_INIT@
+include("${CMAKE_CURRENT_LIST_DIR}/JoltFXSDKTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/JoltFXSDKModules.cmake")
+foreach(component IN ITEMS headers backend facet frontend gui libraries loader module plugins renderer tools)
+    set(JoltFXSDK_${component}_FOUND TRUE)
+endforeach()
+check_required_components(JoltFXSDK)

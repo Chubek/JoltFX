@@ -4,7 +4,7 @@
  * and half-resolution drags so orbiting stays smooth instead of jagged. */
 void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     if (f->scene_png_job && f->scene_png_job->done.load(std::memory_order_acquire)) {
-        if (f->scene_png_job->result==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),"3D PNG exported: %.160s",f->scene_png_job->path.c_str());
+        if (f->scene_png_job->result==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),"3D PNG exported: %.140s",f->scene_png_job->path.c_str());
         else editor_result(f,f->scene_png_job->result);
         tilly::destroy(f->scene_png_job); f->scene_png_job=nullptr;
     }
@@ -21,6 +21,8 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
                     job->shading==JFX_SCENE3D_SHADING_WIREFRAME?"Wireframe":
                     job->options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE?"MonkeyTrace CPU":
                     job->options.renderer==JFX_SCENE3D_RENDER_FILAMENT?"Filament":
+                    job->options.renderer==JFX_SCENE3D_RENDER_JOLT_CPU?"Jolt Renderer CPU":
+                    job->options.renderer==JFX_SCENE3D_RENDER_JOLT_GPU?"Jolt Renderer GPU":
                     job->options.renderer==JFX_SCENE3D_RENDER_RASTER?"Raster":"Vulkan";
                 if (job->fallback) std::snprintf(f->status,sizeof(f->status),"%s render failed; raster fallback",name);
                 else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",name,job->width,job->height);
@@ -157,29 +159,46 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     uint32_t fps=jfx_scene3d_fps(scene),frames=jfx_scene3d_frames(scene);
     f->duration_seconds=(double)frames/fps;
     ImGui::TextUnformatted("3D Modeling & Animation");
-    if (ImGui::Button(f->playing?"Pause 3D":"Play 3D")) {
-        if (f->playing) jfx_desktop_frontend_pause(f); else jfx_desktop_frontend_play(f);
+    if (ImGui::BeginTabBar("3D modes")) {
+        bool previous=f->scene_animation;
+        if (ImGui::BeginTabItem("Modeling")) { f->scene_animation=false; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Animation")) { f->scene_animation=true; ImGui::EndTabItem(); }
+        ImGui::EndTabBar();
+        if (previous!=f->scene_animation && f->scene_navigation) {
+            command("3d.navigation_end"); f->scene_navigation=false;
+        }
     }
-    ImGui::SameLine(); if (ImGui::Button("Stop 3D")) { jfx_desktop_frontend_pause(f); jfx_desktop_frontend_seek(f,0); }
-    ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_undo(f->editor)); if (ImGui::Button("Undo 3D")) command("undo"); ImGui::EndDisabled();
+    const bool animation=f->scene_animation;
+    if (animation) {
+        if (ImGui::Button(f->playing?"Pause 3D":"Play 3D")) {
+            if (f->playing) jfx_desktop_frontend_pause(f); else jfx_desktop_frontend_play(f);
+        }
+        ImGui::SameLine(); if (ImGui::Button("Stop 3D")) { jfx_desktop_frontend_pause(f); jfx_desktop_frontend_seek(f,0); }
+        ImGui::SameLine();
+    }
+    ImGui::BeginDisabled(!jfx_editor_can_undo(f->editor)); if (ImGui::Button("Undo 3D")) command("undo"); ImGui::EndDisabled();
     ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_redo(f->editor)); if (ImGui::Button("Redo 3D")) command("redo"); ImGui::EndDisabled();
     int frame=int(std::min(double(frames-1),std::floor(f->time_seconds*fps+1.e-7)));
-    if (ImGui::SliderInt("3D frame",&frame,0,int(frames)-1)) jfx_desktop_frontend_seek(f,(double)frame/fps);
-    int clock[2]={int(fps),int(frames)};
-    if (ImGui::InputInt2("FPS / duration frames",clock,ImGuiInputTextFlags_EnterReturnsTrue) && clock[0]>0 && clock[1]>0)
-        command("3d.clock",uint32_t(clock[0]),uint32_t(clock[1]));
-    if (ImGui::Button("Add cube")) command("3d.add",0,0,0,0,"cube");
-    ImGui::SameLine(); if (ImGui::Button("Add sphere") && f->scene_segments>=8 && f->scene_segments<=128) command("3d.add",uint32_t(f->scene_segments),0,0,0,"sphere");
-    ImGui::SameLine(); if (ImGui::Button("Add plane")) command("3d.add",0,0,0,0,"plane");
-    ImGui::SameLine(); if (ImGui::Button("New 3D scene")) { command("3d.new"); f->scene_object=0; jfx_desktop_frontend_seek(f,0); }
-    const char *primitives[]={"cylinder","cone","torus","capsule","pyramid","disk","nurbs","metaball",
-        "tube","hemisphere","wedge","tetrahedron","octahedron","icosahedron"};
-    ImGui::SetNextItemWidth(150); ImGui::Combo("More primitives",&f->scene_primitive,primitives,int(sizeof(primitives)/sizeof(primitives[0])),14);
-    ImGui::SameLine(); ImGui::SetNextItemWidth(100); ImGui::InputInt("Segments",&f->scene_segments);
-    ImGui::SameLine(); ImGui::BeginDisabled(f->scene_segments<8 || f->scene_segments>128);
-    if (ImGui::Button("Add primitive"))
-        command("3d.add",uint32_t(f->scene_segments),0,0,0,primitives[f->scene_primitive]);
-    ImGui::EndDisabled();
+    if (animation) {
+        if (ImGui::SliderInt("3D frame",&frame,0,int(frames)-1)) jfx_desktop_frontend_seek(f,(double)frame/fps);
+        int clock[2]={int(fps),int(frames)};
+        if (ImGui::InputInt2("FPS / duration frames",clock,ImGuiInputTextFlags_EnterReturnsTrue) && clock[0]>0 && clock[1]>0)
+            command("3d.clock",uint32_t(clock[0]),uint32_t(clock[1]));
+    }
+    if (!animation) {
+        if (ImGui::Button("Add cube")) command("3d.add",0,0,0,0,"cube");
+        ImGui::SameLine(); if (ImGui::Button("Add sphere") && f->scene_segments>=8 && f->scene_segments<=128) command("3d.add",uint32_t(f->scene_segments),0,0,0,"sphere");
+        ImGui::SameLine(); if (ImGui::Button("Add plane")) command("3d.add",0,0,0,0,"plane");
+        ImGui::SameLine(); if (ImGui::Button("New 3D scene")) { command("3d.new"); f->scene_object=0; jfx_desktop_frontend_seek(f,0); }
+        const char *primitives[]={"cylinder","cone","torus","capsule","pyramid","disk","nurbs","metaball",
+            "tube","hemisphere","wedge","tetrahedron","octahedron","icosahedron"};
+        ImGui::SetNextItemWidth(150); ImGui::Combo("More primitives",&f->scene_primitive,primitives,int(sizeof(primitives)/sizeof(primitives[0])),14);
+        ImGui::SameLine(); ImGui::SetNextItemWidth(100); ImGui::InputInt("Segments",&f->scene_segments);
+        ImGui::SameLine(); ImGui::BeginDisabled(f->scene_segments<8 || f->scene_segments>128);
+        if (ImGui::Button("Add primitive"))
+            command("3d.add",uint32_t(f->scene_segments),0,0,0,primitives[f->scene_primitive]);
+        ImGui::EndDisabled();
+    }
     bool table=ImGui::BeginTable("3D workspace",2,ImGuiTableFlags_Resizable);
     if (table) { ImGui::TableSetupColumn("Scene / inspector",ImGuiTableColumnFlags_WidthFixed,310); ImGui::TableSetupColumn("3D viewport"); ImGui::TableNextColumn(); }
     if (ImGui::BeginChild("3D inspector",ImVec2(0,0))) {
@@ -199,19 +218,21 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             if (ImGui::InputText("Object name",info.name,sizeof(info.name),ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.name",selected,0,0,0,info.name);
             if (ImGui::Checkbox("Visible",&info.visible)) command("3d.visible",selected,0,0,info.visible?1:0);
             if (ImGui::Checkbox("Smooth shading",&procedural.smooth)) command("3d.smooth",selected,0,0,procedural.smooth?1:0);
-            if (ImGui::Button("Duplicate mesh")) command("3d.duplicate",selected);
-            ImGui::SameLine(); if (ImGui::Button("Delete mesh")) command("3d.remove",selected);
+            if (!animation) {
+                if (ImGui::Button("Duplicate mesh")) command("3d.duplicate",selected);
+                ImGui::SameLine(); if (ImGui::Button("Delete mesh")) command("3d.remove",selected);
+            }
             const char *channels[]={"Position X","Position Y","Position Z","Rotation X","Rotation Y","Rotation Z","Scale X","Scale Y","Scale Z"};
             for (uint32_t ch=0;ch<9;++ch) {
                 ImGui::PushID(int(ch)); ImGui::SetNextItemWidth(145);
                 if (ImGui::InputFloat(channels[ch],&info.transform[ch],0,0,"%.3f",ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.transform",selected,ch,0,double(info.transform[ch]));
-                ImGui::SameLine(); if (ImGui::SmallButton("Key")) command("3d.key",selected,ch,uint32_t(frame),double(info.transform[ch]));
+                if (animation) { ImGui::SameLine(); if (ImGui::SmallButton("Key")) command("3d.key",selected,ch,uint32_t(frame),double(info.transform[ch])); }
                 ImGui::PopID();
             }
-            ImGui::TextDisabled("Enter commits a value; Key records it at the playhead.");
+            ImGui::TextDisabled(animation?"Enter commits a value; Key records it at the playhead.":"Enter commits a base transform.");
             for (uint32_t ch=0;ch<3;++ch) { char label[32]; std::snprintf(label,sizeof(label),"Material %s",ch==0?"R":ch==1?"G":"B");
                 if (ImGui::InputFloat(label,&info.color[ch],0,0,"%.3f",ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.color",selected,ch,0,double(info.color[ch])); }
-            if (ImGui::CollapsingHeader("Mesh editing")) {
+            if (!animation && ImGui::CollapsingHeader("Mesh editing")) {
                 ImGui::BeginDisabled(procedural.generator!=0);
                 ImGui::InputInt("Vertex index",&f->scene_vertex); float vertex[3];
                 if (f->scene_vertex>=0 && jfx_scene3d_vertex(scene,selected,uint32_t(f->scene_vertex),vertex)==JFX_SUCCESS)
@@ -222,7 +243,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                 ImGui::EndDisabled();
                 if (procedural.generator && ImGui::Button("Make generator editable")) command("3d.make_editable",selected);
             }
-            if (procedural.generator && ImGui::CollapsingHeader(procedural.generator==1?"NURBS surface":"Metaball field")) {
+            if (!animation && procedural.generator && ImGui::CollapsingHeader(procedural.generator==1?"NURBS surface":"Metaball field")) {
                 int resolution=int(procedural.resolution);
                 if (ImGui::InputInt("Surface resolution",&resolution,1,8,ImGuiInputTextFlags_EnterReturnsTrue) && resolution>=8 && resolution<=64)
                     command("3d.resolution",selected,uint32_t(resolution));
@@ -240,7 +261,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                     if (ImGui::Button("Remove metaball") && point>=0) command("3d.metaball_remove",selected,uint32_t(point));
                 } else ImGui::TextWrapped("Bicubic rational 4 x 4 control grid. Weights change the surface without changing its control positions.");
             }
-            if (ImGui::CollapsingHeader("Cloner")) {
+            if (!animation && ImGui::CollapsingHeader("Cloner")) {
                 ImGui::Combo("Clone arrangement",&f->scene_clone_mode,"Off\0Linear\0Radial\0Grid\0");
                 ImGui::InputInt("Clone count",&f->scene_clone_count);
                 ImGui::InputFloat("Clone spacing / radius",&f->scene_clone_spacing);
@@ -249,7 +270,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                 ImGui::Text("Current: mode %u, %u instances, %.2f spacing",procedural.cloner_mode,procedural.instances,double(procedural.spacing));
                 if (ImGui::Button("Make clones real at playhead")) command("3d.cloner_make_real",selected,0,0,f->time_seconds);
             }
-            if (ImGui::CollapsingHeader("Joltscript animation")) {
+            if (animation && ImGui::CollapsingHeader("Joltscript animation")) {
                 ImGui::Combo("Script channel",&f->scene_channel,"Position X\0Position Y\0Position Z\0Rotation X\0Rotation Y\0Rotation Z\0Scale X\0Scale Y\0Scale Z\0");
                 ImGui::InputTextMultiline("##Animation script",f->scene_script,sizeof(f->scene_script),ImVec2(-1,110));
                 if (ImGui::Button("Load assigned animation script")) editor_result(f,jfx_scene3d_script(scene,selected,uint32_t(f->scene_channel),f->scene_script,sizeof(f->scene_script)));
@@ -260,7 +281,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                 ImGui::TextWrapped("Inputs: time (seconds), frame, clone index, keyed value. One scalar output drives the selected transform channel during preview and export.");
                 ImGui::TextWrapped("Joltscript supports loops, functions and built-in imports such as jolt.math and jolt.time. Use floating inputs and a numeric result; typed programs run on the CPU.");
             }
-            if (ImGui::CollapsingHeader("Animation keys")) {
+            if (animation && ImGui::CollapsingHeader("Animation keys")) {
                 ImGui::Combo("Channel",&f->scene_channel,"Position X\0Position Y\0Position Z\0Rotation X\0Rotation Y\0Rotation Z\0Scale X\0Scale Y\0Scale Z\0");
                 ImGui::Combo("Interpolation",&f->scene_interpolation,"Hold\0Linear\0Smooth\0");
                 if (ImGui::Button("Set key interpolation")) command("3d.interpolation",selected,uint32_t(f->scene_channel),uint32_t(frame),f->scene_interpolation);
@@ -268,16 +289,18 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                 float evaluated[9]; jfx_scene3d_sample(scene,selected,f->time_seconds,evaluated);
                 ImGui::Text("Evaluated position: %.2f %.2f %.2f",double(evaluated[0]),double(evaluated[1]),double(evaluated[2]));
             }
-            if (ImGui::CollapsingHeader("Rigid bodies (Bullet)")) {
+            if (animation && ImGui::CollapsingHeader("Rigid bodies (Bullet)")) {
                 if (ImGui::InputFloat("Mass (0 = static)",&info.mass,0,0,"%.3f",ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.mass",selected,0,0,double(info.mass));
                 ImGui::InputInt("Bake frames",&f->scene_bake_frames);
                 if (ImGui::Button("Bake rigid-body animation") && f->scene_bake_frames>0) command("3d.bake",0,0,uint32_t(f->scene_bake_frames));
                 ImGui::TextWrapped("Convex mesh colliders; add a static plane for a floor. Bake replaces position/rotation keys of dynamic objects.");
             }
         }
-        ImGui::Separator(); ImGui::InputText("PLY path",f->scene_mesh_path,sizeof(f->scene_mesh_path));
-        if (ImGui::Button("Import PLY")) command("3d.import_ply",0,0,0,0,f->scene_mesh_path);
-        ImGui::SameLine(); if (ImGui::Button("Export PLY")) command("3d.export_ply",selected,0,0,0,f->scene_mesh_path);
+        if (!animation) {
+            ImGui::Separator(); ImGui::InputText("PLY path",f->scene_mesh_path,sizeof(f->scene_mesh_path));
+            if (ImGui::Button("Import PLY")) command("3d.import_ply",0,0,0,0,f->scene_mesh_path);
+            ImGui::SameLine(); if (ImGui::Button("Export PLY")) command("3d.export_ply",selected,0,0,0,f->scene_mesh_path);
+        }
         ImGui::InputText("PNG path",f->scene_png_path,sizeof(f->scene_png_path));
         ImGui::BeginDisabled(f->scene_png_job!=nullptr);
         if (ImGui::Button("Export 3D PNG")) modeling3d_png(f,scene);
@@ -288,7 +311,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
-        if (ImGui::CollapsingHeader("Ingagi drive (ECS / animation / cloner / shader)")) {
+        if (animation && ImGui::CollapsingHeader("Ingagi drive (ECS / animation / cloner / shader)")) {
             ImGui::TextWrapped("Run the shared Ingagi source entry to drive this scene: ECS spawns map to scene objects, engine_scene_* writes keys/cloners/colors. See ingagi/stdlib/joltfx_3d and examples/joltfx_3d_drive.ing.");
             ImGui::InputText("Drive entry",f->drive_entry,sizeof(f->drive_entry));
             ImGui::BeginDisabled(!jfx_desktop_frontend_game_available());
@@ -300,7 +323,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             ImGui::EndDisabled();
             if (!jfx_desktop_frontend_game_available()) ImGui::TextDisabled("Enable JFX_INGAGI to run Ingagi drives.");
         }
-        if (ImGui::CollapsingHeader("Ingagi Animation Pack (.iap)")) {
+        if (animation && ImGui::CollapsingHeader("Ingagi Animation Pack (.iap)")) {
             ImGui::TextWrapped("Serializes this scene's animation event stream (keys, cloners) plus packed assets into a versioned binary. Import applies a pack's stream onto the matching scene objects in one undoable step.");
             ImGui::InputText(".iap path",f->iap_path,sizeof(f->iap_path));
             if (ImGui::Button("Export .iap")) {
@@ -314,9 +337,9 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             }
             ImGui::SameLine();
             if (ImGui::Button("Inspect .iap")) {
-                uint32_t fps=0,frames=0,objects=0,assets=0;
-                auto r=jfx_desktop_frontend_iap_info(f->iap_path,&fps,&frames,&objects,&assets);
-                if (r==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),".iap: %u fps %u frames %u objects %u assets",fps,frames,objects,assets);
+                uint32_t pack_fps=0,pack_frames=0,objects=0,assets=0;
+                auto r=jfx_desktop_frontend_iap_info(f->iap_path,&pack_fps,&pack_frames,&objects,&assets);
+                if (r==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),".iap: %u fps %u frames %u objects %u assets",pack_fps,pack_frames,objects,assets);
                 else std::snprintf(f->status,sizeof(f->status),"%s",jfx_result_to_string(r));
             }
             ImGui::TextWrapped("Asset packing uses the PLY path field above when set.");
@@ -340,11 +363,11 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             f->preview_dirty=true; ++f->scene_revision;
         }
         ImGui::TextDisabled("Inspection modes use CPU; exports use Rendering engine.");
-        const char *renderers[]={"Raster viewport","MonkeyTrace (CPU ray tracing)","Vulkan rasterizer","Filament (GPU rasterizer)"};
+        const char *renderers[]={"Raster viewport","MonkeyTrace (CPU ray tracing)","Vulkan rasterizer","Filament (GPU rasterizer)","Jolt Renderer (CPU / Ingagi)","Jolt Renderer (GPU / Vulkan)"};
         int renderer=int(f->scene_render_options.renderer);
         ImGui::SetNextItemWidth(250);
         if (ImGui::BeginCombo("Rendering engine",renderers[renderer])) {
-            for (int i=0;i<4;++i) {
+            for (int i=0;i<6;++i) {
                 bool available=jfx_scene3d_renderer_available(jfx_scene3d_renderer_t(i));
                 ImGui::BeginDisabled(!available);
                 if (ImGui::Selectable(renderers[i],i==renderer)) {
@@ -355,14 +378,14 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             }
             ImGui::EndCombo();
         }
-        if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE) {
+        if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_MONKEYTRACE || f->scene_render_options.renderer==JFX_SCENE3D_RENDER_JOLT_CPU) {
             auto options=f->scene_render_options;
             int samples=int(options.samples),bounces=int(options.bounces);
             ImGui::SetNextItemWidth(115); bool changed=ImGui::SliderInt("Ray samples",&samples,1,64);
             ImGui::SameLine(); ImGui::SetNextItemWidth(115); changed=ImGui::SliderInt("Reflections",&bounces,0,8)||changed;
             ImGui::SetNextItemWidth(200); changed=ImGui::SliderFloat("Mirror fraction",&options.reflectivity,0,1)||changed;
             if (changed) { options.samples=uint32_t(samples); options.bounces=uint32_t(bounces); editor_result(f,jfx_desktop_frontend_set_scene3d_render_options(f,&options)); }
-            ImGui::TextWrapped("MonkeyTrace CPU / Ingagi ECS / BVH. Up to 4096 visible instance triangles; flat normals. Navigation/playback use 1 sample and at most 1 reflection; idle/export use the selected quality.");
+            ImGui::TextWrapped("Ingagi ECS / MonkeyTrace BVH. Up to 4096 visible instance triangles; flat normals. Navigation/playback use 1 sample and at most 1 reflection; idle/export use the selected quality.");
         }
         // Always occupy one line: conditional text here caused a resize/render
         // feedback loop that discarded completed snapshots and flashed black.

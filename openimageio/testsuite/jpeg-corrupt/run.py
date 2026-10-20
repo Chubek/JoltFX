@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+
+# Copyright Contributors to the OpenImageIO project.
+# SPDX-License-Identifier: Apache-2.0
+# https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+
+failureok = 1
+redirect = ' >> out.txt 2>&1 '
+
+command += oiiotool("--create 1x1 3 -d uint8 -o base-short-marker.jpg")
+command += run_app(pythonbin + " src/make-short-marker-jpegs.py", silent=True)
+
+
+# This file has a corrupted Exif block in the metadata. It used to
+# crash on some platforms, on others would be caught by address sanitizer.
+# Fixed by #1635. This test serves to guard against regressions.
+command += info_command ("src/corrupt-exif.jpg", safematch=True)
+
+# This file has a corrupted Exif block that makes it look like one item has a
+# nonsensical length, that before being fixed, caused a buffer overrun.
+command += info_command ("src/corrupt-exif-1626.jpg", safematch=True)
+
+# This file's Exif block has an ExifIFD pointer whose offset lands one byte
+# before the end of the Exif buffer. The shared decoder's recursive IFD branch
+# read a 2-byte directory count there; before being fixed it ran one byte past
+# the buffer (heap OOB read). Must now be dropped cleanly.
+command += info_command ("src/corrupt-exif-recursive-ifd.jpg", safematch=True)
+
+# This file's Exif block declares a tag with TIFF data type 129, the Exif 3.0
+# UTF-8 type. tiff_data_size() didn't know that type and reported size_t(-1),
+# which wrapped the shared decoder's bounds arithmetic into a span of length
+# size_t(-1): a heap OOB read under a sanitizer, and an uncaught
+# std::length_error that aborted the process on a release build.
+command += info_command ("src/corrupt-exif-utf8-type.jpg", safematch=True)
+
+# This file's Exif block chains 100 ExifIFD pointers, each aimed at the next.
+# Every level costs a stack frame, so a large enough chain exhausts the stack;
+# the decoder now stops descending after a fixed depth.
+command += info_command ("src/corrupt-exif-deep-ifds.jpg", safematch=True)
+
+# This file's APP1 XMP marker nests ~9000 XML elements, all a 64 KB marker
+# has room for. decode_xmp_node() recursed once per level with nothing
+# bounding the descent, enough to exhaust the stack of a sanitizer build or of
+# a worker thread with a small stack. The decoder now stops descending after a
+# fixed depth.
+command += info_command ("src/corrupt-xmp-deep-nesting.jpg", safematch=True)
+
+# This file has a corrupted ICC profile block that has tags that say they
+# extend beyond the boundaries of the ICC block itself.
+command += run_app (oiiotool("--echo corrupt-icc-4551.jpg"))
+command += run_app (oiio_app("iconvert") + " src/corrupt-icc-4551.jpg out-4551.jpg")
+
+# This file has a corrupted ICC profile block
+command += info_command ("src/corrupt-icc-4552.jpg", safematch=True)
+
+# This file's ICC profile places an 'mluc' (multi-localized unicode) tag at an
+# odd byte offset, with its English record pointing the UTF-16 string at
+# another odd offset. The shared ICC decoder read the record's 32-bit counts
+# and the 16-bit string code units directly through pointers at those
+# file-controlled offsets, so both loads were misaligned (UBSan `alignment`,
+# and a fault on strict-alignment CPUs). It now reads via memcpy and must
+# decode the profile_description cleanly.
+command += info_command ("src/corrupt-icc-unaligned-mluc.jpg", safematch=True)
+
+# This file's ICC header declares a profile_size far larger than the bytes that
+# follow. The decoder must reject it on the size-mismatch check with a bounded
+# read, never trusting the declared length.
+command += info_command ("src/corrupt-icc-oversized.jpg", safematch=True)
+
+# These files have short APP1/APP2 metadata marker payloads that used to be
+# read past their saved-marker buffers before being ignored. Use iconvert to
+# a null output to force a full input read.
+command += run_commands(
+"""
+iconvert short-exif-app1-len4.jpg out.null && echo short-exif-app1-len4-ok
+iconvert short-exif-app1-len5.jpg out.null && echo short-exif-app1-len5-ok
+iconvert short-icc-app2-len11.jpg out.null && echo short-icc-app2-len11-ok
+iconvert short-icc-app2-len12.jpg out.null && echo short-icc-app2-len12-ok
+iconvert short-icc-app2-len13.jpg out.null && echo short-icc-app2-len13-ok
+""")
+
+# This file had corrupted IPTC data
+command += oiiotool("-oiioattrib imageinput:strict 1 -info -v src/corrupt-iptc-8011.jpg")
+
+# These files' Exif blocks hold a thumbnail stream with a bogus marker segment
+# length: one too small to cover its own length field, one running past the end
+# of the Exif block. Both used to be papered over, the scan resyncing at an
+# arbitrary offset. Strict mode must now reject them.
+command += oiiotool("-oiioattrib imageinput:strict 1 -info -v thumbnail-sof-len0.jpg")
+command += oiiotool("-oiioattrib imageinput:strict 1 -info -v thumbnail-dqt-len-overflow.jpg")
+# Without strict mode, the thumbnail is simply dropped and the file still reads.
+command += oiiotool("-info thumbnail-sof-len0.jpg thumbnail-dqt-len-overflow.jpg")
+
+# This file's SOF0 header declares a ~12 GB image (65500x65500x3) but holds
+# only a few bytes of entropy-coded data: a classic decompression bomb. The
+# reader's compression-ratio guard must reject it cleanly with a bounded
+# allocation rather than attempting the enormous pixel allocation.
+command += info_command("src/bomb-65500x65500.jpg", failureok=True, safematch=True)
+
+# Same bomb, but progressive (SOF2). Progressive decoding allocates a
+# whole-image coefficient array inside jpeg_start_decompress, so the size
+# checks must happen right after jpeg_read_header, not after decompression
+# has been started.
+command += info_command("src/bomb-progressive-65500x65500.jpg", failureok=True,
+                        safematch=True)

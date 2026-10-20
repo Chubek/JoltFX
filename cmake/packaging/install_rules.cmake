@@ -10,6 +10,9 @@ get_property(JFX_ENABLED_BACKENDS GLOBAL PROPERTY JFX_ENABLED_BACKENDS)
 # a kernel. Only targets that exist in this configuration are installed, which
 # keeps a reduced build (options off) installable too.
 set(JFX_INSTALL_TARGETS "")
+if(TARGET jfx_jolt_renderer)
+    list(APPEND JFX_INSTALL_TARGETS jfx_jolt_renderer)
+endif()
 
 # Always present: the runtime foundation and the engine.
 list(APPEND JFX_INSTALL_TARGETS

@@ -328,7 +328,7 @@ JoltFXPluginSDK 1.0. SDK modules register image effects/kernels, transactional
 editor actions and owned events through a header-only host-service table.
 Repeatable `--plugin` loads before opening a project. The plugin host owns module
 lifetime; graphs, clips, history and export snapshots keep referenced modules
-busy. See `docs/plugins.md`, `sdk/` and `plugin_cli_integration`. AE/Premiere/Resolve
+busy. See `docs/plugins.md`, `JoltFX-SDK/` and `plugin_cli_integration`. AE/Premiere/Resolve
 host bridges retain their separate host-SDK adapters.
 
 The CLI script host uses the language-neutral `jfx_extif` API. Build-time language
@@ -1102,6 +1102,15 @@ Validate loaded documents before replacement, preserve load undo, and extend
 `animation_drawing` / `animation_ui_tests` when changing this workflow.
 
 ### 3D modeling and animation
+
+Desktop 1.11 keeps one 3D workspace with Modeling/Animation sub-tabs over the
+same scene, selection, camera and history. Geometry/generators belong in Modeling;
+keys/scripts/baking/transport belong in Animation. Finish navigation on sub-tab
+switch. Modeling3D 1.7 appends Jolt Renderer CPU/GPU IDs 4/5, preserving earlier
+IDs/defaults. It uses `JoltFX-SDK` host services and the plugin in
+`plugins/JoltRenderer`; preview/PNG/video keep the same owned snapshot dispatch.
+`renderer_sdk`, `jolt_renderer_scene` and `sdk_installed_consumer` cover the new
+module ABI and package. xsimd accelerates pixel resolve, not ray intersection.
 
 Modeling3D 1.6 adds CPU Gouraud/wireframe inspection through
 `jfx_scene3d_render_shaded`, separate from production render options/exports.

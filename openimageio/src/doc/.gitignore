@@ -1,0 +1,13 @@
+*.aux
+*.idx
+*.log
+*.out
+*.toc
+*.turd
+/openimageio.ilg
+/openimageio.ind
+_markdown_openimageio/
+_minted-openimageio/
+_static/*
+!_static/css/
+!_static/css/custom.css

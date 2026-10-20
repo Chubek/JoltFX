@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+
+# Copyright Contributors to the OpenImageIO project.
+# SPDX-License-Identifier: Apache-2.0
+# https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+redirect = " >> out.txt 2>&1 "
+
+files = [ "dpx_nuke_10bits_rgb.dpx", "dpx_nuke_16bits_rgba.dpx" ]
+for f in files:
+    command += rw_command (OIIO_TESTSUITE_IMAGEDIR, f)
+
+
+# Additionally, test for regressions for endian issues with 16 bit DPX output
+# (related to issue #354)
+command += oiio_app("oiiotool") + " src/input_rgb_mattes.tif -o output_rgb_mattes.dpx >> out.txt;"
+command += oiio_app("idiff") + " src/input_rgb_mattes.tif output_rgb_mattes.dpx >> out.txt;"
+
+# Test reading and writing of stereo DPX (multi-image)
+#command += (oiio_app("oiiotool") + "--create 80x60 3 --text:x=10 Left "
+#            + "--caption \"view angle: left\" -d uint10 -o L.dpx >> out.txt;")
+#command += (oiio_app("oiiotool") + "--create 80x60 3 --text:x=10 Right "
+#            + "--caption \"view angle: right\" -d uint10 -o R.dpx >> out.txt;")
+command += (oiio_app("oiiotool") + "ref/L.dpx ref/R.dpx --siappend -o stereo.dpx >> out.txt;")
+command += info_command("stereo.dpx", safematch=True, hash=False, extraargs="--stats")
+command += oiio_app("idiff") + "-a stereo.dpx ref/stereo.dpx >> out.txt;"
+
+# Test read/write of 1-channel DPX -- take a color image, make it grey,
+# write it as 1-channel DPX, then read it again and compare to a reference.
+# The reference is stored as TIFF rather than DPX just because it has
+# fantastically better compression.
+command += oiiotool(OIIO_TESTSUITE_IMAGEDIR+"/dpx_nuke_16bits_rgba.dpx"
+                    " -chsum:weight=0.333,0.333,0.333 -chnames Y -ch Y -o grey.dpx")
+command += info_command("grey.dpx", safematch=True)
+command += diff_command("grey.dpx", "ref/grey.tif")
+
+
+# Regression tests
+command += oiiotool("src/crash-badusersize.dpx -o test.tif", failureok=True)
+
+# Regression test: crafted DPX with a 1-channel, 10-bit, "Filled method A"
+# packed subimage whose width (80) is not a multiple of 3. The 1-channel
+# work-around in Read10bitFilled() swapped the first and third datum of
+# each group of 3 packed samples, but did not check that a full group of 3
+# remained for the last (partial) group in the scanline, writing/reading
+# one uint16 past the end of the caller's scanline buffer.
+command += info_command("src/crash-1chan-10bit-filled-methodA.dpx", safematch=True)
+
+# Regression test: the "dpx:EndOfLinePadding" attribute is carried over from
+# an input file's header, but the libdpx writer uses it as the row stride of
+# the caller's pixel buffer, which is always tightly packed. A nonzero value
+# therefore read past the end of the buffer. The writer must ignore it.
+command += oiiotool("--create 80x60 3 -d uint10 "
+                    "--attrib:type=int dpx:EndOfLinePadding 16384 "
+                    "--attrib:type=int dpx:EndOfImagePadding 16384 "
+                    "-o eolpad.dpx")
+command += info_command("eolpad.dpx", safematch=True)
+
+# Regression test: a 21 KB DPX whose header declares a ~12 GB image
+# (46341x46341x3) -- a decompression bomb the compression-ratio guard must
+# reject before any large allocation.
+command += info_command("src/bomb-46341.dpx", safematch=True, failureok=True)
+
+# Regression test: a 2100-byte DPX declaring 2000 bytes of user data. That
+# size alone fits the file, so the old check passed it, but the block starts
+# at offset 2048 and only 52 bytes remain. The short read was ignored and the
+# uninitialized tail of the buffer went out as the dpx:UserData attribute.
+# The bounds check now counts the offset and rejects the file up front.
+command += info_command("src/truncated-userdata.dpx", safematch=True,
+                        failureok=True)
+
+# Regression test: a DPX whose pixel-data y origin is INT_MAX-4, so the data
+# window (origin + size) still fits in int but origin + read chunk does not.
+# read_image() used to compute the scanline chunk range in int arithmetic,
+# which overflowed to a negative range and drove a heap buffer overflow while
+# reading the pixels.
+# It must now read the pixels without overflowing.
+command += oiiotool("src/crash-large-origin.dpx -o crash-large-origin.tif",
+                    failureok=True)
+
+# Regression test: a DPX whose pixel-data y origin (INT_MAX) is so large that
+# origin + size overflows the int scanline coordinates used by the read path.
+# check_open() must reject it up front.
+command += info_command("src/crash-origin-overflow.dpx", safematch=True,
+                        failureok=True)
+
+# Regression test: a DPX whose end-of-line padding (2^31) goes negative in
+# the int the readers use. A negative padding lets a tiny file stand in for
+# a huge image, which reached a 32-bit overflow of the output buffer offset.
+# The file must be rejected on open.
+command += info_command("src/bad-eolpad.dpx", safematch=True, failureok=True)
+
+# Regression test: a DPX whose pixel data is cut off after the first
+# scanline. libdpx ignored the short reads and reported success, so a tiny
+# file declaring huge images was "read" in full, which made the fuzzer time
+# out. The read must now fail.
+command += oiiotool("--testread src/truncated-pixels.dpx", failureok=True)
+
+# Regression test: a 10-bit DPX whose packing field holds 0x3001, which is
+# not a Packing enumerator. Loading it into the enum was undefined behavior
+# (flagged by UBSan). The read fails because the pixel data is too short
+# for the 16-bit words an unknown packing falls back to.
+command += oiiotool("--testread src/bad-packing.dpx", failureok=True)

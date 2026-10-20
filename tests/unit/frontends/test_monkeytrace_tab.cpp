@@ -51,10 +51,23 @@ int main(int argc,char **argv) {
  assert(jfx_desktop_frontend_set_scene3d_render_options(f,nullptr)==JFX_ERROR_INVALID_ARGUMENT);
  assert(jfx_desktop_frontend_set_scene3d_render_options(nullptr,&options)==JFX_ERROR_INVALID_ARGUMENT);
  assert(jfx_desktop_frontend_scene3d_render_options(f,&options)==JFX_SUCCESS);
- bool available=jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_MONKEYTRACE);
- assert(options.renderer==(available?JFX_SCENE3D_RENDER_MONKEYTRACE:JFX_SCENE3D_RENDER_RASTER));
+ bool trace_available=jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_MONKEYTRACE);
+ assert(options.renderer==(trace_available?JFX_SCENE3D_RENDER_MONKEYTRACE:JFX_SCENE3D_RENDER_RASTER));
+ bool jolt=argc>2;
+ auto target=jolt?JFX_SCENE3D_RENDER_JOLT_CPU:JFX_SCENE3D_RENDER_MONKEYTRACE;
+ bool available=jfx_scene3d_renderer_available(target);
+ if (jolt) {
+  options.renderer=target;
+  if (!available) {
+   assert(jfx_desktop_frontend_set_scene3d_render_options(f,&options)==JFX_ERROR_NOT_IMPLEMENTED);
+   jfx_desktop_frontend_destroy(f); return 0;
+  }
+  draw(f); draw(f);
+  click(f,"Rendering engine","3D viewport"); click(f,"Jolt Renderer (CPU / Ingagi)","##Combo_");
+  assert(jfx_desktop_frontend_scene3d_render_options(f,&options)==JFX_SUCCESS && options.renderer==target);
+ }
  auto saved=options;
- options.renderer=JFX_SCENE3D_RENDER_MONKEYTRACE; options.samples=65;
+ options.renderer=target; options.samples=65;
  assert(jfx_desktop_frontend_set_scene3d_render_options(f,&options)==JFX_ERROR_INVALID_ARGUMENT);
  assert(jfx_desktop_frontend_scene3d_render_options(f,&options)==JFX_SUCCESS && options.samples==saved.samples);
  tilly::vector<uint8_t> a(64*48*4),b(a.size());
@@ -100,7 +113,7 @@ int main(int argc,char **argv) {
    assert(a==b); jfx_export_destroy(job); std::remove(argv[1]);
   }
  } else {
-  options.renderer=JFX_SCENE3D_RENDER_MONKEYTRACE;
+  options.renderer=target;
   assert(jfx_desktop_frontend_set_scene3d_render_options(f,&options)==JFX_ERROR_NOT_IMPLEMENTED);
  }
  draw(f); jfx_desktop_frontend_destroy(f); // outstanding snapshot jobs drain safely

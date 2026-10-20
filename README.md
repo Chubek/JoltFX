@@ -183,18 +183,25 @@ Compositing, Plugins, Console and Statistics tabs, with shared preview/transport
 selection, history and export. Grading uses Resolve-inspired color wheels and
 rotary dials with live preview and one-step gesture undo.
 
-The installable **JoltFXPluginSDK 1.0** supplies a header-only host-service ABI
+The installable **JoltFXSDK 1.0** in `JoltFX-SDK/` supplies a header-only host-service ABI
 for native image effects, Joltscript image kernels, editor actions and events.
-C/C++ modules use `JoltFX::plugin_sdk` and `jfx_add_plugin` without engine linkage.
+C/C++ modules use `JoltFXSDK::plugins` and `joltfx_sdk_add_plugin` without engine linkage.
+It also provides renderer-module contracts and a native/static loader.
 
 ```sh
-cmake --build build --target jfx_example_plugin
-build/frontends/desktop/jfx_desktop --plugin "$PWD/build/sdk/jfx_example_plugin.so"
-build/frontends/cli/joltfx plugins inspect "$PWD/build/sdk/jfx_example_plugin.so"
+cmake --build build --target jfx_sdk_gain JoltRenderer
+build/frontends/desktop/jfx_desktop --plugin "$PWD/build/bin/jfx_sdk_gain.so"
+build/frontends/cli/joltfx plugins inspect "$PWD/build/bin/jfx_sdk_gain.so"
 ```
 
 See [desktop controls](frontends/desktop/README.md) and
 [the SDK guide](docs/plugins.md) for standalone builds and CLI/embedding usage.
+The **3D Modeling & Animation** workspace contains **Modeling** and **Animation**
+sub-tabs sharing one scene. Select the SDK-based
+[Jolt Renderer](plugins/JoltRenderer/README.md) in its Rendering engine control:
+Ingagi/MonkeyTrace CPU tracing with optional xsimd pixel resolve, or Vulkan GPU
+rasterization. The native renderer module uses the separate SDK renderer loader,
+not the image-plugin `--plugin` option.
 
 ### Extension languages
 
@@ -268,7 +275,7 @@ or API destructor. See [memory ownership and sanitizer checks](docs/memory.md).
 - `docs/` — guides and references
 - `docs/nle.md`, `docs/editor.md`, `docs/composition.md` — NLE, color and composition workflows
 - `docs/media.md` — audio mixing, encoded export and media dependencies
-- `docs/plugins.md`, `sdk/` — native/static plugin API, installed CMake SDK and example
+- `docs/plugins.md`, `JoltFX-SDK/` — native/static plugin API, installed CMake SDK and example
 - `docs/extensions.md`, `extif/` — five extension languages, typed host API and CLI scripts
 - `docs/memory.md` — MemTKX allocation, ownership, budgets and safety verification
 - `PROGRESS.md` — what is implemented, what is verified, and what is not

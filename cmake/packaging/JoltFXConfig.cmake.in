@@ -1,5 +1,6 @@
 @PACKAGE_INIT@
 include(CMakeFindDependencyMacro)
+find_dependency(JoltFXSDK 1 CONFIG HINTS "${CMAKE_CURRENT_LIST_DIR}/../JoltFXSDK")
 find_dependency(Threads)
 find_dependency(VTK COMPONENTS CommonCore)
 if(@JFX_PACKAGE_VULKAN@)

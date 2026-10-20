@@ -1,0 +1,8 @@
+increasingY.exr      : 4080 x 3072, 3 channel, half openexr
+    SHA-1: 55ECB0DBDCDA7AC0716E402DBB572E6EFAFBCBCB
+increasingY-copy.exr : 4080 x 3072, 3 channel, half openexr
+    SHA-1: 55ECB0DBDCDA7AC0716E402DBB572E6EFAFBCBCB
+decreasingY.exr      : 4080 x 3072, 3 channel, half openexr
+    SHA-1: 55ECB0DBDCDA7AC0716E402DBB572E6EFAFBCBCB
+decreasingY-copy.exr : 4080 x 3072, 3 channel, half openexr
+    SHA-1: 55ECB0DBDCDA7AC0716E402DBB572E6EFAFBCBCB

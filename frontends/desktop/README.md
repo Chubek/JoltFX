@@ -146,7 +146,15 @@ See [creative programming](../../docs/creative.md).
 ## Options
 
 The **3D Modeling & Animation** tab has its own scene outliner, mesh/transform
-inspector, frame slider, playback, undo/redo and shaded viewport. Add a cube,
+controls organized into **Modeling** and **Animation** sub-tabs. Modeling contains
+primitive creation, generators, mesh editing, cloners and PLY import/export;
+Animation contains transport, keys, scripts, physics baking and Ingagi packs.
+Both share scene selection, history, camera, viewport and render/export settings.
+The SDK-based **Jolt Renderer (CPU / Ingagi)** and **Jolt Renderer (GPU / Vulkan)**
+choices are available when their respective backends are built. See
+`plugins/JoltRenderer/README.md` and `JoltFX-SDK/README.md`.
+
+The workspace also exposes a frame slider, playback, undo/redo and shaded viewport. Add a cube,
 sphere or plane; select it in the outliner; enter numeric values and press Enter
 to commit. **Key** stores a transform channel at the current frame. Select a
 channel/frame to change interpolation or remove a key. Mesh editing exposes

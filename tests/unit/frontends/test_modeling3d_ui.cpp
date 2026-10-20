@@ -18,7 +18,9 @@ static ImGuiWindow *window(const char *part) {
 }
 static void click(jfx_desktop_frontend_t *f,const char *label,const char *part="/Editor interface_",int index=-1) {
     auto *w=window(part); auto &io=ImGui::GetIO(); io.AddMousePosEvent(0,0); draw(f);
-    ImGui::DebugLocateItem(index<0?w->GetID(label):ImHashStr(label,0,w->GetID(index))); draw(f);
+    bool subtab=!std::strcmp(label,"Modeling") || !std::strcmp(label,"Animation");
+    ImGui::DebugLocateItem(subtab?ImHashStr(label,0,w->GetID("3D modes")):
+        index<0?w->GetID(label):ImHashStr(label,0,w->GetID(index))); draw(f);
     ImRect bounds=w->InnerRect; bounds.Expand(4); ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
     for (auto &v:ImGui::GetForegroundDrawList()->VtxBuffer) if (bounds.Contains(v.pos)) {
         lo.x=std::fmin(lo.x,v.pos.x); lo.y=std::fmin(lo.y,v.pos.y); hi.x=std::fmax(hi.x,v.pos.x); hi.y=std::fmax(hi.y,v.pos.y);
@@ -37,6 +39,14 @@ int main() {
     click(f,"Add cube");
     char state[16384]; assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS);
     assert(std::strstr(state,"\"name\":\"cube\"") && std::strstr(state,"\"active\":true"));
+    // Nested views share the document, selection and history without adding
+    // top-level workspace IDs or duplicating the scene.
+    click(f,"Animation");
+    click(f,"Key","3D inspector",0);
+    assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS);
+    assert(std::strstr(state,"\"name\":\"cube\""));
+    click(f,"Undo 3D"); // remove the key, not the cube
+    click(f,"Modeling");
     // The windowed viewport requests its display size, not the legacy 320x180
     // effect-preview size. Exercise landscape, portrait and high-DPI rasters.
     for (auto size:{ImVec2(960,540),ImVec2(320,480),ImVec2(1280,720)}) {

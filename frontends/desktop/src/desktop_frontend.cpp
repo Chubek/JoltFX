@@ -362,6 +362,7 @@ struct jfx_desktop_frontend {
     uint8_t *preview_rgba;
     ScenePreviewJob *scene_display;
     int scene_shading;
+    bool scene_animation;
     uint32_t scene_width,scene_height;
     bool preview_dirty;
     void *preview_texture; /* host-owned handle for ImGui::Image */
@@ -1564,8 +1565,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_scene3d_state(jfx_desktop_frontend_
     return f?jfx_editor_scene3d_state(f->editor,out,cap):JFX_ERROR_INVALID_ARGUMENT;
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_scene3d_render_options(jfx_desktop_frontend_t *f,const jfx_scene3d_render_options_t *o) {
-    if (!f || !o || o->size<sizeof(*o) || o->renderer<JFX_SCENE3D_RENDER_RASTER || o->renderer>JFX_SCENE3D_RENDER_FILAMENT ||
-        (o->renderer==JFX_SCENE3D_RENDER_MONKEYTRACE && (o->samples>64 || o->bounces>8 || o->timeout_ms>60000 ||
+    if (!f || !o || o->size<sizeof(*o) || o->renderer<JFX_SCENE3D_RENDER_RASTER || o->renderer>JFX_SCENE3D_RENDER_JOLT_GPU ||
+        ((o->renderer==JFX_SCENE3D_RENDER_MONKEYTRACE || o->renderer==JFX_SCENE3D_RENDER_JOLT_CPU || o->renderer==JFX_SCENE3D_RENDER_JOLT_GPU) && (o->samples>64 || o->bounces>8 || o->timeout_ms>60000 ||
         !std::isfinite(o->reflectivity) || o->reflectivity<0 || o->reflectivity>1))) return JFX_ERROR_INVALID_ARGUMENT;
     if (!jfx_scene3d_renderer_available(o->renderer)) return JFX_ERROR_NOT_IMPLEMENTED;
     f->scene_render_options=*o;

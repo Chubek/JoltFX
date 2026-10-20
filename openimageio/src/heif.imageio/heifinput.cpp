@@ -1,0 +1,643 @@
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
+
+#include <OpenImageIO/color.h>
+#include <OpenImageIO/filesystem.h>
+#include <OpenImageIO/fmath.h>
+#include <OpenImageIO/imageio.h>
+#include <OpenImageIO/platform.h>
+#include <OpenImageIO/tiffutils.h>
+
+#include <libheif/heif_cxx.h>
+
+#define MAKE_LIBHEIF_VERSION(a, b, c, d) \
+    (((a) << 24) | ((b) << 16) | ((c) << 8) | (d))
+
+#if LIBHEIF_NUMERIC_VERSION >= MAKE_LIBHEIF_VERSION(1, 17, 0, 0)
+#    include <libheif/heif_properties.h>
+#endif
+
+
+
+// This plugin utilises libheif:
+//   https://github.com/strukturag/libheif
+//
+// General information about HEIF/HEIC/AVIF:
+//
+// Sources of sample images:
+//     https://github.com/nokiatech/heif/tree/gh-pages/content
+
+
+
+OIIO_PLUGIN_NAMESPACE_BEGIN
+
+
+class HeifReader final : public heif::Context::Reader {
+public:
+    HeifReader(Filesystem::IOProxy* ioproxy) : m_ioproxy(ioproxy)
+    {
+        m_ioproxy->seek(0);
+    }
+    int64_t get_position() const override { return m_ioproxy->tell(); }
+    int read(void* data, size_t size) override
+    {
+        return m_ioproxy->read(data, size) == size ? 0 : -1;
+    }
+    int seek(int64_t position) override
+    {
+        return m_ioproxy->seek(position) ? 0 : -1;
+    }
+    heif_reader_grow_status wait_for_file_size(int64_t target_size) override
+    {
+        return target_size <= int64_t(m_ioproxy->size())
+                   ? heif_reader_grow_status_size_reached
+                   : heif_reader_grow_status_size_beyond_eof;
+    }
+
+private:
+    Filesystem::IOProxy* m_ioproxy;
+};
+
+
+class HeifInput final : public ImageInput {
+public:
+    HeifInput() {}
+    ~HeifInput() override { close(); }
+    const char* format_name(void) const override { return "heif"; }
+    int supports(string_view feature) const override
+    {
+        return feature == "exif" || feature == "ioproxy"
+#if LIBHEIF_HAVE_VERSION(1, 9, 0)
+               || feature == "cicp"
+#endif
+            ;
+    }
+    bool valid_file(Filesystem::IOProxy* ioproxy) const override;
+    bool open(const std::string& name, ImageSpec& newspec) override;
+    bool open(const std::string& name, ImageSpec& newspec,
+              const ImageSpec& config) override;
+    bool close() override;
+    int current_subimage(void) const override { return m_subimage; }
+    bool seek_subimage(int subimage, int miplevel) override;
+    bool read_native_scanline(int subimage, int miplevel, int y, int z,
+                              void* data) override;
+    bool read_scanline(int y, int z, TypeDesc format, void* data,
+                       stride_t xstride) override;
+
+private:
+    // Set up the decode state and m_spec for one subimage.
+    bool read_subimage_spec(int subimage);
+
+    std::string m_filename;
+    int m_subimage                 = -1;
+    int m_num_subimages            = 0;
+    int m_bitdepth                 = 0;
+    int m_has_alpha                = false;
+    bool m_associated_alpha        = true;
+    bool m_keep_unassociated_alpha = false;
+    bool m_do_associate            = false;
+    bool m_reorient                = true;
+    std::unique_ptr<heif::Context> m_ctx;
+    std::unique_ptr<HeifReader> m_reader;
+    heif_item_id m_primary_id;             // id of primary image
+    std::vector<heif_item_id> m_item_ids;  // ids of all other images
+    heif::ImageHandle m_ihandle;
+    heif::Image m_himage;
+};
+
+
+void
+oiio_heif_init()
+{
+#if LIBHEIF_HAVE_VERSION(1, 16, 0)
+    static std::once_flag flag;
+    std::call_once(flag, []() { heif_init(nullptr); });
+#endif
+}
+
+
+
+// Export version number and create function symbols
+OIIO_PLUGIN_EXPORTS_BEGIN
+
+OIIO_EXPORT int heif_imageio_version = OIIO_PLUGIN_VERSION;
+
+OIIO_EXPORT const char*
+heif_imageio_library_version()
+{
+    return "libheif " LIBHEIF_VERSION;
+}
+
+OIIO_EXPORT ImageInput*
+heif_input_imageio_create()
+{
+    oiio_heif_init();
+    return new HeifInput;
+}
+
+OIIO_EXPORT const char* heif_input_extensions[] = { "heic", "heif", "heics",
+                                                    "hif",  "avif", nullptr };
+
+OIIO_PLUGIN_EXPORTS_END
+
+
+bool
+HeifInput::valid_file(Filesystem::IOProxy* ioproxy) const
+{
+    if (!ioproxy || ioproxy->mode() != Filesystem::IOProxy::Mode::Read)
+        return false;
+    uint8_t magic[12];
+    if (ioproxy->pread(magic, sizeof(magic), 0) != sizeof(magic))
+        return false;
+    heif_filetype_result filetype_check = heif_check_filetype(magic,
+                                                              sizeof(magic));
+    return filetype_check != heif_filetype_no
+           && filetype_check != heif_filetype_yes_unsupported;
+}
+
+
+
+bool
+HeifInput::open(const std::string& name, ImageSpec& newspec)
+{
+    // If user doesn't want to provide any config, just use an empty spec.
+    ImageSpec config;
+    return open(name, newspec, config);
+}
+
+
+
+bool
+HeifInput::open(const std::string& name, ImageSpec& newspec,
+                const ImageSpec& config)
+{
+    m_filename = name;
+    m_subimage = -1;
+
+    ioproxy_retrieve_from_config(config);
+    if (!ioproxy_use_or_open(name))
+        return false;
+
+    m_ctx.reset(new heif::Context);
+    m_reader.reset(new HeifReader(ioproxy()));
+    m_himage  = heif::Image();
+    m_ihandle = heif::ImageHandle();
+
+    m_keep_unassociated_alpha
+        = (config.get_int_attribute("oiio:UnassociatedAlpha") != 0);
+    m_reorient = config.get_int_attribute("oiio:reorient", 1);
+
+    try {
+        m_ctx->read_from_reader(*m_reader);
+
+        // Get the item IDs for each subimage, and force the "primary" one to
+        // have index 0.
+        m_primary_id = m_ctx->get_primary_image_ID();
+        m_item_ids.resize(0);
+        m_item_ids.push_back(m_primary_id);
+        for (auto id : m_ctx->get_list_of_top_level_image_IDs()) {
+            if (id != m_primary_id)
+                m_item_ids.push_back(id);
+        }
+        // std::cout << " primary id: " << m_primary_id << "\n";
+        // std::cout << " item ids: " << Strutil::join(m_item_ids, ", ") << "\n";
+        m_num_subimages = int(m_item_ids.size());
+
+    } catch (const heif::Error& err) {
+        std::string e = err.get_message();
+        errorfmt("{}", e.empty() ? "unknown exception" : e.c_str());
+        close();
+        return false;
+    } catch (const std::exception& err) {
+        std::string e = err.what();
+        errorfmt("{}", e.empty() ? "unknown exception" : e.c_str());
+        close();
+        return false;
+    }
+
+    bool ok = seek_subimage(0, 0);
+    newspec = spec();
+    if (!ok)
+        close();
+    return ok;
+}
+
+
+
+bool
+HeifInput::close()
+{
+    m_himage  = heif::Image();
+    m_ihandle = heif::ImageHandle();
+    m_ctx.reset();
+    m_reader.reset();
+    m_item_ids.clear();
+    m_subimage                = -1;
+    m_num_subimages           = 0;
+    m_associated_alpha        = true;
+    m_keep_unassociated_alpha = false;
+    m_do_associate            = false;
+    return true;
+}
+
+
+
+bool
+HeifInput::seek_subimage(int subimage, int miplevel)
+{
+    if (miplevel != 0 || subimage < 0)
+        return false;
+
+    if (subimage == m_subimage) {
+        return true;  // already there
+    }
+
+    if (subimage >= m_num_subimages) {
+        return false;
+    }
+
+    // We're about to overwrite the decode state and m_spec, so give up the
+    // current subimage first. Every failure below then leaves us on none,
+    // rather than on one whose spec and decoded pixels describe different
+    // images. The context stays open, so rejecting one subimage doesn't stop
+    // a later seek to a different (valid) one.
+    m_subimage = -1;
+    m_himage   = heif::Image();
+    m_spec     = ImageSpec();
+
+    // The libheif C++ wrapper throws on errors (e.g. get_image_handle() on a
+    // damaged file), so don't let that escape.
+    bool ok = false;
+    try {
+        ok = read_subimage_spec(subimage);
+    } catch (const heif::Error& err) {
+        std::string e = err.get_message();
+        errorfmt("{}", e.empty() ? "unknown exception" : e.c_str());
+    } catch (const std::exception& err) {
+        std::string e = err.what();
+        errorfmt("{}", e.empty() ? "unknown exception" : e.c_str());
+    }
+    if (!ok) {
+        // Nor keep the spec of an image we refused or could not decode:
+        // spec() would report it, and read_scanline() would size its
+        // buffer from it.
+        m_spec = ImageSpec();
+        return false;
+    }
+
+    m_subimage = subimage;
+    return true;
+}
+
+
+
+// Set up the decode state and m_spec for one subimage. On failure m_spec
+// is left partly filled; the caller clears it.
+bool
+HeifInput::read_subimage_spec(int subimage)
+{
+    // m_item_ids[0] is the primary image; the rest follow in file order.
+    auto id   = m_item_ids[subimage];
+    m_ihandle = m_ctx->get_image_handle(id);
+
+    m_bitdepth = m_ihandle.get_luma_bits_per_pixel();
+    if (m_bitdepth < 0) {
+        errorfmt("Image has undefined bit depth");
+        return false;
+    } else if (!(m_bitdepth == 8 || m_bitdepth == 10 || m_bitdepth == 12)) {
+        errorfmt("Image has unsupported bit depth {}", m_bitdepth);
+        return false;
+    }
+
+    m_has_alpha = m_ihandle.has_alpha_channel();
+
+    bool is_monochrome = false;
+
+#if LIBHEIF_NUMERIC_VERSION >= MAKE_LIBHEIF_VERSION(1, 17, 0, 0)
+    heif_colorspace preferred_colorspace = heif_colorspace_undefined;
+    heif_chroma preferred_chroma         = heif_chroma_undefined;
+
+    if (heif_image_handle_get_preferred_decoding_colorspace(
+            m_ihandle.get_raw_image_handle(), &preferred_colorspace,
+            &preferred_chroma)
+            .code
+        == heif_error_Ok) {
+        is_monochrome = preferred_colorspace == heif_colorspace_monochrome;
+    }
+#endif
+
+    const heif_chroma chroma
+        = (is_monochrome)    ? heif_chroma_monochrome
+          : m_has_alpha      ? (m_bitdepth > 8)
+                                   ? littleendian()
+                                         ? heif_chroma_interleaved_RRGGBBAA_LE
+                                         : heif_chroma_interleaved_RRGGBBAA_BE
+                                   : heif_chroma_interleaved_RGBA
+          : (m_bitdepth > 8) ? littleendian()
+                                   ? heif_chroma_interleaved_RRGGBB_LE
+                                   : heif_chroma_interleaved_RRGGBB_BE
+                             : heif_chroma_interleaved_RGB;
+    const heif_colorspace colorspace = is_monochrome
+                                           ? heif_colorspace_monochrome
+                                           : heif_colorspace_RGB;
+    const heif_channel channel       = is_monochrome ? heif_channel_Y
+                                                     : heif_channel_interleaved;
+    const int nchannels              = is_monochrome ? 1 : m_has_alpha ? 4 : 3;
+
+    // Validate the handle's declared dimensions against OIIO's limits BEFORE
+    // asking libheif to decode (and allocate) the full image. libheif has its
+    // own internal security limits, but this additionally enforces OIIO's
+    // limits:* policy and rejects degenerate (zero/negative) dimensions.
+    m_spec = ImageSpec(m_ihandle.get_width(), m_ihandle.get_height(), nchannels,
+                       (m_bitdepth > 8) ? TypeUInt16 : TypeUInt8);
+    if (!check_open(m_spec, { 0, 1 << 18, 0, 1 << 18, 0, 1, 0, 4 }))
+        return false;
+
+#if 0
+    try {
+        m_himage = m_ihandle.decode_image(heif_colorspace_RGB, chroma);
+    } catch (const heif::Error& err) {
+        std::string e = err.get_message();
+        errorfmt("{}", e.empty() ? "unknown exception" : e.c_str());
+        return false;
+    } catch (const std::exception& err) {
+        std::string e = err.what();
+        errorfmt("{}", e.empty() ? "unknown exception" : e.c_str());
+        return false;
+    }
+#else
+    std::unique_ptr<heif_decoding_options, void (*)(heif_decoding_options*)>
+        options(heif_decoding_options_alloc(), heif_decoding_options_free);
+    options->ignore_transformations = !m_reorient;
+    // print("Got decoding options version {}\n", options->version);
+    struct heif_image* img_tmp = nullptr;
+    struct heif_error herr = heif_decode_image(m_ihandle.get_raw_image_handle(),
+                                               &img_tmp, colorspace, chroma,
+                                               options.get());
+    if (img_tmp)
+        m_himage = heif::Image(img_tmp);
+    if (herr.code != heif_error_Ok || !img_tmp) {
+        errorfmt("Could not decode image ({})", herr.message);
+        return false;
+    }
+#endif
+
+    m_spec = ImageSpec(m_himage.get_width(channel),
+                       m_himage.get_height(channel), nchannels,
+                       (m_bitdepth > 8) ? TypeUInt16 : TypeUInt8);
+
+    if (m_bitdepth > 8) {
+        m_spec.attribute("oiio:BitsPerSample", m_bitdepth);
+    }
+    m_spec.set_colorspace("srgb_rec709_scene");
+
+#if LIBHEIF_HAVE_VERSION(1, 9, 0)
+    // Read CICP. Have to use the C API to get it from the image handle,
+    // the one on the decoded image is not what was written in the file.
+    enum heif_color_profile_type profile_type
+        = heif_image_handle_get_color_profile_type(
+            m_ihandle.get_raw_image_handle());
+    if (profile_type == heif_color_profile_type_nclx) {
+        heif_color_profile_nclx* nclx = nullptr;
+        const heif_error err = heif_image_handle_get_nclx_color_profile(
+            m_ihandle.get_raw_image_handle(), &nclx);
+
+        if (nclx) {
+            // When CICP metadata is not present in the file, libheif returns
+            // unspecified since v1.21. Ignore it then.
+            if (err.code == heif_error_Ok
+                && !(nclx->color_primaries == heif_color_primaries_unspecified
+                     && nclx->transfer_characteristics
+                            == heif_transfer_characteristic_unspecified
+                     && nclx->matrix_coefficients
+                            == heif_matrix_coefficients_unspecified)) {
+                const int cicp[4] = { int(nclx->color_primaries),
+                                      int(nclx->transfer_characteristics),
+                                      int(nclx->matrix_coefficients),
+                                      int(nclx->full_range_flag ? 1 : 0) };
+                m_spec.attribute("CICP", TypeDesc(TypeDesc::INT, 4), cicp);
+                const ColorConfig& colorconfig(
+                    ColorConfig::default_colorconfig());
+                string_view interop_id = colorconfig.get_color_interop_id(cicp);
+                if (!interop_id.empty())
+                    m_spec.attribute("oiio:ColorSpace", interop_id);
+            }
+            heif_nclx_color_profile_free(nclx);
+        }
+    }
+#endif
+
+#if LIBHEIF_HAVE_VERSION(1, 12, 0)
+    // Libheif >= 1.12 added API call to find out if the image is associated
+    // alpha (i.e. colors are premultiplied).
+    m_associated_alpha = m_himage.is_premultiplied_alpha();
+    m_do_associate     = (!m_associated_alpha && m_spec.alpha_channel >= 0
+                          && !m_keep_unassociated_alpha);
+    if (!m_associated_alpha && m_spec.nchannels >= 4) {
+        // Indicate that file stored unassociated alpha data
+        m_spec.attribute("heif:UnassociatedAlpha", 1);
+        // If we don't have 4 chans, we need not consider
+        m_keep_unassociated_alpha &= (m_spec.nchannels >= 4);
+        if (m_keep_unassociated_alpha) {
+            // Indicate that we are returning unassociated data if the file
+            // had associated and we were asked to keep it that way.
+            m_spec.attribute("oiio:UnassociatedAlpha", 1);
+        }
+    }
+#else
+    m_associated_alpha = true;  // assume/hope
+#endif
+
+    auto meta_ids = m_ihandle.get_list_of_metadata_block_IDs();
+    // std::cout << "nmeta? " << meta_ids.size() << "\n";
+    for (auto m : meta_ids) {
+        std::vector<uint8_t> metacontents;
+        try {
+            metacontents = m_ihandle.get_metadata(m);
+        } catch (const heif::Error& err) {
+            if (err.get_code() == heif_error_Usage_error
+                && err.get_subcode() == heif_suberror_Null_pointer_argument) {
+                // a bug in heif_cxx.h means a 0 byte metadata causes a null
+                // ptr error code, which we ignore
+                continue;
+            }
+        }
+        if (Strutil::iequals(m_ihandle.get_metadata_type(m), "Exif")
+            && metacontents.size() >= 10) {
+            cspan<uint8_t> s(&metacontents[10], metacontents.size() - 10);
+            bool ok = decode_exif(s, m_spec);
+            if (!ok && OIIO::get_int_attribute("imageinput:strict")) {
+                errorfmt("Could not decode Exif");
+                return false;
+            }
+        } else if (0  // For now, skip this, I haven't seen anything useful
+                   && Strutil::iequals(m_ihandle.get_metadata_type(m), "mime")
+                   && Strutil::iequals(m_ihandle.get_metadata_content_type(m),
+                                       "application/rdf+xml")) {
+            bool ok = decode_xmp(metacontents, m_spec);
+            if (!ok && OIIO::get_int_attribute("imageinput:strict")) {
+                errorfmt("Could not decode XMP");
+                return false;
+            }
+        } else {
+#ifdef DEBUG
+            print(
+                "Don't know how to decode meta {} type='{}' contenttype='{}'\n",
+                m, m_ihandle.get_metadata_type(m),
+                m_ihandle.get_metadata_content_type(m));
+            print("---\n{}\n---\n",
+                  string_view((const char*)metacontents.data(),
+                              metacontents.size()));
+#endif
+        }
+    }
+
+#if LIBHEIF_NUMERIC_VERSION >= MAKE_LIBHEIF_VERSION(1, 16, 0, 0)
+    // Try to discover the orientation. The Exif is unreliable. We have to go
+    // through the transformation properties ourselves. A tricky bit is that
+    // the C++ API doesn't give us a direct way to get the context ptr, we
+    // need to resort to some casting trickery, with knowledge that the C++
+    // heif::Context class consists solely of a std::shared_ptr to a
+    // heif_context.
+    // NO int orientation = m_spec.get_int_attribute("Orientation", 1);
+    int orientation = 1;
+    const heif_context* raw_ctx
+        = reinterpret_cast<std::shared_ptr<heif_context>*>(m_ctx.get())->get();
+    int xpcount = heif_item_get_transformation_properties(raw_ctx, id, nullptr,
+                                                          100);
+    xpcount     = std::min(xpcount, 100);  // clamp to some reasonable limit
+    std::vector<heif_property_id> xprops(xpcount);
+    heif_item_get_transformation_properties(raw_ctx, id, xprops.data(),
+                                            xpcount);
+    for (int i = 0; i < xpcount; ++i) {
+        auto type = heif_item_get_property_type(raw_ctx, id, xprops[i]);
+        if (type == heif_item_property_type_transform_rotation) {
+            int rot = heif_item_get_property_transform_rotation_ccw(raw_ctx, id,
+                                                                    xprops[i]);
+            // cw[] maps to one additional clockwise 90 degree turn. The
+            // irot angle is the anticlockwise presentation rotation, so
+            // applying it equals (4 - rot/90) % 4 clockwise quarter turns.
+            static const int cw[] = { 0, 6, 7, 8, 5, 2, 3, 4, 1 };
+            for (int i = 0; i < (4 - rot / 90) % 4; ++i)
+                orientation = cw[orientation];
+        } else if (type == heif_item_property_type_transform_mirror) {
+            int mirror = heif_item_get_property_transform_mirror(raw_ctx, id,
+                                                                 xprops[i]);
+            //                                1  2  3  4  5  6  7  8
+            static const int mirrorh[] = { 0, 2, 1, 4, 3, 6, 5, 8, 7 };
+            static const int mirrorv[] = { 0, 4, 3, 2, 1, 8, 7, 6, 5 };
+            if (mirror == heif_transform_mirror_direction_vertical) {
+                orientation = mirrorv[orientation];
+            } else if (mirror == heif_transform_mirror_direction_horizontal) {
+                orientation = mirrorh[orientation];
+            }
+        }
+    }
+#else
+    // Prior to libheif 1.16, the get_transformation_properties API was not
+    // available, so we have to rely on the Exif orientation tag.
+    int orientation = m_spec.get_int_attribute("Orientation", 1);
+#endif
+
+    // Erase the orientation metadata because libheif appears to be doing
+    // the rotation-to-canonical-direction for us.
+    if (orientation != 1) {
+        if (m_reorient) {
+            // If libheif auto-reoriented, record the original orientation in
+            // "oiio:OriginalOrientation" and set the "Orientation" attribute
+            // to 1 since we're presenting the image to the caller in the
+            // usual orientation.
+            m_spec.attribute("oiio:OriginalOrientation", orientation);
+            m_spec.attribute("Orientation", 1);
+        } else {
+            // We asked libheif to ignore the transformations, so the decoded
+            // image and its planes are in the stored, unrotated orientation,
+            // and m_spec -- assigned above from the decoded image dimensions
+            // -- already matches the plane geometry. Swapping width and
+            // height here would make the spec disagree with the planes and
+            // make read_native_scanline run past the end of the plane for
+            // orientations 5-8. Just report the orientation so callers can
+            // account for the stored rotation themselves.
+            m_spec.attribute("Orientation", orientation);
+        }
+    }
+
+    return true;
+}
+
+
+
+bool
+HeifInput::read_native_scanline(int subimage, int miplevel, int y, int /*z*/,
+                                void* data)
+{
+    lock_guard lock(*this);
+    if (!seek_subimage(subimage, miplevel))
+        return false;
+    if (y < 0 || y >= m_spec.height)  // out of range scanline
+        return false;
+#if LIBHEIF_NUMERIC_VERSION >= MAKE_LIBHEIF_VERSION(1, 20, 0, 0)
+    size_t ystride = 0;
+#else
+    int ystride = 0;
+#endif
+    const heif_channel channel = m_spec.nchannels == 1
+                                     ? heif_channel_Y
+                                     : heif_channel_interleaved;
+#if LIBHEIF_NUMERIC_VERSION >= MAKE_LIBHEIF_VERSION(1, 20, 2, 0)
+    const uint8_t* hdata = m_himage.get_plane2(channel, &ystride);
+#else
+    const uint8_t* hdata = m_himage.get_plane(channel, &ystride);
+#endif
+    if (!hdata) {
+        errorfmt("Unknown read error");
+        return false;
+    }
+    hdata += (y - m_spec.y) * ystride;
+    if (m_bitdepth == 10 || m_bitdepth == 12) {
+        const size_t num_values = m_spec.width * m_spec.nchannels;
+        const uint16_t* hdata16 = reinterpret_cast<const uint16_t*>(hdata);
+        uint16_t* data16        = static_cast<uint16_t*>(data);
+        if (m_bitdepth == 10) {
+            for (size_t i = 0; i < num_values; ++i) {
+                data16[i] = bit_range_convert<10, 16>(hdata16[i]);
+            }
+        } else {
+            for (size_t i = 0; i < num_values; ++i) {
+                data16[i] = bit_range_convert<12, 16>(hdata16[i]);
+            }
+        }
+    } else {
+        memcpy(data, hdata, m_spec.width * m_spec.pixel_bytes());
+    }
+    return true;
+}
+
+
+
+bool
+HeifInput::read_scanline(int y, int z, TypeDesc format, void* data,
+                         stride_t xstride)
+{
+    bool ok = ImageInput::read_scanline(y, z, format, data, xstride);
+    if (ok && m_do_associate) {
+        // If alpha is unassociated and we aren't requested to keep it that
+        // way, multiply the colors by alpha per the usual OIIO conventions
+        // to deliver associated color & alpha.  Any auto-premultiplication
+        // by alpha should happen after we've already done data format
+        // conversions. That's why we do it here, rather than in
+        // read_native_blah.
+        {
+            lock_guard lock(*this);
+            if (format == TypeUnknown)  // unknown -> retrieve native type
+                format = m_spec.format;
+        }
+        OIIO::premult(m_spec.nchannels, m_spec.width, 1, 1, 0 /*chbegin*/,
+                      m_spec.nchannels /*chend*/, format, data, xstride,
+                      AutoStride, AutoStride, m_spec.alpha_channel);
+    }
+    return ok;
+}
+
+OIIO_PLUGIN_NAMESPACE_END
