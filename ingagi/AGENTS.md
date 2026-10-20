@@ -2,6 +2,19 @@
 
 - Follow the root `AGENTS.md`; record progress in root `PROGRESS.md`.
 - Run Go commands with `GOROOT=/usr/lib/go`.
+- `DEVELOPMENT.md` tracks implemented versus reserved subsystems. The shader
+  implementation is in `monkeyshade` (package shader); `shader` is a compatibility
+  facade. Put lowering fixes in the implementation, never duplicate them.
+- `noise` uses immutable seeded improved-Perlin lattices and strict bounded JSON
+  profiles; preserve deterministic seed expansion and normalization. `geometry`
+  owns bounded mesh slices, welded outward winding and failure-atomic transforms.
+  Procedural VM builtins marshal ordinary arrays/maps with a 65,536-entry limit;
+  retain no engine/GPU handles. Keep scope/type checks aligned with builtin names,
+  including local shadows, and test malformed aggregate representations.
+- Target catalog entries cover all sixteen declared targets. Only IngagiVM,
+  QBE and WASM are execution backends. Adapter `.go` scaffolds use the `ignore`
+  build constraint until they have real implementations; do not remove those
+  guards just to make an empty adapter appear implemented.
 - `frontend/Ingagi.ebnf` is the language foundation; `frontend/ingagi.ng` is the
   draft native grammar. The `novoparse` tag enables required native recognition
   followed by handwritten typed-AST construction. Keep both paths covered.
@@ -85,6 +98,18 @@
   round trips; geometry/tessellation aren't WebGPU stages and must reject.
   Don't mark renderer adapters as
   implemented solely because shader artifacts can be generated.
+- Shader `interface` declarations carry `ShaderStruct.Interface`; do not erase
+  them into ordinary buffer structs. `inputs`/`outputs` options use the existing
+  grammar and access generated variables through reserved `ig_interface_` names.
+  Keep stage inputs read-only and reject namespace capture. Shader-local names
+  are private to the GPU declaration during module qualification.
+- `monkeyshade.Reflect` reports declared source layouts (not optimized SPIR-V).
+  Preserve std140/std430 matrix/array strides, vec3 packing, bounded recursion and
+  byte/location budgets. `LinkGraphics` matches locations/types/qualifiers and
+  merges structurally compatible descriptors; it is not fixed-state or device
+  validation. Keep `shader` compatibility exports and CLI reflection aligned.
+  Extend real glslang/spirv-val/decoration tests and source-link failures before
+  broadening interface types, layouts or pipeline stage topologies.
 - Standalone embedding checks: configure/build `ingagi/CMakeLists.txt`, then run
   CTest. Optional D/Rust/Python/Java smoke tests run when compilers are available.
   Read `README.md` and `native_extension_api/README.md` before describing support.
@@ -108,6 +133,10 @@
   borrowed C triangle/camera descriptors. Copy inputs into an owned ECS world,
   retain no C pointers, and publish RGBA only on success. JFX_MONKEYTRACE builds
   this bridge independently of the scripting tab; no shader tools are required.
+  The CMake bridge uses `-tags=monkeytrace_native` to exclude VM-authoring and
+  shader/browser tools from this CPU-only dependency graph. The ordinary package
+  still includes those APIs. Test the isolated bridge with
+  `GOROOT=/usr/lib/go go test -tags=monkeytrace_native ./monkeytrace/native ./ecs`.
 - Desktop API 1.8's Game Engine tab links the native ABI conditionally through
   JFX_INGAGI. It owns handles until frontend destruction and borrows frontend state
   synchronously in engine_time callbacks. Keep optional builds and ingagi_tab tests

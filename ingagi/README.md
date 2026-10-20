@@ -7,6 +7,10 @@ typed scalar QBE and WebAssembly backends, shader artifact lowering, an ECS
 package, native math bridges, and a CLI. The desktop Game Engine tab uses the
 native embedding ABI when built with `JFX_INGAGI=ON`.
 
+See [the implementation inventory and remaining milestones](DEVELOPMENT.md).
+The full-tree build now includes working procedural-noise and mesh foundations;
+the original `shader` import path forwards to the compiler in `monkeyshade`.
+
 ## Build and run
 
 From `ingagi/`:
@@ -308,14 +312,62 @@ ctest --test-dir /tmp/opencode/ingagi-embed --output-on-failure
 /tmp/opencode/ingagi-embed/bin/ingagi targets
 ```
 
-The root CMake build also accepts `JFX_INGAGI=ON`. The twelve embedded target
+The root CMake build also accepts `JFX_INGAGI=ON`. The sixteen embedded target
 descriptors are validated schema-v1 metadata, exposed by `compiler.Targets`,
 `compiler.LookupTarget` and `ingagi targets`. IngagiVM, QBE and WASM are implemented;
-the other nine describe planned adapters/shader emitters. `RequireArtifact`
+the other thirteen describe planned adapters/shader emitters. `RequireArtifact`
 rejects planned targets and unsupported output formats. QBE artifact selection
 uses this gate; its architecture-specific checks remain in the native builder.
 
 ## Current implementation boundaries
+
+### Portable procedural APIs
+
+`noise.New(seed)` constructs an immutable, reproducible gradient-noise generator.
+`Sample2` / `Sample3` return signed values in `[-1,1]`, with lattice period 256.
+Coordinates must be finite and within `+/-2^40`. `noise.NewProfile` constructs a
+normalized fBm sampler from a validated `Profile`: 1–32 octaves, frequency
+`(0,1e6]`, lacunarity `[1,8]`, gain `[0,1]`. Each octave must remain within the
+coordinate domain. `DefaultProfile(seed)` uses 4 octaves, frequency 1, lacunarity
+2 and gain 0.5. `ParseProfile` accepts at most 4096 bytes of strict JSON, applying
+those defaults to omitted fields, for example:
+
+```json
+{"seed":42,"octaves":6,"frequency":1,"lacunarity":2,"gain":0.5}
+```
+
+`geometry.Mesh` owns `Vertices []Vec3` and indexed `Triangles []Triangle`.
+`Cube(size)`, `Plane(width, depth)` and `UVSphere(radius, segments, rings)` return
+validated meshes. Library limits are 65,536 vertices / 131,072 triangles and
+finite vertex coordinates within `+/-1e9`. `Validate`, `Bounds`, `VertexNormals`,
+`Clone` and failure-atomic `Transform` support host-side mesh processing.
+Unreferenced/cancelling vertex normals return an error instead of NaN values.
+UV spheres weld the seam and poles; cubes share their eight corner vertices.
+
+The VM exposes these **builtins**, without requiring imports:
+
+| Function | Result / parameters |
+| --- | --- |
+| `noise2(x,y[,seed])` | Signed gradient noise; omitted seed is zero |
+| `noise3(x,y,z[,seed])` | Signed gradient noise |
+| `fbm3(x,y,z,seed,octaves[,frequency,lacunarity,gain])` | Normalized fractal noise |
+| `mesh_cube(size)` | Owned mesh value |
+| `mesh_plane(width,depth)` | XZ plane facing +Y |
+| `mesh_sphere(radius,segments,rings)` | Welded UV sphere; integer segments >=3, rings >=2 |
+| `mesh_normals(mesh)` | Array of area-weighted unit `vec3` normals |
+| `mesh_bounds(mesh)` | Map with `min` and `max` vectors |
+| `mesh_translate(mesh,offset)` | Translated copy; `offset` is a `vec3` |
+
+Mesh values are `{vertices: [vec3...], triangles: [[i,j,k]...]}` maps with exact
+integer indices. VM mesh arrays are each limited to 65,536 entries for snapshot
+compatibility; the generator rejects larger requests before VM allocation.
+Seeds are integer values (negative int64 values preserve their uint64 bit pattern).
+Builtins reject invalid arguments and retain no caller-owned buffers. Mesh
+translation does not change the source value. These bounded operations do not
+provide a total VM memory/time sandbox and do not upload meshes into JoltFX.
+Run `GOROOT=/usr/lib/go go run ./cmd run examples/procedural.ing` for an example.
+
+### Language and engine boundaries
 
 - Functions, captured-by-value closures, arithmetic, arrays, loops, matches,
   deferred blocks, structs and enums execute as dynamically checked bytecode.
@@ -356,6 +408,12 @@ uses this gate; its architecture-specific checks remain in the native builder.
 compute stages. `shader.CompileSPIRV(ctx, declaration, stage, executable)` invokes
 `glslangValidator -V --target-env vulkan1.1` and returns SPIR-V bytes. An empty
 executable selects PATH; the caller's context bounds the compiler process.
+The implementation lives in `monkeyshade`; `shader` is a compatibility facade.
+`Parse(source, name)` and `CompileSource(ctx, source, name, stage, format, tools)`
+also accept bounded shader-only source (maximum 1 MiB). Omit the name only when
+there is exactly one shader. Imports/modules and host declarations are rejected
+by this standalone convenience API; file-based CLI compilation retains its
+existing module resolver.
 
 ```sh
 GOROOT=/usr/lib/go go run ./cmd shader -shader Scale -stage compute \
@@ -381,10 +439,86 @@ Geometry and tessellation stages accept explicit layout options; storage images
 use floating `rgba32f` texels. Unsupported host statements, inferred local types, resource/field attributes,
 stage options and shader types fail with source-positioned errors. GLSL emission
 is source lowering; SPIR-V compilation performs downstream GPU type/link checks.
-Mesh/task lowering, stage-interface declarations, GPU execution and
+Mesh/task lowering, geometry/tessellation interface linking, GPU execution and
 Cg/DXIL/DXBC/SLang emitters remain pending.
 Tests compile vertex/fragment/compute examples and validate their binaries with
 `spirv-val` when both tools are installed.
+
+### Stage interfaces, reflection and source linking
+
+Shader `interface` declarations now remain distinct from buffer `struct`s.
+Select them with the existing `inputs` / `outputs` stage options:
+
+```ingagi
+shader Colored {
+    interface Attributes { @location(0) position: vec3; }
+    interface Varyings { @location(0) color: vec3; }
+    interface Colors { @location(0) color: vec4; }
+    vertex(inputs: Attributes, outputs: Varyings) {
+        gl_Position = vec4(inputs.position, 1.0);
+        outputs.color = vec3(1.0, 0.5, 0.0);
+    }
+    fragment(inputs: Varyings, outputs: Colors) {
+        outputs.color = vec4(inputs.color, 1.0);
+    }
+}
+```
+
+Each selected field needs an explicit `@location(0..63)`. Supported types are
+float/int/uint scalars and vectors, square float matrices, and fixed arrays of
+those types, with `f32`/`i32`/`u32` aliases canonicalized. Matrix columns and array
+elements occupy consecutive locations; ranges may not overlap or exceed 64.
+Boolean and struct-valued stage I/O, component packing, builtin annotations and
+64-bit types are not supported. Existing GLSL builtin names such as `gl_Position`
+remain available directly.
+Fragment outputs additionally exclude matrices, including arrays of matrices.
+
+Vertex outputs and fragment inputs accept one of `@smooth` (default), `@flat`,
+or `@noperspective`; non-flat fields may also use `@centroid` or `@sample`.
+Integer varyings require explicit `@flat`. Vertex inputs and fragment outputs
+do not accept interpolation/sampling qualifiers. Input fields are read-only.
+`inputs`/`outputs` are reserved namespaces in stages using explicit interfaces;
+the emitted `ig_interface_` identifier prefix is reserved everywhere.
+Interfaces are currently supported only for vertex and fragment stages.
+
+`shader.Reflect(declaration, stage)` returns **declared-source reflection**, not
+optimized SPIR-V reflection. It includes location/type ranges, descriptor kind,
+set/binding/access, specialization IDs, compute workgroup size, required source
+features, and buffer field offsets/sizes/strides. Uniform blocks use column-major
+std140, storage blocks column-major std430; structs and fixed arrays are bounded
+to 4 MiB per block, 4,096 reflected layout nodes and nesting depth 32. Offsets in
+nested members are relative to their containing struct; array members describe
+one element. Runtime-sized arrays, row-major matrices, explicit offsets and
+unsupported field attributes fail. Reflection includes unused declared resources
+and returns fresh caller-owned data. `texture*` declarations lower as **combined
+image/sampler descriptors**, while `sampler` declarations are separate descriptors;
+only omitted or `float`/`f32` sampled-texture type annotations are lowered.
+Storage images have fixed `rgba32f` format. Comparison samplers are not lowered.
+
+`shader.LinkGraphics(vertex, fragment)` checks location ranges, canonical types,
+interpolation and sampling, regardless of field names. All fragment inputs need
+matching vertex outputs; unused vertex outputs are allowed. Shared descriptor
+bindings must agree on resource kind and byte layout; read/write usage is merged.
+`ReflectPipeline(file, pipeline)` handles compute-only or direct vertex/fragment
+pipelines. This checks interface contracts, **not** complete GPU expression
+typing, output assignment coverage, fixed-function state, execution or driver
+limits. Reports explicitly mark fixed-function state as unvalidated. `ingagi check`
+reports declaration/layout errors as `E0402` and direct graphics link errors as
+`E0403`; complete GPU type/link validation still requires glslang.
+
+```sh
+GOROOT=/usr/lib/go go run ./cmd check examples/shader_interfaces.ing
+GOROOT=/usr/lib/go go run ./cmd shader -shader Draw -stage vertex \
+  -emit reflect -o /tmp/opencode/draw-vertex.json examples/shader_interfaces.ing
+GOROOT=/usr/lib/go go run ./cmd shader -pipeline DrawPipeline \
+  -emit reflect -o /tmp/opencode/draw-pipeline.json examples/shader_interfaces.ing
+GOROOT=/usr/lib/go go run ./cmd shader-capabilities
+```
+
+Reflection needs no external shader tools. Capability JSON describes compiler
+support, format tool dependencies and implementation bounds, not installed tools
+or device availability. Mesh/task stages and device dispatch remain explicitly
+false. Failed source links/compilations preserve existing CLI artifacts.
 
 ### Cross-compiled shader sources
 

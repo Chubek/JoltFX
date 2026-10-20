@@ -1,0 +1,14 @@
+// Portable procedural mesh data and reproducible animation/terrain signals.
+// These values do not implicitly allocate engine/GPU resources.
+fn main() {
+    let sphere = mesh_sphere(1.0, 16, 8);
+    let moved = mesh_translate(sphere, vec3(0.0, 2.0, 0.0));
+    let box = mesh_bounds(moved);
+    print("sphere vertices", len(moved.vertices));
+    print("sphere triangles", len(moved.triangles));
+    print("bounds", box.min, box.max);
+    print("normal count", len(mesh_normals(moved)));
+    let sample = fbm3(0.17, 0.29, 0.41, 42, 6);
+    print("seeded noise", sample);
+    return sample;
+}

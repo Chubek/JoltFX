@@ -371,6 +371,9 @@ func isBuiltin(name string) bool {
 		"get_component", "set_resource", "get_resource",
 		"set_parent", "get_parent":
 		return true
+	case "noise2", "noise3", "fbm3", "mesh_cube", "mesh_plane", "mesh_sphere",
+		"mesh_normals", "mesh_bounds", "mesh_translate":
+		return true
 	}
 	return false
 }

@@ -109,15 +109,15 @@ func (p *Parser) parseShaderDecl(attrs []Attr, vis Visibility, pos, line, col in
 	return d
 }
 
-// parseShaderStruct implements shader_struct (and shader interface bodies,
-// which share the layout purpose).
+// parseShaderStruct implements shader_struct/interface syntax while preserving
+// the distinction between buffer structs and explicit stage interfaces.
 func (p *Parser) parseShaderStruct(pos, line, col int) ShaderStruct {
-	p.parseIdent() // struct | interface
+	kind, _ := p.parseIdent() // struct | interface
 	name := p.expectIdent("struct name")
 	if !p.lit("{") {
 		p.fail("expected `{`", p.spanAt(p.pos, p.pos))
 	}
-	s := ShaderStruct{Name: name.Name}
+	s := ShaderStruct{Name: name.Name, Interface: kind.Name == "interface"}
 	for {
 		p.skipTrivia()
 		if p.eof() || p.peekLit("}") {
@@ -384,6 +384,9 @@ func (p *Parser) parseShaderStage(pos, line, col int) ShaderStage {
 				if !p.lit(":") {
 					p.fail("expected `:`", p.spanAt(p.pos, p.pos))
 				}
+				if _, exists := opts[oname.Name]; exists {
+					p.fail("duplicate shader stage option "+oname.Name, oname.Span)
+				}
 				opts[oname.Name] = p.parseExpr()
 				if _, ok := p.oneOf(","); !ok {
 					break
@@ -412,11 +415,23 @@ func (p *Parser) parsePipelineDecl(attrs []Attr, vis Visibility, pos, line, col 
 		}
 		memberStart := p.pos
 		w, _ := p.peekIdent()
+		// compute: Shader::compute and compute {state: value;} share a
+		// keyword, but are distinct productions in the reference/native grammar.
+		computeState := false
+		if w == "compute" {
+			pos, line, col := p.pos, p.line, p.col
+			p.parseIdent()
+			computeState = p.peekLit("{")
+			p.pos, p.line, p.col = pos, line, col
+		}
 		switch {
-		case shaderStages[w]:
+		case shaderStages[w] && !computeState:
 			p.parseIdent()
 			if !p.lit(":") {
 				p.fail("expected `:`", p.spanAt(p.pos, p.pos))
+			}
+			if _, exists := d.Stages[w]; exists {
+				p.fail("duplicate pipeline stage "+w, p.spanFrom(memberStart, p.line, p.col))
 			}
 			d.Stages[w] = p.expectPath("shader stage")
 			if !p.lit(";") {

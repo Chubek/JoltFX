@@ -803,9 +803,10 @@ type ShaderField struct {
 	Span  Span
 }
 type ShaderStruct struct {
-	Name   string
-	Fields []ShaderField
-	Span   Span
+	Name      string
+	Fields    []ShaderField
+	Span      Span
+	Interface bool // interface declarations describe stage I/O, not buffer structs
 }
 type ShaderConst struct {
 	Name  string

@@ -76,6 +76,10 @@ func CompileGLSL(s *fe.ShaderDecl, stage string) (string, error) {
 	if len(s.Options) > 0 || len(s.Attrs) > 0 {
 		return "", fmt.Errorf("%s: shader declaration options/attributes are unsupported", s.Span)
 	}
+	reflection, err := Reflect(s, stage)
+	if err != nil {
+		return "", err
+	}
 	e := &glslEmitter{types: map[string]bool{}, names: map[string]bool{}}
 	var selected *fe.ShaderStage
 	for i := range s.Stages {
@@ -92,10 +96,15 @@ func CompileGLSL(s *fe.ShaderDecl, stage string) (string, error) {
 	}
 	e.line("#version 450")
 	for _, st := range s.Structs {
-		e.types[st.Name] = true
+		if !st.Interface {
+			e.types[st.Name] = true
+		}
 	}
 	for _, st := range s.Structs {
 		e.declare(st.Name, st.Span)
+		if st.Interface {
+			continue
+		}
 		e.line("struct %s {", e.ident(st.Name, st.Span))
 		e.indent++
 		for _, f := range st.Fields {
@@ -253,9 +262,9 @@ func CompileGLSL(s *fe.ShaderDecl, stage string) (string, error) {
 		e.emitTessControlLayout(selected)
 	} else if stage == "tess_evaluation" {
 		e.emitTessEvaluationLayout(selected)
-	} else if len(selected.Options) != 0 {
-		e.fail(selected.Span, "stage options are unsupported")
 	}
+	e.emitInterfaces(reflection)
+	e.ioActive = selected.Options["inputs"] != nil || selected.Options["outputs"] != nil
 	e.line("void main()")
 	e.block(selected.Body)
 	if e.err != nil {
@@ -402,10 +411,43 @@ func (e *glslEmitter) emitTessEvaluationLayout(s *fe.ShaderStage) {
 }
 
 type glslEmitter struct {
-	out          strings.Builder
-	indent       int
-	err          error
-	types, names map[string]bool
+	out             strings.Builder
+	indent          int
+	err             error
+	types, names    map[string]bool
+	ioActive        bool
+	inputs, outputs map[string]InterfaceVariable
+}
+
+func (e *glslEmitter) emitInterfaces(r *StageReflection) {
+	e.inputs = map[string]InterfaceVariable{}
+	e.outputs = map[string]InterfaceVariable{}
+	for _, group := range []struct {
+		direction string
+		variables []InterfaceVariable
+		target    map[string]InterfaceVariable
+	}{{"in", r.Inputs, e.inputs}, {"out", r.Outputs, e.outputs}} {
+		for _, v := range group.variables {
+			group.target[v.Name] = v
+			qualifier := ""
+			if r.Stage == "vertex" && group.direction == "out" || r.Stage == "fragment" && group.direction == "in" {
+				qualifier = v.Interpolation + " "
+				if v.Sampling != "" {
+					qualifier = v.Sampling + " " + qualifier
+				}
+			}
+			// Generated names never pass through ident(): the prefix is reserved to
+			// prevent collisions with source globals, locals and parameters.
+			name := "ig_interface_" + group.direction + "_" + v.Name
+			e.line("layout(location = %d) %s%s %s;", v.Location, qualifier, group.direction, e.fieldGenerated(v.Type, name))
+		}
+	}
+}
+func (e *glslEmitter) fieldGenerated(t, name string) string {
+	if elem, n, ok := arrayType(t); ok {
+		return fmt.Sprintf("%s %s[%d]", e.typ(elem, fe.Span{}), name, n)
+	}
+	return e.typ(t, fe.Span{}) + " " + name
 }
 
 func (e *glslEmitter) fail(sp fe.Span, format string, args ...any) {
@@ -419,6 +461,9 @@ func (e *glslEmitter) line(format string, args ...any) {
 	e.out.WriteByte('\n')
 }
 func (e *glslEmitter) ident(n string, sp fe.Span) string {
+	if strings.HasPrefix(n, "ig_interface_") {
+		e.fail(sp, "reserved generated identifier %s", n)
+	}
 	if n == "" {
 		e.fail(sp, "empty identifier")
 		return "invalid"
@@ -503,6 +548,9 @@ func (e *glslEmitter) stmt(s fe.Stmt) {
 	case *fe.Block:
 		e.block(s)
 	case *fe.VarDeclStmt:
+		if e.ioActive && (s.Name == "inputs" || s.Name == "outputs") {
+			e.fail(s.Span, "stage interface namespaces cannot be shadowed")
+		}
 		t, ok := s.Type.(*fe.TypeName)
 		if !ok || t.Optional || len(t.Args) > 0 || len(s.Attrs) > 0 {
 			e.fail(s.Span, "shader local requires an explicit GPU type")
@@ -577,6 +625,9 @@ func (e *glslEmitter) expr(x fe.Expr) string {
 			return strconv.FormatBool(x.Bool)
 		}
 	case *fe.IdentExpr:
+		if e.ioActive && (x.Name == "inputs" || x.Name == "outputs") {
+			e.fail(x.Span, "interface namespace requires a field access")
+		}
 		return e.ident(x.Name, x.Span)
 	case *fe.PathExpr:
 		return e.ident(x.Path.String(), x.Span)
@@ -593,12 +644,39 @@ func (e *glslEmitter) expr(x fe.Expr) string {
 		}
 		return "(" + e.expr(x.X) + " " + x.Op + " " + e.expr(x.Y) + ")"
 	case *fe.AssignExpr:
+		if e.ioActive {
+			var root func(fe.Expr) string
+			root = func(x fe.Expr) string {
+				switch x := x.(type) {
+				case *fe.IdentExpr:
+					return x.Name
+				case *fe.MemberExpr:
+					return root(x.X)
+				case *fe.IndexExpr:
+					return root(x.X)
+				}
+				return ""
+			}
+			if root(x.X) == "inputs" {
+				e.fail(x.Span, "stage inputs are read-only")
+			}
+		}
 		return "(" + e.expr(x.X) + " " + x.Op + " " + e.expr(x.Y) + ")"
 	case *fe.TernaryExpr:
 		return "(" + e.expr(x.Cond) + " ? " + e.expr(x.Then) + " : " + e.expr(x.Else) + ")"
 	case *fe.MemberExpr:
 		if x.Arrow {
 			e.fail(x.Span, "shader pointer members are unsupported")
+		}
+		if name, ok := x.X.(*fe.IdentExpr); ok && e.ioActive && (name.Name == "inputs" || name.Name == "outputs") {
+			fields, direction := e.inputs, "in"
+			if name.Name == "outputs" {
+				fields, direction = e.outputs, "out"
+			}
+			if _, ok := fields[x.Field]; !ok {
+				e.fail(x.Span, "unknown %s interface field %s", name.Name, x.Field)
+			}
+			return "ig_interface_" + direction + "_" + e.ident(x.Field, x.Span)
 		}
 		return e.expr(x.X) + "." + e.ident(x.Field, x.Span)
 	case *fe.IndexExpr:

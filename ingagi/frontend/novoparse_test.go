@@ -29,3 +29,20 @@ func TestNovoParseRejectsInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+func TestNovoParseShaderInterfaces(t *testing.T) {
+	source := `shader S {interface Inputs {@location(0) position:vec3;} vertex(inputs:Inputs) {gl_Position=vec4(inputs.position,1.0);} compute{}}
+	pipeline C {compute:S::compute;compute {groups:1;}}`
+	r := ParseConcrete(source)
+	if len(r.Errors) != 0 || !bytes.Contains(r.Tree, []byte("ShaderInterface")) {
+		t.Fatalf("%s: %v", r.Tree, r.Errors)
+	}
+	parsed := Parse(source)
+	if !parsed.OK() {
+		t.Fatal(parsed.Errors)
+	}
+	p := parsed.File.Decls[1].(*PipelineDecl)
+	if p.Stages["compute"].Last() != "compute" || p.Compute["groups"] == nil {
+		t.Fatal("compute reference/state ambiguity")
+	}
+}

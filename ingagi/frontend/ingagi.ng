@@ -201,8 +201,9 @@ interface_decl: visibility? "interface" IDENT "{" (func_decl | var_decl_stmt)* "
 shader_decl: visibility? "shader" IDENT ("(" shader_options? ")")? "{" shader_member* "}" => ShaderDecl;
 shader_options: shader_option ("," shader_option)* => ShaderOptions;
 shader_option: IDENT ":" expr => ShaderOption;
-shader_member: shader_struct | shader_const | shader_resource | shader_func | shader_stage | shader_spec => ShaderMember;
+shader_member: shader_struct | shader_interface | shader_const | shader_resource | shader_func | shader_stage | shader_spec => ShaderMember;
 shader_struct: "struct" IDENT "{" shader_field* "}" => ShaderStruct;
+shader_interface: "interface" IDENT "{" shader_field* "}" => ShaderInterface;
 shader_field: attr_list IDENT ":" shader_type ";" => ShaderField;
 shader_const: "const" IDENT ":" shader_type "=" expr ";" => ShaderConst;
 shader_spec: "specialize" IDENT ":" shader_type ("=" expr)? ";" => ShaderSpec;
@@ -222,7 +223,7 @@ shader_stage: ("vertex" | "fragment" | "compute" | "geometry" | "tess_control" |
 
 // --- pipelines ---
 pipeline_decl: visibility? "pipeline" IDENT "{" pipeline_member* "}" => PipelineDecl;
-pipeline_member: ("vertex" | "fragment" | "geometry" | "tess_control" | "tess_evaluation" | "mesh" | "task") ":" qualified_name ";" => PipelineStage
+pipeline_member: ("vertex" | "fragment" | "compute" | "geometry" | "tess_control" | "tess_evaluation" | "mesh" | "task") ":" qualified_name ";" => PipelineStage
               | "layout" ":" qualified_name ";" => PipelineLayout
               | "vertex_layout" ":" qualified_name ";" => PipelineVertexLayout
               | ("raster" | "depth" | "blend" | "target" | "compute") "{" state_assign* "}" => PipelineState;

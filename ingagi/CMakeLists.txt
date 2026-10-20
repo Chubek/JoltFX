@@ -85,7 +85,7 @@ install(FILES native_extension_api/Ingagi-Module.di DESTINATION "${CMAKE_INSTALL
 install(FILES native_extension_api/Ingagi-Module.rs DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/bindings" RENAME ingagi_module.rs)
 install(FILES native_extension_api/Ingagi-Module.java DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/bindings" RENAME IngagiModule.java)
 install(DIRECTORY compiler/targets/ DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/targets" FILES_MATCHING PATTERN "*.sexp")
-install(FILES README.md DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/docs")
+install(FILES README.md DEVELOPMENT.md DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/docs")
 install(FILES native_extension_api/README.md DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/docs" RENAME native-extension-api.md)
 
 if(INGAGI_BUILD_TESTS)

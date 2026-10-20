@@ -13,6 +13,7 @@ import (
 // world when the first argument is omitted.
 
 func registerBuiltins(vm *VM) {
+	registerProcedural(vm)
 	vm.builtins["print"] = bPrint
 	vm.builtins["len"] = bLen
 	vm.builtins["type"] = bType

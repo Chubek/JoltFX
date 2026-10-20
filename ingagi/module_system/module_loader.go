@@ -199,6 +199,11 @@ func (q *qualifier) walk(v reflect.Value, s map[string]bool) {
 			return
 		}
 		switch n := v.Interface().(type) {
+		case *fe.ShaderDecl:
+			// GPU declarations have their own namespace. Resource/interface/helper
+			// names and stage-option identifiers must not capture host declarations
+			// with the same spelling. The outer declaration name is qualified by Load.
+			return
 		case *fe.TypeName:
 			q.path(&n.Path, nil)
 			q.walk(reflect.ValueOf(n.Args), nil)

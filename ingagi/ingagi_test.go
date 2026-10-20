@@ -80,3 +80,23 @@ func TestCompileRejectsErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestProceduralEmbedding(t *testing.T) {
+	for _, source := range []string{
+		`fn main() -> float { return noise2(0.25,0.75,42); }`,
+		`fn main() -> string { let noise2 = |x: i64| -> string { return "local"; }; return noise2(1); }`,
+		`fn main() -> i64 { let m = mesh_cube(2); return len(m.vertices); }`,
+	} {
+		m, err := ingagi.Compile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		vm := rt.New()
+		if err = vm.LoadModule(m); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = vm.Call("main"); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

@@ -10,10 +10,14 @@ func TestTargetCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(specs) != 12 {
+	if len(specs) != 16 {
 		t.Fatalf("got %d targets", len(specs))
 	}
 	for _, spec := range specs {
+		implemented := spec.ID == "IngagiVM" || spec.ID == "QBE" || spec.ID == "WASM"
+		if (spec.Status == "implemented") != implemented {
+			t.Fatalf("false target capability: %+v", spec)
+		}
 		if err := spec.RequireArtifact(spec.Artifacts[0]); (err == nil) != (spec.Status == "implemented") {
 			t.Fatalf("%s: %v", spec.ID, err)
 		}

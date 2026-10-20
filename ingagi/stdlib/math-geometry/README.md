@@ -2,6 +2,10 @@
 
 Proposed Ingagi standard-library modules in this subsystem.
 
+The `noise` and `geometry` Go packages and procedural VM builtins implement a
+bounded subset today; see `ingagi/README.md` and `examples/procedural.ing`.
+They do not yet provide the full importable `std.*` module inventory below.
+
 ## `std.math`
 Constants, elementary functions, and numeric utilities.
 

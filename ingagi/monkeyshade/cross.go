@@ -2,6 +2,7 @@ package shader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,6 +36,13 @@ func CompileArtifact(ctx context.Context, s *fe.ShaderDecl, stage, format string
 	if format == "glsl" {
 		text, err := CompileGLSL(s, stage)
 		return []byte(text), err
+	}
+	if format == "reflect" {
+		r, err := Reflect(s, stage)
+		if err != nil {
+			return nil, err
+		}
+		return json.MarshalIndent(r, "", "  ")
 	}
 	var flags []string
 	switch format {

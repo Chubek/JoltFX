@@ -105,6 +105,7 @@ static const np_symbol_spec Ingagi_symbols[] = {
     {NP_NONTERMINAL, "shader_option", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "shader_member", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "shader_struct", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "shader_interface", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "shader_field", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "shader_const", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "shader_spec", "", 0, NP_ASSOC_NONE},
@@ -477,28 +478,29 @@ static const np_symbol_spec Ingagi_symbols[] = {
     {NP_NONTERMINAL, "__np_ebnf_236", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_237", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_238", "", 0, NP_ASSOC_NONE},
-    {NP_LITERAL, "__np_literal_114", "specialize", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_239", "", 0, NP_ASSOC_NONE},
+    {NP_LITERAL, "__np_literal_114", "specialize", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_240", "", 0, NP_ASSOC_NONE},
-    {NP_LITERAL, "__np_literal_115", "uniform", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_241", "", 0, NP_ASSOC_NONE},
+    {NP_LITERAL, "__np_literal_115", "uniform", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_242", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_243", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_244", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_245", "", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_116", "read", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_117", "write", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_118", "read_write", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_119", "storage", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_120", "buffer", 0, NP_ASSOC_NONE},
-    {NP_NONTERMINAL, "__np_ebnf_245", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_246", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_247", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_248", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_249", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_250", "", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_121", "comparison", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_122", "sampler", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_123", "storage_image", 0, NP_ASSOC_NONE},
-    {NP_NONTERMINAL, "__np_ebnf_250", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_251", "", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_124", "texture1d", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_125", "texture2d", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_126", "texture2d_array", 0, NP_ASSOC_NONE},
@@ -506,7 +508,6 @@ static const np_symbol_spec Ingagi_symbols[] = {
     {NP_LITERAL, "__np_literal_128", "texture_cube", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_129", "texture_cube_array", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_130", "texture2d_ms", 0, NP_ASSOC_NONE},
-    {NP_NONTERMINAL, "__np_ebnf_251", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_252", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_253", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_254", "", 0, NP_ASSOC_NONE},
@@ -518,6 +519,7 @@ static const np_symbol_spec Ingagi_symbols[] = {
     {NP_NONTERMINAL, "__np_ebnf_260", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_261", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_262", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_263", "", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_131", "vertex", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_132", "fragment", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_133", "compute", 0, NP_ASSOC_NONE},
@@ -526,29 +528,29 @@ static const np_symbol_spec Ingagi_symbols[] = {
     {NP_LITERAL, "__np_literal_136", "tess_evaluation", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_137", "mesh", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_138", "task", 0, NP_ASSOC_NONE},
-    {NP_NONTERMINAL, "__np_ebnf_263", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_264", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_265", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_266", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_267", "", 0, NP_ASSOC_NONE},
     {NP_NONTERMINAL, "__np_ebnf_268", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_269", "", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_139", "layout", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_140", "vertex_layout", 0, NP_ASSOC_NONE},
-    {NP_NONTERMINAL, "__np_ebnf_269", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_270", "", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_141", "raster", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_142", "depth", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_143", "blend", 0, NP_ASSOC_NONE},
     {NP_LITERAL, "__np_literal_144", "target", 0, NP_ASSOC_NONE},
-    {NP_NONTERMINAL, "__np_ebnf_270", "", 0, NP_ASSOC_NONE},
+    {NP_NONTERMINAL, "__np_ebnf_271", "", 0, NP_ASSOC_NONE},
 };
 static const int Ingagi_body_1[] = {1};
-static const int Ingagi_body_3[] = {159, 2};
-static const int Ingagi_body_5[] = {160, 3};
-static const int Ingagi_body_6[] = {158, 159, 160};
-static const int Ingagi_body_7[] = {161, 69, 162};
-static const int Ingagi_body_8[] = {166, 116};
-static const int Ingagi_body_10[] = {165};
-static const int Ingagi_body_11[] = {163, 69, 164, 162};
+static const int Ingagi_body_3[] = {160, 2};
+static const int Ingagi_body_5[] = {161, 3};
+static const int Ingagi_body_6[] = {159, 160, 161};
+static const int Ingagi_body_7[] = {162, 69, 163};
+static const int Ingagi_body_8[] = {167, 117};
+static const int Ingagi_body_10[] = {166};
+static const int Ingagi_body_11[] = {164, 69, 165, 163};
 static const int Ingagi_body_12[] = {5, 4};
 static const int Ingagi_body_13[] = {8};
 static const int Ingagi_body_14[] = {9};
@@ -561,249 +563,249 @@ static const int Ingagi_body_20[] = {79};
 static const int Ingagi_body_21[] = {94};
 static const int Ingagi_body_22[] = {95};
 static const int Ingagi_body_23[] = {97};
-static const int Ingagi_body_24[] = {113};
+static const int Ingagi_body_24[] = {114};
 static const int Ingagi_body_25[] = {96};
 static const int Ingagi_body_26[] = {12};
 static const int Ingagi_body_27[] = {11};
-static const int Ingagi_body_29[] = {167, 6};
-static const int Ingagi_body_30[] = {167};
+static const int Ingagi_body_29[] = {168, 6};
+static const int Ingagi_body_30[] = {168};
 static const int Ingagi_body_32[] = {45};
-static const int Ingagi_body_33[] = {156, 171, 172};
-static const int Ingagi_body_35[] = {170};
-static const int Ingagi_body_36[] = {168, 116, 169};
-static const int Ingagi_body_37[] = {173};
-static const int Ingagi_body_38[] = {174};
-static const int Ingagi_body_39[] = {175};
+static const int Ingagi_body_33[] = {157, 172, 173};
+static const int Ingagi_body_35[] = {171};
+static const int Ingagi_body_36[] = {169, 117, 170};
+static const int Ingagi_body_37[] = {174};
+static const int Ingagi_body_38[] = {175};
+static const int Ingagi_body_39[] = {176};
 static const int Ingagi_body_41[] = {7};
-static const int Ingagi_body_42[] = {133, 19};
-static const int Ingagi_body_44[] = {179};
-static const int Ingagi_body_45[] = {176, 177, 116, 178, 121, 28, 162};
+static const int Ingagi_body_42[] = {134, 19};
+static const int Ingagi_body_44[] = {180};
+static const int Ingagi_body_45[] = {177, 178, 117, 179, 122, 28, 163};
 static const int Ingagi_body_47[] = {7};
 static const int Ingagi_body_49[] = {10};
-static const int Ingagi_body_50[] = {180, 181, 116, 182, 121, 19, 162};
-static const int Ingagi_body_51[] = {185, 116};
-static const int Ingagi_body_53[] = {183, 184};
-static const int Ingagi_body_54[] = {141, 116, 183, 143};
+static const int Ingagi_body_50[] = {181, 182, 117, 183, 122, 19, 163};
+static const int Ingagi_body_51[] = {186, 117};
+static const int Ingagi_body_53[] = {184, 185};
+static const int Ingagi_body_54[] = {142, 117, 184, 144};
 static const int Ingagi_body_55[] = {24};
 static const int Ingagi_body_56[] = {23};
-static const int Ingagi_body_58[] = {188, 189};
-static const int Ingagi_body_59[] = {186, 119, 187, 188, 190};
-static const int Ingagi_body_60[] = {191, 19, 27};
+static const int Ingagi_body_58[] = {189, 190};
+static const int Ingagi_body_59[] = {187, 120, 188, 189, 191};
+static const int Ingagi_body_60[] = {192, 19, 27};
 static const int Ingagi_body_62[] = {7};
 static const int Ingagi_body_64[] = {10};
-static const int Ingagi_body_65[] = {133, 18};
-static const int Ingagi_body_67[] = {196};
-static const int Ingagi_body_69[] = {197, 14};
-static const int Ingagi_body_70[] = {192, 193, 116, 194, 195, 187, 197, 190};
+static const int Ingagi_body_65[] = {134, 18};
+static const int Ingagi_body_67[] = {197};
+static const int Ingagi_body_69[] = {198, 14};
+static const int Ingagi_body_70[] = {193, 194, 117, 195, 196, 188, 198, 191};
 static const int Ingagi_body_71[] = {23};
 static const int Ingagi_body_72[] = {24};
-static const int Ingagi_body_73[] = {5, 198};
+static const int Ingagi_body_73[] = {5, 199};
 static const int Ingagi_body_75[] = {7};
-static const int Ingagi_body_76[] = {133, 19};
-static const int Ingagi_body_78[] = {202};
-static const int Ingagi_body_80[] = {185};
-static const int Ingagi_body_81[] = {199, 200, 116, 201, 187, 16, 203, 190};
-static const int Ingagi_body_82[] = {185, 17};
-static const int Ingagi_body_84[] = {204, 205};
-static const int Ingagi_body_85[] = {17, 204};
-static const int Ingagi_body_86[] = {156, 18, 172};
-static const int Ingagi_body_88[] = {207};
-static const int Ingagi_body_89[] = {121, 28};
-static const int Ingagi_body_91[] = {209};
-static const int Ingagi_body_92[] = {116, 206, 208};
-static const int Ingagi_body_93[] = {185, 19};
-static const int Ingagi_body_95[] = {210, 211};
-static const int Ingagi_body_96[] = {19, 210};
-static const int Ingagi_body_98[] = {132};
-static const int Ingagi_body_99[] = {20, 212};
-static const int Ingagi_body_100[] = {157, 19, 162, 28, 213};
+static const int Ingagi_body_76[] = {134, 19};
+static const int Ingagi_body_78[] = {203};
+static const int Ingagi_body_80[] = {186};
+static const int Ingagi_body_81[] = {200, 201, 117, 202, 188, 16, 204, 191};
+static const int Ingagi_body_82[] = {186, 17};
+static const int Ingagi_body_84[] = {205, 206};
+static const int Ingagi_body_85[] = {17, 205};
+static const int Ingagi_body_86[] = {157, 18, 173};
+static const int Ingagi_body_88[] = {208};
+static const int Ingagi_body_89[] = {122, 28};
+static const int Ingagi_body_91[] = {210};
+static const int Ingagi_body_92[] = {117, 207, 209};
+static const int Ingagi_body_93[] = {186, 19};
+static const int Ingagi_body_95[] = {211, 212};
+static const int Ingagi_body_96[] = {19, 211};
+static const int Ingagi_body_98[] = {133};
+static const int Ingagi_body_99[] = {20, 213};
+static const int Ingagi_body_100[] = {158, 19, 163, 28, 214};
 static const int Ingagi_body_102[] = {18};
-static const int Ingagi_body_103[] = {156, 214, 172};
+static const int Ingagi_body_103[] = {157, 215, 173};
 static const int Ingagi_body_105[] = {22};
-static const int Ingagi_body_106[] = {155, 19};
-static const int Ingagi_body_108[] = {218};
-static const int Ingagi_body_109[] = {215, 156, 216, 172, 217};
-static const int Ingagi_body_111[] = {220};
-static const int Ingagi_body_112[] = {138, 219, 19};
-static const int Ingagi_body_114[] = {220};
-static const int Ingagi_body_115[] = {149, 221, 19};
-static const int Ingagi_body_116[] = {224, 116};
-static const int Ingagi_body_118[] = {222, 223};
+static const int Ingagi_body_106[] = {156, 19};
+static const int Ingagi_body_108[] = {219};
+static const int Ingagi_body_109[] = {216, 157, 217, 173, 218};
+static const int Ingagi_body_111[] = {221};
+static const int Ingagi_body_112[] = {139, 220, 19};
+static const int Ingagi_body_114[] = {221};
+static const int Ingagi_body_115[] = {150, 222, 19};
+static const int Ingagi_body_116[] = {225, 117};
+static const int Ingagi_body_118[] = {223, 224};
 static const int Ingagi_body_120[] = {21};
-static const int Ingagi_body_121[] = {116, 222, 225};
-static const int Ingagi_body_122[] = {185, 19};
-static const int Ingagi_body_124[] = {226, 227};
-static const int Ingagi_body_125[] = {141, 19, 226, 143};
-static const int Ingagi_body_126[] = {185, 19};
-static const int Ingagi_body_128[] = {228, 229};
-static const int Ingagi_body_129[] = {19, 228};
-static const int Ingagi_body_130[] = {232};
-static const int Ingagi_body_131[] = {233};
-static const int Ingagi_body_133[] = {231};
-static const int Ingagi_body_134[] = {133, 19};
-static const int Ingagi_body_136[] = {235};
-static const int Ingagi_body_137[] = {121, 28};
-static const int Ingagi_body_139[] = {237};
-static const int Ingagi_body_140[] = {5, 230, 116, 234, 236, 162};
+static const int Ingagi_body_121[] = {117, 223, 226};
+static const int Ingagi_body_122[] = {186, 19};
+static const int Ingagi_body_124[] = {227, 228};
+static const int Ingagi_body_125[] = {142, 19, 227, 144};
+static const int Ingagi_body_126[] = {186, 19};
+static const int Ingagi_body_128[] = {229, 230};
+static const int Ingagi_body_129[] = {19, 229};
+static const int Ingagi_body_130[] = {233};
+static const int Ingagi_body_131[] = {234};
+static const int Ingagi_body_133[] = {232};
+static const int Ingagi_body_134[] = {134, 19};
+static const int Ingagi_body_136[] = {236};
+static const int Ingagi_body_137[] = {122, 28};
+static const int Ingagi_body_139[] = {238};
+static const int Ingagi_body_140[] = {5, 231, 117, 235, 237, 163};
 static const int Ingagi_body_142[] = {7};
-static const int Ingagi_body_144[] = {240};
+static const int Ingagi_body_144[] = {241};
 static const int Ingagi_body_146[] = {10};
 static const int Ingagi_body_148[] = {25};
-static const int Ingagi_body_149[] = {155, 19};
-static const int Ingagi_body_151[] = {244};
+static const int Ingagi_body_149[] = {156, 19};
+static const int Ingagi_body_151[] = {245};
 static const int Ingagi_body_152[] = {27};
-static const int Ingagi_body_153[] = {162};
-static const int Ingagi_body_154[] = {238, 239, 215, 116, 241, 156, 242, 172, 243, 245};
-static const int Ingagi_body_155[] = {185, 26};
-static const int Ingagi_body_157[] = {246, 247};
-static const int Ingagi_body_159[] = {185};
-static const int Ingagi_body_160[] = {26, 246, 248};
-static const int Ingagi_body_162[] = {220};
-static const int Ingagi_body_163[] = {121, 28};
-static const int Ingagi_body_165[] = {251};
-static const int Ingagi_body_166[] = {5, 249, 116, 133, 19, 250};
-static const int Ingagi_body_168[] = {252, 55};
+static const int Ingagi_body_153[] = {163};
+static const int Ingagi_body_154[] = {239, 240, 216, 117, 242, 157, 243, 173, 244, 246};
+static const int Ingagi_body_155[] = {186, 26};
+static const int Ingagi_body_157[] = {247, 248};
+static const int Ingagi_body_159[] = {186};
+static const int Ingagi_body_160[] = {26, 247, 249};
+static const int Ingagi_body_162[] = {221};
+static const int Ingagi_body_163[] = {122, 28};
+static const int Ingagi_body_165[] = {252};
+static const int Ingagi_body_166[] = {5, 250, 117, 134, 19, 251};
+static const int Ingagi_body_168[] = {253, 55};
 static const int Ingagi_body_170[] = {28};
-static const int Ingagi_body_171[] = {187, 252, 253, 190};
+static const int Ingagi_body_171[] = {188, 253, 254, 191};
 static const int Ingagi_body_172[] = {29};
 static const int Ingagi_body_173[] = {30, 29};
-static const int Ingagi_body_175[] = {255};
-static const int Ingagi_body_176[] = {31, 254};
-static const int Ingagi_body_177[] = {121};
-static const int Ingagi_body_178[] = {122};
-static const int Ingagi_body_179[] = {123};
-static const int Ingagi_body_180[] = {124};
-static const int Ingagi_body_181[] = {125};
-static const int Ingagi_body_182[] = {126};
-static const int Ingagi_body_183[] = {127};
-static const int Ingagi_body_184[] = {128};
-static const int Ingagi_body_185[] = {129};
-static const int Ingagi_body_186[] = {130};
-static const int Ingagi_body_187[] = {131};
-static const int Ingagi_body_188[] = {132, 28, 133, 28};
-static const int Ingagi_body_190[] = {257};
-static const int Ingagi_body_191[] = {32, 256};
-static const int Ingagi_body_192[] = {134, 33};
-static const int Ingagi_body_194[] = {258, 259};
-static const int Ingagi_body_195[] = {33, 258};
-static const int Ingagi_body_196[] = {135, 34};
-static const int Ingagi_body_198[] = {260, 261};
-static const int Ingagi_body_199[] = {34, 260};
-static const int Ingagi_body_200[] = {136, 35};
-static const int Ingagi_body_202[] = {262, 263};
-static const int Ingagi_body_203[] = {35, 262};
-static const int Ingagi_body_204[] = {137, 35};
-static const int Ingagi_body_206[] = {264, 265};
-static const int Ingagi_body_207[] = {36, 264};
-static const int Ingagi_body_208[] = {138, 37};
-static const int Ingagi_body_210[] = {266, 267};
-static const int Ingagi_body_211[] = {37, 266};
-static const int Ingagi_body_212[] = {139};
-static const int Ingagi_body_213[] = {140};
-static const int Ingagi_body_214[] = {270, 38};
-static const int Ingagi_body_216[] = {268, 269};
-static const int Ingagi_body_217[] = {38, 268};
-static const int Ingagi_body_218[] = {141};
-static const int Ingagi_body_219[] = {142};
-static const int Ingagi_body_220[] = {143};
-static const int Ingagi_body_221[] = {144};
-static const int Ingagi_body_222[] = {273, 39};
-static const int Ingagi_body_224[] = {271, 272};
-static const int Ingagi_body_225[] = {39, 271};
-static const int Ingagi_body_226[] = {145};
-static const int Ingagi_body_227[] = {146};
-static const int Ingagi_body_228[] = {276, 40};
-static const int Ingagi_body_230[] = {274, 275};
-static const int Ingagi_body_231[] = {40, 274};
-static const int Ingagi_body_232[] = {147};
-static const int Ingagi_body_233[] = {148};
-static const int Ingagi_body_234[] = {279, 41};
-static const int Ingagi_body_236[] = {277, 278};
-static const int Ingagi_body_237[] = {41, 277};
-static const int Ingagi_body_238[] = {149};
-static const int Ingagi_body_239[] = {150};
-static const int Ingagi_body_240[] = {151};
-static const int Ingagi_body_241[] = {282, 42};
-static const int Ingagi_body_243[] = {280, 281};
-static const int Ingagi_body_244[] = {42, 280};
-static const int Ingagi_body_245[] = {152};
-static const int Ingagi_body_246[] = {153};
-static const int Ingagi_body_247[] = {148};
-static const int Ingagi_body_248[] = {147};
-static const int Ingagi_body_249[] = {149};
-static const int Ingagi_body_250[] = {138};
-static const int Ingagi_body_251[] = {285};
-static const int Ingagi_body_253[] = {283, 284};
-static const int Ingagi_body_254[] = {283, 43};
-static const int Ingagi_body_256[] = {286, 44};
-static const int Ingagi_body_257[] = {47, 286};
+static const int Ingagi_body_175[] = {256};
+static const int Ingagi_body_176[] = {31, 255};
+static const int Ingagi_body_177[] = {122};
+static const int Ingagi_body_178[] = {123};
+static const int Ingagi_body_179[] = {124};
+static const int Ingagi_body_180[] = {125};
+static const int Ingagi_body_181[] = {126};
+static const int Ingagi_body_182[] = {127};
+static const int Ingagi_body_183[] = {128};
+static const int Ingagi_body_184[] = {129};
+static const int Ingagi_body_185[] = {130};
+static const int Ingagi_body_186[] = {131};
+static const int Ingagi_body_187[] = {132};
+static const int Ingagi_body_188[] = {133, 28, 134, 28};
+static const int Ingagi_body_190[] = {258};
+static const int Ingagi_body_191[] = {32, 257};
+static const int Ingagi_body_192[] = {135, 33};
+static const int Ingagi_body_194[] = {259, 260};
+static const int Ingagi_body_195[] = {33, 259};
+static const int Ingagi_body_196[] = {136, 34};
+static const int Ingagi_body_198[] = {261, 262};
+static const int Ingagi_body_199[] = {34, 261};
+static const int Ingagi_body_200[] = {137, 35};
+static const int Ingagi_body_202[] = {263, 264};
+static const int Ingagi_body_203[] = {35, 263};
+static const int Ingagi_body_204[] = {138, 35};
+static const int Ingagi_body_206[] = {265, 266};
+static const int Ingagi_body_207[] = {36, 265};
+static const int Ingagi_body_208[] = {139, 37};
+static const int Ingagi_body_210[] = {267, 268};
+static const int Ingagi_body_211[] = {37, 267};
+static const int Ingagi_body_212[] = {140};
+static const int Ingagi_body_213[] = {141};
+static const int Ingagi_body_214[] = {271, 38};
+static const int Ingagi_body_216[] = {269, 270};
+static const int Ingagi_body_217[] = {38, 269};
+static const int Ingagi_body_218[] = {142};
+static const int Ingagi_body_219[] = {143};
+static const int Ingagi_body_220[] = {144};
+static const int Ingagi_body_221[] = {145};
+static const int Ingagi_body_222[] = {274, 39};
+static const int Ingagi_body_224[] = {272, 273};
+static const int Ingagi_body_225[] = {39, 272};
+static const int Ingagi_body_226[] = {146};
+static const int Ingagi_body_227[] = {147};
+static const int Ingagi_body_228[] = {277, 40};
+static const int Ingagi_body_230[] = {275, 276};
+static const int Ingagi_body_231[] = {40, 275};
+static const int Ingagi_body_232[] = {148};
+static const int Ingagi_body_233[] = {149};
+static const int Ingagi_body_234[] = {280, 41};
+static const int Ingagi_body_236[] = {278, 279};
+static const int Ingagi_body_237[] = {41, 278};
+static const int Ingagi_body_238[] = {150};
+static const int Ingagi_body_239[] = {151};
+static const int Ingagi_body_240[] = {152};
+static const int Ingagi_body_241[] = {283, 42};
+static const int Ingagi_body_243[] = {281, 282};
+static const int Ingagi_body_244[] = {42, 281};
+static const int Ingagi_body_245[] = {153};
+static const int Ingagi_body_246[] = {154};
+static const int Ingagi_body_247[] = {149};
+static const int Ingagi_body_248[] = {148};
+static const int Ingagi_body_249[] = {150};
+static const int Ingagi_body_250[] = {139};
+static const int Ingagi_body_251[] = {286};
+static const int Ingagi_body_253[] = {284, 285};
+static const int Ingagi_body_254[] = {284, 43};
+static const int Ingagi_body_256[] = {287, 44};
+static const int Ingagi_body_257[] = {47, 287};
 static const int Ingagi_body_259[] = {45};
-static const int Ingagi_body_260[] = {156, 287, 172};
-static const int Ingagi_body_261[] = {154};
-static const int Ingagi_body_262[] = {155};
-static const int Ingagi_body_263[] = {288, 116};
-static const int Ingagi_body_264[] = {157, 28, 213};
-static const int Ingagi_body_265[] = {132};
-static const int Ingagi_body_266[] = {185, 46};
-static const int Ingagi_body_268[] = {289, 290};
-static const int Ingagi_body_270[] = {185};
-static const int Ingagi_body_271[] = {46, 289, 291};
-static const int Ingagi_body_272[] = {116, 133};
-static const int Ingagi_body_274[] = {293};
-static const int Ingagi_body_275[] = {292, 28};
+static const int Ingagi_body_260[] = {157, 288, 173};
+static const int Ingagi_body_261[] = {155};
+static const int Ingagi_body_262[] = {156};
+static const int Ingagi_body_263[] = {289, 117};
+static const int Ingagi_body_264[] = {158, 28, 214};
+static const int Ingagi_body_265[] = {133};
+static const int Ingagi_body_266[] = {186, 46};
+static const int Ingagi_body_268[] = {290, 291};
+static const int Ingagi_body_270[] = {186};
+static const int Ingagi_body_271[] = {46, 290, 292};
+static const int Ingagi_body_272[] = {117, 134};
+static const int Ingagi_body_274[] = {294};
+static const int Ingagi_body_275[] = {293, 28};
 static const int Ingagi_body_276[] = {54};
-static const int Ingagi_body_277[] = {116};
+static const int Ingagi_body_277[] = {117};
 static const int Ingagi_body_278[] = {69};
-static const int Ingagi_body_279[] = {294};
-static const int Ingagi_body_280[] = {156, 28, 172};
+static const int Ingagi_body_279[] = {295};
+static const int Ingagi_body_280[] = {157, 28, 173};
 static const int Ingagi_body_282[] = {45};
-static const int Ingagi_body_283[] = {156, 28, 185, 295, 172};
+static const int Ingagi_body_283[] = {157, 28, 186, 296, 173};
 static const int Ingagi_body_285[] = {45};
-static const int Ingagi_body_286[] = {157, 296, 213};
-static const int Ingagi_body_287[] = {157, 28, 162, 28, 213};
+static const int Ingagi_body_286[] = {158, 297, 214};
+static const int Ingagi_body_287[] = {158, 28, 163, 28, 214};
 static const int Ingagi_body_289[] = {48};
-static const int Ingagi_body_290[] = {69, 187, 297, 190};
+static const int Ingagi_body_290[] = {69, 188, 298, 191};
 static const int Ingagi_body_291[] = {50};
 static const int Ingagi_body_292[] = {27};
 static const int Ingagi_body_293[] = {53};
-static const int Ingagi_body_294[] = {301, 302};
-static const int Ingagi_body_296[] = {300};
-static const int Ingagi_body_297[] = {298, 28, 27, 299};
-static const int Ingagi_body_298[] = {303, 28, 187, 51, 190};
-static const int Ingagi_body_299[] = {185, 49};
-static const int Ingagi_body_301[] = {304, 305};
-static const int Ingagi_body_303[] = {185};
-static const int Ingagi_body_304[] = {49, 304, 306};
-static const int Ingagi_body_305[] = {133, 28};
-static const int Ingagi_body_307[] = {308};
-static const int Ingagi_body_308[] = {116, 307};
+static const int Ingagi_body_294[] = {302, 303};
+static const int Ingagi_body_296[] = {301};
+static const int Ingagi_body_297[] = {299, 28, 27, 300};
+static const int Ingagi_body_298[] = {304, 28, 188, 51, 191};
+static const int Ingagi_body_299[] = {186, 49};
+static const int Ingagi_body_301[] = {305, 306};
+static const int Ingagi_body_303[] = {186};
+static const int Ingagi_body_304[] = {49, 305, 307};
+static const int Ingagi_body_305[] = {134, 28};
+static const int Ingagi_body_307[] = {309};
+static const int Ingagi_body_308[] = {117, 308};
 static const int Ingagi_body_310[] = {25};
-static const int Ingagi_body_311[] = {155, 19};
-static const int Ingagi_body_313[] = {311};
+static const int Ingagi_body_311[] = {156, 19};
+static const int Ingagi_body_313[] = {312};
 static const int Ingagi_body_314[] = {28};
 static const int Ingagi_body_315[] = {27};
-static const int Ingagi_body_316[] = {136, 309, 136, 310, 312};
-static const int Ingagi_body_317[] = {185, 52};
-static const int Ingagi_body_319[] = {313, 314};
-static const int Ingagi_body_321[] = {185};
-static const int Ingagi_body_322[] = {52, 313, 315};
-static const int Ingagi_body_323[] = {298, 28};
-static const int Ingagi_body_325[] = {317};
+static const int Ingagi_body_316[] = {137, 310, 137, 311, 313};
+static const int Ingagi_body_317[] = {186, 52};
+static const int Ingagi_body_319[] = {314, 315};
+static const int Ingagi_body_321[] = {186};
+static const int Ingagi_body_322[] = {52, 314, 316};
+static const int Ingagi_body_323[] = {299, 28};
+static const int Ingagi_body_325[] = {318};
 static const int Ingagi_body_326[] = {28};
 static const int Ingagi_body_327[] = {27};
-static const int Ingagi_body_328[] = {66, 316, 318, 319};
+static const int Ingagi_body_328[] = {66, 317, 319, 320};
 static const int Ingagi_body_329[] = {27};
 static const int Ingagi_body_330[] = {53};
-static const int Ingagi_body_331[] = {301, 322};
-static const int Ingagi_body_333[] = {321};
-static const int Ingagi_body_334[] = {298, 28, 27, 320};
-static const int Ingagi_body_335[] = {117};
-static const int Ingagi_body_336[] = {118};
-static const int Ingagi_body_337[] = {323};
-static const int Ingagi_body_338[] = {324};
-static const int Ingagi_body_339[] = {119};
-static const int Ingagi_body_340[] = {120};
-static const int Ingagi_body_341[] = {325};
+static const int Ingagi_body_331[] = {302, 323};
+static const int Ingagi_body_333[] = {322};
+static const int Ingagi_body_334[] = {299, 28, 27, 321};
+static const int Ingagi_body_335[] = {118};
+static const int Ingagi_body_336[] = {119};
+static const int Ingagi_body_337[] = {324};
+static const int Ingagi_body_338[] = {325};
+static const int Ingagi_body_339[] = {120};
+static const int Ingagi_body_340[] = {121};
+static const int Ingagi_body_341[] = {326};
 static const int Ingagi_body_342[] = {27};
 static const int Ingagi_body_343[] = {23};
 static const int Ingagi_body_344[] = {56};
@@ -822,289 +824,293 @@ static const int Ingagi_body_356[] = {92};
 static const int Ingagi_body_357[] = {93};
 static const int Ingagi_body_358[] = {24};
 static const int Ingagi_body_359[] = {8};
-static const int Ingagi_body_360[] = {28, 162};
+static const int Ingagi_body_360[] = {28, 163};
 static const int Ingagi_body_362[] = {28};
-static const int Ingagi_body_363[] = {326, 327, 162};
-static const int Ingagi_body_365[] = {116};
+static const int Ingagi_body_363[] = {327, 328, 163};
+static const int Ingagi_body_365[] = {117};
 static const int Ingagi_body_367[] = {28};
-static const int Ingagi_body_368[] = {328, 329, 330, 162};
-static const int Ingagi_body_370[] = {116};
-static const int Ingagi_body_371[] = {331, 332, 162};
+static const int Ingagi_body_368[] = {329, 330, 331, 163};
+static const int Ingagi_body_370[] = {117};
+static const int Ingagi_body_371[] = {332, 333, 163};
 static const int Ingagi_body_372[] = {27};
 static const int Ingagi_body_373[] = {59};
-static const int Ingagi_body_374[] = {301, 335};
-static const int Ingagi_body_376[] = {334};
-static const int Ingagi_body_377[] = {298, 28, 27, 333};
-static const int Ingagi_body_378[] = {336, 28, 27};
-static const int Ingagi_body_379[] = {337, 66, 338, 28, 27};
-static const int Ingagi_body_380[] = {339, 27};
-static const int Ingagi_body_381[] = {303, 28, 187, 51, 190};
-static const int Ingagi_body_382[] = {340, 27};
-static const int Ingagi_body_383[] = {341, 27};
-static const int Ingagi_body_384[] = {342};
-static const int Ingagi_body_385[] = {116};
+static const int Ingagi_body_374[] = {302, 336};
+static const int Ingagi_body_376[] = {335};
+static const int Ingagi_body_377[] = {299, 28, 27, 334};
+static const int Ingagi_body_378[] = {337, 28, 27};
+static const int Ingagi_body_379[] = {338, 66, 339, 28, 27};
+static const int Ingagi_body_380[] = {340, 27};
+static const int Ingagi_body_381[] = {304, 28, 188, 51, 191};
+static const int Ingagi_body_382[] = {341, 27};
+static const int Ingagi_body_383[] = {342, 27};
+static const int Ingagi_body_384[] = {343};
+static const int Ingagi_body_385[] = {117};
 static const int Ingagi_body_386[] = {54};
 static const int Ingagi_body_387[] = {69};
-static const int Ingagi_body_388[] = {185, 66};
-static const int Ingagi_body_390[] = {343, 344};
-static const int Ingagi_body_392[] = {185};
-static const int Ingagi_body_393[] = {156, 66, 343, 345, 172};
+static const int Ingagi_body_388[] = {186, 66};
+static const int Ingagi_body_390[] = {344, 345};
+static const int Ingagi_body_392[] = {186};
+static const int Ingagi_body_393[] = {157, 66, 344, 346, 173};
 static const int Ingagi_body_395[] = {67};
-static const int Ingagi_body_396[] = {69, 187, 346, 190};
-static const int Ingagi_body_397[] = {185, 66};
-static const int Ingagi_body_399[] = {349, 350};
-static const int Ingagi_body_400[] = {66, 349};
-static const int Ingagi_body_402[] = {348};
-static const int Ingagi_body_404[] = {116};
-static const int Ingagi_body_405[] = {353, 354};
-static const int Ingagi_body_407[] = {352};
-static const int Ingagi_body_408[] = {157, 347, 351, 213};
-static const int Ingagi_body_409[] = {66, 136, 66};
-static const int Ingagi_body_410[] = {185, 68};
-static const int Ingagi_body_412[] = {355, 356};
-static const int Ingagi_body_414[] = {185};
-static const int Ingagi_body_415[] = {68, 355, 357};
-static const int Ingagi_body_416[] = {133, 66};
-static const int Ingagi_body_418[] = {359};
-static const int Ingagi_body_419[] = {116, 358};
-static const int Ingagi_body_420[] = {224, 116};
-static const int Ingagi_body_422[] = {360, 361};
-static const int Ingagi_body_423[] = {116, 360};
+static const int Ingagi_body_396[] = {69, 188, 347, 191};
+static const int Ingagi_body_397[] = {186, 66};
+static const int Ingagi_body_399[] = {350, 351};
+static const int Ingagi_body_400[] = {66, 350};
+static const int Ingagi_body_402[] = {349};
+static const int Ingagi_body_404[] = {117};
+static const int Ingagi_body_405[] = {354, 355};
+static const int Ingagi_body_407[] = {353};
+static const int Ingagi_body_408[] = {158, 348, 352, 214};
+static const int Ingagi_body_409[] = {66, 137, 66};
+static const int Ingagi_body_410[] = {186, 68};
+static const int Ingagi_body_412[] = {356, 357};
+static const int Ingagi_body_414[] = {186};
+static const int Ingagi_body_415[] = {68, 356, 358};
+static const int Ingagi_body_416[] = {134, 66};
+static const int Ingagi_body_418[] = {360};
+static const int Ingagi_body_419[] = {117, 359};
+static const int Ingagi_body_420[] = {225, 117};
+static const int Ingagi_body_422[] = {361, 362};
+static const int Ingagi_body_423[] = {117, 361};
 static const int Ingagi_body_425[] = {7};
 static const int Ingagi_body_427[] = {10};
-static const int Ingagi_body_428[] = {133, 19};
-static const int Ingagi_body_430[] = {366};
-static const int Ingagi_body_432[] = {367, 71};
-static const int Ingagi_body_433[] = {362, 363, 116, 364, 365, 187, 367, 190};
+static const int Ingagi_body_428[] = {134, 19};
+static const int Ingagi_body_430[] = {367};
+static const int Ingagi_body_432[] = {368, 71};
+static const int Ingagi_body_433[] = {363, 364, 117, 365, 366, 188, 368, 191};
 static const int Ingagi_body_434[] = {72};
 static const int Ingagi_body_435[] = {24};
-static const int Ingagi_body_436[] = {5, 368};
-static const int Ingagi_body_437[] = {121, 28};
-static const int Ingagi_body_439[] = {370};
-static const int Ingagi_body_440[] = {116, 133, 19, 369, 162};
+static const int Ingagi_body_436[] = {5, 369};
+static const int Ingagi_body_437[] = {122, 28};
+static const int Ingagi_body_439[] = {371};
+static const int Ingagi_body_440[] = {117, 134, 19, 370, 163};
 static const int Ingagi_body_442[] = {7};
 static const int Ingagi_body_444[] = {10};
-static const int Ingagi_body_446[] = {374, 74};
-static const int Ingagi_body_447[] = {371, 372, 116, 373, 187, 374, 190};
+static const int Ingagi_body_446[] = {375, 74};
+static const int Ingagi_body_447[] = {372, 373, 117, 374, 188, 375, 191};
 static const int Ingagi_body_448[] = {75};
 static const int Ingagi_body_449[] = {76};
 static const int Ingagi_body_450[] = {77};
 static const int Ingagi_body_452[] = {48};
-static const int Ingagi_body_453[] = {187, 377, 190};
-static const int Ingagi_body_455[] = {376};
-static const int Ingagi_body_456[] = {69, 375, 162};
-static const int Ingagi_body_457[] = {378, 116, 133, 78, 162};
-static const int Ingagi_body_458[] = {121, 28};
-static const int Ingagi_body_460[] = {380};
-static const int Ingagi_body_461[] = {116, 133, 19, 379, 162};
+static const int Ingagi_body_453[] = {188, 378, 191};
+static const int Ingagi_body_455[] = {377};
+static const int Ingagi_body_456[] = {69, 376, 163};
+static const int Ingagi_body_457[] = {379, 117, 134, 78, 163};
+static const int Ingagi_body_458[] = {122, 28};
+static const int Ingagi_body_460[] = {381};
+static const int Ingagi_body_461[] = {117, 134, 19, 380, 163};
 static const int Ingagi_body_463[] = {45};
-static const int Ingagi_body_464[] = {69, 156, 381, 172};
+static const int Ingagi_body_464[] = {69, 157, 382, 173};
 static const int Ingagi_body_466[] = {48};
-static const int Ingagi_body_467[] = {69, 187, 382, 190};
+static const int Ingagi_body_467[] = {69, 188, 383, 191};
 static const int Ingagi_body_468[] = {69};
 static const int Ingagi_body_470[] = {7};
 static const int Ingagi_body_472[] = {10};
-static const int Ingagi_body_474[] = {386, 80};
-static const int Ingagi_body_475[] = {383, 384, 116, 385, 187, 386, 190};
+static const int Ingagi_body_474[] = {387, 80};
+static const int Ingagi_body_475[] = {384, 385, 117, 386, 188, 387, 191};
 static const int Ingagi_body_476[] = {81};
 static const int Ingagi_body_477[] = {85};
 static const int Ingagi_body_478[] = {87};
 static const int Ingagi_body_479[] = {24};
 static const int Ingagi_body_480[] = {23};
 static const int Ingagi_body_482[] = {82};
-static const int Ingagi_body_483[] = {387, 116, 388, 162};
+static const int Ingagi_body_483[] = {388, 117, 389, 163};
 static const int Ingagi_body_485[] = {83};
 static const int Ingagi_body_487[] = {83};
-static const int Ingagi_body_488[] = {393, 156, 394, 172};
-static const int Ingagi_body_490[] = {392};
+static const int Ingagi_body_488[] = {394, 157, 395, 173};
+static const int Ingagi_body_490[] = {393};
 static const int Ingagi_body_492[] = {83};
-static const int Ingagi_body_493[] = {397, 156, 398, 172};
-static const int Ingagi_body_495[] = {396};
-static const int Ingagi_body_496[] = {389, 156, 390, 172, 391, 395};
+static const int Ingagi_body_493[] = {398, 157, 399, 173};
+static const int Ingagi_body_495[] = {397};
+static const int Ingagi_body_496[] = {390, 157, 391, 173, 392, 396};
 static const int Ingagi_body_498[] = {83};
 static const int Ingagi_body_500[] = {83};
-static const int Ingagi_body_501[] = {397, 156, 402, 172};
-static const int Ingagi_body_503[] = {401};
-static const int Ingagi_body_504[] = {393, 156, 399, 172, 400};
+static const int Ingagi_body_501[] = {398, 157, 403, 173};
+static const int Ingagi_body_503[] = {402};
+static const int Ingagi_body_504[] = {394, 157, 400, 173, 401};
 static const int Ingagi_body_506[] = {83};
-static const int Ingagi_body_507[] = {397, 156, 403, 172};
-static const int Ingagi_body_508[] = {185, 84};
-static const int Ingagi_body_510[] = {404, 405};
-static const int Ingagi_body_511[] = {84, 404};
-static const int Ingagi_body_513[] = {220};
-static const int Ingagi_body_514[] = {138, 408};
-static const int Ingagi_body_516[] = {407};
-static const int Ingagi_body_517[] = {166, 116};
-static const int Ingagi_body_519[] = {410};
-static const int Ingagi_body_520[] = {406, 69, 409};
+static const int Ingagi_body_507[] = {398, 157, 404, 173};
+static const int Ingagi_body_508[] = {186, 84};
+static const int Ingagi_body_510[] = {405, 406};
+static const int Ingagi_body_511[] = {84, 405};
+static const int Ingagi_body_513[] = {221};
+static const int Ingagi_body_514[] = {139, 409};
+static const int Ingagi_body_516[] = {408};
+static const int Ingagi_body_517[] = {167, 117};
+static const int Ingagi_body_519[] = {411};
+static const int Ingagi_body_520[] = {407, 69, 410};
 static const int Ingagi_body_522[] = {25};
-static const int Ingagi_body_523[] = {86, 156, 411, 172, 27};
-static const int Ingagi_body_524[] = {412};
-static const int Ingagi_body_525[] = {413};
-static const int Ingagi_body_526[] = {414};
-static const int Ingagi_body_527[] = {415};
-static const int Ingagi_body_528[] = {416};
-static const int Ingagi_body_529[] = {417};
-static const int Ingagi_body_530[] = {418};
-static const int Ingagi_body_531[] = {419};
-static const int Ingagi_body_532[] = {420, 69, 162};
-static const int Ingagi_body_533[] = {421, 69, 162};
-static const int Ingagi_body_534[] = {323};
-static const int Ingagi_body_535[] = {324};
-static const int Ingagi_body_536[] = {422, 423, 162};
+static const int Ingagi_body_523[] = {86, 157, 412, 173, 27};
+static const int Ingagi_body_524[] = {413};
+static const int Ingagi_body_525[] = {414};
+static const int Ingagi_body_526[] = {415};
+static const int Ingagi_body_527[] = {416};
+static const int Ingagi_body_528[] = {417};
+static const int Ingagi_body_529[] = {418};
+static const int Ingagi_body_530[] = {419};
+static const int Ingagi_body_531[] = {420};
+static const int Ingagi_body_532[] = {421, 69, 163};
+static const int Ingagi_body_533[] = {422, 69, 163};
+static const int Ingagi_body_534[] = {324};
+static const int Ingagi_body_535[] = {325};
+static const int Ingagi_body_536[] = {423, 424, 163};
 static const int Ingagi_body_538[] = {89};
-static const int Ingagi_body_539[] = {337, 424, 156, 425, 172, 338, 28, 27};
-static const int Ingagi_body_540[] = {185, 90};
-static const int Ingagi_body_542[] = {426, 427};
-static const int Ingagi_body_543[] = {90, 426};
-static const int Ingagi_body_545[] = {220};
-static const int Ingagi_body_546[] = {138, 430};
-static const int Ingagi_body_548[] = {429};
-static const int Ingagi_body_549[] = {166, 116};
-static const int Ingagi_body_551[] = {432};
-static const int Ingagi_body_552[] = {428, 116, 431};
-static const int Ingagi_body_553[] = {435};
-static const int Ingagi_body_554[] = {436};
-static const int Ingagi_body_555[] = {133, 116};
-static const int Ingagi_body_557[] = {438};
+static const int Ingagi_body_539[] = {338, 425, 157, 426, 173, 339, 28, 27};
+static const int Ingagi_body_540[] = {186, 90};
+static const int Ingagi_body_542[] = {427, 428};
+static const int Ingagi_body_543[] = {90, 427};
+static const int Ingagi_body_545[] = {221};
+static const int Ingagi_body_546[] = {139, 431};
+static const int Ingagi_body_548[] = {430};
+static const int Ingagi_body_549[] = {167, 117};
+static const int Ingagi_body_551[] = {433};
+static const int Ingagi_body_552[] = {429, 117, 432};
+static const int Ingagi_body_553[] = {436};
+static const int Ingagi_body_554[] = {437};
+static const int Ingagi_body_555[] = {134, 117};
+static const int Ingagi_body_557[] = {439};
 static const int Ingagi_body_559[] = {83};
 static const int Ingagi_body_561[] = {83};
-static const int Ingagi_body_562[] = {393, 156, 443, 172};
-static const int Ingagi_body_564[] = {442};
-static const int Ingagi_body_565[] = {433, 434, 116, 437, 439, 424, 389, 156, 440, 172, 441, 338, 28, 162};
-static const int Ingagi_body_566[] = {444, 28, 162};
-static const int Ingagi_body_567[] = {447};
-static const int Ingagi_body_568[] = {448};
-static const int Ingagi_body_569[] = {449};
-static const int Ingagi_body_570[] = {445, 446, 69, 27};
+static const int Ingagi_body_562[] = {394, 157, 444, 173};
+static const int Ingagi_body_564[] = {443};
+static const int Ingagi_body_565[] = {434, 435, 117, 438, 440, 425, 390, 157, 441, 173, 442, 339, 28, 163};
+static const int Ingagi_body_566[] = {445, 28, 163};
+static const int Ingagi_body_567[] = {448};
+static const int Ingagi_body_568[] = {449};
+static const int Ingagi_body_569[] = {450};
+static const int Ingagi_body_570[] = {446, 447, 69, 27};
 static const int Ingagi_body_572[] = {7};
 static const int Ingagi_body_574[] = {10};
-static const int Ingagi_body_575[] = {133, 19};
-static const int Ingagi_body_577[] = {454};
-static const int Ingagi_body_579[] = {455, 72};
-static const int Ingagi_body_580[] = {450, 451, 116, 452, 453, 187, 455, 190};
+static const int Ingagi_body_575[] = {134, 19};
+static const int Ingagi_body_577[] = {455};
+static const int Ingagi_body_579[] = {456, 72};
+static const int Ingagi_body_580[] = {451, 452, 117, 453, 454, 188, 456, 191};
 static const int Ingagi_body_582[] = {7};
-static const int Ingagi_body_583[] = {133, 19};
-static const int Ingagi_body_585[] = {459};
-static const int Ingagi_body_586[] = {121, 28};
-static const int Ingagi_body_588[] = {461};
-static const int Ingagi_body_589[] = {456, 457, 116, 458, 460, 162};
+static const int Ingagi_body_583[] = {134, 19};
+static const int Ingagi_body_585[] = {460};
+static const int Ingagi_body_586[] = {122, 28};
+static const int Ingagi_body_588[] = {462};
+static const int Ingagi_body_589[] = {457, 458, 117, 459, 461, 163};
 static const int Ingagi_body_591[] = {7};
 static const int Ingagi_body_592[] = {24};
 static const int Ingagi_body_593[] = {23};
-static const int Ingagi_body_595[] = {464, 465};
-static const int Ingagi_body_596[] = {462, 463, 116, 187, 464, 190};
+static const int Ingagi_body_595[] = {465, 466};
+static const int Ingagi_body_596[] = {463, 464, 117, 188, 465, 191};
 static const int Ingagi_body_598[] = {7};
 static const int Ingagi_body_600[] = {98};
-static const int Ingagi_body_601[] = {156, 469, 172};
-static const int Ingagi_body_603[] = {468};
-static const int Ingagi_body_605[] = {470, 100};
-static const int Ingagi_body_606[] = {466, 436, 116, 467, 187, 470, 190};
-static const int Ingagi_body_607[] = {185, 99};
-static const int Ingagi_body_609[] = {471, 472};
-static const int Ingagi_body_610[] = {99, 471};
-static const int Ingagi_body_611[] = {116, 133, 28};
+static const int Ingagi_body_601[] = {157, 470, 173};
+static const int Ingagi_body_603[] = {469};
+static const int Ingagi_body_605[] = {471, 100};
+static const int Ingagi_body_606[] = {467, 437, 117, 468, 188, 471, 191};
+static const int Ingagi_body_607[] = {186, 99};
+static const int Ingagi_body_609[] = {472, 473};
+static const int Ingagi_body_610[] = {99, 472};
+static const int Ingagi_body_611[] = {117, 134, 28};
 static const int Ingagi_body_612[] = {101};
-static const int Ingagi_body_613[] = {103};
-static const int Ingagi_body_614[] = {105};
-static const int Ingagi_body_615[] = {108};
-static const int Ingagi_body_616[] = {112};
-static const int Ingagi_body_617[] = {104};
-static const int Ingagi_body_619[] = {473, 102};
-static const int Ingagi_body_620[] = {193, 116, 187, 473, 190};
-static const int Ingagi_body_621[] = {5, 116, 133, 111, 162};
-static const int Ingagi_body_622[] = {177, 116, 133, 111, 121, 28, 162};
-static const int Ingagi_body_623[] = {121, 28};
-static const int Ingagi_body_625[] = {476};
-static const int Ingagi_body_626[] = {474, 116, 133, 111, 475, 162};
-static const int Ingagi_body_627[] = {5, 106};
-static const int Ingagi_body_629[] = {478, 102};
-static const int Ingagi_body_631[] = {116};
-static const int Ingagi_body_632[] = {477, 116, 187, 478, 190, 479, 162};
-static const int Ingagi_body_633[] = {482};
-static const int Ingagi_body_634[] = {483};
-static const int Ingagi_body_635[] = {484};
-static const int Ingagi_body_637[] = {481};
-static const int Ingagi_body_639[] = {487, 102};
-static const int Ingagi_body_641[] = {116};
-static const int Ingagi_body_642[] = {480, 485, 486, 116, 187, 487, 190, 488, 162};
-static const int Ingagi_body_643[] = {133, 111};
-static const int Ingagi_body_645[] = {490};
-static const int Ingagi_body_646[] = {107, 116, 489, 162};
-static const int Ingagi_body_648[] = {492};
-static const int Ingagi_body_649[] = {491, 493, 116, 162};
-static const int Ingagi_body_650[] = {482};
-static const int Ingagi_body_651[] = {483};
-static const int Ingagi_body_652[] = {484};
-static const int Ingagi_body_653[] = {494, 107, 116, 133, 495, 162};
-static const int Ingagi_body_654[] = {496};
-static const int Ingagi_body_655[] = {497};
-static const int Ingagi_body_656[] = {498};
-static const int Ingagi_body_657[] = {499};
-static const int Ingagi_body_658[] = {500};
-static const int Ingagi_body_659[] = {501};
-static const int Ingagi_body_660[] = {502};
-static const int Ingagi_body_662[] = {215};
-static const int Ingagi_body_664[] = {109};
-static const int Ingagi_body_665[] = {155, 111};
-static const int Ingagi_body_667[] = {506};
-static const int Ingagi_body_668[] = {503, 116, 156, 504, 172, 505, 27};
-static const int Ingagi_body_669[] = {185, 110};
-static const int Ingagi_body_671[] = {507, 508};
-static const int Ingagi_body_673[] = {185};
-static const int Ingagi_body_674[] = {110, 507, 509};
-static const int Ingagi_body_675[] = {5, 116, 133, 111};
-static const int Ingagi_body_676[] = {185, 19};
-static const int Ingagi_body_678[] = {512, 513};
-static const int Ingagi_body_679[] = {141, 19, 512, 143};
-static const int Ingagi_body_681[] = {511};
-static const int Ingagi_body_682[] = {116, 510};
-static const int Ingagi_body_683[] = {157, 111, 162, 28, 213};
-static const int Ingagi_body_684[] = {515};
-static const int Ingagi_body_685[] = {516};
-static const int Ingagi_body_686[] = {517};
-static const int Ingagi_body_687[] = {518};
-static const int Ingagi_body_688[] = {519};
-static const int Ingagi_body_689[] = {520};
-static const int Ingagi_body_690[] = {521};
-static const int Ingagi_body_691[] = {522};
-static const int Ingagi_body_693[] = {98};
-static const int Ingagi_body_694[] = {156, 525, 172};
-static const int Ingagi_body_696[] = {524};
-static const int Ingagi_body_697[] = {514, 523, 27};
-static const int Ingagi_body_699[] = {7};
-static const int Ingagi_body_701[] = {527, 114};
-static const int Ingagi_body_702[] = {526, 435, 116, 187, 527, 190};
-static const int Ingagi_body_703[] = {515};
-static const int Ingagi_body_704[] = {516};
-static const int Ingagi_body_705[] = {518};
-static const int Ingagi_body_706[] = {519};
-static const int Ingagi_body_707[] = {520};
-static const int Ingagi_body_708[] = {521};
-static const int Ingagi_body_709[] = {522};
-static const int Ingagi_body_710[] = {528, 133, 69, 162};
-static const int Ingagi_body_711[] = {529, 133, 69, 162};
-static const int Ingagi_body_712[] = {530, 133, 69, 162};
-static const int Ingagi_body_713[] = {532};
-static const int Ingagi_body_714[] = {533};
-static const int Ingagi_body_715[] = {534};
-static const int Ingagi_body_716[] = {535};
-static const int Ingagi_body_717[] = {517};
-static const int Ingagi_body_719[] = {536, 115};
-static const int Ingagi_body_720[] = {531, 187, 536, 190};
-static const int Ingagi_body_721[] = {116, 133, 28, 162};
+static const int Ingagi_body_613[] = {102};
+static const int Ingagi_body_614[] = {104};
+static const int Ingagi_body_615[] = {106};
+static const int Ingagi_body_616[] = {109};
+static const int Ingagi_body_617[] = {113};
+static const int Ingagi_body_618[] = {105};
+static const int Ingagi_body_620[] = {474, 103};
+static const int Ingagi_body_621[] = {194, 117, 188, 474, 191};
+static const int Ingagi_body_623[] = {475, 103};
+static const int Ingagi_body_624[] = {464, 117, 188, 475, 191};
+static const int Ingagi_body_625[] = {5, 117, 134, 112, 163};
+static const int Ingagi_body_626[] = {178, 117, 134, 112, 122, 28, 163};
+static const int Ingagi_body_627[] = {122, 28};
+static const int Ingagi_body_629[] = {478};
+static const int Ingagi_body_630[] = {476, 117, 134, 112, 477, 163};
+static const int Ingagi_body_631[] = {5, 107};
+static const int Ingagi_body_633[] = {480, 103};
+static const int Ingagi_body_635[] = {117};
+static const int Ingagi_body_636[] = {479, 117, 188, 480, 191, 481, 163};
+static const int Ingagi_body_637[] = {484};
+static const int Ingagi_body_638[] = {485};
+static const int Ingagi_body_639[] = {486};
+static const int Ingagi_body_641[] = {483};
+static const int Ingagi_body_643[] = {489, 103};
+static const int Ingagi_body_645[] = {117};
+static const int Ingagi_body_646[] = {482, 487, 488, 117, 188, 489, 191, 490, 163};
+static const int Ingagi_body_647[] = {134, 112};
+static const int Ingagi_body_649[] = {492};
+static const int Ingagi_body_650[] = {108, 117, 491, 163};
+static const int Ingagi_body_652[] = {494};
+static const int Ingagi_body_653[] = {493, 495, 117, 163};
+static const int Ingagi_body_654[] = {484};
+static const int Ingagi_body_655[] = {485};
+static const int Ingagi_body_656[] = {486};
+static const int Ingagi_body_657[] = {496, 108, 117, 134, 497, 163};
+static const int Ingagi_body_658[] = {498};
+static const int Ingagi_body_659[] = {499};
+static const int Ingagi_body_660[] = {500};
+static const int Ingagi_body_661[] = {501};
+static const int Ingagi_body_662[] = {502};
+static const int Ingagi_body_663[] = {503};
+static const int Ingagi_body_664[] = {504};
+static const int Ingagi_body_666[] = {216};
+static const int Ingagi_body_668[] = {110};
+static const int Ingagi_body_669[] = {156, 112};
+static const int Ingagi_body_671[] = {508};
+static const int Ingagi_body_672[] = {505, 117, 157, 506, 173, 507, 27};
+static const int Ingagi_body_673[] = {186, 111};
+static const int Ingagi_body_675[] = {509, 510};
+static const int Ingagi_body_677[] = {186};
+static const int Ingagi_body_678[] = {111, 509, 511};
+static const int Ingagi_body_679[] = {5, 117, 134, 112};
+static const int Ingagi_body_680[] = {186, 19};
+static const int Ingagi_body_682[] = {514, 515};
+static const int Ingagi_body_683[] = {142, 19, 514, 144};
+static const int Ingagi_body_685[] = {513};
+static const int Ingagi_body_686[] = {117, 512};
+static const int Ingagi_body_687[] = {158, 112, 163, 28, 214};
+static const int Ingagi_body_688[] = {517};
+static const int Ingagi_body_689[] = {518};
+static const int Ingagi_body_690[] = {519};
+static const int Ingagi_body_691[] = {520};
+static const int Ingagi_body_692[] = {521};
+static const int Ingagi_body_693[] = {522};
+static const int Ingagi_body_694[] = {523};
+static const int Ingagi_body_695[] = {524};
+static const int Ingagi_body_697[] = {98};
+static const int Ingagi_body_698[] = {157, 527, 173};
+static const int Ingagi_body_700[] = {526};
+static const int Ingagi_body_701[] = {516, 525, 27};
+static const int Ingagi_body_703[] = {7};
+static const int Ingagi_body_705[] = {529, 115};
+static const int Ingagi_body_706[] = {528, 436, 117, 188, 529, 191};
+static const int Ingagi_body_707[] = {517};
+static const int Ingagi_body_708[] = {518};
+static const int Ingagi_body_709[] = {519};
+static const int Ingagi_body_710[] = {520};
+static const int Ingagi_body_711[] = {521};
+static const int Ingagi_body_712[] = {522};
+static const int Ingagi_body_713[] = {523};
+static const int Ingagi_body_714[] = {524};
+static const int Ingagi_body_715[] = {530, 134, 69, 163};
+static const int Ingagi_body_716[] = {531, 134, 69, 163};
+static const int Ingagi_body_717[] = {532, 134, 69, 163};
+static const int Ingagi_body_718[] = {534};
+static const int Ingagi_body_719[] = {535};
+static const int Ingagi_body_720[] = {536};
+static const int Ingagi_body_721[] = {537};
+static const int Ingagi_body_722[] = {519};
+static const int Ingagi_body_724[] = {538, 116};
+static const int Ingagi_body_725[] = {533, 188, 538, 191};
+static const int Ingagi_body_726[] = {117, 134, 28, 163};
 static const np_production_spec Ingagi_productions[] = {
-    {158, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {158, Ingagi_body_1, 1, "", 0, NP_ASSOC_NONE},
     {159, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {159, Ingagi_body_3, 2, "", 0, NP_ASSOC_NONE},
+    {159, Ingagi_body_1, 1, "", 0, NP_ASSOC_NONE},
     {160, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {160, Ingagi_body_5, 2, "", 0, NP_ASSOC_NONE},
+    {160, Ingagi_body_3, 2, "", 0, NP_ASSOC_NONE},
+    {161, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {161, Ingagi_body_5, 2, "", 0, NP_ASSOC_NONE},
     {0, Ingagi_body_6, 3, "CompilationUnit", 0, NP_ASSOC_NONE},
     {1, Ingagi_body_7, 3, "ModuleDecl", 0, NP_ASSOC_NONE},
-    {165, Ingagi_body_8, 2, "", 0, NP_ASSOC_NONE},
-    {164, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {164, Ingagi_body_10, 1, "", 0, NP_ASSOC_NONE},
+    {166, Ingagi_body_8, 2, "", 0, NP_ASSOC_NONE},
+    {165, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {165, Ingagi_body_10, 1, "", 0, NP_ASSOC_NONE},
     {2, Ingagi_body_11, 4, "ImportDecl", 0, NP_ASSOC_NONE},
     {3, Ingagi_body_12, 2, "ExternalDecl", 0, NP_ASSOC_NONE},
     {4, Ingagi_body_13, 1, "", 0, NP_ASSOC_NONE},
@@ -1122,154 +1128,154 @@ static const np_production_spec Ingagi_productions[] = {
     {4, Ingagi_body_25, 1, "", 0, NP_ASSOC_NONE},
     {4, Ingagi_body_26, 1, "", 0, NP_ASSOC_NONE},
     {4, Ingagi_body_27, 1, "ExternBody", 0, NP_ASSOC_NONE},
-    {167, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {167, Ingagi_body_29, 2, "", 0, NP_ASSOC_NONE},
+    {168, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {168, Ingagi_body_29, 2, "", 0, NP_ASSOC_NONE},
     {5, Ingagi_body_30, 1, "AttrList", 0, NP_ASSOC_NONE},
-    {171, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {171, Ingagi_body_32, 1, "", 0, NP_ASSOC_NONE},
-    {170, Ingagi_body_33, 3, "", 0, NP_ASSOC_NONE},
-    {169, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {169, Ingagi_body_35, 1, "", 0, NP_ASSOC_NONE},
+    {172, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {172, Ingagi_body_32, 1, "", 0, NP_ASSOC_NONE},
+    {171, Ingagi_body_33, 3, "", 0, NP_ASSOC_NONE},
+    {170, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {170, Ingagi_body_35, 1, "", 0, NP_ASSOC_NONE},
     {6, Ingagi_body_36, 3, "Attribute", 0, NP_ASSOC_NONE},
     {7, Ingagi_body_37, 1, "", 0, NP_ASSOC_NONE},
     {7, Ingagi_body_38, 1, "", 0, NP_ASSOC_NONE},
     {7, Ingagi_body_39, 1, "Visibility", 0, NP_ASSOC_NONE},
-    {176, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {176, Ingagi_body_41, 1, "", 0, NP_ASSOC_NONE},
-    {179, Ingagi_body_42, 2, "", 2, NP_ASSOC_RIGHT},
-    {178, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {178, Ingagi_body_44, 1, "", 0, NP_ASSOC_NONE},
+    {177, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {177, Ingagi_body_41, 1, "", 0, NP_ASSOC_NONE},
+    {180, Ingagi_body_42, 2, "", 2, NP_ASSOC_RIGHT},
+    {179, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {179, Ingagi_body_44, 1, "", 0, NP_ASSOC_NONE},
     {8, Ingagi_body_45, 7, "ConstDecl", 0, NP_ASSOC_NONE},
-    {180, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {180, Ingagi_body_47, 1, "", 0, NP_ASSOC_NONE},
-    {182, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {182, Ingagi_body_49, 1, "", 0, NP_ASSOC_NONE},
-    {9, Ingagi_body_50, 7, "TypeAliasDecl", 0, NP_ASSOC_NONE},
-    {184, Ingagi_body_51, 2, "", 0, NP_ASSOC_NONE},
+    {181, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {181, Ingagi_body_47, 1, "", 0, NP_ASSOC_NONE},
     {183, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {183, Ingagi_body_53, 2, "", 0, NP_ASSOC_NONE},
+    {183, Ingagi_body_49, 1, "", 0, NP_ASSOC_NONE},
+    {9, Ingagi_body_50, 7, "TypeAliasDecl", 0, NP_ASSOC_NONE},
+    {185, Ingagi_body_51, 2, "", 0, NP_ASSOC_NONE},
+    {184, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {184, Ingagi_body_53, 2, "", 0, NP_ASSOC_NONE},
     {10, Ingagi_body_54, 4, "GenericParams", 9, NP_ASSOC_LEFT},
-    {189, Ingagi_body_55, 1, "", 0, NP_ASSOC_NONE},
-    {189, Ingagi_body_56, 1, "", 0, NP_ASSOC_NONE},
-    {188, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {188, Ingagi_body_58, 2, "", 0, NP_ASSOC_NONE},
+    {190, Ingagi_body_55, 1, "", 0, NP_ASSOC_NONE},
+    {190, Ingagi_body_56, 1, "", 0, NP_ASSOC_NONE},
+    {189, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {189, Ingagi_body_58, 2, "", 0, NP_ASSOC_NONE},
     {11, Ingagi_body_59, 5, "ExternDecl", 0, NP_ASSOC_NONE},
     {12, Ingagi_body_60, 3, "ExtendDecl", 0, NP_ASSOC_NONE},
-    {192, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {192, Ingagi_body_62, 1, "", 0, NP_ASSOC_NONE},
-    {194, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {194, Ingagi_body_64, 1, "", 0, NP_ASSOC_NONE},
-    {196, Ingagi_body_65, 2, "", 2, NP_ASSOC_RIGHT},
+    {193, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {193, Ingagi_body_62, 1, "", 0, NP_ASSOC_NONE},
     {195, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {195, Ingagi_body_67, 1, "", 0, NP_ASSOC_NONE},
-    {197, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {197, Ingagi_body_69, 2, "", 0, NP_ASSOC_NONE},
+    {195, Ingagi_body_64, 1, "", 0, NP_ASSOC_NONE},
+    {197, Ingagi_body_65, 2, "", 2, NP_ASSOC_RIGHT},
+    {196, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {196, Ingagi_body_67, 1, "", 0, NP_ASSOC_NONE},
+    {198, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {198, Ingagi_body_69, 2, "", 0, NP_ASSOC_NONE},
     {13, Ingagi_body_70, 8, "StructDecl", 0, NP_ASSOC_NONE},
-    {198, Ingagi_body_71, 1, "", 0, NP_ASSOC_NONE},
-    {198, Ingagi_body_72, 1, "", 0, NP_ASSOC_NONE},
+    {199, Ingagi_body_71, 1, "", 0, NP_ASSOC_NONE},
+    {199, Ingagi_body_72, 1, "", 0, NP_ASSOC_NONE},
     {14, Ingagi_body_73, 2, "StructMember", 0, NP_ASSOC_NONE},
-    {199, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {199, Ingagi_body_75, 1, "", 0, NP_ASSOC_NONE},
-    {202, Ingagi_body_76, 2, "", 2, NP_ASSOC_RIGHT},
-    {201, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {201, Ingagi_body_78, 1, "", 0, NP_ASSOC_NONE},
-    {203, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {203, Ingagi_body_80, 1, "", 0, NP_ASSOC_NONE},
-    {15, Ingagi_body_81, 8, "EnumDecl", 0, NP_ASSOC_NONE},
-    {205, Ingagi_body_82, 2, "", 0, NP_ASSOC_NONE},
+    {200, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {200, Ingagi_body_75, 1, "", 0, NP_ASSOC_NONE},
+    {203, Ingagi_body_76, 2, "", 2, NP_ASSOC_RIGHT},
+    {202, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {202, Ingagi_body_78, 1, "", 0, NP_ASSOC_NONE},
     {204, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {204, Ingagi_body_84, 2, "", 0, NP_ASSOC_NONE},
+    {204, Ingagi_body_80, 1, "", 0, NP_ASSOC_NONE},
+    {15, Ingagi_body_81, 8, "EnumDecl", 0, NP_ASSOC_NONE},
+    {206, Ingagi_body_82, 2, "", 0, NP_ASSOC_NONE},
+    {205, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {205, Ingagi_body_84, 2, "", 0, NP_ASSOC_NONE},
     {16, Ingagi_body_85, 2, "EnumVariants", 0, NP_ASSOC_NONE},
-    {207, Ingagi_body_86, 3, "", 0, NP_ASSOC_NONE},
-    {206, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {206, Ingagi_body_88, 1, "", 0, NP_ASSOC_NONE},
-    {209, Ingagi_body_89, 2, "", 1, NP_ASSOC_RIGHT},
-    {208, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {208, Ingagi_body_91, 1, "", 0, NP_ASSOC_NONE},
+    {208, Ingagi_body_86, 3, "", 0, NP_ASSOC_NONE},
+    {207, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {207, Ingagi_body_88, 1, "", 0, NP_ASSOC_NONE},
+    {210, Ingagi_body_89, 2, "", 1, NP_ASSOC_RIGHT},
+    {209, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {209, Ingagi_body_91, 1, "", 0, NP_ASSOC_NONE},
     {17, Ingagi_body_92, 3, "EnumVariant", 0, NP_ASSOC_NONE},
-    {211, Ingagi_body_93, 2, "", 0, NP_ASSOC_NONE},
-    {210, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {210, Ingagi_body_95, 2, "", 0, NP_ASSOC_NONE},
+    {212, Ingagi_body_93, 2, "", 0, NP_ASSOC_NONE},
+    {211, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {211, Ingagi_body_95, 2, "", 0, NP_ASSOC_NONE},
     {18, Ingagi_body_96, 2, "TypeList", 0, NP_ASSOC_NONE},
-    {212, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {212, Ingagi_body_98, 1, "", 2, NP_ASSOC_RIGHT},
+    {213, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {213, Ingagi_body_98, 1, "", 2, NP_ASSOC_RIGHT},
     {19, Ingagi_body_99, 2, "TypeName", 0, NP_ASSOC_NONE},
     {19, Ingagi_body_100, 5, "ArrayType", 0, NP_ASSOC_NONE},
-    {214, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {214, Ingagi_body_102, 1, "", 0, NP_ASSOC_NONE},
+    {215, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {215, Ingagi_body_102, 1, "", 0, NP_ASSOC_NONE},
     {19, Ingagi_body_103, 3, "TupleType", 0, NP_ASSOC_NONE},
-    {216, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {216, Ingagi_body_105, 1, "", 0, NP_ASSOC_NONE},
-    {218, Ingagi_body_106, 2, "", 14, NP_ASSOC_LEFT},
     {217, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {217, Ingagi_body_108, 1, "", 0, NP_ASSOC_NONE},
+    {217, Ingagi_body_105, 1, "", 0, NP_ASSOC_NONE},
+    {219, Ingagi_body_106, 2, "", 14, NP_ASSOC_LEFT},
+    {218, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {218, Ingagi_body_108, 1, "", 0, NP_ASSOC_NONE},
     {19, Ingagi_body_109, 5, "FnType", 0, NP_ASSOC_NONE},
-    {219, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {219, Ingagi_body_111, 1, "", 0, NP_ASSOC_NONE},
+    {220, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {220, Ingagi_body_111, 1, "", 0, NP_ASSOC_NONE},
     {19, Ingagi_body_112, 3, "RefType", 7, NP_ASSOC_LEFT},
-    {221, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {221, Ingagi_body_114, 1, "", 0, NP_ASSOC_NONE},
-    {19, Ingagi_body_115, 3, "PtrType", 12, NP_ASSOC_LEFT},
-    {223, Ingagi_body_116, 2, "", 0, NP_ASSOC_NONE},
     {222, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {222, Ingagi_body_118, 2, "", 0, NP_ASSOC_NONE},
-    {225, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {225, Ingagi_body_120, 1, "", 0, NP_ASSOC_NONE},
-    {20, Ingagi_body_121, 3, "QualifiedType", 0, NP_ASSOC_NONE},
-    {227, Ingagi_body_122, 2, "", 0, NP_ASSOC_NONE},
+    {222, Ingagi_body_114, 1, "", 0, NP_ASSOC_NONE},
+    {19, Ingagi_body_115, 3, "PtrType", 12, NP_ASSOC_LEFT},
+    {224, Ingagi_body_116, 2, "", 0, NP_ASSOC_NONE},
+    {223, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {223, Ingagi_body_118, 2, "", 0, NP_ASSOC_NONE},
     {226, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {226, Ingagi_body_124, 2, "", 0, NP_ASSOC_NONE},
+    {226, Ingagi_body_120, 1, "", 0, NP_ASSOC_NONE},
+    {20, Ingagi_body_121, 3, "QualifiedType", 0, NP_ASSOC_NONE},
+    {228, Ingagi_body_122, 2, "", 0, NP_ASSOC_NONE},
+    {227, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {227, Ingagi_body_124, 2, "", 0, NP_ASSOC_NONE},
     {21, Ingagi_body_125, 4, "GenericArgs", 9, NP_ASSOC_LEFT},
-    {229, Ingagi_body_126, 2, "", 0, NP_ASSOC_NONE},
-    {228, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {228, Ingagi_body_128, 2, "", 0, NP_ASSOC_NONE},
+    {230, Ingagi_body_126, 2, "", 0, NP_ASSOC_NONE},
+    {229, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {229, Ingagi_body_128, 2, "", 0, NP_ASSOC_NONE},
     {22, Ingagi_body_129, 2, "ParamTypeList", 0, NP_ASSOC_NONE},
-    {231, Ingagi_body_130, 1, "", 0, NP_ASSOC_NONE},
-    {231, Ingagi_body_131, 1, "", 0, NP_ASSOC_NONE},
-    {230, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {230, Ingagi_body_133, 1, "", 0, NP_ASSOC_NONE},
-    {235, Ingagi_body_134, 2, "", 2, NP_ASSOC_RIGHT},
-    {234, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {234, Ingagi_body_136, 1, "", 0, NP_ASSOC_NONE},
-    {237, Ingagi_body_137, 2, "", 1, NP_ASSOC_RIGHT},
-    {236, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {236, Ingagi_body_139, 1, "", 0, NP_ASSOC_NONE},
+    {232, Ingagi_body_130, 1, "", 0, NP_ASSOC_NONE},
+    {232, Ingagi_body_131, 1, "", 0, NP_ASSOC_NONE},
+    {231, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {231, Ingagi_body_133, 1, "", 0, NP_ASSOC_NONE},
+    {236, Ingagi_body_134, 2, "", 2, NP_ASSOC_RIGHT},
+    {235, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {235, Ingagi_body_136, 1, "", 0, NP_ASSOC_NONE},
+    {238, Ingagi_body_137, 2, "", 1, NP_ASSOC_RIGHT},
+    {237, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {237, Ingagi_body_139, 1, "", 0, NP_ASSOC_NONE},
     {23, Ingagi_body_140, 6, "VarDecl", 0, NP_ASSOC_NONE},
-    {238, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {238, Ingagi_body_142, 1, "", 0, NP_ASSOC_NONE},
     {239, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {239, Ingagi_body_144, 1, "", 0, NP_ASSOC_NONE},
-    {241, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {241, Ingagi_body_146, 1, "", 0, NP_ASSOC_NONE},
+    {239, Ingagi_body_142, 1, "", 0, NP_ASSOC_NONE},
+    {240, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {240, Ingagi_body_144, 1, "", 0, NP_ASSOC_NONE},
     {242, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {242, Ingagi_body_148, 1, "", 0, NP_ASSOC_NONE},
-    {244, Ingagi_body_149, 2, "", 14, NP_ASSOC_LEFT},
+    {242, Ingagi_body_146, 1, "", 0, NP_ASSOC_NONE},
     {243, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {243, Ingagi_body_151, 1, "", 0, NP_ASSOC_NONE},
-    {245, Ingagi_body_152, 1, "", 0, NP_ASSOC_NONE},
-    {245, Ingagi_body_153, 1, "", 0, NP_ASSOC_NONE},
+    {243, Ingagi_body_148, 1, "", 0, NP_ASSOC_NONE},
+    {245, Ingagi_body_149, 2, "", 14, NP_ASSOC_LEFT},
+    {244, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {244, Ingagi_body_151, 1, "", 0, NP_ASSOC_NONE},
+    {246, Ingagi_body_152, 1, "", 0, NP_ASSOC_NONE},
+    {246, Ingagi_body_153, 1, "", 0, NP_ASSOC_NONE},
     {24, Ingagi_body_154, 10, "FuncDecl", 0, NP_ASSOC_NONE},
-    {247, Ingagi_body_155, 2, "", 0, NP_ASSOC_NONE},
-    {246, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {246, Ingagi_body_157, 2, "", 0, NP_ASSOC_NONE},
-    {248, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {248, Ingagi_body_159, 1, "", 0, NP_ASSOC_NONE},
-    {25, Ingagi_body_160, 3, "ParamList", 0, NP_ASSOC_NONE},
+    {248, Ingagi_body_155, 2, "", 0, NP_ASSOC_NONE},
+    {247, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {247, Ingagi_body_157, 2, "", 0, NP_ASSOC_NONE},
     {249, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {249, Ingagi_body_162, 1, "", 0, NP_ASSOC_NONE},
-    {251, Ingagi_body_163, 2, "", 1, NP_ASSOC_RIGHT},
+    {249, Ingagi_body_159, 1, "", 0, NP_ASSOC_NONE},
+    {25, Ingagi_body_160, 3, "ParamList", 0, NP_ASSOC_NONE},
     {250, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {250, Ingagi_body_165, 1, "", 0, NP_ASSOC_NONE},
+    {250, Ingagi_body_162, 1, "", 0, NP_ASSOC_NONE},
+    {252, Ingagi_body_163, 2, "", 1, NP_ASSOC_RIGHT},
+    {251, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {251, Ingagi_body_165, 1, "", 0, NP_ASSOC_NONE},
     {26, Ingagi_body_166, 6, "Param", 2, NP_ASSOC_RIGHT},
-    {252, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {252, Ingagi_body_168, 2, "", 0, NP_ASSOC_NONE},
     {253, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {253, Ingagi_body_170, 1, "", 0, NP_ASSOC_NONE},
+    {253, Ingagi_body_168, 2, "", 0, NP_ASSOC_NONE},
+    {254, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {254, Ingagi_body_170, 1, "", 0, NP_ASSOC_NONE},
     {27, Ingagi_body_171, 4, "Block", 0, NP_ASSOC_NONE},
     {28, Ingagi_body_172, 1, "Expr", 0, NP_ASSOC_NONE},
-    {255, Ingagi_body_173, 2, "", 0, NP_ASSOC_NONE},
-    {254, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {254, Ingagi_body_175, 1, "", 0, NP_ASSOC_NONE},
+    {256, Ingagi_body_173, 2, "", 0, NP_ASSOC_NONE},
+    {255, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {255, Ingagi_body_175, 1, "", 0, NP_ASSOC_NONE},
     {29, Ingagi_body_176, 2, "AssignExpr", 0, NP_ASSOC_NONE},
     {30, Ingagi_body_177, 1, "", 1, NP_ASSOC_RIGHT},
     {30, Ingagi_body_178, 1, "", 1, NP_ASSOC_RIGHT},
@@ -1282,152 +1288,152 @@ static const np_production_spec Ingagi_productions[] = {
     {30, Ingagi_body_185, 1, "", 1, NP_ASSOC_RIGHT},
     {30, Ingagi_body_186, 1, "", 1, NP_ASSOC_RIGHT},
     {30, Ingagi_body_187, 1, "AssignOp", 1, NP_ASSOC_RIGHT},
-    {257, Ingagi_body_188, 4, "", 2, NP_ASSOC_RIGHT},
-    {256, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {256, Ingagi_body_190, 1, "", 0, NP_ASSOC_NONE},
+    {258, Ingagi_body_188, 4, "", 2, NP_ASSOC_RIGHT},
+    {257, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {257, Ingagi_body_190, 1, "", 0, NP_ASSOC_NONE},
     {31, Ingagi_body_191, 2, "TernaryExpr", 0, NP_ASSOC_NONE},
-    {259, Ingagi_body_192, 2, "", 3, NP_ASSOC_LEFT},
-    {258, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {258, Ingagi_body_194, 2, "", 0, NP_ASSOC_NONE},
+    {260, Ingagi_body_192, 2, "", 3, NP_ASSOC_LEFT},
+    {259, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {259, Ingagi_body_194, 2, "", 0, NP_ASSOC_NONE},
     {32, Ingagi_body_195, 2, "OrExpr", 0, NP_ASSOC_NONE},
-    {261, Ingagi_body_196, 2, "", 4, NP_ASSOC_LEFT},
-    {260, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {260, Ingagi_body_198, 2, "", 0, NP_ASSOC_NONE},
+    {262, Ingagi_body_196, 2, "", 4, NP_ASSOC_LEFT},
+    {261, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {261, Ingagi_body_198, 2, "", 0, NP_ASSOC_NONE},
     {33, Ingagi_body_199, 2, "AndExpr", 0, NP_ASSOC_NONE},
-    {263, Ingagi_body_200, 2, "", 5, NP_ASSOC_LEFT},
-    {262, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {262, Ingagi_body_202, 2, "", 0, NP_ASSOC_NONE},
+    {264, Ingagi_body_200, 2, "", 5, NP_ASSOC_LEFT},
+    {263, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {263, Ingagi_body_202, 2, "", 0, NP_ASSOC_NONE},
     {34, Ingagi_body_203, 2, "BitorExpr", 0, NP_ASSOC_NONE},
-    {265, Ingagi_body_204, 2, "", 6, NP_ASSOC_LEFT},
-    {264, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {264, Ingagi_body_206, 2, "", 0, NP_ASSOC_NONE},
+    {266, Ingagi_body_204, 2, "", 6, NP_ASSOC_LEFT},
+    {265, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {265, Ingagi_body_206, 2, "", 0, NP_ASSOC_NONE},
     {35, Ingagi_body_207, 2, "BitxorExpr", 0, NP_ASSOC_NONE},
-    {267, Ingagi_body_208, 2, "", 7, NP_ASSOC_LEFT},
-    {266, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {266, Ingagi_body_210, 2, "", 0, NP_ASSOC_NONE},
+    {268, Ingagi_body_208, 2, "", 7, NP_ASSOC_LEFT},
+    {267, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {267, Ingagi_body_210, 2, "", 0, NP_ASSOC_NONE},
     {36, Ingagi_body_211, 2, "BitandExpr", 0, NP_ASSOC_NONE},
-    {270, Ingagi_body_212, 1, "", 8, NP_ASSOC_LEFT},
-    {270, Ingagi_body_213, 1, "", 8, NP_ASSOC_LEFT},
-    {269, Ingagi_body_214, 2, "", 0, NP_ASSOC_NONE},
-    {268, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {268, Ingagi_body_216, 2, "", 0, NP_ASSOC_NONE},
+    {271, Ingagi_body_212, 1, "", 8, NP_ASSOC_LEFT},
+    {271, Ingagi_body_213, 1, "", 8, NP_ASSOC_LEFT},
+    {270, Ingagi_body_214, 2, "", 0, NP_ASSOC_NONE},
+    {269, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {269, Ingagi_body_216, 2, "", 0, NP_ASSOC_NONE},
     {37, Ingagi_body_217, 2, "EqExpr", 0, NP_ASSOC_NONE},
-    {273, Ingagi_body_218, 1, "", 9, NP_ASSOC_LEFT},
-    {273, Ingagi_body_219, 1, "", 9, NP_ASSOC_LEFT},
-    {273, Ingagi_body_220, 1, "", 9, NP_ASSOC_LEFT},
-    {273, Ingagi_body_221, 1, "", 9, NP_ASSOC_LEFT},
-    {272, Ingagi_body_222, 2, "", 0, NP_ASSOC_NONE},
-    {271, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {271, Ingagi_body_224, 2, "", 0, NP_ASSOC_NONE},
+    {274, Ingagi_body_218, 1, "", 9, NP_ASSOC_LEFT},
+    {274, Ingagi_body_219, 1, "", 9, NP_ASSOC_LEFT},
+    {274, Ingagi_body_220, 1, "", 9, NP_ASSOC_LEFT},
+    {274, Ingagi_body_221, 1, "", 9, NP_ASSOC_LEFT},
+    {273, Ingagi_body_222, 2, "", 0, NP_ASSOC_NONE},
+    {272, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {272, Ingagi_body_224, 2, "", 0, NP_ASSOC_NONE},
     {38, Ingagi_body_225, 2, "RelExpr", 0, NP_ASSOC_NONE},
-    {276, Ingagi_body_226, 1, "", 10, NP_ASSOC_LEFT},
-    {276, Ingagi_body_227, 1, "", 10, NP_ASSOC_LEFT},
-    {275, Ingagi_body_228, 2, "", 0, NP_ASSOC_NONE},
-    {274, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {274, Ingagi_body_230, 2, "", 0, NP_ASSOC_NONE},
+    {277, Ingagi_body_226, 1, "", 10, NP_ASSOC_LEFT},
+    {277, Ingagi_body_227, 1, "", 10, NP_ASSOC_LEFT},
+    {276, Ingagi_body_228, 2, "", 0, NP_ASSOC_NONE},
+    {275, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {275, Ingagi_body_230, 2, "", 0, NP_ASSOC_NONE},
     {39, Ingagi_body_231, 2, "ShiftExpr", 0, NP_ASSOC_NONE},
-    {279, Ingagi_body_232, 1, "", 11, NP_ASSOC_LEFT},
-    {279, Ingagi_body_233, 1, "", 11, NP_ASSOC_LEFT},
-    {278, Ingagi_body_234, 2, "", 0, NP_ASSOC_NONE},
-    {277, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {277, Ingagi_body_236, 2, "", 0, NP_ASSOC_NONE},
+    {280, Ingagi_body_232, 1, "", 11, NP_ASSOC_LEFT},
+    {280, Ingagi_body_233, 1, "", 11, NP_ASSOC_LEFT},
+    {279, Ingagi_body_234, 2, "", 0, NP_ASSOC_NONE},
+    {278, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {278, Ingagi_body_236, 2, "", 0, NP_ASSOC_NONE},
     {40, Ingagi_body_237, 2, "AddExpr", 0, NP_ASSOC_NONE},
-    {282, Ingagi_body_238, 1, "", 12, NP_ASSOC_LEFT},
-    {282, Ingagi_body_239, 1, "", 12, NP_ASSOC_LEFT},
-    {282, Ingagi_body_240, 1, "", 12, NP_ASSOC_LEFT},
-    {281, Ingagi_body_241, 2, "", 0, NP_ASSOC_NONE},
-    {280, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {280, Ingagi_body_243, 2, "", 0, NP_ASSOC_NONE},
+    {283, Ingagi_body_238, 1, "", 12, NP_ASSOC_LEFT},
+    {283, Ingagi_body_239, 1, "", 12, NP_ASSOC_LEFT},
+    {283, Ingagi_body_240, 1, "", 12, NP_ASSOC_LEFT},
+    {282, Ingagi_body_241, 2, "", 0, NP_ASSOC_NONE},
+    {281, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {281, Ingagi_body_243, 2, "", 0, NP_ASSOC_NONE},
     {41, Ingagi_body_244, 2, "MulExpr", 0, NP_ASSOC_NONE},
-    {284, Ingagi_body_245, 1, "", 13, NP_ASSOC_RIGHT},
-    {284, Ingagi_body_246, 1, "", 13, NP_ASSOC_RIGHT},
-    {284, Ingagi_body_247, 1, "", 11, NP_ASSOC_LEFT},
-    {284, Ingagi_body_248, 1, "", 11, NP_ASSOC_LEFT},
-    {284, Ingagi_body_249, 1, "", 12, NP_ASSOC_LEFT},
-    {284, Ingagi_body_250, 1, "", 7, NP_ASSOC_LEFT},
-    {284, Ingagi_body_251, 1, "", 0, NP_ASSOC_NONE},
-    {283, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {283, Ingagi_body_253, 2, "", 0, NP_ASSOC_NONE},
+    {285, Ingagi_body_245, 1, "", 13, NP_ASSOC_RIGHT},
+    {285, Ingagi_body_246, 1, "", 13, NP_ASSOC_RIGHT},
+    {285, Ingagi_body_247, 1, "", 11, NP_ASSOC_LEFT},
+    {285, Ingagi_body_248, 1, "", 11, NP_ASSOC_LEFT},
+    {285, Ingagi_body_249, 1, "", 12, NP_ASSOC_LEFT},
+    {285, Ingagi_body_250, 1, "", 7, NP_ASSOC_LEFT},
+    {285, Ingagi_body_251, 1, "", 0, NP_ASSOC_NONE},
+    {284, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {284, Ingagi_body_253, 2, "", 0, NP_ASSOC_NONE},
     {42, Ingagi_body_254, 2, "UnaryExpr", 0, NP_ASSOC_NONE},
-    {286, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {286, Ingagi_body_256, 2, "", 0, NP_ASSOC_NONE},
-    {43, Ingagi_body_257, 2, "PostfixExpr", 0, NP_ASSOC_NONE},
     {287, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {287, Ingagi_body_259, 1, "", 0, NP_ASSOC_NONE},
+    {287, Ingagi_body_256, 2, "", 0, NP_ASSOC_NONE},
+    {43, Ingagi_body_257, 2, "PostfixExpr", 0, NP_ASSOC_NONE},
+    {288, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {288, Ingagi_body_259, 1, "", 0, NP_ASSOC_NONE},
     {44, Ingagi_body_260, 3, "CallSuffix", 0, NP_ASSOC_NONE},
-    {288, Ingagi_body_261, 1, "", 14, NP_ASSOC_LEFT},
-    {288, Ingagi_body_262, 1, "", 14, NP_ASSOC_LEFT},
+    {289, Ingagi_body_261, 1, "", 14, NP_ASSOC_LEFT},
+    {289, Ingagi_body_262, 1, "", 14, NP_ASSOC_LEFT},
     {44, Ingagi_body_263, 2, "MemberSuffix", 0, NP_ASSOC_NONE},
     {44, Ingagi_body_264, 3, "IndexSuffix", 0, NP_ASSOC_NONE},
     {44, Ingagi_body_265, 1, "QuestionSuffix", 2, NP_ASSOC_RIGHT},
-    {290, Ingagi_body_266, 2, "", 0, NP_ASSOC_NONE},
-    {289, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {289, Ingagi_body_268, 2, "", 0, NP_ASSOC_NONE},
-    {291, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {291, Ingagi_body_270, 1, "", 0, NP_ASSOC_NONE},
-    {45, Ingagi_body_271, 3, "ArgList", 0, NP_ASSOC_NONE},
-    {293, Ingagi_body_272, 2, "", 2, NP_ASSOC_RIGHT},
+    {291, Ingagi_body_266, 2, "", 0, NP_ASSOC_NONE},
+    {290, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {290, Ingagi_body_268, 2, "", 0, NP_ASSOC_NONE},
     {292, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {292, Ingagi_body_274, 1, "", 0, NP_ASSOC_NONE},
+    {292, Ingagi_body_270, 1, "", 0, NP_ASSOC_NONE},
+    {45, Ingagi_body_271, 3, "ArgList", 0, NP_ASSOC_NONE},
+    {294, Ingagi_body_272, 2, "", 2, NP_ASSOC_RIGHT},
+    {293, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {293, Ingagi_body_274, 1, "", 0, NP_ASSOC_NONE},
     {46, Ingagi_body_275, 2, "Arg", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_276, 1, "", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_277, 1, "", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_278, 1, "", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_279, 1, "PrimarySimple", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_280, 3, "ParenExpr", 0, NP_ASSOC_NONE},
-    {295, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {295, Ingagi_body_282, 1, "", 0, NP_ASSOC_NONE},
-    {47, Ingagi_body_283, 5, "TupleExpr", 0, NP_ASSOC_NONE},
     {296, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {296, Ingagi_body_285, 1, "", 0, NP_ASSOC_NONE},
+    {296, Ingagi_body_282, 1, "", 0, NP_ASSOC_NONE},
+    {47, Ingagi_body_283, 5, "TupleExpr", 0, NP_ASSOC_NONE},
+    {297, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {297, Ingagi_body_285, 1, "", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_286, 3, "ArrayExpr", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_287, 5, "ArrayRepeatExpr", 0, NP_ASSOC_NONE},
-    {297, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {297, Ingagi_body_289, 1, "", 0, NP_ASSOC_NONE},
+    {298, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {298, Ingagi_body_289, 1, "", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_290, 4, "StructExpr", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_291, 1, "LambdaExpr", 0, NP_ASSOC_NONE},
-    {302, Ingagi_body_292, 1, "", 0, NP_ASSOC_NONE},
-    {302, Ingagi_body_293, 1, "", 0, NP_ASSOC_NONE},
-    {300, Ingagi_body_294, 2, "", 0, NP_ASSOC_NONE},
-    {299, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {299, Ingagi_body_296, 1, "", 0, NP_ASSOC_NONE},
+    {303, Ingagi_body_292, 1, "", 0, NP_ASSOC_NONE},
+    {303, Ingagi_body_293, 1, "", 0, NP_ASSOC_NONE},
+    {301, Ingagi_body_294, 2, "", 0, NP_ASSOC_NONE},
+    {300, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {300, Ingagi_body_296, 1, "", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_297, 4, "IfExpr", 0, NP_ASSOC_NONE},
     {47, Ingagi_body_298, 5, "MatchExpr", 0, NP_ASSOC_NONE},
-    {305, Ingagi_body_299, 2, "", 0, NP_ASSOC_NONE},
-    {304, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {304, Ingagi_body_301, 2, "", 0, NP_ASSOC_NONE},
-    {306, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {306, Ingagi_body_303, 1, "", 0, NP_ASSOC_NONE},
-    {48, Ingagi_body_304, 3, "StructInits", 0, NP_ASSOC_NONE},
-    {308, Ingagi_body_305, 2, "", 2, NP_ASSOC_RIGHT},
+    {306, Ingagi_body_299, 2, "", 0, NP_ASSOC_NONE},
+    {305, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {305, Ingagi_body_301, 2, "", 0, NP_ASSOC_NONE},
     {307, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {307, Ingagi_body_307, 1, "", 0, NP_ASSOC_NONE},
+    {307, Ingagi_body_303, 1, "", 0, NP_ASSOC_NONE},
+    {48, Ingagi_body_304, 3, "StructInits", 0, NP_ASSOC_NONE},
+    {309, Ingagi_body_305, 2, "", 2, NP_ASSOC_RIGHT},
+    {308, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {308, Ingagi_body_307, 1, "", 0, NP_ASSOC_NONE},
     {49, Ingagi_body_308, 2, "StructInit", 0, NP_ASSOC_NONE},
-    {309, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {309, Ingagi_body_310, 1, "", 0, NP_ASSOC_NONE},
-    {311, Ingagi_body_311, 2, "", 14, NP_ASSOC_LEFT},
     {310, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {310, Ingagi_body_313, 1, "", 0, NP_ASSOC_NONE},
-    {312, Ingagi_body_314, 1, "", 0, NP_ASSOC_NONE},
-    {312, Ingagi_body_315, 1, "", 0, NP_ASSOC_NONE},
+    {310, Ingagi_body_310, 1, "", 0, NP_ASSOC_NONE},
+    {312, Ingagi_body_311, 2, "", 14, NP_ASSOC_LEFT},
+    {311, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {311, Ingagi_body_313, 1, "", 0, NP_ASSOC_NONE},
+    {313, Ingagi_body_314, 1, "", 0, NP_ASSOC_NONE},
+    {313, Ingagi_body_315, 1, "", 0, NP_ASSOC_NONE},
     {50, Ingagi_body_316, 5, "LambdaExpr", 5, NP_ASSOC_LEFT},
-    {314, Ingagi_body_317, 2, "", 0, NP_ASSOC_NONE},
-    {313, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {313, Ingagi_body_319, 2, "", 0, NP_ASSOC_NONE},
-    {315, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {315, Ingagi_body_321, 1, "", 0, NP_ASSOC_NONE},
-    {51, Ingagi_body_322, 3, "MatchArms", 0, NP_ASSOC_NONE},
-    {317, Ingagi_body_323, 2, "", 0, NP_ASSOC_NONE},
+    {315, Ingagi_body_317, 2, "", 0, NP_ASSOC_NONE},
+    {314, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {314, Ingagi_body_319, 2, "", 0, NP_ASSOC_NONE},
     {316, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {316, Ingagi_body_325, 1, "", 0, NP_ASSOC_NONE},
-    {319, Ingagi_body_326, 1, "", 0, NP_ASSOC_NONE},
-    {319, Ingagi_body_327, 1, "", 0, NP_ASSOC_NONE},
+    {316, Ingagi_body_321, 1, "", 0, NP_ASSOC_NONE},
+    {51, Ingagi_body_322, 3, "MatchArms", 0, NP_ASSOC_NONE},
+    {318, Ingagi_body_323, 2, "", 0, NP_ASSOC_NONE},
+    {317, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {317, Ingagi_body_325, 1, "", 0, NP_ASSOC_NONE},
+    {320, Ingagi_body_326, 1, "", 0, NP_ASSOC_NONE},
+    {320, Ingagi_body_327, 1, "", 0, NP_ASSOC_NONE},
     {52, Ingagi_body_328, 4, "MatchArm", 0, NP_ASSOC_NONE},
-    {322, Ingagi_body_329, 1, "", 0, NP_ASSOC_NONE},
-    {322, Ingagi_body_330, 1, "", 0, NP_ASSOC_NONE},
-    {321, Ingagi_body_331, 2, "", 0, NP_ASSOC_NONE},
-    {320, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {320, Ingagi_body_333, 1, "", 0, NP_ASSOC_NONE},
+    {323, Ingagi_body_329, 1, "", 0, NP_ASSOC_NONE},
+    {323, Ingagi_body_330, 1, "", 0, NP_ASSOC_NONE},
+    {322, Ingagi_body_331, 2, "", 0, NP_ASSOC_NONE},
+    {321, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {321, Ingagi_body_333, 1, "", 0, NP_ASSOC_NONE},
     {53, Ingagi_body_334, 4, "IfExpr", 0, NP_ASSOC_NONE},
     {54, Ingagi_body_335, 1, "IntLit", 0, NP_ASSOC_NONE},
     {54, Ingagi_body_336, 1, "FloatLit", 0, NP_ASSOC_NONE},
@@ -1455,22 +1461,22 @@ static const np_production_spec Ingagi_productions[] = {
     {55, Ingagi_body_358, 1, "", 0, NP_ASSOC_NONE},
     {55, Ingagi_body_359, 1, "", 0, NP_ASSOC_NONE},
     {55, Ingagi_body_360, 2, "Stmt", 0, NP_ASSOC_NONE},
-    {327, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {327, Ingagi_body_362, 1, "", 0, NP_ASSOC_NONE},
+    {328, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {328, Ingagi_body_362, 1, "", 0, NP_ASSOC_NONE},
     {56, Ingagi_body_363, 3, "ReturnStmt", 0, NP_ASSOC_NONE},
-    {329, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {329, Ingagi_body_365, 1, "", 0, NP_ASSOC_NONE},
     {330, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {330, Ingagi_body_367, 1, "", 0, NP_ASSOC_NONE},
+    {330, Ingagi_body_365, 1, "", 0, NP_ASSOC_NONE},
+    {331, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {331, Ingagi_body_367, 1, "", 0, NP_ASSOC_NONE},
     {57, Ingagi_body_368, 4, "BreakStmt", 0, NP_ASSOC_NONE},
-    {332, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {332, Ingagi_body_370, 1, "", 0, NP_ASSOC_NONE},
-    {58, Ingagi_body_371, 3, "ContinueStmt", 0, NP_ASSOC_NONE},
-    {335, Ingagi_body_372, 1, "", 0, NP_ASSOC_NONE},
-    {335, Ingagi_body_373, 1, "", 0, NP_ASSOC_NONE},
-    {334, Ingagi_body_374, 2, "", 0, NP_ASSOC_NONE},
     {333, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {333, Ingagi_body_376, 1, "", 0, NP_ASSOC_NONE},
+    {333, Ingagi_body_370, 1, "", 0, NP_ASSOC_NONE},
+    {58, Ingagi_body_371, 3, "ContinueStmt", 0, NP_ASSOC_NONE},
+    {336, Ingagi_body_372, 1, "", 0, NP_ASSOC_NONE},
+    {336, Ingagi_body_373, 1, "", 0, NP_ASSOC_NONE},
+    {335, Ingagi_body_374, 2, "", 0, NP_ASSOC_NONE},
+    {334, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {334, Ingagi_body_376, 1, "", 0, NP_ASSOC_NONE},
     {59, Ingagi_body_377, 4, "IfStmt", 0, NP_ASSOC_NONE},
     {60, Ingagi_body_378, 3, "WhileStmt", 0, NP_ASSOC_NONE},
     {61, Ingagi_body_379, 5, "ForStmt", 0, NP_ASSOC_NONE},
@@ -1482,141 +1488,141 @@ static const np_production_spec Ingagi_productions[] = {
     {66, Ingagi_body_385, 1, "BindPat", 0, NP_ASSOC_NONE},
     {66, Ingagi_body_386, 1, "LitPat", 0, NP_ASSOC_NONE},
     {66, Ingagi_body_387, 1, "PathPat", 0, NP_ASSOC_NONE},
-    {344, Ingagi_body_388, 2, "", 0, NP_ASSOC_NONE},
-    {343, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {343, Ingagi_body_390, 2, "", 0, NP_ASSOC_NONE},
-    {345, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {345, Ingagi_body_392, 1, "", 0, NP_ASSOC_NONE},
-    {66, Ingagi_body_393, 5, "TuplePat", 0, NP_ASSOC_NONE},
+    {345, Ingagi_body_388, 2, "", 0, NP_ASSOC_NONE},
+    {344, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {344, Ingagi_body_390, 2, "", 0, NP_ASSOC_NONE},
     {346, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {346, Ingagi_body_395, 1, "", 0, NP_ASSOC_NONE},
-    {66, Ingagi_body_396, 4, "StructPat", 0, NP_ASSOC_NONE},
-    {350, Ingagi_body_397, 2, "", 0, NP_ASSOC_NONE},
-    {349, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {349, Ingagi_body_399, 2, "", 0, NP_ASSOC_NONE},
-    {348, Ingagi_body_400, 2, "", 0, NP_ASSOC_NONE},
+    {346, Ingagi_body_392, 1, "", 0, NP_ASSOC_NONE},
+    {66, Ingagi_body_393, 5, "TuplePat", 0, NP_ASSOC_NONE},
     {347, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {347, Ingagi_body_402, 1, "", 0, NP_ASSOC_NONE},
-    {354, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {354, Ingagi_body_404, 1, "", 0, NP_ASSOC_NONE},
-    {352, Ingagi_body_405, 2, "", 0, NP_ASSOC_NONE},
-    {351, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {351, Ingagi_body_407, 1, "", 0, NP_ASSOC_NONE},
+    {347, Ingagi_body_395, 1, "", 0, NP_ASSOC_NONE},
+    {66, Ingagi_body_396, 4, "StructPat", 0, NP_ASSOC_NONE},
+    {351, Ingagi_body_397, 2, "", 0, NP_ASSOC_NONE},
+    {350, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {350, Ingagi_body_399, 2, "", 0, NP_ASSOC_NONE},
+    {349, Ingagi_body_400, 2, "", 0, NP_ASSOC_NONE},
+    {348, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {348, Ingagi_body_402, 1, "", 0, NP_ASSOC_NONE},
+    {355, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {355, Ingagi_body_404, 1, "", 0, NP_ASSOC_NONE},
+    {353, Ingagi_body_405, 2, "", 0, NP_ASSOC_NONE},
+    {352, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {352, Ingagi_body_407, 1, "", 0, NP_ASSOC_NONE},
     {66, Ingagi_body_408, 4, "ArrayPat", 0, NP_ASSOC_NONE},
     {66, Ingagi_body_409, 3, "OrPat", 5, NP_ASSOC_LEFT},
-    {356, Ingagi_body_410, 2, "", 0, NP_ASSOC_NONE},
-    {355, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {355, Ingagi_body_412, 2, "", 0, NP_ASSOC_NONE},
-    {357, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {357, Ingagi_body_414, 1, "", 0, NP_ASSOC_NONE},
-    {67, Ingagi_body_415, 3, "PatternFields", 0, NP_ASSOC_NONE},
-    {359, Ingagi_body_416, 2, "", 2, NP_ASSOC_RIGHT},
+    {357, Ingagi_body_410, 2, "", 0, NP_ASSOC_NONE},
+    {356, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {356, Ingagi_body_412, 2, "", 0, NP_ASSOC_NONE},
     {358, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {358, Ingagi_body_418, 1, "", 0, NP_ASSOC_NONE},
+    {358, Ingagi_body_414, 1, "", 0, NP_ASSOC_NONE},
+    {67, Ingagi_body_415, 3, "PatternFields", 0, NP_ASSOC_NONE},
+    {360, Ingagi_body_416, 2, "", 2, NP_ASSOC_RIGHT},
+    {359, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {359, Ingagi_body_418, 1, "", 0, NP_ASSOC_NONE},
     {68, Ingagi_body_419, 2, "PatternField", 0, NP_ASSOC_NONE},
-    {361, Ingagi_body_420, 2, "", 0, NP_ASSOC_NONE},
-    {360, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {360, Ingagi_body_422, 2, "", 0, NP_ASSOC_NONE},
+    {362, Ingagi_body_420, 2, "", 0, NP_ASSOC_NONE},
+    {361, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {361, Ingagi_body_422, 2, "", 0, NP_ASSOC_NONE},
     {69, Ingagi_body_423, 2, "QualifiedName", 0, NP_ASSOC_NONE},
-    {362, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {362, Ingagi_body_425, 1, "", 0, NP_ASSOC_NONE},
-    {364, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {364, Ingagi_body_427, 1, "", 0, NP_ASSOC_NONE},
-    {366, Ingagi_body_428, 2, "", 2, NP_ASSOC_RIGHT},
+    {363, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {363, Ingagi_body_425, 1, "", 0, NP_ASSOC_NONE},
     {365, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {365, Ingagi_body_430, 1, "", 0, NP_ASSOC_NONE},
-    {367, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {367, Ingagi_body_432, 2, "", 0, NP_ASSOC_NONE},
+    {365, Ingagi_body_427, 1, "", 0, NP_ASSOC_NONE},
+    {367, Ingagi_body_428, 2, "", 2, NP_ASSOC_RIGHT},
+    {366, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {366, Ingagi_body_430, 1, "", 0, NP_ASSOC_NONE},
+    {368, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {368, Ingagi_body_432, 2, "", 0, NP_ASSOC_NONE},
     {70, Ingagi_body_433, 8, "ComponentDecl", 0, NP_ASSOC_NONE},
-    {368, Ingagi_body_434, 1, "", 0, NP_ASSOC_NONE},
-    {368, Ingagi_body_435, 1, "", 0, NP_ASSOC_NONE},
+    {369, Ingagi_body_434, 1, "", 0, NP_ASSOC_NONE},
+    {369, Ingagi_body_435, 1, "", 0, NP_ASSOC_NONE},
     {71, Ingagi_body_436, 2, "ComponentMember", 0, NP_ASSOC_NONE},
-    {370, Ingagi_body_437, 2, "", 1, NP_ASSOC_RIGHT},
-    {369, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {369, Ingagi_body_439, 1, "", 0, NP_ASSOC_NONE},
+    {371, Ingagi_body_437, 2, "", 1, NP_ASSOC_RIGHT},
+    {370, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {370, Ingagi_body_439, 1, "", 0, NP_ASSOC_NONE},
     {72, Ingagi_body_440, 5, "ComponentField", 0, NP_ASSOC_NONE},
-    {371, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {371, Ingagi_body_442, 1, "", 0, NP_ASSOC_NONE},
-    {373, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {373, Ingagi_body_444, 1, "", 0, NP_ASSOC_NONE},
+    {372, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {372, Ingagi_body_442, 1, "", 0, NP_ASSOC_NONE},
     {374, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {374, Ingagi_body_446, 2, "", 0, NP_ASSOC_NONE},
+    {374, Ingagi_body_444, 1, "", 0, NP_ASSOC_NONE},
+    {375, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {375, Ingagi_body_446, 2, "", 0, NP_ASSOC_NONE},
     {73, Ingagi_body_447, 7, "EntityDecl", 0, NP_ASSOC_NONE},
     {74, Ingagi_body_448, 1, "", 0, NP_ASSOC_NONE},
     {74, Ingagi_body_449, 1, "", 0, NP_ASSOC_NONE},
     {74, Ingagi_body_450, 1, "EntityMember", 0, NP_ASSOC_NONE},
-    {377, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {377, Ingagi_body_452, 1, "", 0, NP_ASSOC_NONE},
-    {376, Ingagi_body_453, 3, "", 0, NP_ASSOC_NONE},
-    {375, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {375, Ingagi_body_455, 1, "", 0, NP_ASSOC_NONE},
+    {378, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {378, Ingagi_body_452, 1, "", 0, NP_ASSOC_NONE},
+    {377, Ingagi_body_453, 3, "", 0, NP_ASSOC_NONE},
+    {376, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {376, Ingagi_body_455, 1, "", 0, NP_ASSOC_NONE},
     {75, Ingagi_body_456, 3, "ComponentAttach", 0, NP_ASSOC_NONE},
     {76, Ingagi_body_457, 5, "EntityChild", 0, NP_ASSOC_NONE},
-    {380, Ingagi_body_458, 2, "", 1, NP_ASSOC_RIGHT},
-    {379, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {379, Ingagi_body_460, 1, "", 0, NP_ASSOC_NONE},
+    {381, Ingagi_body_458, 2, "", 1, NP_ASSOC_RIGHT},
+    {380, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {380, Ingagi_body_460, 1, "", 0, NP_ASSOC_NONE},
     {77, Ingagi_body_461, 5, "EntityProp", 0, NP_ASSOC_NONE},
-    {381, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {381, Ingagi_body_463, 1, "", 0, NP_ASSOC_NONE},
-    {78, Ingagi_body_464, 4, "CallEntity", 0, NP_ASSOC_NONE},
     {382, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {382, Ingagi_body_466, 1, "", 0, NP_ASSOC_NONE},
+    {382, Ingagi_body_463, 1, "", 0, NP_ASSOC_NONE},
+    {78, Ingagi_body_464, 4, "CallEntity", 0, NP_ASSOC_NONE},
+    {383, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {383, Ingagi_body_466, 1, "", 0, NP_ASSOC_NONE},
     {78, Ingagi_body_467, 4, "StructEntity", 0, NP_ASSOC_NONE},
     {78, Ingagi_body_468, 1, "NamedEntity", 0, NP_ASSOC_NONE},
-    {383, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {383, Ingagi_body_470, 1, "", 0, NP_ASSOC_NONE},
-    {385, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {385, Ingagi_body_472, 1, "", 0, NP_ASSOC_NONE},
+    {384, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {384, Ingagi_body_470, 1, "", 0, NP_ASSOC_NONE},
     {386, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {386, Ingagi_body_474, 2, "", 0, NP_ASSOC_NONE},
+    {386, Ingagi_body_472, 1, "", 0, NP_ASSOC_NONE},
+    {387, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {387, Ingagi_body_474, 2, "", 0, NP_ASSOC_NONE},
     {79, Ingagi_body_475, 7, "SystemDecl", 0, NP_ASSOC_NONE},
     {80, Ingagi_body_476, 1, "", 0, NP_ASSOC_NONE},
     {80, Ingagi_body_477, 1, "", 0, NP_ASSOC_NONE},
     {80, Ingagi_body_478, 1, "", 0, NP_ASSOC_NONE},
     {80, Ingagi_body_479, 1, "", 0, NP_ASSOC_NONE},
     {80, Ingagi_body_480, 1, "SystemMember", 0, NP_ASSOC_NONE},
-    {388, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {388, Ingagi_body_482, 1, "", 0, NP_ASSOC_NONE},
+    {389, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {389, Ingagi_body_482, 1, "", 0, NP_ASSOC_NONE},
     {81, Ingagi_body_483, 4, "SystemQuery", 0, NP_ASSOC_NONE},
-    {390, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {390, Ingagi_body_485, 1, "", 0, NP_ASSOC_NONE},
-    {394, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {394, Ingagi_body_487, 1, "", 0, NP_ASSOC_NONE},
-    {392, Ingagi_body_488, 4, "", 0, NP_ASSOC_NONE},
     {391, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {391, Ingagi_body_490, 1, "", 0, NP_ASSOC_NONE},
-    {398, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {398, Ingagi_body_492, 1, "", 0, NP_ASSOC_NONE},
-    {396, Ingagi_body_493, 4, "", 0, NP_ASSOC_NONE},
+    {391, Ingagi_body_485, 1, "", 0, NP_ASSOC_NONE},
     {395, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {395, Ingagi_body_495, 1, "", 0, NP_ASSOC_NONE},
-    {82, Ingagi_body_496, 6, "QueryWith", 0, NP_ASSOC_NONE},
+    {395, Ingagi_body_487, 1, "", 0, NP_ASSOC_NONE},
+    {393, Ingagi_body_488, 4, "", 0, NP_ASSOC_NONE},
+    {392, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {392, Ingagi_body_490, 1, "", 0, NP_ASSOC_NONE},
     {399, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {399, Ingagi_body_498, 1, "", 0, NP_ASSOC_NONE},
-    {402, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {402, Ingagi_body_500, 1, "", 0, NP_ASSOC_NONE},
-    {401, Ingagi_body_501, 4, "", 0, NP_ASSOC_NONE},
+    {399, Ingagi_body_492, 1, "", 0, NP_ASSOC_NONE},
+    {397, Ingagi_body_493, 4, "", 0, NP_ASSOC_NONE},
+    {396, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {396, Ingagi_body_495, 1, "", 0, NP_ASSOC_NONE},
+    {82, Ingagi_body_496, 6, "QueryWith", 0, NP_ASSOC_NONE},
     {400, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {400, Ingagi_body_503, 1, "", 0, NP_ASSOC_NONE},
-    {82, Ingagi_body_504, 5, "QueryWithout", 0, NP_ASSOC_NONE},
+    {400, Ingagi_body_498, 1, "", 0, NP_ASSOC_NONE},
     {403, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {403, Ingagi_body_506, 1, "", 0, NP_ASSOC_NONE},
-    {82, Ingagi_body_507, 4, "QueryOptional", 0, NP_ASSOC_NONE},
-    {405, Ingagi_body_508, 2, "", 0, NP_ASSOC_NONE},
+    {403, Ingagi_body_500, 1, "", 0, NP_ASSOC_NONE},
+    {402, Ingagi_body_501, 4, "", 0, NP_ASSOC_NONE},
+    {401, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {401, Ingagi_body_503, 1, "", 0, NP_ASSOC_NONE},
+    {82, Ingagi_body_504, 5, "QueryWithout", 0, NP_ASSOC_NONE},
     {404, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {404, Ingagi_body_510, 2, "", 0, NP_ASSOC_NONE},
+    {404, Ingagi_body_506, 1, "", 0, NP_ASSOC_NONE},
+    {82, Ingagi_body_507, 4, "QueryOptional", 0, NP_ASSOC_NONE},
+    {406, Ingagi_body_508, 2, "", 0, NP_ASSOC_NONE},
+    {405, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {405, Ingagi_body_510, 2, "", 0, NP_ASSOC_NONE},
     {83, Ingagi_body_511, 2, "QueryComps", 0, NP_ASSOC_NONE},
-    {408, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {408, Ingagi_body_513, 1, "", 0, NP_ASSOC_NONE},
-    {407, Ingagi_body_514, 2, "", 7, NP_ASSOC_LEFT},
-    {406, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {406, Ingagi_body_516, 1, "", 0, NP_ASSOC_NONE},
-    {410, Ingagi_body_517, 2, "", 0, NP_ASSOC_NONE},
     {409, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {409, Ingagi_body_519, 1, "", 0, NP_ASSOC_NONE},
+    {409, Ingagi_body_513, 1, "", 0, NP_ASSOC_NONE},
+    {408, Ingagi_body_514, 2, "", 7, NP_ASSOC_LEFT},
+    {407, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {407, Ingagi_body_516, 1, "", 0, NP_ASSOC_NONE},
+    {411, Ingagi_body_517, 2, "", 0, NP_ASSOC_NONE},
+    {410, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {410, Ingagi_body_519, 1, "", 0, NP_ASSOC_NONE},
     {84, Ingagi_body_520, 3, "QueryComp", 0, NP_ASSOC_NONE},
-    {411, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {411, Ingagi_body_522, 1, "", 0, NP_ASSOC_NONE},
+    {412, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {412, Ingagi_body_522, 1, "", 0, NP_ASSOC_NONE},
     {85, Ingagi_body_523, 5, "SystemHook", 0, NP_ASSOC_NONE},
     {86, Ingagi_body_524, 1, "", 0, NP_ASSOC_NONE},
     {86, Ingagi_body_525, 1, "", 0, NP_ASSOC_NONE},
@@ -1628,82 +1634,82 @@ static const np_production_spec Ingagi_productions[] = {
     {86, Ingagi_body_531, 1, "HookName", 0, NP_ASSOC_NONE},
     {87, Ingagi_body_532, 3, "BeforeDep", 0, NP_ASSOC_NONE},
     {87, Ingagi_body_533, 3, "AfterDep", 0, NP_ASSOC_NONE},
-    {423, Ingagi_body_534, 1, "", 0, NP_ASSOC_NONE},
-    {423, Ingagi_body_535, 1, "", 0, NP_ASSOC_NONE},
+    {424, Ingagi_body_534, 1, "", 0, NP_ASSOC_NONE},
+    {424, Ingagi_body_535, 1, "", 0, NP_ASSOC_NONE},
     {87, Ingagi_body_536, 3, "ParallelDep", 0, NP_ASSOC_NONE},
-    {425, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {425, Ingagi_body_538, 1, "", 0, NP_ASSOC_NONE},
-    {88, Ingagi_body_539, 8, "ForEachStmt", 0, NP_ASSOC_NONE},
-    {427, Ingagi_body_540, 2, "", 0, NP_ASSOC_NONE},
     {426, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {426, Ingagi_body_542, 2, "", 0, NP_ASSOC_NONE},
+    {426, Ingagi_body_538, 1, "", 0, NP_ASSOC_NONE},
+    {88, Ingagi_body_539, 8, "ForEachStmt", 0, NP_ASSOC_NONE},
+    {428, Ingagi_body_540, 2, "", 0, NP_ASSOC_NONE},
+    {427, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {427, Ingagi_body_542, 2, "", 0, NP_ASSOC_NONE},
     {89, Ingagi_body_543, 2, "QueryBindings", 0, NP_ASSOC_NONE},
-    {430, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {430, Ingagi_body_545, 1, "", 0, NP_ASSOC_NONE},
-    {429, Ingagi_body_546, 2, "", 7, NP_ASSOC_LEFT},
-    {428, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {428, Ingagi_body_548, 1, "", 0, NP_ASSOC_NONE},
-    {432, Ingagi_body_549, 2, "", 0, NP_ASSOC_NONE},
     {431, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {431, Ingagi_body_551, 1, "", 0, NP_ASSOC_NONE},
+    {431, Ingagi_body_545, 1, "", 0, NP_ASSOC_NONE},
+    {430, Ingagi_body_546, 2, "", 7, NP_ASSOC_LEFT},
+    {429, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {429, Ingagi_body_548, 1, "", 0, NP_ASSOC_NONE},
+    {433, Ingagi_body_549, 2, "", 0, NP_ASSOC_NONE},
+    {432, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {432, Ingagi_body_551, 1, "", 0, NP_ASSOC_NONE},
     {90, Ingagi_body_552, 3, "QueryBinding", 0, NP_ASSOC_NONE},
-    {434, Ingagi_body_553, 1, "", 0, NP_ASSOC_NONE},
-    {434, Ingagi_body_554, 1, "", 0, NP_ASSOC_NONE},
-    {438, Ingagi_body_555, 2, "", 0, NP_ASSOC_NONE},
-    {437, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {437, Ingagi_body_557, 1, "", 0, NP_ASSOC_NONE},
-    {440, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {440, Ingagi_body_559, 1, "", 0, NP_ASSOC_NONE},
-    {443, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {443, Ingagi_body_561, 1, "", 0, NP_ASSOC_NONE},
-    {442, Ingagi_body_562, 4, "", 0, NP_ASSOC_NONE},
+    {435, Ingagi_body_553, 1, "", 0, NP_ASSOC_NONE},
+    {435, Ingagi_body_554, 1, "", 0, NP_ASSOC_NONE},
+    {439, Ingagi_body_555, 2, "", 0, NP_ASSOC_NONE},
+    {438, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {438, Ingagi_body_557, 1, "", 0, NP_ASSOC_NONE},
     {441, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {441, Ingagi_body_564, 1, "", 0, NP_ASSOC_NONE},
+    {441, Ingagi_body_559, 1, "", 0, NP_ASSOC_NONE},
+    {444, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {444, Ingagi_body_561, 1, "", 0, NP_ASSOC_NONE},
+    {443, Ingagi_body_562, 4, "", 0, NP_ASSOC_NONE},
+    {442, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {442, Ingagi_body_564, 1, "", 0, NP_ASSOC_NONE},
     {91, Ingagi_body_565, 14, "BindStmt", 0, NP_ASSOC_NONE},
     {92, Ingagi_body_566, 3, "EmitStmt", 0, NP_ASSOC_NONE},
-    {446, Ingagi_body_567, 1, "", 0, NP_ASSOC_NONE},
-    {446, Ingagi_body_568, 1, "", 0, NP_ASSOC_NONE},
-    {446, Ingagi_body_569, 1, "", 0, NP_ASSOC_NONE},
+    {447, Ingagi_body_567, 1, "", 0, NP_ASSOC_NONE},
+    {447, Ingagi_body_568, 1, "", 0, NP_ASSOC_NONE},
+    {447, Ingagi_body_569, 1, "", 0, NP_ASSOC_NONE},
     {93, Ingagi_body_570, 4, "OnStmt", 0, NP_ASSOC_NONE},
-    {450, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {450, Ingagi_body_572, 1, "", 0, NP_ASSOC_NONE},
-    {452, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {452, Ingagi_body_574, 1, "", 0, NP_ASSOC_NONE},
-    {454, Ingagi_body_575, 2, "", 2, NP_ASSOC_RIGHT},
+    {451, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {451, Ingagi_body_572, 1, "", 0, NP_ASSOC_NONE},
     {453, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {453, Ingagi_body_577, 1, "", 0, NP_ASSOC_NONE},
-    {455, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {455, Ingagi_body_579, 2, "", 0, NP_ASSOC_NONE},
-    {94, Ingagi_body_580, 8, "EventDecl", 0, NP_ASSOC_NONE},
+    {453, Ingagi_body_574, 1, "", 0, NP_ASSOC_NONE},
+    {455, Ingagi_body_575, 2, "", 2, NP_ASSOC_RIGHT},
+    {454, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {454, Ingagi_body_577, 1, "", 0, NP_ASSOC_NONE},
     {456, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {456, Ingagi_body_582, 1, "", 0, NP_ASSOC_NONE},
-    {459, Ingagi_body_583, 2, "", 2, NP_ASSOC_RIGHT},
-    {458, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {458, Ingagi_body_585, 1, "", 0, NP_ASSOC_NONE},
-    {461, Ingagi_body_586, 2, "", 1, NP_ASSOC_RIGHT},
-    {460, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {460, Ingagi_body_588, 1, "", 0, NP_ASSOC_NONE},
+    {456, Ingagi_body_579, 2, "", 0, NP_ASSOC_NONE},
+    {94, Ingagi_body_580, 8, "EventDecl", 0, NP_ASSOC_NONE},
+    {457, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {457, Ingagi_body_582, 1, "", 0, NP_ASSOC_NONE},
+    {460, Ingagi_body_583, 2, "", 2, NP_ASSOC_RIGHT},
+    {459, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {459, Ingagi_body_585, 1, "", 0, NP_ASSOC_NONE},
+    {462, Ingagi_body_586, 2, "", 1, NP_ASSOC_RIGHT},
+    {461, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {461, Ingagi_body_588, 1, "", 0, NP_ASSOC_NONE},
     {95, Ingagi_body_589, 6, "ResourceDecl", 0, NP_ASSOC_NONE},
-    {462, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {462, Ingagi_body_591, 1, "", 0, NP_ASSOC_NONE},
-    {465, Ingagi_body_592, 1, "", 0, NP_ASSOC_NONE},
-    {465, Ingagi_body_593, 1, "", 0, NP_ASSOC_NONE},
-    {464, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {464, Ingagi_body_595, 2, "", 0, NP_ASSOC_NONE},
+    {463, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {463, Ingagi_body_591, 1, "", 0, NP_ASSOC_NONE},
+    {466, Ingagi_body_592, 1, "", 0, NP_ASSOC_NONE},
+    {466, Ingagi_body_593, 1, "", 0, NP_ASSOC_NONE},
+    {465, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {465, Ingagi_body_595, 2, "", 0, NP_ASSOC_NONE},
     {96, Ingagi_body_596, 6, "InterfaceDecl", 0, NP_ASSOC_NONE},
-    {466, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {466, Ingagi_body_598, 1, "", 0, NP_ASSOC_NONE},
-    {469, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {469, Ingagi_body_600, 1, "", 0, NP_ASSOC_NONE},
-    {468, Ingagi_body_601, 3, "", 0, NP_ASSOC_NONE},
     {467, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {467, Ingagi_body_603, 1, "", 0, NP_ASSOC_NONE},
+    {467, Ingagi_body_598, 1, "", 0, NP_ASSOC_NONE},
     {470, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {470, Ingagi_body_605, 2, "", 0, NP_ASSOC_NONE},
-    {97, Ingagi_body_606, 7, "ShaderDecl", 0, NP_ASSOC_NONE},
-    {472, Ingagi_body_607, 2, "", 0, NP_ASSOC_NONE},
+    {470, Ingagi_body_600, 1, "", 0, NP_ASSOC_NONE},
+    {469, Ingagi_body_601, 3, "", 0, NP_ASSOC_NONE},
+    {468, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {468, Ingagi_body_603, 1, "", 0, NP_ASSOC_NONE},
     {471, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {471, Ingagi_body_609, 2, "", 0, NP_ASSOC_NONE},
+    {471, Ingagi_body_605, 2, "", 0, NP_ASSOC_NONE},
+    {97, Ingagi_body_606, 7, "ShaderDecl", 0, NP_ASSOC_NONE},
+    {473, Ingagi_body_607, 2, "", 0, NP_ASSOC_NONE},
+    {472, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {472, Ingagi_body_609, 2, "", 0, NP_ASSOC_NONE},
     {98, Ingagi_body_610, 2, "ShaderOptions", 0, NP_ASSOC_NONE},
     {99, Ingagi_body_611, 3, "ShaderOption", 2, NP_ASSOC_RIGHT},
     {100, Ingagi_body_612, 1, "", 0, NP_ASSOC_NONE},
@@ -1711,114 +1717,119 @@ static const np_production_spec Ingagi_productions[] = {
     {100, Ingagi_body_614, 1, "", 0, NP_ASSOC_NONE},
     {100, Ingagi_body_615, 1, "", 0, NP_ASSOC_NONE},
     {100, Ingagi_body_616, 1, "", 0, NP_ASSOC_NONE},
-    {100, Ingagi_body_617, 1, "ShaderMember", 0, NP_ASSOC_NONE},
-    {473, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {473, Ingagi_body_619, 2, "", 0, NP_ASSOC_NONE},
-    {101, Ingagi_body_620, 5, "ShaderStruct", 0, NP_ASSOC_NONE},
-    {102, Ingagi_body_621, 5, "ShaderField", 0, NP_ASSOC_NONE},
-    {103, Ingagi_body_622, 7, "ShaderConst", 0, NP_ASSOC_NONE},
-    {476, Ingagi_body_623, 2, "", 1, NP_ASSOC_RIGHT},
+    {100, Ingagi_body_617, 1, "", 0, NP_ASSOC_NONE},
+    {100, Ingagi_body_618, 1, "ShaderMember", 0, NP_ASSOC_NONE},
+    {474, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {474, Ingagi_body_620, 2, "", 0, NP_ASSOC_NONE},
+    {101, Ingagi_body_621, 5, "ShaderStruct", 0, NP_ASSOC_NONE},
     {475, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {475, Ingagi_body_625, 1, "", 0, NP_ASSOC_NONE},
-    {104, Ingagi_body_626, 6, "ShaderSpec", 0, NP_ASSOC_NONE},
-    {105, Ingagi_body_627, 2, "ShaderResource", 0, NP_ASSOC_NONE},
-    {478, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {478, Ingagi_body_629, 2, "", 0, NP_ASSOC_NONE},
-    {479, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {479, Ingagi_body_631, 1, "", 0, NP_ASSOC_NONE},
-    {106, Ingagi_body_632, 7, "UniformBlock", 0, NP_ASSOC_NONE},
-    {481, Ingagi_body_633, 1, "", 0, NP_ASSOC_NONE},
-    {481, Ingagi_body_634, 1, "", 0, NP_ASSOC_NONE},
-    {481, Ingagi_body_635, 1, "", 0, NP_ASSOC_NONE},
+    {475, Ingagi_body_623, 2, "", 0, NP_ASSOC_NONE},
+    {102, Ingagi_body_624, 5, "ShaderInterface", 0, NP_ASSOC_NONE},
+    {103, Ingagi_body_625, 5, "ShaderField", 0, NP_ASSOC_NONE},
+    {104, Ingagi_body_626, 7, "ShaderConst", 0, NP_ASSOC_NONE},
+    {478, Ingagi_body_627, 2, "", 1, NP_ASSOC_RIGHT},
+    {477, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {477, Ingagi_body_629, 1, "", 0, NP_ASSOC_NONE},
+    {105, Ingagi_body_630, 6, "ShaderSpec", 0, NP_ASSOC_NONE},
+    {106, Ingagi_body_631, 2, "ShaderResource", 0, NP_ASSOC_NONE},
     {480, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {480, Ingagi_body_637, 1, "", 0, NP_ASSOC_NONE},
-    {487, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {487, Ingagi_body_639, 2, "", 0, NP_ASSOC_NONE},
-    {488, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {488, Ingagi_body_641, 1, "", 0, NP_ASSOC_NONE},
-    {106, Ingagi_body_642, 9, "StorageBlock", 0, NP_ASSOC_NONE},
-    {490, Ingagi_body_643, 2, "", 2, NP_ASSOC_RIGHT},
+    {480, Ingagi_body_633, 2, "", 0, NP_ASSOC_NONE},
+    {481, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {481, Ingagi_body_635, 1, "", 0, NP_ASSOC_NONE},
+    {107, Ingagi_body_636, 7, "UniformBlock", 0, NP_ASSOC_NONE},
+    {483, Ingagi_body_637, 1, "", 0, NP_ASSOC_NONE},
+    {483, Ingagi_body_638, 1, "", 0, NP_ASSOC_NONE},
+    {483, Ingagi_body_639, 1, "", 0, NP_ASSOC_NONE},
+    {482, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {482, Ingagi_body_641, 1, "", 0, NP_ASSOC_NONE},
     {489, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {489, Ingagi_body_645, 1, "", 0, NP_ASSOC_NONE},
-    {106, Ingagi_body_646, 4, "TextureDecl", 0, NP_ASSOC_NONE},
+    {489, Ingagi_body_643, 2, "", 0, NP_ASSOC_NONE},
+    {490, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {490, Ingagi_body_645, 1, "", 0, NP_ASSOC_NONE},
+    {107, Ingagi_body_646, 9, "StorageBlock", 0, NP_ASSOC_NONE},
+    {492, Ingagi_body_647, 2, "", 2, NP_ASSOC_RIGHT},
     {491, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {491, Ingagi_body_648, 1, "", 0, NP_ASSOC_NONE},
-    {106, Ingagi_body_649, 4, "SamplerDecl", 0, NP_ASSOC_NONE},
-    {495, Ingagi_body_650, 1, "", 0, NP_ASSOC_NONE},
-    {495, Ingagi_body_651, 1, "", 0, NP_ASSOC_NONE},
-    {495, Ingagi_body_652, 1, "", 0, NP_ASSOC_NONE},
-    {106, Ingagi_body_653, 6, "StorageImageDecl", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_654, 1, "", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_655, 1, "", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_656, 1, "", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_657, 1, "", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_658, 1, "", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_659, 1, "", 0, NP_ASSOC_NONE},
-    {107, Ingagi_body_660, 1, "TextureKind", 0, NP_ASSOC_NONE},
-    {503, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {503, Ingagi_body_662, 1, "", 0, NP_ASSOC_NONE},
-    {504, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {504, Ingagi_body_664, 1, "", 0, NP_ASSOC_NONE},
-    {506, Ingagi_body_665, 2, "", 14, NP_ASSOC_LEFT},
+    {491, Ingagi_body_649, 1, "", 0, NP_ASSOC_NONE},
+    {107, Ingagi_body_650, 4, "TextureDecl", 0, NP_ASSOC_NONE},
+    {493, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {493, Ingagi_body_652, 1, "", 0, NP_ASSOC_NONE},
+    {107, Ingagi_body_653, 4, "SamplerDecl", 0, NP_ASSOC_NONE},
+    {497, Ingagi_body_654, 1, "", 0, NP_ASSOC_NONE},
+    {497, Ingagi_body_655, 1, "", 0, NP_ASSOC_NONE},
+    {497, Ingagi_body_656, 1, "", 0, NP_ASSOC_NONE},
+    {107, Ingagi_body_657, 6, "StorageImageDecl", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_658, 1, "", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_659, 1, "", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_660, 1, "", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_661, 1, "", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_662, 1, "", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_663, 1, "", 0, NP_ASSOC_NONE},
+    {108, Ingagi_body_664, 1, "TextureKind", 0, NP_ASSOC_NONE},
     {505, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {505, Ingagi_body_667, 1, "", 0, NP_ASSOC_NONE},
-    {108, Ingagi_body_668, 7, "ShaderFunc", 0, NP_ASSOC_NONE},
-    {508, Ingagi_body_669, 2, "", 0, NP_ASSOC_NONE},
+    {505, Ingagi_body_666, 1, "", 0, NP_ASSOC_NONE},
+    {506, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {506, Ingagi_body_668, 1, "", 0, NP_ASSOC_NONE},
+    {508, Ingagi_body_669, 2, "", 14, NP_ASSOC_LEFT},
     {507, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {507, Ingagi_body_671, 2, "", 0, NP_ASSOC_NONE},
+    {507, Ingagi_body_671, 1, "", 0, NP_ASSOC_NONE},
+    {109, Ingagi_body_672, 7, "ShaderFunc", 0, NP_ASSOC_NONE},
+    {510, Ingagi_body_673, 2, "", 0, NP_ASSOC_NONE},
     {509, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {509, Ingagi_body_673, 1, "", 0, NP_ASSOC_NONE},
-    {109, Ingagi_body_674, 3, "ShaderParams", 0, NP_ASSOC_NONE},
-    {110, Ingagi_body_675, 4, "ShaderParam", 2, NP_ASSOC_RIGHT},
-    {513, Ingagi_body_676, 2, "", 0, NP_ASSOC_NONE},
+    {509, Ingagi_body_675, 2, "", 0, NP_ASSOC_NONE},
+    {511, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {511, Ingagi_body_677, 1, "", 0, NP_ASSOC_NONE},
+    {110, Ingagi_body_678, 3, "ShaderParams", 0, NP_ASSOC_NONE},
+    {111, Ingagi_body_679, 4, "ShaderParam", 2, NP_ASSOC_RIGHT},
+    {515, Ingagi_body_680, 2, "", 0, NP_ASSOC_NONE},
+    {514, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {514, Ingagi_body_682, 2, "", 0, NP_ASSOC_NONE},
+    {513, Ingagi_body_683, 4, "", 9, NP_ASSOC_LEFT},
     {512, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {512, Ingagi_body_678, 2, "", 0, NP_ASSOC_NONE},
-    {511, Ingagi_body_679, 4, "", 9, NP_ASSOC_LEFT},
-    {510, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {510, Ingagi_body_681, 1, "", 0, NP_ASSOC_NONE},
-    {111, Ingagi_body_682, 2, "ShaderType", 0, NP_ASSOC_NONE},
-    {111, Ingagi_body_683, 5, "ShaderArrayType", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_684, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_685, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_686, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_687, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_688, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_689, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_690, 1, "", 0, NP_ASSOC_NONE},
-    {514, Ingagi_body_691, 1, "", 0, NP_ASSOC_NONE},
-    {525, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {525, Ingagi_body_693, 1, "", 0, NP_ASSOC_NONE},
-    {524, Ingagi_body_694, 3, "", 0, NP_ASSOC_NONE},
-    {523, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {523, Ingagi_body_696, 1, "", 0, NP_ASSOC_NONE},
-    {112, Ingagi_body_697, 3, "ShaderStage", 0, NP_ASSOC_NONE},
-    {526, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {526, Ingagi_body_699, 1, "", 0, NP_ASSOC_NONE},
+    {512, Ingagi_body_685, 1, "", 0, NP_ASSOC_NONE},
+    {112, Ingagi_body_686, 2, "ShaderType", 0, NP_ASSOC_NONE},
+    {112, Ingagi_body_687, 5, "ShaderArrayType", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_688, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_689, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_690, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_691, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_692, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_693, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_694, 1, "", 0, NP_ASSOC_NONE},
+    {516, Ingagi_body_695, 1, "", 0, NP_ASSOC_NONE},
     {527, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {527, Ingagi_body_701, 2, "", 0, NP_ASSOC_NONE},
-    {113, Ingagi_body_702, 6, "PipelineDecl", 0, NP_ASSOC_NONE},
+    {527, Ingagi_body_697, 1, "", 0, NP_ASSOC_NONE},
+    {526, Ingagi_body_698, 3, "", 0, NP_ASSOC_NONE},
+    {525, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {525, Ingagi_body_700, 1, "", 0, NP_ASSOC_NONE},
+    {113, Ingagi_body_701, 3, "ShaderStage", 0, NP_ASSOC_NONE},
+    {528, NULL, 0, "", 0, NP_ASSOC_NONE},
     {528, Ingagi_body_703, 1, "", 0, NP_ASSOC_NONE},
-    {528, Ingagi_body_704, 1, "", 0, NP_ASSOC_NONE},
-    {528, Ingagi_body_705, 1, "", 0, NP_ASSOC_NONE},
-    {528, Ingagi_body_706, 1, "", 0, NP_ASSOC_NONE},
-    {528, Ingagi_body_707, 1, "", 0, NP_ASSOC_NONE},
-    {528, Ingagi_body_708, 1, "", 0, NP_ASSOC_NONE},
-    {528, Ingagi_body_709, 1, "", 0, NP_ASSOC_NONE},
-    {114, Ingagi_body_710, 4, "PipelineStage", 0, NP_ASSOC_NONE},
-    {114, Ingagi_body_711, 4, "PipelineLayout", 0, NP_ASSOC_NONE},
-    {114, Ingagi_body_712, 4, "PipelineVertexLayout", 0, NP_ASSOC_NONE},
-    {531, Ingagi_body_713, 1, "", 0, NP_ASSOC_NONE},
-    {531, Ingagi_body_714, 1, "", 0, NP_ASSOC_NONE},
-    {531, Ingagi_body_715, 1, "", 0, NP_ASSOC_NONE},
-    {531, Ingagi_body_716, 1, "", 0, NP_ASSOC_NONE},
-    {531, Ingagi_body_717, 1, "", 0, NP_ASSOC_NONE},
-    {536, NULL, 0, "", 0, NP_ASSOC_NONE},
-    {536, Ingagi_body_719, 2, "", 0, NP_ASSOC_NONE},
-    {114, Ingagi_body_720, 4, "PipelineState", 0, NP_ASSOC_NONE},
-    {115, Ingagi_body_721, 4, "StateAssign", 0, NP_ASSOC_NONE},
+    {529, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {529, Ingagi_body_705, 2, "", 0, NP_ASSOC_NONE},
+    {114, Ingagi_body_706, 6, "PipelineDecl", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_707, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_708, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_709, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_710, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_711, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_712, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_713, 1, "", 0, NP_ASSOC_NONE},
+    {530, Ingagi_body_714, 1, "", 0, NP_ASSOC_NONE},
+    {115, Ingagi_body_715, 4, "PipelineStage", 0, NP_ASSOC_NONE},
+    {115, Ingagi_body_716, 4, "PipelineLayout", 0, NP_ASSOC_NONE},
+    {115, Ingagi_body_717, 4, "PipelineVertexLayout", 0, NP_ASSOC_NONE},
+    {533, Ingagi_body_718, 1, "", 0, NP_ASSOC_NONE},
+    {533, Ingagi_body_719, 1, "", 0, NP_ASSOC_NONE},
+    {533, Ingagi_body_720, 1, "", 0, NP_ASSOC_NONE},
+    {533, Ingagi_body_721, 1, "", 0, NP_ASSOC_NONE},
+    {533, Ingagi_body_722, 1, "", 0, NP_ASSOC_NONE},
+    {538, NULL, 0, "", 0, NP_ASSOC_NONE},
+    {538, Ingagi_body_724, 2, "", 0, NP_ASSOC_NONE},
+    {115, Ingagi_body_725, 4, "PipelineState", 0, NP_ASSOC_NONE},
+    {116, Ingagi_body_726, 4, "StateAssign", 0, NP_ASSOC_NONE},
 };
 static const np_grammar_spec Ingagi_grammar = {
-    "Ingagi", Ingagi_symbols, 537, Ingagi_productions, 722, 0, NP_SKIP_PATTERN, "([ \011\015\012]|//[^\012]*)+", NP_FIRST, ""
+    "Ingagi", Ingagi_symbols, 539, Ingagi_productions, 727, 0, NP_SKIP_PATTERN, "([ \011\015\012]|//[^\012]*)+", NP_FIRST, ""
 };
 
 static inline np_parser *Ingagi_create(char *error, size_t size)

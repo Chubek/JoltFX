@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,13 +22,26 @@ import (
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
-		fmt.Fprintln(stderr, "usage: ingagi {run|check|dump} [-entry main] [-budget 1000000] FILE\n       ingagi build [-emit obj|bin|asm|qbe|wasm] [-target amd64_sysv|wasm32] [-entry main] -o OUTPUT FILE\n       ingagi shader [-shader NAME] [-stage compute] [-emit glsl|spirv] -o OUTPUT FILE\n       ingagi targets")
+		fmt.Fprintln(stderr, "usage: ingagi {run|check|dump} [-entry main] [-budget 1000000] FILE\n       ingagi build [-emit obj|bin|asm|qbe|wasm] [-target amd64_sysv|wasm32] [-entry main] -o OUTPUT FILE\n       ingagi shader [-shader NAME] [-stage compute] [-emit glsl|spirv|reflect] -o OUTPUT FILE\n       ingagi shader -pipeline NAME -emit reflect -o OUTPUT FILE\n       ingagi shader-capabilities\n       ingagi targets")
 	}
 	if len(args) == 0 {
 		usage()
 		return 2
 	}
 	command := args[0]
+	if command == "shader-capabilities" {
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "usage: ingagi shader-capabilities")
+			return 2
+		}
+		data, err := json.MarshalIndent(shader.Capabilities(), "", "  ")
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		fmt.Fprintln(stdout, string(data))
+		return 0
+	}
 	if command == "targets" {
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, "usage: ingagi targets")
@@ -52,7 +66,7 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	entry := flags.String("entry", "main", "function to invoke or export")
 	budget := flags.Uint64("budget", 1000000, "instruction limit per VM invocation; 0 means unlimited")
 	var emit, target, output, qbe, keystone string
-	var shaderName, stage, glslang, spirvCross, naga string
+	var shaderName, pipelineName, stage, glslang, spirvCross, naga string
 	if command == "build" {
 		flags.StringVar(&emit, "emit", "", "output format: obj (default), bin, asm, qbe, wasm; wasm32 defaults to wasm")
 		flags.StringVar(&target, "target", "", "QBE architecture (default amd64_sysv), or wasm32")
@@ -61,8 +75,9 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		flags.StringVar(&keystone, "keystone", "", "libkeystone.so path (default INGAGI_KEYSTONE_LIBRARY)")
 	}
 	if command == "shader" {
-		flags.StringVar(&emit, "emit", "spirv", "output format: glsl, spirv, hlsl, glsl-opengl, glsl-es, msl, wgsl")
+		flags.StringVar(&emit, "emit", "spirv", "output format: glsl, spirv, hlsl, glsl-opengl, glsl-es, msl, wgsl, reflect")
 		flags.StringVar(&shaderName, "shader", "", "shader declaration (required when more than one exists)")
+		flags.StringVar(&pipelineName, "pipeline", "", "pipeline to link/reflect (requires -emit reflect; no -shader/-stage)")
 		flags.StringVar(&stage, "stage", "compute", "shader stage: vertex, fragment, compute")
 		flags.StringVar(&glslang, "glslang", "", "glslangValidator executable")
 		flags.StringVar(&spirvCross, "spirv-cross", "", "SPIRV-Cross executable")
@@ -99,6 +114,42 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		f, err := (&module_system.Loader{FS: os.DirFS(filepath.Dir(path))}).Load(filepath.Base(path))
 		if err != nil {
 			return fail(err)
+		}
+		if pipelineName != "" {
+			explicitStage := false
+			flags.Visit(func(f *flag.Flag) {
+				if f.Name == "stage" {
+					explicitStage = true
+				}
+			})
+			if shaderName != "" || emit != "reflect" || explicitStage {
+				fmt.Fprintln(stderr, "-pipeline requires -emit reflect and cannot combine with -shader/-stage")
+				return 2
+			}
+			var p *fe.PipelineDecl
+			for _, d := range f.Decls {
+				if candidate, ok := d.(*fe.PipelineDecl); ok && candidate.Name == pipelineName {
+					if p != nil {
+						return fail(fmt.Errorf("duplicate pipeline %q", pipelineName))
+					}
+					p = candidate
+				}
+			}
+			if p == nil {
+				return fail(fmt.Errorf("pipeline %q not found", pipelineName))
+			}
+			reflection, err := shader.ReflectPipeline(f, p)
+			if err != nil {
+				return fail(err)
+			}
+			data, err := json.MarshalIndent(reflection, "", "  ")
+			if err != nil {
+				return fail(err)
+			}
+			if err = writeArtifact(output, data); err != nil {
+				return fail(err)
+			}
+			return 0
 		}
 		var selected *fe.ShaderDecl
 		for _, d := range f.Decls {

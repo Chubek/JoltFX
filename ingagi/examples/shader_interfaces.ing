@@ -1,0 +1,30 @@
+// Source interfaces and resource layouts; this does not create a GPU pipeline.
+shader Draw {
+    interface VertexInput {
+        @location(0) position: vec3;
+        @location(1) color: vec3;
+    }
+    interface Varyings {
+        @location(0) color: vec3;
+    }
+    interface FragmentOutput {
+        @location(0) color: vec4;
+    }
+    @set(0) @binding(0) uniform Camera {
+        matrix: mat4;
+        tint: vec4;
+    } camera;
+
+    vertex(inputs: VertexInput, outputs: Varyings) {
+        gl_Position = camera.matrix * vec4(inputs.position, 1.0);
+        outputs.color = inputs.color;
+    }
+    fragment(inputs: Varyings, outputs: FragmentOutput) {
+        outputs.color = vec4(inputs.color, 1.0) * camera.tint;
+    }
+}
+
+pipeline DrawPipeline {
+    vertex: Draw::vertex;
+    fragment: Draw::fragment;
+}

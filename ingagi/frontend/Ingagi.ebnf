@@ -638,7 +638,7 @@ PipelineMember
     | PipelineComputeState ;
 
 PipelineShaderStage
-    = ( "vertex" | "fragment"
+    = ( "vertex" | "fragment" | "compute"
       | "geometry" | "tess_control"
       | "tess_evaluation" | "mesh" | "task" ),
       ":", QualifiedName, ";" ;
@@ -759,5 +759,4 @@ OctalDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" ;
 
 Letter = "a" | "b" | ... | "z"
        | "A" | "B" | ... | "Z" ;
-
 

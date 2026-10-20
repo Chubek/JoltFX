@@ -362,12 +362,15 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		if fn != nil {
 			return canonical(typeName(fn.Ret))
 		}
+		if _, shadow := s[name]; shadow {
+			return "?" // A local callable is not the same-named builtin.
+		}
 		switch name {
 		case "len", "int":
 			return "int"
 		case "str", "type":
 			return "string"
-		case "float":
+		case "float", "noise2", "noise3", "fbm3":
 			return "float"
 		}
 		return "?"

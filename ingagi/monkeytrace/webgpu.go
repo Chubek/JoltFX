@@ -1,3 +1,5 @@
+//go:build !monkeytrace_native
+
 package monkeytrace
 
 import (
