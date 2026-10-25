@@ -34,6 +34,8 @@ const (
 	KWorld
 	KEntity
 	KHandle // opaque host object (native extensions, resources)
+	KMesh
+	KAABB
 )
 
 func (k Kind) String() string {
@@ -76,6 +78,10 @@ func (k Kind) String() string {
 		return "entity"
 	case KHandle:
 		return "handle"
+	case KMesh:
+		return "mesh"
+	case KAABB:
+		return "aabb"
 	}
 	return "unknown"
 }
@@ -92,7 +98,8 @@ type Value struct {
 	// M holds column-major 4x4 matrices (glm layout).
 	M *[16]float64
 	// O holds heap objects: *ArrayObj, *MapObj, *StructObj, *EnumObj,
-	// *ClosureObj, *BuiltinObj, host handles, entity refs, world refs.
+	// *ClosureObj, *BuiltinObj, immutable *meshObj, Mat4, geometry.Bounds,
+	// host handles, entity refs, world refs.
 	O any
 }
 
@@ -164,6 +171,8 @@ func (v Value) String() string {
 		return fmt.Sprintf("vec4(%g, %g, %g, %g)", v.V[0], v.V[1], v.V[2], v.V[3])
 	case KMat4:
 		return "mat4(...)"
+	case KMesh, KAABB:
+		return v.K.String() + "(...)"
 	case KQuat:
 		return fmt.Sprintf("quat(%g, %g, %g, %g)", v.V[0], v.V[1], v.V[2], v.V[3])
 	case KArray:

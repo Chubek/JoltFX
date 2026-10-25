@@ -24,6 +24,14 @@ func CheckShader(f *fe.File, _ *Registry) []Diagnostic {
 			declarations[s.Name] = s
 			stages := map[string]bool{}
 			shaders[s.Name] = stages
+			if shader.IsFilament(s) {
+				if _, validation := shader.CompileFilament(s); validation != nil {
+					out = append(out, Diagnostic{Sev: Error, Code: "E0402", Msg: validation.Error(), Span: s.Span})
+				}
+				// A material's stages are hooks owned by Filament, not standalone
+				// graphics stages that can be bound into an Ingagi pipeline.
+				continue
+			}
 			for _, stage := range s.Stages {
 				if stages[stage.Kind] {
 					err("duplicate shader stage "+stage.Kind, stage.Span)

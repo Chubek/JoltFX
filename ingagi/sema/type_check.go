@@ -287,6 +287,9 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		if e.Op == "!" {
 			return "bool"
 		}
+		if (e.Op == "-" || e.Op == "+") && (vectorType(t) || t == "mat4" || t == "quat") {
+			return t
+		}
 		if (e.Op == "-" || e.Op == "+" || e.Op == "~") && t != "?" && t != "int" && t != "float" {
 			c.error("E0202", "invalid operand for "+e.Op+": "+t, e.Span)
 		}
@@ -297,7 +300,12 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 	case *fe.BinaryExpr:
 		x, y := c.expr(e.X, s), c.expr(e.Y, s)
 		switch e.Op {
-		case "==", "!=", "<", "<=", ">", ">=":
+		case "==", "!=":
+			return "bool"
+		case "<", "<=", ">", ">=":
+			if spatialType(x) || spatialType(y) {
+				c.error("E0202", "invalid ordered comparison: "+x+", "+y, e.Span)
+			}
 			return "bool"
 		case "&&", "||":
 			if x == "bool" && y == "bool" {
@@ -310,6 +318,9 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		}
 		if e.Op == "+" && x == "string" && y == "string" {
 			return "string"
+		}
+		if result := spatialBinary(e.Op, x, y); result != "" {
+			return result
 		}
 		if e.Op == ".." || e.Op == "..=" {
 			c.expect("int", x, e.X.Pos())
@@ -332,6 +343,15 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		return "int"
 	case *fe.AssignExpr:
 		x, y := c.expr(e.X, s), c.expr(e.Y, s)
+		if e.Op != "=" {
+			if result := spatialBinary(strings.TrimSuffix(e.Op, "="), x, y); result != "" {
+				c.expect(x, result, e.Span)
+				return result
+			}
+			if spatialType(x) || spatialType(y) {
+				c.error("E0202", "invalid operands for "+e.Op+": "+x+", "+y, e.Span)
+			}
+		}
 		c.expect(x, y, e.Span)
 		return y
 	case *fe.TernaryExpr:
@@ -341,20 +361,33 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		return x
 	case *fe.CallExpr:
 		name := ""
+		var argTypes []string
+		method := false
 		switch fn := e.Fn.(type) {
 		case *fe.IdentExpr:
 			name = fn.Name
 		case *fe.PathExpr:
 			name = fn.Path.String()
+		case *fe.MemberExpr:
+			receiver := c.expr(fn.X, s)
+			if c.r.Funcs[receiver+"::"+fn.Field] == nil {
+				name = fn.Field
+				argTypes = append(argTypes, receiver)
+				method = true
+			}
 		default:
 			c.expr(e.Fn, s)
 		}
 		fn := c.funcs[name]
+		if method {
+			fn = nil
+		}
 		if _, shadow := s[name]; shadow {
 			fn = nil
 		}
 		for i, a := range e.Args {
 			t := c.expr(a.Value, s)
+			argTypes = append(argTypes, t)
 			if fn != nil && i < len(fn.Args) {
 				c.expect(canonical(typeName(fn.Args[i].Type)), t, a.Span)
 			}
@@ -362,8 +395,11 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		if fn != nil {
 			return canonical(typeName(fn.Ret))
 		}
-		if _, shadow := s[name]; shadow {
+		if _, shadow := s[name]; shadow && !method {
 			return "?" // A local callable is not the same-named builtin.
+		}
+		if result, ok := c.spatialCall(name, argTypes, e.Span); ok {
+			return result
 		}
 		switch name {
 		case "len", "int":
@@ -376,6 +412,13 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 		return "?"
 	case *fe.MemberExpr:
 		t := c.expr(e.X, s)
+		if result, ok := spatialField(t, e.Field); ok {
+			if result == "" {
+				c.error("E0203", "unknown field "+t+"."+e.Field, e.Span)
+				return "?"
+			}
+			return result
+		}
 		if td := c.r.Types[t]; td != nil {
 			if ft, ok := td.Fields[e.Field]; ok {
 				return canonical(ft)
@@ -388,6 +431,12 @@ func (c *typeChecker) expr(e fe.Expr, s map[string]string) string {
 	case *fe.IndexExpr:
 		t := c.expr(e.X, s)
 		c.expect("int", c.expr(e.Index, s), e.Index.Pos())
+		if vectorType(t) || t == "quat" {
+			return "float"
+		}
+		if t == "mat4" {
+			return "vec4"
+		}
 		if strings.HasPrefix(t, "[") {
 			return strings.TrimSuffix(t[1:], "]")
 		}

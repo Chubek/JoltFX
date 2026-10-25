@@ -85,10 +85,10 @@ func TestProceduralSnapshotValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Snapshot installation must not alias the original script's owned arrays.
-	vertices := restored.globals["saved_mesh"].O.(*MapObj).Fields["vertices"].O.(*ArrayObj)
-	vertices.Elems[0].V[0] = 123
-	original := mesh.O.(*MapObj).Fields["vertices"].O.(*ArrayObj)
-	if original.Elems[0].V[0] == 123 {
+	vertices := restored.globals["saved_mesh"].O.(*meshObj)
+	vertices.data.Vertices[0].X = 123
+	original := mesh.O.(*meshObj)
+	if original.data.Vertices[0].X == 123 {
 		t.Fatal("snapshot mesh aliases original")
 	}
 }

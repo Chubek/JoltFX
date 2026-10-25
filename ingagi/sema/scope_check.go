@@ -360,6 +360,9 @@ func globalKnown(name string, r *Registry) bool {
 
 // isBuiltin reports std builtins callable without import.
 func isBuiltin(name string) bool {
+	if spatialBuiltin(name) {
+		return true
+	}
 	switch name {
 	case "print", "len", "type", "keys", "push", "pop", "range", "str",
 		"int", "float", "assert", "sin", "cos", "tan", "sqrt", "exp",

@@ -1,5 +1,73 @@
 # Progress
 
+## Ingagi Filament shader artifacts (2026-10-24)
+
+- Completed `shader(target:"filament")` in MonkeyShade using the existing shader
+  AST, GLSL body emitter, interface linking, module loader and CLI artifact path.
+  Emits `.mat` source and context-bounded `matc` `.filamat` packages with named
+  uniform/sampler parameters, optional vertex hooks and four smooth vec4 varyings.
+- Added source-level material reflection, compatibility-facade exports, CLI
+  options, a vendored-tool build option and `examples/filament_material.ing`.
+  Documented material contracts, host parameter binding and SDK version matching.
+- Tests cover real OpenGL/Vulkan/Metal package compilation and matc reflection,
+  unsupported profiles, namespace collisions, AST preservation, imported shaders,
+  malformed packages, diagnostics, cancellation and existing-output preservation.
+- Passed full default and CGO_ENABLED=0 Go suites with INGAGI_MATC set, plus
+  scripts/test-native.sh (NovoParse regeneration and full tagged suite). Compiled
+  the documented example with all APIs/platforms using vendored matc. Shell syntax
+  validation and git diff --check passed.
+
+## Filament Rendering tab and image sequences (2026-10-24)
+
+- Added the third 3D **Rendering** sub-tab, selecting vendored Filament on first
+  entry when available. Resolution, source-frame range and literal output-prefix
+  controls start numbered RGBA PNG sequences through the existing stb writer.
+- Export API 1.3 adds `png_sequence` without changing public layouts. Jobs own
+  scene/settings snapshots, sample at scene FPS and publish each frame atomically.
+  Cancellation/failure retains completed frames and preserves later destinations;
+  PNG output does not depend on FFmpeg. Desktop 1.12 reuses serialized scheduler
+  steps, progress snapshots and deferred cancellation, including across tab edits.
+- Added core/image and real ImGui tests for decoded pixels, animation timing,
+  renderer/scene snapshot isolation, range validation, cancellation, file failures,
+  temporary cleanup and literal percent signs. Updated API and usage guides.
+- Passed Filament-OFF checks and six Filament-ON scene/export/UI/media checks
+  against real surfaceless EGL; built the vendored SDK and desktop successfully.
+  All eight configured desktop UI tests and both Filament/sequence core checks
+  pass after restoring the SDK to durable `build/filament` and relinking the old
+  Modeling UI executable. Clang ASAN+UBSan checks in `build-rendering-san` pass
+  for image sequences, real ImGui sequence export and media export with Filament,
+  FFmpeg and optional ray renderers disabled. GCC 16 hit an internal compiler
+  crash in vendored VTK; Clang completed the sanitized build and all three checks.
+
+## Ingagi first-class geometry and linear algebra (2026-10-24)
+
+- Implemented first-class immutable `mesh`/`aabb` values with constructors,
+  annotations/inference, structural equality, detached fields, affine transforms,
+  surface area, area-weighted normals and inclusive containment. Generators and
+  bounds return typed values; legacy mesh-map inputs remain accepted. Snapshot
+  v3 preserves and validates these values, clones storage on installation, and
+  continues to read v1/v2 images.
+- Retained vendored GLM for native matrix math and added construction, indexed
+  reads, transpose, determinant, inverse, matrix addition/subtraction/scaling,
+  dimension-correct vector dot/length/normalization and static operator checks.
+  Fixed quaternion composition/rotation to use multiplication and V storage.
+- libigl computes projected triangle double areas through a synchronous private
+  bridge using fixed-size Eigen storage. Its compatible Eigen 3.4 dependency is
+  already vendored under Bullet; root Eigen 3.3.90 is incompatible. Both math and
+  geometry have portable Go implementations. No vendor source modifications,
+  retained C pointers, library threads or public C ABI layout changes.
+- Added contextual `mesh`/`type` function expressions, preserved qualified names,
+  updated both grammars and regenerated the C/sexp artifacts. Added
+  `ingagi/examples/spatial.ing`, API/dependency docs, malformed-value and ownership
+  regressions, numerical backend parity and a real C embedding geometry test.
+  SDK backend replacement remains outside this change.
+- Verification passes: full Go suites with and without CGO; full NovoParse-tagged
+  suite and deterministic regeneration; focused final native parser/spatial tests;
+  runtime/geometry/frontend/sema race checks; runtime/geometry ASAN+UBSan; `go vet`;
+  six standalone embedding CTests; GCC C++20 `-Wall -Wextra -Werror` bridge checks;
+  example check/run and `git diff --check`. Optional external-tool tests retain
+  their existing skips when tools are unavailable.
+
 ## Ingagi shader interfaces and validation (2026-10-17)
 
 - Implemented milestone 2's baseline: explicit location-based vertex/fragment

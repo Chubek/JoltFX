@@ -7,6 +7,18 @@
 #include <simdette/math/linalg.hpp>
 #include <algorithm>
 
+extern "C" void ingagi_mat4_transpose(double *out, const double *a) {
+    const auto m = glm::transpose(glm::make_mat4(a));
+    std::copy_n(glm::value_ptr(m), 16, out);
+}
+extern "C" double ingagi_mat4_determinant(const double *a) {
+    return glm::determinant(glm::make_mat4(a));
+}
+extern "C" void ingagi_mat4_inverse(double *out, const double *a) {
+    const auto m = glm::inverse(glm::make_mat4(a));
+    std::copy_n(glm::value_ptr(m), 16, out);
+}
+
 extern "C" void ingagi_mat4_mul(double *out, const double *a, const double *b) {
     const auto m = glm::make_mat4(a) * glm::make_mat4(b);
     std::copy_n(glm::value_ptr(m), 16, out);

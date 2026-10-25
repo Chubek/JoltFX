@@ -6,12 +6,12 @@
 extern "C" {
 #endif
 #define JFX_EXPORT_API_MAJOR 1
-#define JFX_EXPORT_API_MINOR 2
+#define JFX_EXPORT_API_MINOR 3
 #define JFX_EXPORT_API_PATCH 0
 typedef struct {
     size_t size;
-    const char *path;
-    const char *container;          /* NULL: infer .mp4/.mov/.mkv/.webm/.wav */
+    const char *path;               /* png_sequence: literal filename prefix */
+    const char *container;          /* NULL: infer video/WAV; "png_sequence": 3D PNG frames */
     const char *video_codec;        /* NULL: mpeg4/mp4, prores/mov, ffv1/mkv, libvpx-vp9/webm */
     const char *audio_codec;        /* NULL: aac/mp4, pcm_s16le/mov/mkv, libopus/webm */
     uint32_t width, height;         /* 0: exact project raster */
@@ -32,7 +32,14 @@ bool jfx_export_codec_available(const char *codec, bool audio);
  * Graph export requires frame_count and omits audio. Frames run synchronously;
  * jobs and mixers are single-owner-thread and have no implicit worker thread.
  * WAV is audio-only stereo float32, requires a sequence and audio=true, ignores
- * video/codec settings, and works without FFmpeg. RIFF payload is <4 GiB. */
+ * video/codec settings, and works without FFmpeg. RIFF payload is <4 GiB.
+ * png_sequence requires a 3D scene and audio=false, and works without FFmpeg.
+ * It writes path_000000.png using source frame numbers (at least six digits),
+ * sampling at the scene FPS. Range must fit the scene; count 0 means remaining
+ * frames. Parent directories must exist. Each stb PNG atomically replaces its
+ * destination after a successful render/write/close. Cancel/failure retains
+ * completed frames; later destinations and the failing frame remain untouched.
+ * No printf-style tokens are interpreted in path. Codec options are ignored. */
 jfx_result_t jfx_export_begin(const jfx_editor_t *editor,
     const jfx_export_options_t *options, jfx_export_job_t **out_job);
 /* Select the renderer for an owned 3D export snapshot before its first step.

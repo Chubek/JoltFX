@@ -79,8 +79,8 @@ func (m Mesh) VertexNormals() ([]Vec3, error) {
 		return nil, err
 	}
 	normals := make([]Vec3, len(m.Vertices))
-	for _, t := range m.Triangles {
-		n := m.Vertices[t[1]].Sub(m.Vertices[t[0]]).Cross(m.Vertices[t[2]].Sub(m.Vertices[t[0]]))
+	for i, n := range triangleVectors(m) {
+		t := m.Triangles[i]
 		for _, idx := range t {
 			normals[idx] = normals[idx].Add(n)
 		}

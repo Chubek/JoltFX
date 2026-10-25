@@ -59,6 +59,50 @@ void modeling3d_png(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
         f->scene_png_job=job;
     } catch (...) { tilly::destroy(job); editor_result(f,JFX_ERROR_OUT_OF_MEMORY); }
 }
+void modeling3d_sequence(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
+    ImGui::TextUnformatted("Render image sequence");
+    ImGui::TextWrapped("Filament renders the scene; stb writes lossless RGBA PNG frames. Rendering uses a snapshot of the scene, animation, camera and selected engine.");
+    if (!jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_FILAMENT))
+        ImGui::TextWrapped("Filament is not compiled in this build. Enable JFX_FILAMENT=ON for the Filament renderer.");
+    bool running=desktop_export_running(f);
+    ImGui::BeginDisabled(running);
+    ImGui::InputText("Sequence prefix",f->scene_sequence_prefix,sizeof(f->scene_sequence_prefix));
+    ImGui::InputInt("Render width",&f->scene_sequence_width);
+    ImGui::InputInt("Render height",&f->scene_sequence_height);
+    ImGui::InputScalar("First frame",ImGuiDataType_U64,&f->scene_sequence_start);
+    ImGui::InputScalar("Frame count (0: remaining)",ImGuiDataType_U64,&f->scene_sequence_count);
+    uint64_t frames=jfx_scene3d_frames(scene);
+    uint64_t remaining=f->scene_sequence_start<frames?frames-f->scene_sequence_start:0;
+    uint64_t count=f->scene_sequence_count?f->scene_sequence_count:remaining;
+    bool valid=f->scene_sequence_prefix[0] && f->scene_sequence_width>0 && f->scene_sequence_width<=2048 &&
+        f->scene_sequence_height>0 && f->scene_sequence_height<=2048 && count && count<=remaining;
+    ImGui::Text("Scene rate: %u fps | %llu frames",jfx_scene3d_fps(scene),(unsigned long long)frames);
+    ImGui::TextWrapped("Output: %s_%06llu.png",f->scene_sequence_prefix,(unsigned long long)f->scene_sequence_start);
+    ImGui::TextWrapped("Use a filename prefix in an existing directory. Each completed frame replaces its numbered PNG. Cancellation keeps completed frames.");
+    if (!valid) ImGui::TextWrapped("Enter a prefix, dimensions from 1 to 2048 and a range within the scene.");
+    ImGui::BeginDisabled(!valid);
+    if (ImGui::Button("Render PNG sequence")) {
+        jfx_export_destroy(f->export_job); f->export_job=nullptr;
+        jfx_export_options_t options{}; options.size=sizeof(options);
+        options.container="png_sequence"; options.path=f->scene_sequence_prefix;
+        options.width=uint32_t(f->scene_sequence_width); options.height=uint32_t(f->scene_sequence_height);
+        options.start_frame=f->scene_sequence_start; options.frame_count=f->scene_sequence_count;
+        auto r=jfx_desktop_frontend_export_begin(f,&options,&f->export_job);
+        editor_result(f,r);
+        f->export_image_sequence=true; f->export_result_snapshot=JFX_SUCCESS;
+        f->export_worker_scene=f->export_job!=nullptr;
+        if (r==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),"PNG sequence queued: %llu frames",(unsigned long long)count);
+    }
+    ImGui::EndDisabled(); ImGui::EndDisabled();
+    if (running) {
+        auto completed=desktop_export_completed(f),total=desktop_export_total(f);
+        ImGui::Text("Rendered %llu / %llu frames",(unsigned long long)completed,(unsigned long long)total);
+        ImGui::ProgressBar(total?float(double(completed)/double(total)):0);
+        if (ImGui::Button("Cancel image sequence")) desktop_export_cancel(f);
+        if (f->export_cancel_pending) ImGui::TextUnformatted("Cancelling after the active frame...");
+    }
+    ImGui::TextWrapped("%s",f->status);
+}
 void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     auto command=[&](const char *op,double value=0,const char *text="") {
         auto r=jfx_desktop_frontend_edit(f,op,0,0,0,value,text); editor_result(f,r); return r==JFX_SUCCESS;
@@ -160,15 +204,24 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     f->duration_seconds=(double)frames/fps;
     ImGui::TextUnformatted("3D Modeling & Animation");
     if (ImGui::BeginTabBar("3D modes")) {
-        bool previous=f->scene_animation;
-        if (ImGui::BeginTabItem("Modeling")) { f->scene_animation=false; ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("Animation")) { f->scene_animation=true; ImGui::EndTabItem(); }
+        int previous=f->scene_mode;
+        if (ImGui::BeginTabItem("Modeling")) { f->scene_mode=0; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Animation")) { f->scene_mode=1; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Rendering")) { f->scene_mode=2; ImGui::EndTabItem(); }
         ImGui::EndTabBar();
-        if (previous!=f->scene_animation && f->scene_navigation) {
+        if (previous!=f->scene_mode && f->scene_navigation) {
             command("3d.navigation_end"); f->scene_navigation=false;
         }
+        if (f->scene_mode==2 && !f->scene_render_initialized) {
+            f->scene_render_initialized=true;
+            if (jfx_scene3d_renderer_available(JFX_SCENE3D_RENDER_FILAMENT)) {
+                auto options=f->scene_render_options; options.renderer=JFX_SCENE3D_RENDER_FILAMENT;
+                editor_result(f,jfx_desktop_frontend_set_scene3d_render_options(f,&options));
+            }
+            f->scene_shading=JFX_SCENE3D_SHADING_PHONG; f->preview_dirty=true; ++f->scene_revision;
+        }
     }
-    const bool animation=f->scene_animation;
+    const bool animation=f->scene_mode==1,rendering=f->scene_mode==2;
     if (animation) {
         if (ImGui::Button(f->playing?"Pause 3D":"Play 3D")) {
             if (f->playing) jfx_desktop_frontend_pause(f); else jfx_desktop_frontend_play(f);
@@ -185,7 +238,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         if (ImGui::InputInt2("FPS / duration frames",clock,ImGuiInputTextFlags_EnterReturnsTrue) && clock[0]>0 && clock[1]>0)
             command("3d.clock",uint32_t(clock[0]),uint32_t(clock[1]));
     }
-    if (!animation) {
+    if (!animation && !rendering) {
         if (ImGui::Button("Add cube")) command("3d.add",0,0,0,0,"cube");
         ImGui::SameLine(); if (ImGui::Button("Add sphere") && f->scene_segments>=8 && f->scene_segments<=128) command("3d.add",uint32_t(f->scene_segments),0,0,0,"sphere");
         ImGui::SameLine(); if (ImGui::Button("Add plane")) command("3d.add",0,0,0,0,"plane");
@@ -202,6 +255,8 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     bool table=ImGui::BeginTable("3D workspace",2,ImGuiTableFlags_Resizable);
     if (table) { ImGui::TableSetupColumn("Scene / inspector",ImGuiTableColumnFlags_WidthFixed,310); ImGui::TableSetupColumn("3D viewport"); ImGui::TableNextColumn(); }
     if (ImGui::BeginChild("3D inspector",ImVec2(0,0))) {
+        if (rendering) modeling3d_sequence(f,scene);
+        else {
         uint32_t count=jfx_scene3d_object_count(scene);
         if (f->scene_object<0 || uint32_t(f->scene_object)>=count) f->scene_object=0;
         ImGui::Text("Scene objects (%u)",count);
@@ -345,6 +400,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             ImGui::TextWrapped("Asset packing uses the PLY path field above when set.");
         }
         ImGui::TextWrapped("File > Save/Open uses shared .jfx scenes with embedded meshes.");
+        }
     }
     ImGui::EndChild();
     if (table) ImGui::TableNextColumn();

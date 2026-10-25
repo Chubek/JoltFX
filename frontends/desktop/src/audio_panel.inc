@@ -288,7 +288,7 @@ void daw_panel(jfx_desktop_frontend_t *f) {
                 finish_audio(f); editor_result(f,native_sync(f,true)); jfx_export_destroy(f->export_job); f->export_job=nullptr;
                 jfx_export_options_t options{}; options.size=sizeof(options); options.path=f->audio_export_path; options.container="wav"; options.audio=true;
                 editor_result(f,jfx_export_begin(f->editor,&options,&f->export_job));
-                f->export_worker_scene=false;
+                f->export_worker_scene=false; f->export_image_sequence=false; f->export_result_snapshot=JFX_SUCCESS;
             }
             ImGui::EndDisabled();
             if (running) {

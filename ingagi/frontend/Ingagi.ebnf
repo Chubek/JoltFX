@@ -221,6 +221,7 @@ PrimaryExpression
     | Identifier
     | QualifiedName
     | "self"
+    | "mesh" | "type" (* contextual builtin function values *)
     | "(", Expression, ")"
     | TupleExpression
     | ArrayExpression
@@ -759,4 +760,3 @@ OctalDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" ;
 
 Letter = "a" | "b" | ... | "z"
        | "A" | "B" | ... | "Z" ;
-

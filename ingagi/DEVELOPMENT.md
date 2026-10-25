@@ -5,6 +5,22 @@ working subsystem. Empty adapters/IR placeholders are not executable backends.
 
 ## Completed in this development pass
 
+- Filament surface-material artifacts: `shader(target:"filament")` reuses the
+  MonkeyShade parser/body emitter and interface linker to generate `.mat`, then
+  bounded `matc` compilation generates `.filamat` for OpenGL/Vulkan/Metal. Supports
+  lit/unlit materials, uniform/sampler parameter mapping, optional vertex hooks
+  and four smooth vec4 varyings. CLI imports/reflection and the compatibility API
+  share the implementation. Real vendored `matc` tests verify packages and reject
+  invalid GLSL; no runtime material binding or new execution backend is implied.
+- First-class CPU/VM geometry: owned immutable `mesh` and `aabb` kinds, checked
+  constructors, structural equality, detached fields, affine transforms, area,
+  normals, containment and version-3 snapshots (v1/v2 remain readable). Mesh
+  generator/bounds results are typed; legacy map inputs remain accepted.
+- First-class linear-algebra checking and operations: vec2/3/4, quat and mat4
+  annotations/inference, dimension-aware arithmetic, quaternion multiplication,
+  indexed reads, dot/cross/length/normalize, matrix construction, inverse,
+  transpose and determinant. Native GLM and libigl triangle-measure bridges
+  have Go fallbacks. See `examples/spatial.ing` and `DEPENDENCIES.md`.
 - Full-tree Go builds/tests work again: the missing embedded target manifests
   are present, malformed empty Go placeholders no longer poison package discovery,
   and `shader` forwards to the real `monkeyshade` implementation.
@@ -25,7 +41,7 @@ working subsystem. Empty adapters/IR placeholders are not executable backends.
   vertex normals, cloned vertex transformations, and welded outward-wound cube,
   XZ plane and UV-sphere generators. Invalid indices, nonfinite coordinates,
   degenerate faces and excessive tessellation fail explicitly.
-- VM builtins expose these foundations as ordinary values, with argument and
+- VM builtins expose these foundations as owned values, with argument and
   collection limits. They do not implicitly allocate engine/GPU resources.
   See `examples/procedural.ing` and the README API tables.
 - Shader milestone 2 now has explicit location-based vertex/fragment interfaces,

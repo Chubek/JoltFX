@@ -1103,6 +1103,13 @@ Validate loaded documents before replacement, preserve load undo, and extend
 
 ### 3D modeling and animation
 
+Desktop 1.12 adds the third Rendering sub-tab with PNG image-sequence controls.
+First entry selects Filament when compiled; subsequent entries retain selection.
+Export 1.3 owns the scene/settings snapshot and uses stb PNG publication per frame.
+Reuse serialized scheduler export steps and snapshot progress counters; defer
+cancel/destruction until the active step finishes. `image_sequence_ui_tests`
+checks real widgets, scene/renderer isolation, source timing and cancellation.
+
 Desktop 1.11 keeps one 3D workspace with Modeling/Animation sub-tabs over the
 same scene, selection, camera and history. Geometry/generators belong in Modeling;
 keys/scripts/baking/transport belong in Animation. Finish navigation on sub-tab

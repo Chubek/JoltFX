@@ -12,6 +12,7 @@ void encoded_export(jfx_desktop_frontend_t *f) {
     bool running=desktop_export_running(f);
     ImGui::BeginDisabled(running);
     if (ImGui::Button("Export encoded video")) {
+        f->export_image_sequence=false; f->export_result_snapshot=JFX_SUCCESS;
         jfx_export_destroy(f->export_job); f->export_job=nullptr;
         jfx_export_options_t options{}; options.size=sizeof(options); options.path=f->video_export_path;
         options.video_codec=*f->video_codec?f->video_codec:nullptr; options.start_frame=f->video_start;

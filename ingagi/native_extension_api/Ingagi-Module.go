@@ -146,6 +146,11 @@ func reservedName(name string) bool {
 		"spawn", "despawn", "add_component", "remove_component", "has_component",
 		"get_component", "set_resource", "get_resource", "set_parent", "get_parent":
 		return true
+	case "mat4", "transpose", "determinant", "inverse", "length",
+		"mesh", "aabb", "contains", "mesh_area", "mesh_transform",
+		"noise2", "noise3", "fbm3", "mesh_cube", "mesh_plane", "mesh_sphere",
+		"mesh_normals", "mesh_bounds", "mesh_translate":
+		return true
 	default:
 		return false
 	}

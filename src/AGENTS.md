@@ -161,6 +161,13 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Export 1.3 adds scene-only `container="png_sequence"` using a literal filename
+prefix and source-frame numbering. Reuse the owned export snapshot, scene FPS,
+renderer selection and stb atomic PNG writer; never gate PNG sequences on FFmpeg.
+Cancel/failure retains completed frames and preserves failing/later destinations.
+Keep job access serialized across worker handoffs. `image_sequence` covers range,
+snapshot, pixels, cancellation and file failures; run with Filament ON and OFF.
+
 Modeling3D 1.7 appends SDK-based Jolt Renderer CPU/GPU values 4/5. The plugin
 receives an immutable borrowed snapshot and host allocator/backend services;
 callbacks dispatch only to the base Ingagi/MonkeyTrace or Vulkan renderer, never

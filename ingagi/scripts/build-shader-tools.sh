@@ -13,3 +13,12 @@ if [[ ${INGAGI_BUILD_NAGA:-0} == 1 ]]; then
     --root "$build/naga" --target-dir "$build/naga-build"
   printf 'INGAGI_NAGA=%s/naga/bin/naga\n' "$build"
 fi
+if [[ ${INGAGI_BUILD_FILAMENT:-0} == 1 ]]; then
+  # Reuse JoltFX's isolated vendored SDK configuration, building just the material
+  # compiler. No engine embedding or CGO dependency is added to MonkeyShade.
+  cmake -S "$root/backends/filament" -B "$build/filament" \
+    -DFILAMENT_ROOT="$root/third_party/filament" -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+  cmake --build "$build/filament" --target matc --parallel "${INGAGI_BUILD_JOBS:-4}"
+  printf 'INGAGI_MATC=%s/filament/vendor/tools/matc/matc\n' "$build"
+fi

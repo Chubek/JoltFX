@@ -83,8 +83,8 @@ type CapabilityInfo struct {
 // Compiler support only: external cross-compilers and device features are not
 // probed. Each artifact's stage restrictions still apply.
 func Capabilities() CapabilityInfo {
-	return CapabilityInfo{Stages: []string{"vertex", "fragment", "compute", "geometry", "tess_control", "tess_evaluation"}, Formats: []string{"glsl", "spirv", "hlsl", "glsl-opengl", "glsl-es", "msl", "wgsl", "reflect"}, InterfaceStages: []string{"vertex", "fragment"}, BufferLayouts: []string{"std140", "std430"}, PipelineLinks: []string{"compute", "vertex-fragment"}, MaxInterfaceLocations: MaxInterfaceLocations, MaxBufferBytes: MaxBufferBytes,
-		ToolDependencies: map[string][]string{"glsl": {}, "reflect": {}, "spirv": {"glslangValidator"}, "hlsl": {"glslangValidator", "spirv-cross"}, "glsl-opengl": {"glslangValidator", "spirv-cross"}, "glsl-es": {"glslangValidator", "spirv-cross"}, "msl": {"glslangValidator", "spirv-cross"}, "wgsl": {"glslangValidator", "naga"}}}
+	return CapabilityInfo{Stages: []string{"vertex", "fragment", "compute", "geometry", "tess_control", "tess_evaluation"}, Formats: []string{"glsl", "spirv", "hlsl", "glsl-opengl", "glsl-es", "msl", "wgsl", "reflect", "filament", "filamat"}, InterfaceStages: []string{"vertex", "fragment"}, BufferLayouts: []string{"std140", "std430"}, PipelineLinks: []string{"compute", "vertex-fragment"}, MaxInterfaceLocations: MaxInterfaceLocations, MaxBufferBytes: MaxBufferBytes,
+		ToolDependencies: map[string][]string{"glsl": {}, "reflect": {}, "filament": {}, "filamat": {"matc"}, "spirv": {"glslangValidator"}, "hlsl": {"glslangValidator", "spirv-cross"}, "glsl-opengl": {"glslangValidator", "spirv-cross"}, "glsl-es": {"glslangValidator", "spirv-cross"}, "msl": {"glslangValidator", "spirv-cross"}, "wgsl": {"glslangValidator", "naga"}}}
 }
 
 func canonicalGPUType(t string) string {

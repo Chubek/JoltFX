@@ -25,7 +25,7 @@ import (
 
 const (
 	aotMagic   = "IGBC1\x00"
-	aotVersion = 2
+	aotVersion = 3
 )
 
 type aotWriter struct {
@@ -180,6 +180,8 @@ const (
 	vClosure
 	vBuiltin
 	vEntity
+	vMesh
+	vAABB
 )
 
 func (w *aotWriter) writeValue(v Value) error {
@@ -208,10 +210,32 @@ func (w *aotWriter) writeValue(v Value) error {
 			w.u64(math.Float64bits(f))
 		}
 	case KMat4:
-		m := v.O.(Mat4)
+		m, err := matArg(v)
+		if err != nil {
+			return err
+		}
 		for _, f := range m {
 			w.u64(math.Float64bits(f))
 		}
+	case KMesh:
+		m, err := valueMesh(v)
+		if err != nil {
+			return err
+		}
+		payload, err := meshMapValue(m)
+		if err != nil {
+			return err
+		}
+		return w.writeValue(payload)
+	case KAABB:
+		b, err := valueBounds(v)
+		if err != nil {
+			return err
+		}
+		if err = w.writeValue(vectorValue(b.Min)); err != nil {
+			return err
+		}
+		return w.writeValue(vectorValue(b.Max))
 	case KArray:
 		elems := v.O.(*ArrayObj).Elems
 		w.u64(uint64(len(elems)))
@@ -313,6 +337,10 @@ func vTag(v Value) int {
 		return vBuiltin
 	case KEntity:
 		return vEntity
+	case KMesh:
+		return vMesh
+	case KAABB:
+		return vAABB
 	}
 	return -1
 }
@@ -347,9 +375,10 @@ const (
 )
 
 type aotReader struct {
-	b     *bytes.Reader
-	err   error
-	depth int
+	b       *bytes.Reader
+	err     error
+	depth   int
+	version uint64
 }
 
 // remaining reports how many bytes are still unread.
@@ -470,9 +499,10 @@ func Decode(data []byte) (*Decoded, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
-	if version != 1 && version != aotVersion {
+	if version < 1 || version > aotVersion {
 		return nil, fmt.Errorf("ingagi: image version %d, want %d", version, aotVersion)
 	}
+	r.version = version
 	pool := NewConstPool()
 	nInts, err := r.count(aotMaxItems, "int pool")
 	if err != nil {
@@ -740,6 +770,35 @@ func (r *aotReader) readValue() (Value, error) {
 			m[i] = math.Float64frombits(r.u64())
 		}
 		return Value{K: KMat4, O: m}, nil
+	case vMesh:
+		if r.version < 3 {
+			return NilValue, fmt.Errorf("ingagi: mesh requires image version 3")
+		}
+		payload, err := r.readValue()
+		if err != nil {
+			return NilValue, err
+		}
+		if payload.K != KMap {
+			return NilValue, fmt.Errorf("ingagi: invalid mesh payload")
+		}
+		m, err := valueMesh(payload)
+		if err != nil {
+			return NilValue, err
+		}
+		return meshValue(m)
+	case vAABB:
+		if r.version < 3 {
+			return NilValue, fmt.Errorf("ingagi: aabb requires image version 3")
+		}
+		lo, err := r.readValue()
+		if err != nil {
+			return NilValue, err
+		}
+		hi, err := r.readValue()
+		if err != nil {
+			return NilValue, err
+		}
+		return boundsValue(lo, hi)
 	case vArray:
 		n, err := r.count(aotMaxItems, "array")
 		if err != nil {

@@ -18,6 +18,17 @@ type SpecializationReflection = monkeyshade.SpecializationReflection
 type StageReflection = monkeyshade.StageReflection
 type PipelineReflection = monkeyshade.PipelineReflection
 type CapabilityInfo = monkeyshade.CapabilityInfo
+type FilamentParameter = monkeyshade.FilamentParameter
+type FilamentReflection = monkeyshade.FilamentReflection
+
+func IsFilament(s *fe.ShaderDecl) bool                 { return monkeyshade.IsFilament(s) }
+func CompileFilament(s *fe.ShaderDecl) (string, error) { return monkeyshade.CompileFilament(s) }
+func ReflectFilament(s *fe.ShaderDecl) (*FilamentReflection, error) {
+	return monkeyshade.ReflectFilament(s)
+}
+func CompileFilamat(ctx context.Context, s *fe.ShaderDecl, tools ToolOptions) ([]byte, error) {
+	return monkeyshade.CompileFilamat(ctx, s, tools)
+}
 
 const MaxInterfaceLocations = monkeyshade.MaxInterfaceLocations
 const MaxBufferBytes = monkeyshade.MaxBufferBytes

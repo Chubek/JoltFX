@@ -66,7 +66,7 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	entry := flags.String("entry", "main", "function to invoke or export")
 	budget := flags.Uint64("budget", 1000000, "instruction limit per VM invocation; 0 means unlimited")
 	var emit, target, output, qbe, keystone string
-	var shaderName, pipelineName, stage, glslang, spirvCross, naga string
+	var shaderName, pipelineName, stage, glslang, spirvCross, naga, matc, filamentAPI, filamentPlatform string
 	if command == "build" {
 		flags.StringVar(&emit, "emit", "", "output format: obj (default), bin, asm, qbe, wasm; wasm32 defaults to wasm")
 		flags.StringVar(&target, "target", "", "QBE architecture (default amd64_sysv), or wasm32")
@@ -75,13 +75,16 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		flags.StringVar(&keystone, "keystone", "", "libkeystone.so path (default INGAGI_KEYSTONE_LIBRARY)")
 	}
 	if command == "shader" {
-		flags.StringVar(&emit, "emit", "spirv", "output format: glsl, spirv, hlsl, glsl-opengl, glsl-es, msl, wgsl, reflect")
+		flags.StringVar(&emit, "emit", "spirv", "output format: glsl, spirv, hlsl, glsl-opengl, glsl-es, msl, wgsl, reflect, filament (.mat), filamat")
 		flags.StringVar(&shaderName, "shader", "", "shader declaration (required when more than one exists)")
 		flags.StringVar(&pipelineName, "pipeline", "", "pipeline to link/reflect (requires -emit reflect; no -shader/-stage)")
-		flags.StringVar(&stage, "stage", "compute", "shader stage: vertex, fragment, compute")
+		flags.StringVar(&stage, "stage", "compute", "shader stage (default compute; Filament artifacts use material)")
 		flags.StringVar(&glslang, "glslang", "", "glslangValidator executable")
 		flags.StringVar(&spirvCross, "spirv-cross", "", "SPIRV-Cross executable")
 		flags.StringVar(&naga, "naga", "", "Naga shader compiler executable")
+		flags.StringVar(&matc, "matc", "", "Filament matc executable (default INGAGI_MATC or PATH)")
+		flags.StringVar(&filamentAPI, "filament-api", "", "filamat backend: opengl (default), vulkan, metal, all")
+		flags.StringVar(&filamentPlatform, "filament-platform", "", "filamat shader family: all (default), desktop, mobile")
 		flags.StringVar(&output, "o", "", "output path (required)")
 	}
 	if err := flags.Parse(args[1:]); err != nil {
@@ -163,9 +166,18 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		if selected == nil {
 			return fail(fmt.Errorf("shader %q not found", shaderName))
 		}
+		explicitStage := false
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name == "stage" {
+				explicitStage = true
+			}
+		})
+		if !explicitStage && (emit == "filament" || emit == "filamat" || emit == "reflect" && shader.IsFilament(selected)) {
+			stage = "material"
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		data, err := shader.CompileArtifact(ctx, selected, stage, emit, shader.ToolOptions{GLSLang: glslang, SPIRVCross: spirvCross, Naga: naga})
+		data, err := shader.CompileArtifact(ctx, selected, stage, emit, shader.ToolOptions{GLSLang: glslang, SPIRVCross: spirvCross, Naga: naga, Matc: matc, FilamentAPI: filamentAPI, FilamentPlatform: filamentPlatform})
 		if err != nil {
 			return fail(err)
 		}

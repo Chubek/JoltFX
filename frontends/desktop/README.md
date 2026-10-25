@@ -146,10 +146,21 @@ See [creative programming](../../docs/creative.md).
 ## Options
 
 The **3D Modeling & Animation** tab has its own scene outliner, mesh/transform
-controls organized into **Modeling** and **Animation** sub-tabs. Modeling contains
+controls organized into **Modeling**, **Animation** and **Rendering** sub-tabs. Modeling contains
 primitive creation, generators, mesh editing, cloners and PLY import/export;
 Animation contains transport, keys, scripts, physics baking and Ingagi packs.
-Both share scene selection, history, camera, viewport and render/export settings.
+All three share scene selection, history, camera, viewport and render/export settings.
+**Rendering** selects Filament on first entry when built with `JFX_FILAMENT=ON`.
+Choose the **Rendering engine**, enter a **Sequence prefix** (for example
+`/path/to/frames/shot` in an existing directory), set width/height (1–2048),
+**First frame** and **Frame count** (0 means all remaining frames), then click
+**Render PNG sequence**. Output is `shot_000000.png`, `shot_000001.png`, etc.,
+numbered by source frame and sampled at the scene FPS. `third_party/filament`
+renders the scene and `third_party/stb` writes lossless RGBA PNGs, without FFmpeg.
+Exports capture scene/camera/animation/renderer settings and continue while
+switching tabs or editing. Progress and cancellation run through the scheduler;
+cancellation finishes the active frame and retains completed images. Each PNG
+replaces its destination only after a successful render and write.
 The SDK-based **Jolt Renderer (CPU / Ingagi)** and **Jolt Renderer (GPU / Vulkan)**
 choices are available when their respective backends are built. See
 `plugins/JoltRenderer/README.md` and `JoltFX-SDK/README.md`.

@@ -51,7 +51,10 @@ file(GLOB_RECURSE ingagi_sources CONFIGURE_DEPENDS
 file(GLOB_RECURSE ingagi_math_headers CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glm/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glm/*.inl"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/simdette/*.hpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/simdette/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libigl/include/igl/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libigl/include/igl/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/bullet3/examples/ThirdPartyLibs/Eigen/*")
 set(ingagi_lib_dir "${CMAKE_CURRENT_BINARY_DIR}/lib")
 set(ingagi_bin_dir "${CMAKE_CURRENT_BINARY_DIR}/bin")
 set(ingagi_library "${ingagi_lib_dir}/${CMAKE_SHARED_LIBRARY_PREFIX}ingagi_embed${CMAKE_SHARED_LIBRARY_SUFFIX}")

@@ -87,6 +87,25 @@ func TestMathBackendAgainstReference(t *testing.T) {
 				t.Fatalf("matrix[%d]: got %g, want %g", i, got[i], want[i])
 			}
 		}
+		if transposeMat4(a) != scalarTransposeMat4(a) {
+			t.Fatal("transpose mismatch")
+		}
+		d, reference := determinantMat4(a), scalarDeterminantMat4(a)
+		if math.Abs(d-reference) > 1e-10*math.Max(1, math.Abs(reference)) {
+			t.Fatalf("determinant: %g != %g", d, reference)
+		}
+		if math.Abs(d) > 1e-6 {
+			inv, ref := inverseMat4(a), scalarInverseMat4(a)
+			product := inv.Mul(a)
+			for i, f := range inv {
+				if math.Abs(f-ref[i]) > 1e-9*math.Max(1, math.Abs(ref[i])) {
+					t.Fatal("inverse mismatch")
+				}
+				if !close(product[i], IdentityMat4()[i]) {
+					t.Fatal("inverse product is not identity")
+				}
+			}
+		}
 		// Include non-axis-aligned camera bases and non-identity transforms.
 		eye := Vec3{rng.Float64() + 1, rng.Float64() + 2, rng.Float64() + 3}
 		got, want = LookAt(eye, Vec3{}, Vec3{0, 1, 0}), scalarLookAt(eye, Vec3{}, Vec3{0, 1, 0})

@@ -363,6 +363,32 @@ success. PPM frame output is also available through shared frontend APIs.
 
 ## Current rendering and modeling scope
 
+### Image sequences (Export API 1.3 / Desktop 1.12)
+
+The third desktop sub-tab, **Rendering**, exposes numbered PNG sequences with
+resolution (up to 2048 × 2048), first frame, frame count, progress and cancellation.
+It selects Filament on first entry if compiled in; the shared Rendering engine
+selector can change the renderer. Filament uses the vendored SDK and PNG encoding
+uses `third_party/stb/stb_image_write.h` with Tilly allocation hooks.
+
+For API clients, pass `container="png_sequence"` to `jfx_export_begin`, with a
+literal `path` prefix, `audio=false`, and the desired dimensions/range. Set the
+renderer through `jfx_export_set_scene3d_render_options` before the first step
+(the desktop wrapper does this automatically). Step, query and cancel through
+the existing export-job API. The job owns its snapshot and copied options;
+serialize all operations on a job, including cancellation/destruction.
+
+`path="frames/shot"`, `start_frame=12`, `frame_count=2` writes
+`frames/shot_000012.png` and `frames/shot_000013.png` at source times `12/fps`
+and `13/fps`. Count 0 exports the remaining scene; ranges outside its duration
+are rejected. Parent directories must exist; percent signs are literal text.
+Each frame is published atomically. Failure/cancellation keeps completed frames
+and preserves the failing/later destinations. FFmpeg is not required.
+`image_sequence` and `image_sequence_ui_tests` cover animation, snapshot isolation,
+decoded pixels, ranges, cancellation and optional Filament dispatch.
+
+### Base raster renderer
+
 This is a polygon/procedural-surface and transform authoring workspace. The
 viewport is a CPU z-buffered perspective renderer with smooth or flat normals,
 one fixed diffuse light and two-sided faces. Four subpixel samples are averaged

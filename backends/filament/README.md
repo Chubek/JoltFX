@@ -3,7 +3,12 @@
 `JFX_FILAMENT=ON` adds **Filament (GPU rasterizer)** to the desktop 3D Modeling &
 Animation renderer selector. It consumes the same sampled scene, cloners,
 procedural tessellations, smooth normals and quaternion camera as the other 3D
-renderers. PNG and encoded video export capture this renderer selection.
+renderers. PNG, image-sequence and encoded video export capture this renderer selection.
+The third desktop **Rendering** sub-tab selects Filament on first entry when
+available and writes numbered PNG sequences through vendored `third_party/stb`.
+Set a filename prefix in an existing directory, dimensions and source-frame
+range; output uses the scene FPS. Scheduler workers report progress and support
+cancellation after the current frame, retaining completed PNGs.
 
 This is a scene-rendering adapter, with lit PBR surfaces (nonmetallic, roughness
 0.6), directional shadows, diffuse ambient illumination, Filament tone mapping

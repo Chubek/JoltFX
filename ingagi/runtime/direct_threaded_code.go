@@ -260,7 +260,16 @@ func hNeg(vm *VM, fr *frame, in Instr, pc int) (int, *RuntimeError) {
 		vm.stack.push(IntValue(-a.I))
 	case KFloat:
 		vm.stack.push(FloatValue(-a.F))
-	case KVec2, KVec3, KVec4:
+	case KMat4:
+		m, err := matArg(a)
+		if err != nil {
+			return 0, vm.fail("%s", err)
+		}
+		for i := range m {
+			m[i] = -m[i]
+		}
+		vm.stack.push(Value{K: KMat4, O: m})
+	case KVec2, KVec3, KVec4, KQuat:
 		var o [4]float64
 		for i := 0; i < 4; i++ {
 			o[i] = -a.V[i]

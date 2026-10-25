@@ -1,0 +1,31 @@
+// Complete Filament surface material. Compile with:
+// ingagi shader -emit filament -o surface.mat filament_material.ing
+// ingagi shader -emit filamat -matc /path/to/matc -o surface.filamat filament_material.ing
+shader Surface(target: "filament", shading_model: "lit", requires: "uv0", double_sided: true) {
+    uniform SurfaceParams {
+        tint: vec4;
+        roughness: float;
+        displacement: float;
+    } params;
+    texture2d albedo;
+
+    interface Varyings {
+        @location(0) tint: vec4;
+    }
+
+    fn tintColor(color: vec4, tint: vec4) -> vec4 {
+        return color * tint;
+    }
+
+    vertex(outputs: Varyings) {
+        material.worldPosition.y += params.displacement;
+        outputs.tint = params.tint;
+    }
+
+    fragment(inputs: Varyings) {
+        prepareMaterial(material);
+        material.baseColor = tintColor(texture(albedo, getUV0()), inputs.tint);
+        material.roughness = params.roughness;
+        material.metallic = 0.0;
+    }
+}

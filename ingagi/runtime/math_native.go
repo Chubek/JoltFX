@@ -15,6 +15,16 @@ import "unsafe"
 
 func mathPtr(v []float64) *C.double { return (*C.double)(unsafe.Pointer(&v[0])) }
 
+func transposeMat4(m Mat4) (out Mat4) {
+	C.ingagi_mat4_transpose(mathPtr(out[:]), mathPtr(m[:]))
+	return
+}
+func determinantMat4(m Mat4) float64 { return float64(C.ingagi_mat4_determinant(mathPtr(m[:]))) }
+func inverseMat4(m Mat4) (out Mat4) {
+	C.ingagi_mat4_inverse(mathPtr(out[:]), mathPtr(m[:]))
+	return
+}
+
 func multiplyMat4(a, b Mat4) (out Mat4) {
 	C.ingagi_mat4_mul(mathPtr(out[:]), mathPtr(a[:]), mathPtr(b[:]))
 	return

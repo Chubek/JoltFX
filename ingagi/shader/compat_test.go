@@ -26,3 +26,23 @@ func TestCompatibility(t *testing.T) {
 		t.Fatal("invalid artifact")
 	}
 }
+
+func TestFilamentSourceCompatibility(t *testing.T) {
+	source := `shader Demo(target:"filament",shading_model:"unlit") {fragment {prepareMaterial(material);material.baseColor=vec4(1.0);}}`
+	s, err := Parse(source, "")
+	if err != nil || !IsFilament(s) {
+		t.Fatalf("%v", err)
+	}
+	text, err := CompileFilament(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := CompileSource(context.Background(), source, "", "material", "filament", ToolOptions{})
+	if err != nil || string(data) != text {
+		t.Fatalf("source/API mismatch: %v", err)
+	}
+	r, err := ReflectFilament(s)
+	if err != nil || r.ShadingModel != "unlit" {
+		t.Fatalf("reflection: %+v %v", r, err)
+	}
+}

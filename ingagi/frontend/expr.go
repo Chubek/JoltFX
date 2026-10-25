@@ -345,7 +345,9 @@ func (p *Parser) peekPath() (Path, bool) {
 	if !ok {
 		return Path{}, false
 	}
-	if len(q.Parts) == 1 && isKeyword(q.Parts[0].Name) {
+	// Contextual builtin names are callable values here while retaining their
+	// declaration/stage meanings elsewhere. Qualified paths remain ordinary paths.
+	if len(q.Parts) == 1 && isKeyword(q.Parts[0].Name) && q.Last() != "mesh" && q.Last() != "type" {
 		return Path{}, false
 	}
 	return q, true

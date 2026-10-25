@@ -37,6 +37,13 @@ int main(void) {
     assert(ingagi_load(active,"fn {",4,error,sizeof(error))==INGAGI_COMPILE_ERROR);
     arg.reserved=0;
     assert(ingagi_call(active,"main",4,&arg,1,&result,error,sizeof(error))==INGAGI_OK && result.integer==42);
+    source="fn main() -> f64 { let m:mesh=mesh_cube(2); "
+           "let t:mat4=mat4_scale(mat4(1),vec3(2,2,2)); "
+           "assert(inverse(t)*t==mat4(1)); "
+           "return mesh_area(mesh_transform(m,t)); }";
+    assert(ingagi_load(active,source,strlen(source),error,sizeof(error))==INGAGI_OK);
+    assert(ingagi_call(active,"main",4,NULL,0,&result,error,sizeof(error))==INGAGI_OK);
+    assert(result.kind==INGAGI_FLOAT && result.real==96.0);
     assert(ingagi_destroy(active,error,sizeof(error))==INGAGI_OK);
     assert(ingagi_destroy(active,error,sizeof(error))==INGAGI_INVALID_HANDLE);
     puts("C ABI callback/reentry/reload/error checks passed");

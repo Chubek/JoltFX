@@ -134,6 +134,17 @@ func meshPrimitive(kind string) func(*VM, []Value) (Value, error) {
 func vectorValue(v geometry.Vec3) Value { return Value{K: KVec3, V: [4]float64{v.X, v.Y, v.Z, 0}} }
 func meshValue(m geometry.Mesh) (Value, error) {
 	if len(m.Vertices) > meshValueLimit || len(m.Triangles) > meshValueLimit {
+		return NilValue, fmt.Errorf("geometry: mesh exceeds VM collection limit")
+	}
+	if err := m.Validate(); err != nil {
+		return NilValue, err
+	}
+	return Value{K: KMesh, O: &meshObj{m.Clone()}}, nil
+}
+
+// Interchange and field views are independent, mutable copies of the mesh.
+func meshMapValue(m geometry.Mesh) (Value, error) {
+	if len(m.Vertices) > meshValueLimit || len(m.Triangles) > meshValueLimit {
 		return NilValue, fmt.Errorf("procedural: mesh exceeds VM collection limit")
 	}
 	vertices := make([]Value, len(m.Vertices))
@@ -147,7 +158,17 @@ func meshValue(m geometry.Mesh) (Value, error) {
 	return Value{K: KMap, O: &MapObj{Fields: map[string]Value{"vertices": {K: KArray, O: &ArrayObj{Elems: vertices}}, "triangles": {K: KArray, O: &ArrayObj{Elems: triangles}}}}}, nil
 }
 func valueMesh(v Value) (geometry.Mesh, error) {
-	invalid := fmt.Errorf("procedural: expected {vertices: [vec3...], triangles: [[i,j,k]...]}")
+	invalid := fmt.Errorf("geometry: expected mesh or {vertices: [vec3...], triangles: [[i,j,k]...]}")
+	if v.K == KMesh {
+		obj, ok := v.O.(*meshObj)
+		if !ok || obj == nil {
+			return geometry.Mesh{}, invalid
+		}
+		if len(obj.data.Vertices) > meshValueLimit || len(obj.data.Triangles) > meshValueLimit {
+			return geometry.Mesh{}, invalid
+		}
+		return obj.data, obj.data.Validate()
+	}
 	if v.K != KMap {
 		return geometry.Mesh{}, invalid
 	}
@@ -224,7 +245,7 @@ func meshBounds(vm *VM, args []Value) (Value, error) {
 	if err != nil {
 		return NilValue, err
 	}
-	return Value{K: KMap, O: &MapObj{Fields: map[string]Value{"min": vectorValue(b.Min), "max": vectorValue(b.Max)}}}, nil
+	return Value{K: KAABB, O: b}, nil
 }
 func meshTranslate(vm *VM, args []Value) (Value, error) {
 	if len(args) != 2 || args[1].K != KVec3 {

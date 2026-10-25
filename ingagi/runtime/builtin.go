@@ -14,6 +14,8 @@ import (
 
 func registerBuiltins(vm *VM) {
 	registerProcedural(vm)
+	registerGeometry(vm)
+	registerLinearAlgebra(vm)
 	vm.builtins["print"] = bPrint
 	vm.builtins["len"] = bLen
 	vm.builtins["type"] = bType
@@ -361,6 +363,9 @@ func bQuat(vm *VM, args []Value) (Value, error) {
 }
 
 func bMat4Identity(vm *VM, args []Value) (Value, error) {
+	if len(args) != 0 {
+		return NilValue, vm.fail("mat4_identity takes no arguments")
+	}
 	return Value{K: KMat4, O: IdentityMat4()}, nil
 }
 
@@ -386,7 +391,9 @@ func vec3Arg(v Value) (Vec3, error) {
 
 func matArg(v Value) (Mat4, error) {
 	if v.K == KMat4 {
-		return v.O.(Mat4), nil
+		if m, ok := v.O.(Mat4); ok {
+			return m, nil
+		}
 	}
 	return Mat4{}, errString("need a mat4")
 }
@@ -475,23 +482,19 @@ func bMat4LookAt(vm *VM, args []Value) (Value, error) {
 }
 
 func bDot(vm *VM, args []Value) (Value, error) {
-	if len(args) != 2 {
-		return NilValue, vm.fail("dot takes 2 arguments")
+	if len(args) != 2 || vectorSize(args[0].K) == 0 || args[0].K != args[1].K {
+		return NilValue, vm.fail("dot takes two vectors of the same dimension")
 	}
-	a, err := vec3Arg(args[0])
-	if err != nil {
-		return NilValue, vm.fail("%s", err)
+	var d float64
+	for i := 0; i < vectorSize(args[0].K); i++ {
+		d += args[0].V[i] * args[1].V[i]
 	}
-	b, err := vec3Arg(args[1])
-	if err != nil {
-		return NilValue, vm.fail("%s", err)
-	}
-	return FloatValue(a.Dot(b)), nil
+	return FloatValue(d), nil
 }
 
 func bCross(vm *VM, args []Value) (Value, error) {
-	if len(args) != 2 {
-		return NilValue, vm.fail("cross takes 2 arguments")
+	if len(args) != 2 || args[0].K != KVec3 || args[1].K != KVec3 {
+		return NilValue, vm.fail("cross takes two vec3 arguments")
 	}
 	a, err := vec3Arg(args[0])
 	if err != nil {
@@ -509,12 +512,22 @@ func bNormalize(vm *VM, args []Value) (Value, error) {
 	if len(args) != 1 {
 		return NilValue, vm.fail("normalize takes 1 argument")
 	}
-	a, err := vec3Arg(args[0])
+	l, err := vectorLength(args[0])
 	if err != nil {
-		return NilValue, vm.fail("%s", err)
+		return NilValue, err
 	}
-	r := a.Norm()
-	return Value{K: KVec3, V: [4]float64{r.X, r.Y, r.Z}}, nil
+	if l == 0 {
+		return NilValue, vm.fail("cannot normalize a zero vector or quaternion")
+	}
+	v := args[0]
+	n := vectorSize(v.K)
+	if v.K == KQuat {
+		n = 4
+	}
+	for i := 0; i < n; i++ {
+		v.V[i] /= l
+	}
+	return v, nil
 }
 
 func bLerp(vm *VM, args []Value) (Value, error) {

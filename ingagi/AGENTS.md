@@ -28,6 +28,16 @@
   private C bridge. Go owns all passed storage; C must not retain its pointers.
   Keep `CGO_ENABLED=0` working and test both variants. Simdette currently uses
   scalar double-precision vector math here; do not claim hardware acceleration.
+- First-class geometry lives in `runtime/geometry_values.go`: immutable owned
+  `mesh` storage and by-value `aabb`, detached field arrays, validated affine
+  transforms and structural equality. Generator results are typed; legacy map
+  inputs remain accepted. Snapshot v3 adds these kinds and reads v1/v2; validate
+  malformed payloads and clone mesh storage at every image installation.
+  `geometry/triangle_bridge.cc` uses libigl projected triangle double areas with
+  Eigen 3.4 from Bullet's vendored ThirdPartyLibs (root Eigen is incompatible).
+  Keep it synchronous and fixed-size; no retained pointers or library threads.
+  Math builtins/type rules are in `runtime/linear_algebra.go` and `sema/spatial.go`;
+  preserve dimension checks, local function shadows and native/portable parity.
 - The compiler emits nested function bodies inline behind skip jumps. Function
   scopes own slots, nil-propagation fixups and loop contexts. Optimizations must
   relocate all entries, branches and deferred-block targets and handle cycles.
@@ -110,6 +120,15 @@
   validation. Keep `shader` compatibility exports and CLI reflection aligned.
   Extend real glslang/spirv-val/decoration tests and source-link failures before
   broadening interface types, layouts or pipeline stage topologies.
+- `monkeyshade/filament.go` adds `shader(target:"filament")` surface materials.
+  Reuse the GLSL body emitter and existing reflection/link checks; `.mat` and
+  `.filamat` are whole-material artifacts (`stage="material"`). Uniform fields
+  become named parameters, textures become Filament samplers, and smooth vec4
+  interface locations 0..3 become custom varyings. Reject unsupported bindings,
+  stages and namespace shadows. `ReflectFilament` describes parameter names, not
+  Vulkan layouts. `matc` runs with bounded context/output and validates package
+  framing; set `INGAGI_MATC` to the matching vendored SDK tool for real tests.
+  No renderer/device support follows implicitly from material compilation.
 - Standalone embedding checks: configure/build `ingagi/CMakeLists.txt`, then run
   CTest. Optional D/Rust/Python/Java smoke tests run when compilers are available.
   Read `README.md` and `native_extension_api/README.md` before describing support.

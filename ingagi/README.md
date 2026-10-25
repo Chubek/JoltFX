@@ -35,8 +35,9 @@ It does not execute the module. `dump` prints
 optimized bytecode. Exit codes are 0 for success, 1 for input/compilation/runtime
 errors, and 2 for CLI usage errors.
 
-CGO builds require a C++20 compiler and repository-relative vendored GLM and
-simdette headers. `CGO_ENABLED=0` selects the portable Go math implementation.
+CGO builds require a C++20 compiler and repository-relative vendored GLM,
+simdette, libigl and Eigen 3.4 headers (see [dependencies](DEPENDENCIES.md)).
+`CGO_ENABLED=0` selects portable Go math and geometry implementations.
 
 ## QBE native compilation and Keystone assembly
 
@@ -340,7 +341,7 @@ those defaults to omitted fields, for example:
 `Cube(size)`, `Plane(width, depth)` and `UVSphere(radius, segments, rings)` return
 validated meshes. Library limits are 65,536 vertices / 131,072 triangles and
 finite vertex coordinates within `+/-1e9`. `Validate`, `Bounds`, `VertexNormals`,
-`Clone` and failure-atomic `Transform` support host-side mesh processing.
+`Area`, `Clone` and failure-atomic `Transform` support host-side mesh processing.
 Unreferenced/cancelling vertex normals return an error instead of NaN values.
 UV spheres weld the seam and poles; cubes share their eight corner vertices.
 
@@ -355,17 +356,66 @@ The VM exposes these **builtins**, without requiring imports:
 | `mesh_plane(width,depth)` | XZ plane facing +Y |
 | `mesh_sphere(radius,segments,rings)` | Welded UV sphere; integer segments >=3, rings >=2 |
 | `mesh_normals(mesh)` | Array of area-weighted unit `vec3` normals |
-| `mesh_bounds(mesh)` | Map with `min` and `max` vectors |
+| `mesh_bounds(mesh)` | `aabb` with `min` and `max` vectors |
 | `mesh_translate(mesh,offset)` | Translated copy; `offset` is a `vec3` |
+| `mesh(vertices,triangles)` | Validated, owned `mesh` from `[vec3...]` and integer index triples |
+| `mesh_transform(mesh,mat4)` | Affine transformed copy; degenerate/invalid results fail atomically |
+| `mesh_area(mesh)` | Unsigned total triangle surface area |
+| `aabb(min,max)` | Finite axis-aligned bounds; requires `min <= max` on every axis |
+| `contains(aabb,vec3)` | Inclusive point containment; also `box.contains(point)` |
 
-Mesh values are `{vertices: [vec3...], triangles: [[i,j,k]...]}` maps with exact
-integer indices. VM mesh arrays are each limited to 65,536 entries for snapshot
-compatibility; the generator rejects larger requests before VM allocation.
+`mesh` and `aabb` are first-class VM kinds: they can be annotated, passed,
+returned, stored in collections/components, compared structurally and snapshotted.
+`mesh_cube`/`mesh_plane`/`mesh_sphere` now return **mesh**, rather than map values;
+`mesh_bounds` now returns **aabb**. Their field-reading syntax is preserved.
+Mesh `vertices`/`triangles` reads return detached array copies; bounds fields are
+value copies. Both types have read-only fields. Construct a new mesh to publish
+edited arrays. Existing `{vertices,triangles}` map inputs remain accepted by
+mesh operations for host interchange. VM mesh arrays are each limited to 65,536
+entries; the generator rejects larger requests before VM allocation.
 Seeds are integer values (negative int64 values preserve their uint64 bit pattern).
 Builtins reject invalid arguments and retain no caller-owned buffers. Mesh
 translation does not change the source value. These bounded operations do not
 provide a total VM memory/time sandbox and do not upload meshes into JoltFX.
 Run `GOROOT=/usr/lib/go go run ./cmd run examples/procedural.ing` for an example.
+
+### First-class linear algebra
+
+`vec2`, `vec3`, `vec4`, `quat` and `mat4` use float64 components. Static checks
+understand constructors, annotations, operator dimensions, fields, indexing and
+the following builtins. Functions are ordinary callable values; local/user
+function shadows retain their normal meaning.
+
+| Construct / operation | Semantics |
+| --- | --- |
+| `vec2(x,y)`, `vec3(x,y,z)`, `vec4(x,y,z,w)` | Numeric components; integer inputs widen |
+| `quat(x,y,z,w)` | Quaternion; normalize before using it as a rotation |
+| `mat4()`, `mat4(s)` | Identity, or diagonal matrix with four entries `s` |
+| `mat4(c0,c1,c2,c3)` | Four `vec4` columns |
+| `dot(a,b)`, `cross(a,b)` | Same-dimension vectors for dot; two vec3 for cross |
+| `length(v)`, `normalize(v)` | vec2/3/4 or quat; normalization preserves kind and rejects zero/nonfinite length |
+| `transpose(m)`, `determinant(m)`, `inverse(m)` | mat4; inverse rejects zero/nonfinite determinant or nonfinite result |
+| `m[column][row]`, `v[index]` | Read-only integer indexing; bounds checked |
+
+Vectors support component-wise `+ - * /` with equal dimensions or a numeric
+scalar on either side. Matrices support `+ -`, scalar multiplication, matrix
+multiplication and `mat4 * vec4`. Quaternion `*` composes quaternions or rotates
+a vec3; there is no quaternion `+` composition. Unary `+ -` work on all these
+math values. Equality is exact; use a tolerance for computed floating results.
+Generic method spelling works too: `v.normalize()`, `m.inverse()`.
+
+Matrices are column-major, multiply column vectors, and compose right-to-left.
+The existing `mat4_identity`, `mat4_translate`, `mat4_scale`, `mat4_rotate`
+(radians), `mat4_perspective` and `mat4_lookat` remain available. Affine mesh
+transforms require bottom row `[0,0,0,1]`; they preserve triangle indices/winding.
+Reflections therefore reverse geometric orientation. New geometry/matrix
+constructors reject nonfinite inputs; ordinary floating arithmetic retains IEEE
+behavior. Inversion uses floating arithmetic, not an exact or conditioned solver.
+
+Run/check `examples/spatial.ing`. This is the CPU VM language surface; host
+mat2/mat3, arbitrary-size matrices, decompositions, general geometry booleans,
+and native QBE/WASM aggregate lowering are not implemented. GPU shader math keeps
+its separate GLSL-oriented subset.
 
 ### Language and engine boundaries
 
@@ -374,12 +424,17 @@ Run `GOROOT=/usr/lib/go go run ./cmd run examples/procedural.ing` for an example
 - ECS storage, queries, hierarchy, system ordering and command queues have
   package-level tests. The VM has draft ECS builtins, hooks and render-binding
   metadata; full engine integration and conformance coverage remain pending.
-- CGO math calls **GLM** for matrix multiplication, projection, view matrices
+- CGO math calls **GLM** for matrix multiplication, transpose, determinant, inverse, projection, view matrices
   and point transforms. **Simdette** `vec3<double>` implements batch addition and
   scaling. Its float hardware batches cannot preserve the VM's float64 values,
   so this bridge uses scalar linear algebra, not hardware SIMD. Go implements
   the remaining scalar vector/quaternion operations. Native and portable math
-  are compared against reference results, including tails and in-place buffers.
+   are compared against reference results, including tails and in-place buffers.
+- CGO geometry uses **libigl** projected signed triangle double areas to compute
+  oriented area vectors for surface area and area-weighted normals. Fixed-size
+  Eigen values stay on the stack, Go owns all buffers, and the bridge retains no
+  pointers or starts threads. Bounds/validation/generators remain in Go. Portable
+  builds use the same projected-area formulas.
 - `sema.DefaultOptions()` enables scope, syntax, gradual type, ECS, shader,
   import, control-flow and constant-overflow checks. Checks use known annotations
   and inferred scalar/aggregate types; they don't implement generic
@@ -394,7 +449,8 @@ Run `GOROOT=/usr/lib/go go run ./cmd run examples/procedural.ing` for an example
    GPU dispatch and renderer adapters remain pending.
   QBE and WASM are implemented scalar native backends; other target descriptors still
   describe planned adapters rather than claiming GPU integration.
-- Bytecode image serialization is experimental (snapshot v2, decodes v1).
+- Bytecode image serialization is experimental (snapshot v3, decodes v1/v2).
+  Version 3 adds validated owned mesh and aabb payloads.
   Opcode-level descriptor verification and enum payload signatures are enforced
   at load, at snapshot install and at runtime construction; comprehensive static
   analysis, broader native/JIT targets,
@@ -519,6 +575,88 @@ Reflection needs no external shader tools. Capability JSON describes compiler
 support, format tool dependencies and implementation bounds, not installed tools
 or device availability. Mesh/task stages and device dispatch remain explicitly
 false. Failed source links/compilations preserve existing CLI artifacts.
+
+### Filament materials
+
+MonkeyShade also compiles Ingagi's shader DSL to **Filament surface materials**.
+Use `shader Surface(target: "filament")` with a required `fragment` body and an
+optional `vertex` body. The existing parser, typed GLSL expression/statement
+lowering, helper functions, constants, structs and interface linker are reused.
+See [`examples/filament_material.ing`](examples/filament_material.ing).
+
+```sh
+# From ingagi/. Source emission and reflection need no external tools.
+GOROOT=/usr/lib/go go run ./cmd shader -emit filament \
+  -o /tmp/opencode/surface.mat examples/filament_material.ing
+GOROOT=/usr/lib/go go run ./cmd shader -emit reflect \
+  -o /tmp/opencode/surface.json examples/filament_material.ing
+# Use the matc built by JoltFX's JFX_FILAMENT=ON configuration.
+export INGAGI_MATC="$PWD/../build/filament/vendor/tools/matc/matc"
+GOROOT=/usr/lib/go go run ./cmd shader -emit filamat \
+  -filament-api opengl -filament-platform mobile \
+  -o /tmp/opencode/surface.filamat examples/filament_material.ing
+```
+
+`-matc PATH` overrides `INGAGI_MATC`, then `matc` on PATH is the fallback.
+`-filament-api` accepts `opengl` (default), `vulkan`, `metal`, or `all`;
+`-filament-platform` accepts `all` (default), `desktop`, or `mobile`.
+Alternatively, run `INGAGI_BUILD_FILAMENT=1 bash ingagi/scripts/build-shader-tools.sh`
+from the repository root to build the vendored material compiler alongside the
+existing shader tools. Use the same SDK revision to compile and load `.filamat`;
+these packages are versioned by Filament, not a portable standalone SPIR-V ABI.
+
+The profile uses the existing declaration-option syntax:
+
+| Option | Accepted values / default |
+|---|---|
+| `target` | `"filament"` (required) |
+| `shading_model` | `"lit"` (default), `"unlit"` |
+| `blending` | `"opaque"` (default), `"transparent"`, `"masked"`, `"fade"`, `"add"` |
+| `vertex_domain` | `"object"` (default), `"world"`, `"view"`, `"device"` |
+| `double_sided` | Boolean, default `false` |
+| `requires` | Comma-separated string: `uv0`, `uv1`, `color`, `custom0`…`custom7`; omitted by default |
+
+Inside stages, `material` is the implicit Filament `MaterialInputs` or
+`MaterialVertexInputs` parameter. Call `prepareMaterial(material)` in the fragment
+body, **after writing tangent-space normals and before lighting-dependent API
+calls**. Use Filament's public APIs (`getUV0()`, `getWorldPosition()`, etc.) and
+material fields (`baseColor`, `roughness`, `metallic`, `worldPosition`, etc.).
+`matc` performs final GLSL type and Filament API validation; source/reflection
+emission alone does not claim a fully validated binary.
+
+- `uniform Params { tint:vec4; } p;` maps `p.tint` to the named Filament parameter
+  **`Params_tint`**. Without an alias, use the field name directly in Ingagi.
+  Scalars, boolean/integer/float vectors, `mat3`/`mat4` and bounded fixed arrays
+  are supported, up to 128 named parameters. Nested uniform structs and `mat2`
+  parameters are rejected. Filament owns the packed runtime layout.
+- `texture2d`, `texture2d_array` and `texture_cube` become floating Filament
+  samplers with the same parameter name. Keep using `texture(albedo, getUV0())`;
+  the emitter supplies Filament's sampler prefix. Bind all parameters/textures
+  through the host's `MaterialInstance` API (parameters have no DSL defaults).
+- Existing `interface` declarations connect vertex `outputs` to fragment `inputs`
+  by location. Filament supports smooth `vec4` varyings at locations **0–3** in
+  this profile. Vertex attributes and fragment outputs use Filament APIs instead
+  of explicit location interfaces. Helpers are emitted into both stages and must
+  use APIs valid in each stage where they are emitted.
+- Explicit descriptor bindings, storage buffers/images, specialization constants,
+  other stages and standalone `gl_*` builtins are rejected. Resource names and
+  `material`/interface/generated namespaces cannot be shadowed. Filament material
+  hooks cannot be inserted into a standalone Ingagi graphics `pipeline`.
+
+Go APIs are available from both `monkeyshade` and the `shader` compatibility facade:
+`CompileFilament(declaration)`, `ReflectFilament(declaration)` and
+`CompileFilamat(ctx, declaration, ToolOptions{Matc: path})`.
+`CompileArtifact` / `CompileSource` accept formats `filament`, `filamat`, or
+`reflect` with **`stage="material"`** to process the complete material; the CLI
+selects that stage automatically for Filament artifacts/reflection. The CLI's
+existing module loader supports imported material declarations.
+
+`ReflectFilament` reports source-to-parameter mappings, properties and varying
+locations, without inventing Vulkan descriptor layouts. `matc` is invoked without
+a shell, with a 30-second maximum deadline, bounded diagnostics/package sizes and
+temporary cleanup. Failed builds preserve existing CLI output files. Material
+compilation is available with `CGO_ENABLED=0`; loading/binding materials to a
+renderer remains the host's responsibility.
 
 ### Cross-compiled shader sources
 

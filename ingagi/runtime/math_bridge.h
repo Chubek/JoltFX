@@ -6,6 +6,9 @@ extern "C" {
 #endif
 /* Synchronous calls; no pointer is retained and all storage belongs to Go. */
 void ingagi_mat4_mul(double *out, const double *a, const double *b);
+void ingagi_mat4_transpose(double *out, const double *a);
+double ingagi_mat4_determinant(const double *a);
+void ingagi_mat4_inverse(double *out, const double *a);
 void ingagi_perspective(double *out, double fovy, double aspect, double near_z, double far_z);
 void ingagi_look_at(double *out, const double *eye, const double *center, const double *up);
 void ingagi_add_batch(double *dst, const double *a, const double *b, size_t n);

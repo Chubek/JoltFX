@@ -83,6 +83,16 @@ func prepareImageValues(d *Decoded, vm *VM) (map[string]Value, map[string]map[st
 			if _, ok := v.O.(Mat4); !ok {
 				return bad()
 			}
+		case KMesh:
+			m, err := valueMesh(v)
+			if err != nil {
+				return bad()
+			}
+			v.O = &meshObj{data: m.Clone()}
+		case KAABB:
+			if _, err := valueBounds(v); err != nil {
+				return bad()
+			}
 		case KEntity:
 			if _, ok := v.O.(EntityRef); !ok {
 				return bad()

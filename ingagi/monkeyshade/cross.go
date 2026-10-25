@@ -16,22 +16,47 @@ import (
 // INGAGI_* environment variable, then PATH. All subprocesses use the caller's
 // context; no tool command is interpreted by a shell.
 type ToolOptions struct {
-	GLSLang    string
-	SPIRVCross string
-	Naga       string
+	GLSLang          string
+	SPIRVCross       string
+	Naga             string
+	Matc             string
+	FilamentAPI      string // opengl (default), vulkan, metal, all
+	FilamentPlatform string // all (default), desktop, mobile
 }
 
 // CompileArtifact generates shader source or SPIR-V. Cross-compilation uses the
 // validated SPIR-V intermediate, preserving its stage semantics and resource
 // bindings. Renderer creation/dispatch belongs to the embedding host.
 // Formats: glsl (Vulkan), spirv, hlsl (SM 5.0), glsl-opengl (450), glsl-es (300,
-// vertex/fragment only), msl (2.0), wgsl (vertex/fragment/compute).
+// vertex/fragment only), msl (2.0), wgsl (vertex/fragment/compute), filament
+// (.mat source) and filamat (matc package). Filament uses stage="material" and
+// its own material profile/entry points, rather than standalone SPIR-V lowering.
 func CompileArtifact(ctx context.Context, s *fe.ShaderDecl, stage, format string, tools ToolOptions) ([]byte, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("ingagi: missing shader build context")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if format == "filament" || format == "filamat" || format == "reflect" && stage == "material" {
+		if stage != "material" {
+			return nil, fmt.Errorf("ingagi: Filament artifacts require stage material (the complete material)")
+		}
+		if format == "filamat" {
+			return CompileFilamat(ctx, s, tools)
+		}
+		if format == "reflect" {
+			r, err := ReflectFilament(s)
+			if err != nil {
+				return nil, err
+			}
+			return json.MarshalIndent(r, "", "  ")
+		}
+		text, err := CompileFilament(s)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(text), nil
 	}
 	if format == "glsl" {
 		text, err := CompileGLSL(s, stage)

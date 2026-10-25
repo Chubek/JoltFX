@@ -352,11 +352,13 @@ func (vm *VM) arith(op Op, a, b Value, pc int) (Value, error) {
 		if r, ok := matArith(op, a, b); ok {
 			return r, nil
 		}
-		if a.K == KQuat && b.K == KQuat {
-			return Value{K: KQuat, V: quatToArr(a.O.(Quat).Mul(b.O.(Quat)))}, nil
+	}
+	if op == OpMul && a.K == KQuat {
+		q := Quat{a.V[0], a.V[1], a.V[2], a.V[3]}
+		if b.K == KQuat {
+			return Value{K: KQuat, V: quatToArr(q.Mul(Quat{b.V[0], b.V[1], b.V[2], b.V[3]}))}, nil
 		}
-		if a.K == KQuat && b.K == KVec3 {
-			q := a.O.(Quat)
+		if b.K == KVec3 {
 			r := q.RotateVec(Vec3{b.V[0], b.V[1], b.V[2]})
 			return Value{K: KVec3, V: [4]float64{r.X, r.Y, r.Z}}, nil
 		}
@@ -378,6 +380,9 @@ func quatToArr(q Quat) [4]float64 { return [4]float64{q.X, q.Y, q.Z, q.W} }
 func vecArith(op Op, a, b Value) (Value, bool) {
 	ak := a.K == KVec2 || a.K == KVec3 || a.K == KVec4
 	bk := b.K == KVec2 || b.K == KVec3 || b.K == KVec4
+	if ak && bk && a.K != b.K {
+		return NilValue, false
+	}
 	n := 0
 	switch {
 	case a.K == KVec2 || b.K == KVec2:
@@ -436,6 +441,40 @@ func matArith(op Op, a, b Value) (Value, bool) {
 	if op != OpMul && op != OpAdd && op != OpSub {
 		return NilValue, false
 	}
+	if a.K == KMat4 {
+		if _, ok := a.O.(Mat4); !ok {
+			return NilValue, false
+		}
+	}
+	if b.K == KMat4 {
+		if _, ok := b.O.(Mat4); !ok {
+			return NilValue, false
+		}
+	}
+	if a.K == KMat4 && b.K == KMat4 && (op == OpAdd || op == OpSub) {
+		am, bm := a.O.(Mat4), b.O.(Mat4)
+		for i := range am {
+			if op == OpAdd {
+				am[i] += bm[i]
+			} else {
+				am[i] -= bm[i]
+			}
+		}
+		return Value{K: KMat4, O: am}, true
+	}
+	if op == OpMul {
+		m, s := a, b
+		if b.K == KMat4 {
+			m, s = b, a
+		}
+		if f, ok := s.AsFloat(); m.K == KMat4 && ok {
+			out := m.O.(Mat4)
+			for i := range out {
+				out[i] *= f
+			}
+			return Value{K: KMat4, O: out}, true
+		}
+	}
 	if a.K == KMat4 && b.K == KMat4 && op == OpMul {
 		r := a.O.(Mat4).Mul(b.O.(Mat4))
 		return Value{K: KMat4, O: r}, true
@@ -474,6 +513,27 @@ func valueEqual(a, b Value) bool {
 		am := a.O.(Mat4)
 		bm := b.O.(Mat4)
 		return am == bm
+	case KMesh:
+		am, ae := valueMesh(a)
+		bm, be := valueMesh(b)
+		if ae != nil || be != nil || len(am.Vertices) != len(bm.Vertices) || len(am.Triangles) != len(bm.Triangles) {
+			return false
+		}
+		for i, v := range am.Vertices {
+			if v != bm.Vertices[i] {
+				return false
+			}
+		}
+		for i, v := range am.Triangles {
+			if v != bm.Triangles[i] {
+				return false
+			}
+		}
+		return true
+	case KAABB:
+		ab, ae := valueBounds(a)
+		bb, be := valueBounds(b)
+		return ae == nil && be == nil && ab == bb
 	case KArray:
 		aa := a.O.(*ArrayObj).Elems
 		ba := b.O.(*ArrayObj).Elems
@@ -575,6 +635,8 @@ var vecFields = map[string]int{
 
 func (vm *VM) loadField(obj Value, name string) (Value, error) {
 	switch obj.K {
+	case KMesh, KAABB:
+		return geometryField(obj, name)
 	case KStruct:
 		if v, ok := obj.O.(*StructObj).Fields[name]; ok {
 			return v, nil
@@ -627,7 +689,7 @@ func (vm *VM) storeField(obj, val Value, name string) (Value, error) {
 		return obj, nil
 	case KVec2, KVec3, KVec4, KQuat:
 		i, ok := vecFields[name]
-		if !ok {
+		if !ok || (obj.K == KVec2 && i >= 2) || (obj.K == KVec3 && i >= 3) {
 			return NilValue, vm.fail("no field %q on %s", name, obj.K)
 		}
 		f, ok := val.AsFloat()
@@ -642,6 +704,23 @@ func (vm *VM) storeField(obj, val Value, name string) (Value, error) {
 
 func (vm *VM) loadIndex(obj, idx Value) (Value, error) {
 	switch obj.K {
+	case KVec2, KVec3, KVec4, KQuat, KMat4:
+		n := vectorSize(obj.K)
+		if obj.K == KQuat || obj.K == KMat4 {
+			n = 4
+		}
+		if idx.K != KInt || idx.I < 0 || idx.I >= int64(n) {
+			return NilValue, vm.fail("%s index must be an integer in 0..%d", obj.K, n-1)
+		}
+		i := int(idx.I)
+		if obj.K == KMat4 {
+			m, err := matArg(obj)
+			if err != nil {
+				return NilValue, err
+			}
+			return Value{K: KVec4, V: [4]float64{m[4*i], m[4*i+1], m[4*i+2], m[4*i+3]}}, nil
+		}
+		return FloatValue(obj.V[i]), nil
 	case KArray:
 		i, ok := idx.AsFloat()
 		if !ok {

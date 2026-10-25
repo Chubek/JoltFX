@@ -1,0 +1,23 @@
+// First-class CPU/VM geometry and double-precision linear algebra.
+fn place(shape: mesh, position: vec3) -> mesh {
+    let transform: mat4 = mat4_translate(mat4(1), position);
+    return mesh_transform(shape, transform);
+}
+
+fn main() -> f64 {
+    let shape: mesh = mesh_cube(2);
+    let moved: mesh = place(shape, vec3(3, 0, 0));
+    let bounds: aabb = mesh_bounds(moved);
+    assert(bounds.contains(vec3(3, 0, 0)));
+    assert(!bounds.contains(vec3(0, 0, 0)));
+    assert(shape == mesh(shape.vertices, shape.triangles));
+
+    let scale: mat4 = mat4_scale(mat4(1), vec3(2, 3, 4));
+    let point: vec4 = vec4(1, 2, 3, 1);
+    let restored: vec4 = inverse(scale) * (scale * point);
+    assert(length(restored - point) < 0.000001);
+    assert(determinant(scale) == 24);
+    assert(dot(vec2(3, 4).normalize(), vec2(3, 4)) == 5);
+    print(type(shape), type(bounds), mesh_area(moved), mesh_normals(shape)[0]);
+    return mesh_area(moved);
+}

@@ -411,6 +411,7 @@ func (e *glslEmitter) emitTessEvaluationLayout(s *fe.ShaderStage) {
 }
 
 type glslEmitter struct {
+	filament        *filamentEmitter
 	out             strings.Builder
 	indent          int
 	err             error
@@ -461,6 +462,9 @@ func (e *glslEmitter) line(format string, args ...any) {
 	e.out.WriteByte('\n')
 }
 func (e *glslEmitter) ident(n string, sp fe.Span) string {
+	if e.filament != nil && strings.HasPrefix(n, "ig_filament_") {
+		e.fail(sp, "reserved generated Filament identifier %s", n)
+	}
 	if strings.HasPrefix(n, "ig_interface_") {
 		e.fail(sp, "reserved generated identifier %s", n)
 	}
@@ -523,6 +527,9 @@ func (e *glslEmitter) field(t, name string, sp fe.Span) string {
 func (e *glslEmitter) signature(fn fe.ShaderFunc) string {
 	var params []string
 	for _, p := range fn.Params {
+		if e.filament != nil {
+			e.filament.local(e, p.Name, p.Span)
+		}
 		if len(p.Attrs) > 0 {
 			e.fail(p.Span, "parameter attributes are unsupported")
 		}
@@ -548,6 +555,9 @@ func (e *glslEmitter) stmt(s fe.Stmt) {
 	case *fe.Block:
 		e.block(s)
 	case *fe.VarDeclStmt:
+		if e.filament != nil {
+			e.filament.local(e, s.Name, s.Span)
+		}
 		if e.ioActive && (s.Name == "inputs" || s.Name == "outputs") {
 			e.fail(s.Span, "stage interface namespaces cannot be shadowed")
 		}
@@ -625,11 +635,17 @@ func (e *glslEmitter) expr(x fe.Expr) string {
 			return strconv.FormatBool(x.Bool)
 		}
 	case *fe.IdentExpr:
+		if e.filament != nil {
+			return e.filament.identifier(e, x.Name, x.Span)
+		}
 		if e.ioActive && (x.Name == "inputs" || x.Name == "outputs") {
 			e.fail(x.Span, "interface namespace requires a field access")
 		}
 		return e.ident(x.Name, x.Span)
 	case *fe.PathExpr:
+		if e.filament != nil {
+			return e.filament.identifier(e, x.Path.String(), x.Span)
+		}
 		return e.ident(x.Path.String(), x.Span)
 	case *fe.UnaryExpr:
 		if x.Op != "!" && x.Op != "~" && x.Op != "-" && x.Op != "+" {
@@ -644,6 +660,12 @@ func (e *glslEmitter) expr(x fe.Expr) string {
 		}
 		return "(" + e.expr(x.X) + " " + x.Op + " " + e.expr(x.Y) + ")"
 	case *fe.AssignExpr:
+		if e.filament != nil {
+			root := shaderExprRoot(x.X)
+			if e.filament.values[root] != "" || e.filament.blocks[root] != nil {
+				e.fail(x.Span, "Filament parameters are read-only")
+			}
+		}
 		if e.ioActive {
 			var root func(fe.Expr) string
 			root = func(x fe.Expr) string {
@@ -668,13 +690,28 @@ func (e *glslEmitter) expr(x fe.Expr) string {
 		if x.Arrow {
 			e.fail(x.Span, "shader pointer members are unsupported")
 		}
+		if name, ok := x.X.(*fe.IdentExpr); ok && e.filament != nil {
+			if fields := e.filament.blocks[name.Name]; fields != nil {
+				if value, ok := fields[x.Field]; ok {
+					return value
+				}
+				e.fail(x.Span, "unknown Filament uniform field %s.%s", name.Name, x.Field)
+			}
+		}
 		if name, ok := x.X.(*fe.IdentExpr); ok && e.ioActive && (name.Name == "inputs" || name.Name == "outputs") {
 			fields, direction := e.inputs, "in"
 			if name.Name == "outputs" {
 				fields, direction = e.outputs, "out"
 			}
-			if _, ok := fields[x.Field]; !ok {
+			v, ok := fields[x.Field]
+			if !ok {
 				e.fail(x.Span, "unknown %s interface field %s", name.Name, x.Field)
+			}
+			if e.filament != nil {
+				if direction == "in" {
+					return fmt.Sprintf("variable_ig_filament_v%d", v.Location)
+				}
+				return fmt.Sprintf("material.ig_filament_v%d", v.Location)
 			}
 			return "ig_interface_" + direction + "_" + e.ident(x.Field, x.Span)
 		}

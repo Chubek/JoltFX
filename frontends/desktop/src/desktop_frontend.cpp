@@ -253,10 +253,15 @@ struct jfx_desktop_frontend {
     ScenePreviewJob *scene_png_job;
     SceneExportStep *scene_export_step;
     bool export_worker_scene,export_cancel_pending;
+    bool export_image_sequence;
+    jfx_result_t export_result_snapshot;
     uint64_t export_completed_snapshot,export_total_snapshot;
     char scene_script[4097];
     char scene_script_path[512];
     char scene_mesh_path[512],scene_png_path[512];
+    char scene_sequence_prefix[512];
+    int scene_sequence_width,scene_sequence_height;
+    uint64_t scene_sequence_start,scene_sequence_count;
     jfx_desktop_workspace_t workspace;
     bool grading_edit;
     bool audio_edit;
@@ -362,7 +367,8 @@ struct jfx_desktop_frontend {
     uint8_t *preview_rgba;
     ScenePreviewJob *scene_display;
     int scene_shading;
-    bool scene_animation;
+    int scene_mode; // Modeling, Animation, Rendering; one shared scene/history.
+    bool scene_render_initialized;
     uint32_t scene_width,scene_height;
     bool preview_dirty;
     void *preview_texture; /* host-owned handle for ImGui::Image */
@@ -398,6 +404,7 @@ static void desktop_export_cancel(jfx_desktop_frontend_t *f) {
 static void desktop_export_advance(jfx_desktop_frontend_t *f) {
     if (f->scene_export_step) {
         if (!f->scene_export_step->done.load(std::memory_order_acquire)) return;
+        f->export_result_snapshot=f->scene_export_step->result;
         tilly::destroy(f->scene_export_step); f->scene_export_step=nullptr;
     }
     if (!f->export_job) return;
@@ -405,7 +412,7 @@ static void desktop_export_advance(jfx_desktop_frontend_t *f) {
     if (jfx_export_state(f->export_job)==JFX_EXPORT_RUNNING) {
         if (f->export_worker_scene) {
             auto *step=tilly::create<SceneExportStep>();
-            if (!step) { jfx_export_cancel(f->export_job); }
+            if (!step) { jfx_export_cancel(f->export_job); f->export_result_snapshot=JFX_ERROR_OUT_OF_MEMORY; }
             else {
                 step->job=f->export_job;
                 f->export_completed_snapshot=jfx_export_completed_frames(f->export_job);
@@ -415,15 +422,19 @@ static void desktop_export_advance(jfx_desktop_frontend_t *f) {
             }
         } else {
             auto result=jfx_export_step(f->export_job,1);
+            f->export_result_snapshot=result;
             std::snprintf(f->status,sizeof(f->status),"%s: %llu / %llu frames",result==JFX_SUCCESS?"Video export":"Video export failed",
                 (unsigned long long)jfx_export_completed_frames(f->export_job),(unsigned long long)jfx_export_total_frames(f->export_job));
         }
     }
     if (jfx_export_state(f->export_job)!=JFX_EXPORT_RUNNING) {
         auto state=jfx_export_state(f->export_job);
-        std::snprintf(f->status,sizeof(f->status),"Video export %s: %llu / %llu frames",
+        std::snprintf(f->status,sizeof(f->status),"%s %s: %llu / %llu frames%s%s",
+            f->export_image_sequence?"PNG sequence":"Video export",
             state==JFX_EXPORT_COMPLETE?"complete":state==JFX_EXPORT_CANCELLED?"cancelled":"failed",
-            (unsigned long long)jfx_export_completed_frames(f->export_job),(unsigned long long)jfx_export_total_frames(f->export_job));
+            (unsigned long long)jfx_export_completed_frames(f->export_job),(unsigned long long)jfx_export_total_frames(f->export_job),
+            f->export_result_snapshot==JFX_SUCCESS?"":" - ",
+            f->export_result_snapshot==JFX_SUCCESS?"":jfx_result_to_string(f->export_result_snapshot));
         jfx_export_destroy(f->export_job); f->export_job=nullptr; f->export_worker_scene=false;
     }
 }
@@ -526,6 +537,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     std::snprintf(frontend->scene_script_path,sizeof(frontend->scene_script_path),"examples/modeling3d/spin.jolt");
     std::snprintf(frontend->scene_mesh_path,sizeof(frontend->scene_mesh_path),"mesh.ply");
     std::snprintf(frontend->scene_png_path,sizeof(frontend->scene_png_path),"scene.png");
+    std::snprintf(frontend->scene_sequence_prefix,sizeof(frontend->scene_sequence_prefix),"scene");
+    frontend->scene_sequence_width=960; frontend->scene_sequence_height=540;
     std::snprintf(frontend->audio_export_path,sizeof(frontend->audio_export_path),"mix.wav");
     std::snprintf(frontend->creative_source, sizeof(frontend->creative_source),
         ";; @kernel sketch_demo\n;; @category generative\n"

@@ -2,6 +2,10 @@
 
 package runtime
 
+func transposeMat4(m Mat4) Mat4      { return scalarTransposeMat4(m) }
+func determinantMat4(m Mat4) float64 { return scalarDeterminantMat4(m) }
+func inverseMat4(m Mat4) Mat4        { return scalarInverseMat4(m) }
+
 func multiplyMat4(a, b Mat4) Mat4 { return scalarMultiplyMat4(a, b) }
 
 // Perspective builds a right-handed projection with depth range [-1, 1].
