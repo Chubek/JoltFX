@@ -3,4 +3,6 @@
 #include <jfx/jfx_engine.h>
 #include <jfx/jfx_image.h>
 #include <jfx/jfx_lut.h>
+#include <jfx/jfx_buffer.h>
+#include <jfx/jfx_texture.h>
 #endif

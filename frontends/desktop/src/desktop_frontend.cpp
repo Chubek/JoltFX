@@ -367,7 +367,11 @@ struct jfx_desktop_frontend {
     uint8_t *preview_rgba;
     ScenePreviewJob *scene_display;
     int scene_shading;
-    int scene_mode; // Modeling, Animation, Rendering; one shared scene/history.
+    int scene_mode; // Design=0, Animation=1, Rendering=2, Sculpting=3.
+    bool scene_sculpting,scene_sculpt_mirror;
+    int scene_sculpt_brush,scene_path_first,scene_path_last;
+    float scene_sculpt_radius,scene_sculpt_strength;
+    char scene_path_points[256];
     bool scene_render_initialized;
     uint32_t scene_width,scene_height;
     bool preview_dirty;
@@ -531,6 +535,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->scene_render_options.samples=4; frontend->scene_render_options.bounces=3;
     frontend->scene_render_options.reflectivity=.15f; frontend->scene_render_options.timeout_ms=5000;
     frontend->scene_segments=64;
+    frontend->scene_sculpt_radius=.6f; frontend->scene_sculpt_strength=.25f;
+    frontend->scene_sculpt_mirror=true; frontend->scene_path_last=59;
+    std::snprintf(frontend->scene_path_points,sizeof(frontend->scene_path_points),"-3 0 0  -1 1 0  1 1 0  3 0 0");
     frontend->scene_clone_count=5;
     frontend->scene_clone_spacing=3;
     std::snprintf(frontend->scene_script,sizeof(frontend->scene_script),"(defkernel spin [time frame index value] (+ value (* time 90)))");
@@ -723,6 +730,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     std::memcpy(owned_path, path, std::strlen(path) + 1);
     path = owned_path;
     if (frontend->recording) return JFX_ERROR_BUSY;
+    if (frontend->scene_sculpting) {
+        auto r=jfx_desktop_frontend_edit(frontend,"3d.sculpt_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        frontend->scene_sculpting=false;
+    }
     if (const char *ext = std::strrchr(path, '.'); ext && std::strcmp(ext, ".ing") == 0) {
         FILE *file = std::fopen(path, "rb");
         if (!file) return JFX_ERROR_NOT_FOUND;
@@ -1545,6 +1557,9 @@ static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
     if (!f || !op) return JFX_ERROR_INVALID_ARGUMENT;
     if (f->recording) return JFX_ERROR_BUSY;
+    if (f->scene_sculpting && std::strcmp(op,"3d.sculpt") && std::strcmp(op,"3d.sculpt_end") && std::strcmp(op,"3d.sculpt_cancel")) {
+        auto r=jfx_editor_command(f->editor,"3d.sculpt_end",0,0,0,0,""); if (r!=JFX_SUCCESS) return r; f->scene_sculpting=false;
+    }
     if (f->scene_navigation && std::strcmp(op,"3d.navigation_end") && std::strcmp(op,"3d.navigation_cancel") &&
         std::strcmp(op,"3d.orbit") && std::strcmp(op,"3d.orbit_axis") && std::strcmp(op,"3d.pan") && std::strcmp(op,"3d.dolly")) {
         auto r=jfx_editor_command(f->editor,"3d.navigation_end",0,0,0,0,""); if (r!=JFX_SUCCESS) return r; f->scene_navigation=false;
@@ -1924,6 +1939,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     finish_grading(f);
     finish_audio(f);
+    if (f->scene_sculpting) {
+        auto r=jfx_editor_command(f->editor,"3d.sculpt_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        f->scene_sculpting=false;
+    }
     if (f->scene_navigation) {
         auto r=jfx_editor_command(f->editor,"3d.navigation_end",0,0,0,0,"");
         if (r!=JFX_SUCCESS) return r;
@@ -1975,6 +1995,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->scene_sculpting) {
+        auto r=jfx_desktop_frontend_edit(f,"3d.sculpt_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        f->scene_sculpting=false;
+    }
     if (f->workspace == JFX_DESKTOP_WORKSPACE_GAME) {
         const char *ext = std::strrchr(path, '.');
         if (!ext || std::strcmp(ext, ".ing") || std::strlen(path) >= kMaxProjectPath)

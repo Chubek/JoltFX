@@ -146,10 +146,15 @@ See [creative programming](../../docs/creative.md).
 ## Options
 
 The **3D Modeling & Animation** tab has its own scene outliner, mesh/transform
-controls organized into **Modeling**, **Animation** and **Rendering** sub-tabs. Modeling contains
+controls organized into **Design**, **Animation**, **Sculpting** and **Rendering** sub-tabs. Design contains
 primitive creation, generators, mesh editing, cloners and PLY import/export;
-Animation contains transport, keys, scripts, physics baking and Ingagi packs.
-All three share scene selection, history, camera, viewport and render/export settings.
+Animation contains transport, keys, scripts, physics baking, GLM motion paths
+and low-poly animation proxies. Design also exposes meshoptimizer optimization
+and Bullet convex hulls. Sculpting offers Draw/Inflate/Smooth/Flatten/Pinch
+brushes, X symmetry, triangulation and Low-/Mid-/High-Poly shapes. Left-drag
+sculpts, Shift smooths, Ctrl reverses, and Escape cancels a stroke; undo groups
+each stroke. See [the sculpting guide](../../docs/modeling3d.md).
+All four share scene selection, history, camera, viewport and render/export settings.
 **Rendering** selects Filament on first entry when built with `JFX_FILAMENT=ON`.
 Choose the **Rendering engine**, enter a **Sequence prefix** (for example
 `/path/to/frames/shot` in an existing directory), set width/height (1–2048),

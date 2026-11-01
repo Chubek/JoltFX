@@ -1,2 +1,0 @@
-Comparing "parts.exr" and "ref/parts.exr"
-PASS

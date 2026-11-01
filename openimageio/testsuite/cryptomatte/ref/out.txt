@@ -1,2 +1,0 @@
-Comparing "cmcolors.exr" and "ref/cmcolors.exr"
-PASS

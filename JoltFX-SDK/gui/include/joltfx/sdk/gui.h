@@ -3,4 +3,5 @@
 /* Toolkit-independent UI descriptors and transactional editor commands. */
 #include <jfx/jfx_editor.h>
 #include <jfx/jfx_color.h>
+#include <jfx/jfx_osg_viewport.h>
 #endif

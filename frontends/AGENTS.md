@@ -1103,6 +1103,16 @@ Validate loaded documents before replacement, preserve load undo, and extend
 
 ### 3D modeling and animation
 
+Desktop 1.13 inserts Sculpting third (internal mode 3), preserving Rendering's
+internal mode 2; Modeling is labeled Design. Surface brushes use Core 1.8
+`3d.sculpt_begin/end/cancel` and `3d.sculpt`, with one history entry per stroke.
+Finish strokes on release, selection/command, tab, workspace, open/save changes;
+Escape restores the baseline. No mesh state belongs in the UI. Polygon-level
+copies retain animation and hide their source; selecting a source derives another
+level from that mesh. Design exposes meshoptimizer optimization/Bullet hulls;
+Animation exposes GLM Catmull–Rom path baking and reduced proxies. Run `sculpting`
+and `modeling3d_ui_tests` when changing these paths; see `docs/modeling3d.md`.
+
 Desktop 1.12 adds the third Rendering sub-tab with PNG image-sequence controls.
 First entry selects Filament when compiled; subsequent entries retain selection.
 Export 1.3 owns the scene/settings snapshot and uses stb PNG publication per frame.

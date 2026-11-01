@@ -1,3 +1,0 @@
-oiiotool ERROR: read : "src/partial.exr": Some tiles were missing or corrupted
-Full command line was:
-> oiiotool src/partial.exr -d uint8 -o error.tif

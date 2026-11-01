@@ -27,7 +27,8 @@ working subsystem. Empty adapters/IR placeholders are not executable backends.
 - Sixteen target descriptors are validated, sorted, independently owned data.
   **IngagiVM, QBE and WASM** are execution backends. The remaining thirteen are
   planned integrations. `Vulkan` is the canonical ID; the old `Vukkan/` scaffold
-  is retained but is not compiled. Shader artifact generation and JoltFX's
+  is archived under `../.decomissioned/ingagi/compiler/targets/Vukkan/` and is
+  not compiled. Shader artifact generation and JoltFX's
   renderer bridges do not make these general Ingagi adapters complete.
 - `monkeyshade.Parse` and `CompileSource` provide bounded, shader-only source
   selection over the existing scannerless frontend and GLSL/SPIR-V compiler.

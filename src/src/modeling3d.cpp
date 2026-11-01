@@ -8,14 +8,19 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/spline.hpp>
 #include <xsimd/xsimd.hpp>
 #include <CGAL/Simple_cartesian.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <igl/per_face_normals.h>
 #include <igl/upsample.h>
+#include <igl/per_vertex_normals.h>
+#include <meshoptimizer.h>
 #include <vtkMath.h>
 #include <btBulletDynamicsCommon.h>
+#include <LinearMath/btConvexHullComputer.h>
 #define TINYPLY_IMPLEMENTATION
 #include <tinyply.h>
 #define STBIW_MALLOC(n) tilly_mem_alloc(n)
@@ -267,6 +272,7 @@ void align_mesh(Object &o) {
     if (basis.determinant()<0) basis.col(2)*=-1;
     for (auto &v:o.vertices) v=vec((basis.transpose()*(eigen(v).cast<double>()-center)).cast<float>());
 }
+#include "modeling3d_sculpt.inc"
 tilly::string serialize(const Document &d) {
     Output out; out.exceptions(std::ios::badbit|std::ios::failbit); out.imbue(std::locale::classic()); out<<std::setprecision(9);
     out<<"scene3d 1\nclock "<<d.fps<<' '<<d.frames<<"\ncamera";
@@ -577,6 +583,24 @@ jfx_result_t apply(Document &d,const char *op,uint32_t a,uint32_t b,uint32_t c,d
         else { require(value>=0 && value<=2 && std::floor(value)==value); at->interpolation=uint32_t(value); }
     }
     else if (!std::strcmp(op,"3d.subdivide")) { require(!o.generator); subdivide(o); }
+    else if (!std::strcmp(op,"3d.sculpt")) { sculpt(d,o,b,c,value,text); }
+    else if (!std::strcmp(op,"3d.optimize")) { require(!o.generator); optimize_mesh(o); }
+    else if (!std::strcmp(op,"3d.triangulate")) {
+        // Generators already produce triangles; bake their current tessellation
+        // into editable geometry, then compact/cache-optimize the index buffer.
+        o.generator=0; o.controls.clear(); o.balls.clear(); optimize_mesh(o);
+    }
+    else if (!std::strcmp(op,"3d.hull")) { require(!o.generator); convex_hull(o); }
+    else if (!std::strcmp(op,"3d.poly_copy")) {
+        require(b<3 && d.objects.size()<JFX_3D_MAX_OBJECTS);
+        Object copy=o; copy.generator=0; copy.controls.clear(); copy.balls.clear();
+        if (b==2) subdivide(copy); else simplify_mesh(copy,b==0?.15f:.5f);
+        optimize_mesh(copy); copy.normals.reset();
+        copy.name=o.name.substr(0,110)+(b==0?" Low-Poly":b==1?" Mid-Poly":" High-Poly");
+        // Variants overlap the source. Hide the source for an unambiguous preview.
+        copy.visible=true; o.visible=false; d.objects.push_back(std::move(copy));
+    }
+    else if (!std::strcmp(op,"3d.path_bake")) { bake_path(o,d.frames,b,c,text); }
     else if (!std::strcmp(op,"3d.align")) { require(!o.generator); align_mesh(o); }
     else if (!std::strcmp(op,"3d.export_ply")) { require(text && *text); return export_ply(o,text)?JFX_SUCCESS:JFX_ERROR_BACKEND_FAILURE; }
     else require(false);
@@ -675,12 +699,17 @@ struct jfx_scene3d {
     tilly::vector<tilly::string> undo,redo;
     size_t history_bytes=0;
     bool navigating=false;
+    bool sculpting=false,sculpt_changed=false;
+    uint32_t sculpt_object=0;
+    Document sculpt_baseline;
+    tilly::string sculpt_before;
     std::array<float,7> navigation_camera;
     glm::quat navigation_orientation;
 };
 extern "C" jfx_scene3d_t *jfx_scene3d_create() {
     // Bullet is private to this engine; install its process-lifetime hooks once.
     static const bool configured=[] {
+        meshopt_setAllocator([](size_t n)->void * { void *p=tilly_mem_alloc(n); if (!p) throw std::bad_alloc(); return p; },tilly_mem_free);
         btAlignedAllocSetCustom([](size_t n)->void * { void *p=tilly_mem_alloc(n); if (!p) throw std::bad_alloc(); return p; },tilly_mem_free);
         btAlignedAllocSetCustomAligned([](size_t n,int alignment)->void * {
             void *p=tilly_alloc((tilly_allocator_t *)tilly_default_allocator(),n,size_t(alignment));
@@ -740,6 +769,31 @@ extern "C" void jfx_scene3d_clear_history(jfx_scene3d_t *s) {
 extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint32_t a,uint32_t b,uint32_t c,double value,const char *text) {
     if (!s || !op || !number(value)) return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] {
+        if (!std::strcmp(op,"3d.sculpt_begin")) {
+            require(!s->sculpting && !s->navigating && a<s->document.objects.size());
+            require(!s->document.objects[a].generator && s->document.objects[a].visible && s->document.objects[a].instances==1);
+            Document baseline=s->document; auto before=serialize(baseline);
+            s->undo.reserve(s->undo.size()+1);
+            s->sculpt_baseline=std::move(baseline); s->sculpt_before=std::move(before);
+            s->sculpt_object=a; s->sculpting=true; s->sculpt_changed=false; return JFX_SUCCESS;
+        }
+        if (!std::strcmp(op,"3d.sculpt_cancel")) {
+            require(s->sculpting); s->document=std::move(s->sculpt_baseline);
+            s->sculpt_before.clear(); s->sculpting=false; return JFX_SUCCESS;
+        }
+        if (!std::strcmp(op,"3d.sculpt_end")) {
+            require(s->sculpting);
+            if (s->sculpt_changed) {
+                for (auto &entry:s->redo) s->history_bytes-=entry.size();
+                s->redo.clear(); s->history_bytes+=s->sculpt_before.size();
+                s->undo.push_back(std::move(s->sculpt_before));
+                while (s->undo.size()>32 || s->history_bytes>history_limit) {
+                    s->history_bytes-=s->undo.front().size(); s->undo.erase(s->undo.begin());
+                }
+            }
+            s->sculpt_baseline=Document{}; s->sculpt_before.clear(); s->sculpting=false; return JFX_SUCCESS;
+        }
+        if (s->sculpting) require(!std::strcmp(op,"3d.sculpt") && a==s->sculpt_object);
         if (!std::strcmp(op,"3d.navigation_begin")) {
             require(!s->navigating); s->navigation_camera=s->document.camera; s->navigation_orientation=s->document.orientation; s->navigating=true; return JFX_SUCCESS;
         }
@@ -768,12 +822,19 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
                 !std::strcmp(op,"3d.align") || !std::strcmp(op,"3d.smooth") || !std::strcmp(op,"3d.make_editable"))) next.objects[a].normals.reset();
             auto r=finish?JFX_SUCCESS:apply(next,op,a,b,c,value,text); if (r!=JFX_SUCCESS) return r;
             if (!std::strcmp(op,"3d.export_ply")) return r;
+            if (s->sculpting) {
+                if (next.objects[a].vertices==s->document.objects[a].vertices) return JFX_SUCCESS;
+                validate(next); (void)serialize(next);
+                s->sculpt_changed=true;
+                s->document=std::move(next); return JFX_SUCCESS;
+            }
             validate(next); tilly::string before;
             if (finish) {
                 require(s->navigating); Document old=next; old.camera=s->navigation_camera; old.orientation=s->navigation_orientation; before=serialize(old);
                 if (before==serialize(next)) { s->navigating=false; return JFX_SUCCESS; }
             } else before=serialize(s->document);
-            (void)serialize(next);
+            auto after=serialize(next);
+            if (!std::strcmp(op,"3d.sculpt") && before==after) return JFX_SUCCESS;
             s->undo.reserve(s->undo.size()+1);
             for (auto &entry:s->redo) s->history_bytes-=entry.size();
             s->redo.clear();
@@ -797,7 +858,8 @@ extern "C" jfx_result_t jfx_iap_import(jfx_scene3d_t *s,const char *path) {
 }
 extern "C" jfx_result_t jfx_scene3d_load(jfx_scene3d_t *s,const char *text,size_t length,char *err,size_t cap) {
     if (!s || !text) return JFX_ERROR_INVALID_ARGUMENT;
-    auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false; return JFX_SUCCESS; });
+    auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false;
+        s->sculpting=false; s->sculpt_baseline=Document{}; s->sculpt_before.clear(); return JFX_SUCCESS; });
     if (err && cap) std::snprintf(err,cap,"%s",r==JFX_SUCCESS?"":"Invalid or oversized 3D scene (check mesh indices, keys and camera)");
     return r;
 }

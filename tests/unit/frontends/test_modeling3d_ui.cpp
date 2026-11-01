@@ -18,7 +18,7 @@ static ImGuiWindow *window(const char *part) {
 }
 static void click(jfx_desktop_frontend_t *f,const char *label,const char *part="/Editor interface_",int index=-1) {
     auto *w=window(part); auto &io=ImGui::GetIO(); io.AddMousePosEvent(0,0); draw(f);
-    bool subtab=!std::strcmp(label,"Modeling") || !std::strcmp(label,"Animation");
+    bool subtab=!std::strcmp(label,"Design") || !std::strcmp(label,"Animation") || !std::strcmp(label,"Sculpting");
     ImGui::DebugLocateItem(subtab?ImHashStr(label,0,w->GetID("3D modes")):
         index<0?w->GetID(label):ImHashStr(label,0,w->GetID(index))); draw(f);
     ImRect bounds=w->InnerRect; bounds.Expand(4); ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
@@ -46,7 +46,7 @@ int main() {
     assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS);
     assert(std::strstr(state,"\"name\":\"cube\""));
     click(f,"Undo 3D"); // remove the key, not the cube
-    click(f,"Modeling");
+    click(f,"Design");
     // The windowed viewport requests its display size, not the legacy 320x180
     // effect-preview size. Exercise landscape, portrait and high-DPI rasters.
     for (auto size:{ImVec2(960,540),ImVec2(320,480),ImVec2(1280,720)}) {
@@ -113,5 +113,54 @@ int main() {
         assert(!v->Hidden && v->InnerClipRect.GetWidth()>200 && v->InnerClipRect.GetHeight()>150);
         assert(v->InnerClipRect.Min.x>=0 && v->InnerClipRect.Max.x<=size.x && v->InnerClipRect.Max.y<=size.y);
     }
+    // Real Sculpting tab and viewport input, with grouped undo and Escape.
+    assert(jfx_desktop_frontend_resize(f,1440,1000)==JFX_SUCCESS);
+    assert(jfx_desktop_frontend_edit(f,"3d.new",0,0,0,0,"")==JFX_SUCCESS);
+    assert(jfx_desktop_frontend_edit(f,"3d.add",32,0,0,0,"sphere")==JFX_SUCCESS);
+    assert(jfx_desktop_frontend_edit(f,"3d.view",0,0,0,0,"")==JFX_SUCCESS);
+    draw(f); draw(f); click(f,"Sculpting"); draw(f);
+    auto *v=window("3D viewport");
+    ImGui::SetScrollY(v,0); draw(f); draw(f);
+    io.AddMousePosEvent(0,0); draw(f);
+    ImGui::DebugLocateItem(v->GetID("##3D navigation")); draw(f);
+    ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
+    ImRect viewport_bounds=v->InnerRect; viewport_bounds.Expand(4);
+    for (auto &vertex:ImGui::GetForegroundDrawList()->VtxBuffer) if (viewport_bounds.Contains(vertex.pos)) {
+        lo.x=std::min(lo.x,vertex.pos.x); lo.y=std::min(lo.y,vertex.pos.y);
+        hi.x=std::max(hi.x,vertex.pos.x); hi.y=std::max(hi.y,vertex.pos.y);
+    }
+    if (!(lo.x<hi.x)) std::fprintf(stderr,"Sculpt viewport %s: inner %.0f %.0f %.0f %.0f scroll %.0f vertices %d\n",v->Name,
+        double(v->InnerRect.Min.x),double(v->InnerRect.Min.y),double(v->InnerRect.Max.x),double(v->InnerRect.Max.y),double(v->Scroll.y),ImGui::GetForegroundDrawList()->VtxBuffer.Size);
+    assert(lo.x<hi.x); ImVec2 center((lo.x+hi.x)/2,(lo.y+hi.y)/2);
+    assert(jfx_desktop_frontend_render_rgba8(f,128,128,before,sizeof(before))==JFX_SUCCESS);
+    auto stroke=[&](bool cancel) {
+        io.AddMousePosEvent(center.x,center.y); draw(f); io.AddMouseButtonEvent(0,true); draw(f);
+        for (int i=1;i<5;++i) { io.AddMousePosEvent(center.x+float(i)*3,center.y); draw(f); }
+        if (cancel) { io.AddKeyEvent(ImGuiKey_Escape,true); draw(f); io.AddKeyEvent(ImGuiKey_Escape,false); }
+        io.AddMouseButtonEvent(0,false); draw(f); draw(f);
+    };
+    stroke(false);
+    assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS && std::memcmp(before,after,sizeof(before))!=0);
+    click(f,"Undo 3D");
+    assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS && std::memcmp(before,after,sizeof(before))==0);
+    stroke(true);
+    assert(jfx_desktop_frontend_render_rgba8(f,128,128,after,sizeof(after))==JFX_SUCCESS && std::memcmp(before,after,sizeof(before))==0);
+    for (auto label:{"Low-Poly","Mid-Poly","High-Poly"}) {
+        click(f,label,"3D inspector");
+        assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS && std::strstr(state,label));
+        click(f,"Undo 3D");
+        assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS && !std::strstr(state,label));
+    }
+    click(f,"Design");
+    click(f,"Mesh editing","3D inspector");
+    click(f,"Optimize mesh (meshoptimizer)","3D inspector"); click(f,"Undo 3D");
+    click(f,"Convex hull (Bullet)","3D inspector"); click(f,"Undo 3D");
+    click(f,"Animation");
+    click(f,"Motion path (GLM)","3D inspector");
+    click(f,"Bake Catmull-Rom path","3D inspector");
+    assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS && std::strstr(state,"\"frame\":59"));
+    click(f,"Undo 3D");
+    assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS && std::strstr(state,"\"keys\":[]"));
+    assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS && std::strstr(state,"sphere"));
     jfx_desktop_frontend_destroy(f);
 }

@@ -1,3 +1,0 @@
-to_OpenCV: PASS
-from_OpenCV: PASS
-round trip: PASS

@@ -1,7 +1,12 @@
-# JoltFX SDK 1.0
+# JoltFX SDK 1.1
 
 A C11/C++17 development package over JoltFX's existing public contracts. The SDK
 does not duplicate the engine or expose third-party implementation types.
+
+The package covers native plugins/renderers, editing and export, composition and
+3D, audio and animation, runtime services, **Ingagi embedding**, and **Joltscript
+compilation/execution**. See the [complete facet guide](docs/facets.md),
+[Ingagi guide](docs/ingagi.md), and [Joltscript guide](docs/joltscript.md).
 
 | CMake target | Public include | Purpose |
 | --- | --- | --- |
@@ -10,17 +15,30 @@ does not duplicate the engine or expose third-party implementation types.
 | `JoltFXSDK::loader` | `joltfx/sdk/loader.h` | Native renderer loading or static attachment |
 | `JoltFXSDK::backend` | `joltfx/sdk/backend.h` | Existing backend HAL |
 | `JoltFXSDK::frontend` | `joltfx/sdk/frontend.h` | Shared editor and export API |
-| `JoltFXSDK::gui` | `joltfx/sdk/gui.h` | Toolkit-independent controls/descriptors and transactions |
+| `JoltFXSDK::gui` | `joltfx/sdk/gui.h` | Toolkit-independent descriptors, transactions, viewport helpers |
 | `JoltFXSDK::facet` | `joltfx/sdk/facet.h` | Composition, color and 3D scene APIs |
-| `JoltFXSDK::libraries` | `joltfx/sdk/libraries.h` | Engine, images and LUTs |
+| `JoltFXSDK::libraries` | `joltfx/sdk/libraries.h` | Engine, images, LUTs, buffers and textures |
 | `JoltFXSDK::module` | `joltfx/sdk/module.h` | Existing plugin definitions and lifecycle |
-| `JoltFXSDK::tools` | `joltfx/sdk/tools.h` | Project and scene tooling |
+| `JoltFXSDK::tools` | `joltfx/sdk/tools.h` | Project, scene and Ingagi Animation Pack tooling |
+| `JoltFXSDK::audio` | `joltfx/sdk/audio.h` | Mixing, MIDI, automation, recording and VST3 |
+| `JoltFXSDK::timeline` | `joltfx/sdk/timeline.h` | Sequences, tracks, clips and keyframe animation |
+| `JoltFXSDK::events` | `joltfx/sdk/events.h` | Synchronous engine event subscriptions |
+| `JoltFXSDK::runtime` | `joltfx/sdk/runtime.h` | Engine lifecycle, memory, scheduler and result codes |
+| `JoltFXSDK::ingagi` | `joltfx/sdk/ingagi.h` | Canonical Ingagi native-module/embedding ABI 1.0.0 |
+| `JoltFXSDK::joltscript` | `joltfx/sdk/joltscript.h` | Compiler, typed VM, image/audio tasks and pipelines |
+
+`JoltFXSDK::headers` supplies the installed public include directory. Link the
+named facet targets for equivalent build-tree usage. `loader` is a static
+implementation library; the other targets are header-only contracts.
 
 Header-only targets supply contracts, not engine implementations. Engine API
 consumers additionally link `JoltFX::jfx_core` from the full JoltFX installation.
 Modules using host-service tables need **no engine linkage**. GUI toolkit widgets,
 new foreign-language bindings and unsupported plugin capabilities are not invented
-by these adapters; existing API limitations still apply (`docs/plugins.md`).
+by these adapters; existing API limitations still apply. Ingagi needs the
+separately built `ingagi_embed` shared library. Direct Joltscript calls need
+`JoltFX::joltscript_glue` / `JoltFX::joltscript_execution` from a full installation.
+Finding an SDK component confirms its headers, not runtime or GPU availability.
 
 ## Build/install the standalone SDK
 
@@ -33,15 +51,35 @@ cmake --build build/renderer
 ```
 
 The root JoltFX build also builds/installs this package. A relocated SDK needs no
-source tree. When building SDK sources outside this repository, set
-`JOLTFX_SDK_API_ROOT` to the public `include` tree. `examples/gain` is a complete
-standalone image-effect module:
+source tree. Standalone packaging needs CMake 3.20+, C and C++ compilers; it does
+not build the language runtimes or require Go. When building SDK sources outside
+this repository, set these paths to canonical headers or an existing installation:
+
+| CMake cache variable | Repository default | Installed equivalent |
+| --- | --- | --- |
+| `JOLTFX_SDK_API_ROOT` | `src/include` | `<prefix>/include` |
+| `JOLTFX_SDK_GLUE_INCLUDE_DIR` | `joltscript/layers/glue/include` | `<prefix>/include` |
+| `JOLTFX_SDK_EXECUTION_INCLUDE_DIR` | `joltscript/layers/execution/include` | `<prefix>/include` |
+| `JOLTFX_SDK_INGAGI_API_DIR` | `ingagi/native_extension_api` | `<prefix>/include/ingagi` |
+| `JOLTFX_SDK_TILLY_INCLUDE_DIR` | `tilly/include` | `<prefix>/include` |
+
+`examples/gain` is a complete standalone image-effect module:
 
 ```cmake
 find_package(JoltFXSDK 1 REQUIRED CONFIG)
 joltfx_sdk_add_plugin(MyEffect effect.c) # exports jfx_plugin_entry
 joltfx_sdk_add_renderer(MyRenderer renderer.cpp) # exports jfx_renderer_entry
 ```
+
+Request new facets with `find_package(JoltFXSDK 1.1 REQUIRED CONFIG COMPONENTS
+ingagi joltscript)`. Required unknown components fail configuration. SDK package
+version 1.1.0 is additive; individual engine/language/module ABI versions are
+independent. Existing 1.0 consumers remain supported.
+
+Installed examples live in `share/joltfx/sdk/examples`; guides are under
+`${CMAKE_INSTALL_DOCDIR}/sdk`. Language examples check results and release their
+owned resources: `examples/ingagi` calls a script through the scalar C ABI;
+`examples/joltscript` compiles and runs an exact-integer typed kernel.
 
 ## Renderer contract
 
@@ -62,5 +100,5 @@ evolution. A host must never dispatch its backend callback back to the same
 module. Explicit device errors propagate; availability reports build support,
 not guaranteed GPU-driver operation. Output must remain untouched on error.
 
-See [`plugins/JoltRenderer`](../plugins/JoltRenderer/README.md) for the in-tree
-renderer implementation and CPU/GPU limits.
+See repository guide `plugins/JoltRenderer/README.md` for the in-tree renderer
+implementation and CPU/GPU limits.

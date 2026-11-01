@@ -75,6 +75,18 @@ set(CMAKE_CXX_FLAGS_DEBUG "${jfx_saved_cxx_debug_flags}")
 target_link_libraries(BulletCollision PUBLIC LinearMath)
 target_link_libraries(BulletDynamics PUBLIC BulletCollision LinearMath)
 target_sources(jfx_core PRIVATE src/modeling3d.cpp src/osg_viewport.cpp src/iap.cpp)
+# Compile only the meshoptimizer algorithms used by scene authoring into Core,
+# keeping vendor symbols/types out of the public ABI and SDK link dependencies.
+set(jfx_meshopt_sources)
+foreach(part allocator simplifier vcacheoptimizer vfetchoptimizer indexgenerator)
+    list(APPEND jfx_meshopt_sources "${PROJECT_SOURCE_DIR}/third_party/meshoptimizer/src/${part}.cpp")
+endforeach()
+add_library(jfx_scene_meshopt OBJECT ${jfx_meshopt_sources})
+set_target_properties(jfx_scene_meshopt PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17)
+target_sources(jfx_core PRIVATE $<TARGET_OBJECTS:jfx_scene_meshopt>)
+target_include_directories(jfx_core SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/meshoptimizer/src")
+install(FILES "${PROJECT_SOURCE_DIR}/third_party/meshoptimizer/LICENSE.md"
+    DESTINATION share/doc/JoltFX/third_party/meshoptimizer)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(src/modeling3d.cpp PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-g1>")
 endif()

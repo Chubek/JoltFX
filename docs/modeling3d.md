@@ -9,6 +9,53 @@ scene state and renderer.
 
 ## Workflow
 
+### Design, Animation and Sculpting
+
+Desktop 1.13 presents **Design**, **Animation**, **Sculpting**, then **Rendering**
+over the same scene. Design's **Mesh editing** adds meshoptimizer vertex-cache /
+vertex-fetch optimization and Bullet convex-hull construction. Convex hulls
+replace local geometry with a triangulated enclosing solid; they require a
+non-coplanar point set. All these edits support undo.
+
+Animation's **Motion path (GLM)** bakes a Catmull–Rom segment into XYZ position
+keys. Enter four XYZ points: the middle two are the endpoints, the outer two
+control their tangents. The inclusive frame range replaces position keys only
+inside that range. Position scripts must be removed first, since they override
+keys. **Create low-poly animation proxy** uses meshoptimizer and retains the
+source's keys, scripts, transforms, material and cloner settings.
+
+For a sculpt:
+
+1. Add a sphere, import a PLY mesh, or select an existing object. Enter **Sculpting**;
+   playback pauses and the viewport selects Gouraud inspection shading.
+2. For a NURBS/metaball generator, use **Triangulate / make editable** to bake its
+   current surface. Core meshes are already triangles; this also compacts and
+   optimizes their index buffers. Make cloner instances real before sculpting.
+3. Choose **Draw**, **Inflate**, **Smooth**, **Flatten** or **Pinch**. Set local-space
+   radius, strength and optional **Mirror X**. Left-drag stamps the selected
+   surface, Shift temporarily smooths, and Ctrl reverses Draw/Inflate/Pinch.
+   Alt-drag/gimbal orbit, middle/right drag pan, and the wheel zooms. Release
+   creates one undo step for the entire stroke; Escape restores its baseline.
+4. Use **Refine sculpt (libigl)** to add vertices before working on finer details.
+   **Low-Poly** targets 15% and **Mid-Poly** 50% of source triangles using
+   meshoptimizer's topology/border-preserving simplifier with a 10% relative
+   geometric-error limit. Actual counts are shown in the inspector: topology or
+   error limits may prevent reaching a target. **High-Poly** makes four triangles
+   per source triangle through lossless midpoint subdivision; it adds editable
+   resolution, not invented detail.
+5. Each level is a separate named object. The source is hidden and the new object
+   is selected; select the source again to derive another level from the same
+   sculpt. Visibility is undoable. Save everything as `.jfx`, or export the
+   selected triangulated mesh using **Export PLY**.
+
+This is a bounded surface-sculpting workflow: up to 65,536 vertices and 131,072
+triangles per object, with the existing 16 MiB scene and 32 MiB history budgets.
+Brushes use radial falloff and libigl area-weighted vertex normals in local
+space, and picking evaluates the selected object's animation and nonuniform
+scale at the playhead. The cursor ring estimates radius at the camera target.
+It does not implement voxel/dynamic-topology remeshing, sculpt layers, masks,
+tablet-pressure input, UV preservation or ZBrush feature parity.
+
 ### Viewport shading
 
 The desktop **Viewport shading** selector offers:
@@ -121,12 +168,13 @@ scrubbing: a bake produces ordinary editable keys.
 | Vendored library | Integrated operation |
 |---|---|
 | `third_party/cgal` | Triangle degeneracy and geometry validation using `Simple_cartesian<double>` |
-| `third_party/bullet3` | Portable CPU rigid-body world, convex mesh colliders, fixed-step animation bake |
+| `third_party/bullet3` | Portable CPU rigid-body world, convex mesh colliders, fixed-step animation bake, triangulated convex hull construction |
 | `third_party/tinyply` | ASCII/binary PLY import and binary triangle-mesh export |
 | `third_party/VTK` | `vtkMath::Jacobi` covariance eigensystem for principal-axis mesh alignment |
-| `third_party/libigl` | Triangle subdivision |
+| `third_party/libigl` | Triangle subdivision and area-weighted vertex normals for sculpt brushes |
+| `third_party/meshoptimizer` | Low/Mid polygon reduction, vertex-cache/fetch optimization and animation proxy meshes |
 | `third_party/stb` | PNG frame output through `stb_image_write` |
-| `third_party/glm` | Camera/object quaternions, geometry generators, perspective projection and shading |
+| `third_party/glm` | Camera/object quaternions, geometry generators, perspective projection, sculpt picking and Catmull–Rom motion-path baking |
 | `third_party/openscenegraph` | Opt-in OSG viewport bridge (`JFX_USE_OSG`, `jfx_osg_viewport.h`): trackball math, adaptive drag resolution, instance culling, wider gimbal picking; see `docs/osg_viewport.md` |
 
 `cmake/Modeling3D.cmake` builds Bullet's LinearMath/Collision/Dynamics and only
@@ -137,6 +185,17 @@ examples and tests are disabled. libigl executes serially; it creates no private
 worker threads. Scene/history/render buffers use Tilly containers, Bullet's
 allocation hooks and stb's write allocator route through Tilly. Vendor-owned
 Eigen/tinyply/VTK temporary internals retain their library ownership.
+The selected meshoptimizer sources compile directly into Core, with Tilly
+allocator hooks configured once alongside Bullet's hooks. No extra system
+package or download is needed for meshoptimizer.
+
+The `third_party` scan also found Assimp/tinygltf (asset interchange),
+Manifold/CGAL/OCCT (solid modeling), OpenVDB/libfive (implicit and volumetric
+surfaces), Open3D/PCL (scan reconstruction), Gmsh (meshing), Ceres (optimization),
+JoltPhysics/FCL (physics/collision), and Filament/bgfx (rendering). Those broader
+adapters require additional scene contracts such as skeletons, UVs, volumes or
+CAD topology; this surface-mesh workflow integrates the operations listed above.
+Existing Filament/OSG rendering integration remains available to sculpted meshes.
 
 CGAL also requires Boost 1.74+ headers. Install the development headers or pass
 `Boost_ROOT` to a compatible header installation, including for cross builds.
@@ -151,7 +210,7 @@ cmake -S . -B build -DJFX_3D_EIGEN_ROOT=/path/to/eigen-3.4.1
 cmake --build build --parallel
 ```
 
-The libraries are hidden behind `jfx_modeling3d.h` (API 1.2) and editor 1.8.
+The libraries are hidden behind `jfx_modeling3d.h` (API 1.8) and editor 1.8.
 Existing project-kind values and desktop identifiers retain their numeric values;
 scene kind and desktop identifiers are appended (desktop API 1.6).
 
@@ -185,6 +244,13 @@ and `undo`, `redo`, `show`, `save`, `quit` use the normal terminal editor.
 | `3d.vertex` | A = object, B = vertex index, C = axis 0..2, VALUE = local coordinate |
 | `3d.color` | A = object, B = RGB channel 0..2, VALUE = 0..1 |
 | `3d.subdivide` | A = object; one midpoint subdivision (four triangles per face); rejects nonmanifold edges |
+| `3d.optimize` | A = editable mesh; meshoptimizer cache/fetch reordering and unused-vertex removal |
+| `3d.hull` | A = editable mesh; triangulated Bullet convex hull |
+| `3d.triangulate` | A = object; bake generator tessellation, compact and optimize triangle mesh |
+| `3d.poly_copy` | A = source object, B = 0 Low / 1 Mid / 2 High; appends a derived object and hides source |
+| `3d.sculpt` | A = editable visible single-instance mesh, B = 0 Draw / 1 Inflate / 2 Smooth / 3 Flatten / 4 Pinch, C = 0/1 mirror X, VALUE = strength -1..1, TEXT = `X Y ASPECT RADIUS SECONDS`; X/Y normalized top-left viewport coordinates, local radius 0.001..1000 |
+| `3d.sculpt_begin/end/cancel` | Begin with A = object; group that object's brush stamps into one undo step, or restore baseline without allocation. Other commands are rejected while active; missed stamps do not add history |
+| `3d.path_bake` | A = object, B/C = inclusive first/last frame, TEXT = four XYZ points (12 numbers); at most 4096 total keys |
 | `3d.align` | A = object; centers local vertices and rotates to principal axes |
 | `3d.key` | A = object, B = channel, C = frame, VALUE = key value; inserts/replaces, initially linear |
 | `3d.key_remove` | A = object, B = channel, C = existing key frame |
@@ -365,7 +431,7 @@ success. PPM frame output is also available through shared frontend APIs.
 
 ### Image sequences (Export API 1.3 / Desktop 1.12)
 
-The third desktop sub-tab, **Rendering**, exposes numbered PNG sequences with
+The **Rendering** desktop sub-tab exposes numbered PNG sequences with
 resolution (up to 2048 × 2048), first frame, frame count, progress and cancellation.
 It selects Filament on first entry if compiled in; the shared Rendering engine
 selector can change the renderer. Filament uses the vendored SDK and PNG encoding

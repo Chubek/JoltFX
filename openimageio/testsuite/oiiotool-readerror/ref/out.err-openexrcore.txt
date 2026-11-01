@@ -1,3 +1,0 @@
-oiiotool ERROR: read : "src/incomplete.exr": Some scanline chunks were missing or corrupted
-Full command line was:
-> oiiotool src/incomplete.exr -o out.exr

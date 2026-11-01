@@ -1,5 +1,60 @@
 # Progress
 
+## 3D library tools and sculpting (2026-11-01)
+
+- Scanned the vendored library inventory and current 3D scene/UI integration.
+  Added meshoptimizer reduction/cache optimization, libigl-assisted sculpting
+  and subdivision, Bullet convex hulls and GLM Catmull–Rom motion-path baking.
+- Desktop 1.13 presents Design, Animation, Sculpting, Rendering over one scene.
+  Sculpting has Draw/Inflate/Smooth/Flatten/Pinch, X symmetry, reversible strokes,
+  ray picking through animated/nonuniform transforms and foreground occlusion.
+  Core 1.8 commands bake triangulated generators and produce named Low-/Mid-/
+  High-Poly objects retaining animation. Low/Mid targets are best effort; High
+  adds midpoint resolution. Geometry, history and save budgets remain enforced.
+- Core and real ImGui sculpt tests pass under Clang ASAN+UBSan, including all
+  brushes, undo/cancel, misses, invalid inputs, visibility, transformed picking,
+  LOD persistence, Design tools and Animation path widgets. Existing modeling,
+  generator and shading tests pass. GCC desktop/Filament-ON build succeeds.
+- Final checks pass: all eight configured desktop UI tests and three existing
+  modeling tests under ASAN+UBSan, plus the dedicated sculpting test. GCC builds
+  desktop and passes sculpting, Modeling UI and real Filament image-sequence UI
+  tests (3/3). New sculpt/tool code has no compiler warnings; scoped diff checks
+  pass. Documented commands, library choices, controls and bounded surface-sculpting
+  scope; existing SDK work is preserved.
+
+## SDK language and API coverage (2026-10-31)
+
+- Advanced the SDK package to version 1.1.0 with 16 facets. Added Ingagi,
+  Joltscript, audio, timeline, events and runtime adapters; completed buffer,
+  texture, viewport and IAP coverage across all 28 public engine headers.
+- Package canonical Ingagi C/C++ and Joltscript Glue/Execution headers plus the
+  Tilly allocator dependency, with explicit external header roots. Runtime
+  libraries remain separately linked; standalone packaging needs no Go tools.
+- Added installed facet/capability inventory, dedicated language guides, C host
+  examples and SDK maintenance instructions. Documented versions, implemented
+  profiles, ownership, build dependencies and remaining language/backend work.
+- Package integration passes: independent C11/C++17 compilation of every facet,
+  C++ Ingagi wrapper, relocated and build-tree consumers, detached-source install,
+  canonical-header identity, installed guides and unknown-component rejection.
+  Existing gain and Jolt Renderer standalone module builds also pass.
+- Ingagi example CMake/CTest passes against the existing embedding library.
+  Joltscript example compiles/links against existing runtime archives and returns
+  exact int64 42, including Clang ASAN+UBSan execution. All SDK facets and loader
+  consumers compile with Clang -Wall -Wextra -Werror and ASAN+UBSan; both C/C++
+  consumers run cleanly. Existing renderer_sdk, renderer_sdk_scalar and
+  sdk_gain_plugin tests pass (3/3); scoped git diff --check passes.
+
+## Deprecated first-party directory cleanup (2026-10-31)
+
+- Audited first-party build configuration, CI, source references and implementation
+  notes. Confirmed `ingagi/compiler/targets/Vukkan/` is an ignored legacy
+  misspelling; the compiler embeds the canonical `Vulkan.sexp` descriptor.
+- Archiving that directory under `.decomissioned/ingagi/compiler/targets/`,
+  preserving its contents and documenting the original path and reason.
+- Other first-party subsystems are active or documented as planned scaffolds;
+  no other directories were confirmed deprecated. `third_party/` is excluded.
+- Validation pending: target catalog tests and whitespace checks.
+
 ## Ingagi Filament shader artifacts (2026-10-24)
 
 - Completed `shader(target:"filament")` in MonkeyShade using the existing shader

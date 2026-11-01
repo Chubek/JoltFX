@@ -30,6 +30,8 @@ jfx_test_target(test_modeling3d SOURCES core/test_modeling3d.cpp LIBRARIES jfx_c
 add_test(NAME modeling3d COMMAND test_modeling3d)
 jfx_test_target(test_modeling3d_tools SOURCES core/test_modeling3d_tools.cpp LIBRARIES jfx_core)
 add_test(NAME modeling3d_tools COMMAND test_modeling3d_tools)
+jfx_test_target(test_sculpting SOURCES core/test_sculpting.cpp LIBRARIES jfx_core)
+add_test(NAME sculpting COMMAND test_sculpting)
 jfx_test_target(test_modeling3d_shading SOURCES core/test_modeling3d_shading.cpp LIBRARIES jfx_core)
 add_test(NAME modeling3d_shading COMMAND test_modeling3d_shading)
 jfx_test_target(test_jolt_renderer SOURCES core/test_jolt_renderer.cpp LIBRARIES jfx_core)

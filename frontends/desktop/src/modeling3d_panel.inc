@@ -164,10 +164,34 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
         }
     }
     bool hovered=ImGui::IsItemHovered(),active=ImGui::IsItemActive();
+    bool sculpt_mode=f->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D && f->scene_mode==3;
+    if (sculpt_mode && hovered && hit<0) {
+        float camera[7]; jfx_scene3d_camera(scene,camera);
+        float radius=f->scene_sculpt_radius*height/(2*camera[2]*std::tan(camera[6]*.00872664626f));
+        draw->AddCircle(io.MousePos,std::clamp(radius,4.f,200.f),IM_COL32(255,195,100,230),48,1.5f);
+    }
+    if (sculpt_mode && active && io.MouseClicked[0] && hit<0 && !io.KeyAlt && !f->scene_navigation) {
+        auto r=jfx_desktop_frontend_edit(f,"3d.sculpt_begin",uint32_t(f->scene_object),0,0,0,"");
+        editor_result(f,r); f->scene_sculpting=r==JFX_SUCCESS;
+    }
+    if (f->scene_sculpting) {
+        if (active && hovered && io.MouseDown[0] && (io.MouseClicked[0] || io.MouseDelta.x!=0 || io.MouseDelta.y!=0)) {
+            char text[192];
+            std::snprintf(text,sizeof(text),"%.9g %.9g %.9g %.9g %.17g",
+                double((io.MousePos.x-origin.x)/width),double((io.MousePos.y-origin.y)/height),
+                double(width/height),double(f->scene_sculpt_radius),f->time_seconds);
+            auto r=jfx_desktop_frontend_edit(f,"3d.sculpt",uint32_t(f->scene_object),
+                uint32_t(io.KeyShift?2:f->scene_sculpt_brush),f->scene_sculpt_mirror?1u:0u,
+                double(f->scene_sculpt_strength)*(io.KeyCtrl?-1:1),text);
+            editor_result(f,r);
+        }
+        return;
+    }
     /* Wheel zoom applies outside a gesture; per-frame drag deltas below are
      * clamped so fast flicks stay smooth. Full-res returns on release. */
     if (hovered && io.MouseWheel!=0 && !f->scene_navigation) command("3d.dolly",std::clamp(double(io.MouseWheel)*.15,-10.,10.));
-    if (active && !f->scene_navigation && (io.MouseClicked[0] || io.MouseClicked[1] || io.MouseClicked[2])) {
+    if (active && !f->scene_navigation && (io.MouseClicked[0] || io.MouseClicked[1] || io.MouseClicked[2]) &&
+        (!sculpt_mode || !io.MouseClicked[0] || hit>=0 || io.KeyAlt)) {
         if (command("3d.navigation_begin")) { f->scene_navigation=true; f->scene_gizmo_axis=io.MouseClicked[0]?hit:-1; }
     }
     if (active && f->scene_navigation && (io.MouseDelta.x!=0 || io.MouseDelta.y!=0)) {
@@ -183,7 +207,8 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
             float camera[7]; jfx_scene3d_camera(scene,camera); float scale=2*camera[2]*std::tan(camera[6]*.00872664626f)/height;
             std::snprintf(text,sizeof(text),"%.9g %.9g 0",double(-mdx*scale),double(mdy*scale)); command("3d.pan",0,text);
         } else {
-            std::snprintf(text,sizeof(text),"%.9g %.9g %.9g",io.KeyAlt?0.:double(-mdx)*.4,io.KeyAlt?0.:double(-mdy)*.4,io.KeyAlt?double(mdx)*.4:0.);
+            bool roll=io.KeyAlt && !sculpt_mode;
+            std::snprintf(text,sizeof(text),"%.9g %.9g %.9g",roll?0.:double(-mdx)*.4,roll?0.:double(-mdy)*.4,roll?double(mdx)*.4:0.);
             command("3d.orbit",0,text);
         }
     }
@@ -192,23 +217,34 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     auto *scene=jfx_editor_scene3d(f->editor);
     auto command=[&](const char *op,uint32_t a=0,uint32_t b=0,uint32_t c=0,double value=0,const char *text="") {
         auto result=jfx_desktop_frontend_edit(f,op,a,b,c,value,text); editor_result(f,result);
-        if (result==JFX_SUCCESS && (!std::strcmp(op,"3d.add") || !std::strcmp(op,"3d.duplicate") || !std::strcmp(op,"3d.import_ply"))) {
+        if (result==JFX_SUCCESS && (!std::strcmp(op,"3d.add") || !std::strcmp(op,"3d.duplicate") || !std::strcmp(op,"3d.import_ply") || !std::strcmp(op,"3d.poly_copy"))) {
             f->scene_object=int(jfx_scene3d_object_count(scene))-1; f->scene_vertex=0;
         }
     };
     auto &io=ImGui::GetIO();
+    if (f->scene_sculpting && (ImGui::IsKeyPressed(ImGuiKey_Escape) || !io.MouseDown[0])) {
+        command(ImGui::IsKeyPressed(ImGuiKey_Escape)?"3d.sculpt_cancel":"3d.sculpt_end"); f->scene_sculpting=false;
+    }
     if (f->scene_navigation && (ImGui::IsKeyPressed(ImGuiKey_Escape) || (!io.MouseDown[0] && !io.MouseDown[1] && !io.MouseDown[2]))) {
         command(ImGui::IsKeyPressed(ImGuiKey_Escape)?"3d.navigation_cancel":"3d.navigation_end"); f->scene_navigation=false;
     }
     uint32_t fps=jfx_scene3d_fps(scene),frames=jfx_scene3d_frames(scene);
     f->duration_seconds=(double)frames/fps;
-    ImGui::TextUnformatted("3D Modeling & Animation");
+    ImGui::TextUnformatted("3D Design, Animation & Sculpting");
     if (ImGui::BeginTabBar("3D modes")) {
         int previous=f->scene_mode;
-        if (ImGui::BeginTabItem("Modeling")) { f->scene_mode=0; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Design")) { f->scene_mode=0; ImGui::EndTabItem(); }
         if (ImGui::BeginTabItem("Animation")) { f->scene_mode=1; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Sculpting")) { f->scene_mode=3; ImGui::EndTabItem(); }
         if (ImGui::BeginTabItem("Rendering")) { f->scene_mode=2; ImGui::EndTabItem(); }
         ImGui::EndTabBar();
+        if (previous!=f->scene_mode && f->scene_sculpting) {
+            command("3d.sculpt_end"); f->scene_sculpting=false;
+        }
+        if (previous!=f->scene_mode && f->scene_mode==3) {
+            jfx_desktop_frontend_pause(f);
+            f->scene_shading=JFX_SCENE3D_SHADING_GOURAUD; f->preview_dirty=true; ++f->scene_revision;
+        }
         if (previous!=f->scene_mode && f->scene_navigation) {
             command("3d.navigation_end"); f->scene_navigation=false;
         }
@@ -221,7 +257,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             f->scene_shading=JFX_SCENE3D_SHADING_PHONG; f->preview_dirty=true; ++f->scene_revision;
         }
     }
-    const bool animation=f->scene_mode==1,rendering=f->scene_mode==2;
+    const bool animation=f->scene_mode==1,rendering=f->scene_mode==2,sculpting=f->scene_mode==3;
     if (animation) {
         if (ImGui::Button(f->playing?"Pause 3D":"Play 3D")) {
             if (f->playing) jfx_desktop_frontend_pause(f); else jfx_desktop_frontend_play(f);
@@ -270,6 +306,26 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         if (jfx_scene3d_object_info(scene,selected,&info)==JFX_SUCCESS) {
             jfx_procedural3d_info_t procedural={}; procedural.size=sizeof(procedural); jfx_scene3d_procedural_info(scene,selected,&procedural);
             ImGui::Separator(); ImGui::Text("%u vertices | %u triangles | %u keys",info.vertices,info.triangles,info.keys);
+            if (sculpting) {
+                ImGui::TextUnformatted("Surface sculpting (libigl / GLM)");
+                ImGui::Combo("Brush",&f->scene_sculpt_brush,"Draw\0Inflate\0Smooth\0Flatten\0Pinch\0");
+                ImGui::SliderFloat("Brush radius (local units)",&f->scene_sculpt_radius,.01f,5.f,"%.2f");
+                ImGui::SliderFloat("Brush strength",&f->scene_sculpt_strength,.01f,1.f,"%.2f");
+                ImGui::Checkbox("Mirror X",&f->scene_sculpt_mirror);
+                ImGui::TextWrapped("Left-drag sculpts. Shift smooths; Ctrl reverses Draw/Inflate/Pinch. Alt-drag or the gimbal orbits; right/middle pans. Escape cancels the stroke.");
+                if (procedural.generator) ImGui::TextWrapped("Triangulate the generator before sculpting.");
+                if (procedural.instances>1) ImGui::TextWrapped("Make clones real before sculpting.");
+                if (ImGui::Button("Triangulate / make editable")) command("3d.triangulate",selected);
+                ImGui::BeginDisabled(procedural.generator!=0);
+                if (ImGui::Button("Refine sculpt (libigl)")) command("3d.subdivide",selected);
+                ImGui::EndDisabled();
+                ImGui::TextUnformatted("Create polygon-level shape");
+                if (ImGui::Button("Low-Poly")) command("3d.poly_copy",selected,0);
+                ImGui::SameLine(); if (ImGui::Button("Mid-Poly")) command("3d.poly_copy",selected,1);
+                ImGui::SameLine(); if (ImGui::Button("High-Poly")) command("3d.poly_copy",selected,2);
+                ImGui::TextWrapped("Low targets 15%%, Mid 50%% (meshoptimizer, up to 10%% relative error); High refines to 4x triangles (libigl). Targets are best effort. A new selected shape retains animation; the source is hidden. Undo or select the source to derive another level.");
+                ImGui::Separator();
+            }
             if (ImGui::InputText("Object name",info.name,sizeof(info.name),ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.name",selected,0,0,0,info.name);
             if (ImGui::Checkbox("Visible",&info.visible)) command("3d.visible",selected,0,0,info.visible?1:0);
             if (ImGui::Checkbox("Smooth shading",&procedural.smooth)) command("3d.smooth",selected,0,0,procedural.smooth?1:0);
@@ -295,6 +351,8 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                         if (ImGui::InputFloat(label,&vertex[ch],0,0,"%.3f",ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.vertex",selected,uint32_t(f->scene_vertex),ch,double(vertex[ch])); }
                 if (ImGui::Button("Subdivide (libigl)")) command("3d.subdivide",selected);
                 if (ImGui::Button("Align principal axes (VTK)")) command("3d.align",selected);
+                if (ImGui::Button("Optimize mesh (meshoptimizer)")) command("3d.optimize",selected);
+                if (ImGui::Button("Convex hull (Bullet)")) command("3d.hull",selected);
                 ImGui::EndDisabled();
                 if (procedural.generator && ImGui::Button("Make generator editable")) command("3d.make_editable",selected);
             }
@@ -343,6 +401,16 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
                 if (ImGui::Button("Remove key at frame")) command("3d.key_remove",selected,uint32_t(f->scene_channel),uint32_t(frame));
                 float evaluated[9]; jfx_scene3d_sample(scene,selected,f->time_seconds,evaluated);
                 ImGui::Text("Evaluated position: %.2f %.2f %.2f",double(evaluated[0]),double(evaluated[1]),double(evaluated[2]));
+            }
+            if (animation && ImGui::CollapsingHeader("Motion path (GLM)")) {
+                ImGui::InputText("Four XYZ path points",f->scene_path_points,sizeof(f->scene_path_points));
+                ImGui::InputInt("Path first frame",&f->scene_path_first);
+                ImGui::InputInt("Path last frame",&f->scene_path_last);
+                if (ImGui::Button("Bake Catmull-Rom path") && f->scene_path_first>=0 && f->scene_path_last>f->scene_path_first)
+                    command("3d.path_bake",selected,uint32_t(f->scene_path_first),uint32_t(f->scene_path_last),0,f->scene_path_points);
+                ImGui::TextWrapped("Moves from point 2 to point 3; points 1 and 4 set tangents. Replaces XYZ keys in this range. Remove position scripts first.");
+                if (ImGui::Button("Create low-poly animation proxy")) command("3d.poly_copy",selected,0);
+                ImGui::TextWrapped("meshoptimizer reduces the mesh while preserving transform keys, scripts and cloner settings.");
             }
             if (animation && ImGui::CollapsingHeader("Rigid bodies (Bullet)")) {
                 if (ImGui::InputFloat("Mass (0 = static)",&info.mass,0,0,"%.3f",ImGuiInputTextFlags_EnterReturnsTrue)) command("3d.mass",selected,0,0,double(info.mass));
@@ -448,7 +516,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         ImGui::TextUnformatted(f->scene_preview_job?"Rendering scene snapshot...":"Preview ready");
         if (f->scene_render_options.renderer==JFX_SCENE3D_RENDER_FILAMENT)
             ImGui::TextWrapped("Filament: lit PBR surfaces, smooth normals, directional shadows and FXAA. Up to 4096 visible instances / 6,291,456 expanded vertices. Preview and exports share the selected renderer.");
-        ImGui::TextWrapped("Drag: orbit | Middle/right or Shift-drag: pan | Wheel: zoom | Alt-drag: roll. Drag the colored gimbal rings to rotate each axis. Escape cancels a drag.");
+        ImGui::TextWrapped(sculpting?"Left: sculpt | Shift: smooth | Ctrl: reverse | Alt: orbit | Middle/right: pan | Wheel: zoom | Escape: cancel stroke.":"Drag: orbit | Middle/right or Shift-drag: pan | Wheel: zoom | Alt-drag: roll. Drag the colored gimbal rings to rotate each axis. Escape cancels a drag.");
         modeling3d_viewport(f,scene);
         ImGui::Text("Viewport %ux%u%s | OSG %s | pick %.0fpx",f->scene_width,f->scene_height,
             f->scene_navigation?" (drag: half-res)":"",jfx_osg_have_osg()?"headers":"fallback",double(jfx_osg_gimbal_pick_px()));

@@ -1,5 +1,0 @@
-24bit
-24bit-space
-dither
-iterm2
-done

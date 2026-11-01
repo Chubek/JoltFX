@@ -161,6 +161,16 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Modeling3D 1.8 adds command-only surface sculpting, polygon-level copies,
+triangulation baking, mesh optimization, convex hulls and motion-path baking.
+`modeling3d_sculpt.inc` keeps libigl/meshoptimizer/Bullet/GLM types private.
+Meshoptimizer uses process-lifetime Tilly hooks. Sculpt sessions reserve history
+at begin, retain a document baseline for allocation-free cancel, and allow only
+stamps on the captured object until end/cancel. Keep failures atomic, geometry
+normal caches invalidated and object/scene/history limits enforced. LOD copies
+preserve keys/scripts; simplification targets are best effort. Run `sculpting`
+and the existing modeling3d tests under ASAN/UBSan.
+
 Export 1.3 adds scene-only `container="png_sequence"` using a literal filename
 prefix and source-frame numbering. Reuse the owned export snapshot, scene FPS,
 renderer selection and stb atomic PNG writer; never gate PNG sequences on FFmpeg.
