@@ -2,6 +2,7 @@
 #include "jfx_test_backend.h"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "../../../third_party/ImGuizmo/src/ImGuizmo.h"
 #include "tilly/memory.hpp"
 #include <cassert>
 #include <cmath>
@@ -39,6 +40,43 @@ int main() {
     click(f,"Add cube");
     char state[16384]; assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS);
     assert(std::strstr(state,"\"name\":\"cube\"") && std::strstr(state,"\"active\":true"));
+    // Grab ImGuizmo's screen-translation handle, not the navigation canvas.
+    // Live edits must move the mesh without orbiting, then undo in one step.
+    {
+        auto *v=window("3D viewport"); auto &input=ImGui::GetIO();
+        input.AddMousePosEvent(0,0); draw(f);
+        ImRect rect(FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX);
+        for (auto &vertex:v->DrawList->VtxBuffer) if (vertex.col==IM_COL32(22,26,34,255)) rect.Add(vertex.pos);
+        assert(rect.GetWidth()>100); auto center=rect.GetCenter();
+        unsigned char original[96*96*4],moved[sizeof(original)];
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,original,sizeof(original))==JFX_SUCCESS);
+        input.AddMousePosEvent(center.x,center.y); draw(f);
+        input.AddMouseButtonEvent(0,true); draw(f);
+        assert(ImGuizmo::IsUsing());
+        for (int i=1;i<=4;++i) { input.AddMousePosEvent(center.x+float(i)*12,center.y); draw(f); }
+        input.AddMouseButtonEvent(0,false); draw(f); draw(f);
+        assert(jfx_desktop_frontend_scene3d_state(f,state,sizeof(state))==JFX_SUCCESS);
+        assert(!std::strstr(state,"\"transform\":[0,0,0,0,0,0,1,1,1]"));
+        assert(std::strstr(state,"\"camera\":[35,22,7,0,0,0,45]"));
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))!=0);
+        click(f,"Undo 3D");
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))==0);
+        input.AddMousePosEvent(center.x,center.y); draw(f);
+        input.AddMouseButtonEvent(0,true); draw(f);
+        input.AddMousePosEvent(center.x+30,center.y); draw(f);
+        input.AddKeyEvent(ImGuiKey_Escape,true); draw(f); input.AddKeyEvent(ImGuiKey_Escape,false);
+        input.AddMouseButtonEvent(0,false); draw(f); draw(f);
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))==0);
+        click(f,"Gizmo","3D viewport"); click(f,"Scale","##Combo_",2);
+        input.AddMousePosEvent(center.x,center.y); draw(f);
+        input.AddMouseButtonEvent(0,true); draw(f); assert(ImGuizmo::IsUsing());
+        input.AddMousePosEvent(center.x+40,center.y); draw(f);
+        input.AddMouseButtonEvent(0,false); draw(f); draw(f);
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))!=0);
+        click(f,"Undo 3D");
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))==0);
+        click(f,"Gizmo","3D viewport"); click(f,"Move","##Combo_",0);
+    }
     // Nested views share the document, selection and history without adding
     // top-level workspace IDs or duplicating the scene.
     click(f,"Animation");

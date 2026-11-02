@@ -42,7 +42,7 @@ typedef enum {
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 13
+#define JFX_DESKTOP_API_MINOR 14
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -62,7 +62,9 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
 
-/* Ingagi workspace, available when built with JFX_INGAGI. Source is bounded to
+/* GameDev / Ingagi workspace, execution available when built with JFX_INGAGI.
+ * Rooms/Cliches are source-defined factories; scene edits share Core history.
+ * Source changes/reload/workspace changes stop the UI simulation. Source is bounded to
  * 16 KiB and import-free. Load is transactional for script state; call invokes
  * a zero-argument function with a 100,000-instruction/256-frame budget. Each
  * frontend owns its session/world. Use these APIs on the frontend owner thread.

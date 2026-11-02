@@ -1,6 +1,7 @@
 set(JFX_IMGUI_DIR "${PROJECT_SOURCE_DIR}/third_party/imgui")
 
 set(JFX_IMGUI_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/imguizmo_bridge.cpp
     ${JFX_IMGUI_DIR}/imgui.cpp
     ${JFX_IMGUI_DIR}/imgui_draw.cpp
     ${JFX_IMGUI_DIR}/imgui_tables.cpp
@@ -55,6 +56,7 @@ target_include_directories(jfx_desktop_frontend PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_include_directories(jfx_desktop_frontend PRIVATE ${JFX_IMGUI_DIR})
+target_include_directories(jfx_desktop_frontend PRIVATE "${PROJECT_SOURCE_DIR}/third_party/ImGuizmo/src")
 target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/glm")
 target_link_libraries(jfx_desktop_frontend PUBLIC jfx_core jolt_effects)
 
@@ -96,6 +98,8 @@ set_project_warnings(jfx_desktop_frontend)
 # become so; our own sources still get the full set.
 set_source_files_properties(${JFX_IMGUI_SOURCES} PROPERTIES
     COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion;-Wno-format-nonliteral;-Wno-null-dereference")
+set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/imguizmo_bridge.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Wno-double-promotion;-Wno-pedantic")
 
 if(JFX_DESKTOP_WINDOW_ENABLED)
     if(SDL2_FOUND)

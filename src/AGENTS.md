@@ -161,6 +161,13 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+Modeling3D 1.9 adds command-only base-transform gestures. Begin serializes and
+reserves history once; set parses/validates all nine TRS channels before replacing
+the captured object's transform without copying geometry. End coalesces changes;
+cancel restores the captured array without allocation. Reject unrelated commands
+until end/cancel. Preserve redo for cancelled/no-op gestures and keep clone/load
+ownership independent. `modeling3d_tools` and real desktop gizmo input cover this.
+
 Modeling3D 1.8 adds command-only surface sculpting, polygon-level copies,
 triangulation baking, mesh optimization, convex hulls and motion-path baking.
 `modeling3d_sculpt.inc` keeps libigl/meshoptimizer/Bullet/GLM types private.

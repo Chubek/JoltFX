@@ -699,6 +699,10 @@ struct jfx_scene3d {
     tilly::vector<tilly::string> undo,redo;
     size_t history_bytes=0;
     bool navigating=false;
+    bool transforming=false;
+    uint32_t transform_object=0;
+    Transform transform_baseline;
+    tilly::string transform_before;
     bool sculpting=false,sculpt_changed=false;
     uint32_t sculpt_object=0;
     Document sculpt_baseline;
@@ -769,6 +773,7 @@ extern "C" void jfx_scene3d_clear_history(jfx_scene3d_t *s) {
 extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint32_t a,uint32_t b,uint32_t c,double value,const char *text) {
     if (!s || !op || !number(value)) return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] {
+        if (s->transforming) require(!std::strcmp(op,"3d.transform_set") || !std::strcmp(op,"3d.transform_end") || !std::strcmp(op,"3d.transform_cancel"));
         if (!std::strcmp(op,"3d.sculpt_begin")) {
             require(!s->sculpting && !s->navigating && a<s->document.objects.size());
             require(!s->document.objects[a].generator && s->document.objects[a].visible && s->document.objects[a].instances==1);
@@ -794,6 +799,38 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
             s->sculpt_baseline=Document{}; s->sculpt_before.clear(); s->sculpting=false; return JFX_SUCCESS;
         }
         if (s->sculpting) require(!std::strcmp(op,"3d.sculpt") && a==s->sculpt_object);
+        if (!std::strcmp(op,"3d.transform_begin")) {
+            require(!s->transforming && !s->navigating && !s->sculpting && a<s->document.objects.size());
+            auto before=serialize(s->document);
+            // Leave ample room for nine precision-9 float strings to grow,
+            // without reserializing all embedded geometry on every update.
+            require(before.size()+9*32<JFX_PROJECT_MAX_BYTES);
+            s->undo.reserve(s->undo.size()+1);
+            s->transform_before=std::move(before); s->transform_baseline=s->document.objects[a].transform;
+            s->transform_object=a; s->transforming=true; return JFX_SUCCESS;
+        }
+        if (s->transforming) {
+            auto &t=s->document.objects[s->transform_object].transform;
+            if (!std::strcmp(op,"3d.transform_set")) {
+                require(text && a==s->transform_object); Transform next;
+                Input input(text); input.imbue(std::locale::classic());
+                for (unsigned i=0;i<9;++i) require(bool(input>>next[i]) && channel_value(i,double(next[i])));
+                tilly::string extra; require(!(input>>extra)); t=next; return JFX_SUCCESS;
+            }
+            bool cancel=!std::strcmp(op,"3d.transform_cancel");
+            require(cancel || !std::strcmp(op,"3d.transform_end"));
+            if (cancel) t=s->transform_baseline;
+            else if (t!=s->transform_baseline) {
+                for (auto &entry:s->redo) s->history_bytes-=entry.size();
+                s->redo.clear(); s->history_bytes+=s->transform_before.size();
+                s->undo.push_back(std::move(s->transform_before));
+                while (s->undo.size()>32 || s->history_bytes>history_limit) {
+                    s->history_bytes-=s->undo.front().size(); s->undo.erase(s->undo.begin());
+                }
+            }
+            s->transform_before.clear(); s->transforming=false; return JFX_SUCCESS;
+        }
+        require(std::strcmp(op,"3d.transform_set") && std::strcmp(op,"3d.transform_end") && std::strcmp(op,"3d.transform_cancel"));
         if (!std::strcmp(op,"3d.navigation_begin")) {
             require(!s->navigating); s->navigation_camera=s->document.camera; s->navigation_orientation=s->document.orientation; s->navigating=true; return JFX_SUCCESS;
         }
@@ -859,7 +896,8 @@ extern "C" jfx_result_t jfx_iap_import(jfx_scene3d_t *s,const char *path) {
 extern "C" jfx_result_t jfx_scene3d_load(jfx_scene3d_t *s,const char *text,size_t length,char *err,size_t cap) {
     if (!s || !text) return JFX_ERROR_INVALID_ARGUMENT;
     auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false;
-        s->sculpting=false; s->sculpt_baseline=Document{}; s->sculpt_before.clear(); return JFX_SUCCESS; });
+        s->sculpting=false; s->sculpt_baseline=Document{}; s->sculpt_before.clear();
+        s->transforming=false; s->transform_before.clear(); return JFX_SUCCESS; });
     if (err && cap) std::snprintf(err,cap,"%s",r==JFX_SUCCESS?"":"Invalid or oversized 3D scene (check mesh indices, keys and camera)");
     return r;
 }

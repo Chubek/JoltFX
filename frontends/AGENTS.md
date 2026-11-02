@@ -1089,6 +1089,21 @@ the shared scene and commit through desktop edits/history. Scene indices shift
 on removal; they are not stable ECS IDs. Game Engine uses the modeling viewport
 for preview/scrubbing. Host edits survive failed script execution/reload.
 
+Desktop 1.14 labels this workspace GameDev, preserving workspace/panel IDs and
+the `game_*` API. `game_authoring.h` contains allocation-free bounded lexical
+pickers/source builders, not a second parser. Ingagi `cliche_*`/`room_*` factories
+are canonical resources saved in `.ing`; never infer stable scene/ECS identity
+from a picker or object index. Variants delegate to a base factory; instances are
+independent, without linked Apply/Revert. Core owns scene edits/history/keys.
+The UI owns configurable ready/step events, input and its separate preview clock.
+Tick once per draw, clamp delta, stop on runtime error, source/load/lifecycle or
+external scene/history edits. Set `game_call_active` only around synchronous ABI
+calls so host-driven scene edits do not stop their own simulation. Clear transient
+input/placement after pause/calls. Preserve optional-off authoring, source reload
+failure behavior and the 16 KiB/100,000-instruction/256-frame bounds. Resources
+save source and scene separately; do not imply a packaged game export. Extend
+`game_authoring`, `game_ui_tests` and `ingagi_tab`; see `docs/gamedev.md`.
+
 ### Desktop vector animation
 
 The 2D Animation workspace uses `desktop/src/animation_drawing.h` for its private
@@ -1102,6 +1117,22 @@ Validate loaded documents before replacement, preserve load undo, and extend
 `animation_drawing` / `animation_ui_tests` when changing this workflow.
 
 ### 3D modeling and animation
+
+Desktop transform overlays compile vendored `third_party/ImGuizmo/src` against
+the same ImGui context. `imguizmo_bridge.cpp` releases upstream's process-static
+ImVectors before Tilly teardown; preserve this cleanup when updating the vendor.
+Submit gizmos before canvas InvisibleButtons so those
+buttons cannot consume their mouse activation. Use `IsOver(operation)` for
+current-frame hover (the no-argument overload reports the previous frame).
+3D base TRS uses Core 1.9
+`3d.transform_begin/set/end/cancel`; never store mesh edits in UI state. Disable
+handles on keyed/scripted objects, playback and sculpting. Planar drawing handles
+preview `pending` points and checkpoint once on release; no arbitrary rotation
+for axis-aligned rectangle/ellipse documents. Escape/tab switch cancels drawing
+previews. Retain completed interactive raster frames while newer revisions are
+queued, then restore production shading/resolution on release. Upload cached
+preview pixels only on publication; invalidate texture handles on workspace
+changes because the host shares one texture. Extend real ImGui mouse tests.
 
 Desktop 1.13 inserts Sculpting third (internal mode 3), preserving Rendering's
 internal mode 2; Modeling is labeled Design. Surface brushes use Core 1.8

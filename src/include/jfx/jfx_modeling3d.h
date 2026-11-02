@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #define JFX_MODELING3D_API_MAJOR 1
-#define JFX_MODELING3D_API_MINOR 8
+#define JFX_MODELING3D_API_MINOR 9
 #define JFX_3D_MAX_OBJECTS 64u
 #define JFX_3D_MAX_VERTICES 65536u
 #define JFX_3D_MAX_TRIANGLES 131072u
@@ -80,6 +80,10 @@ jfx_scene3d_t *jfx_scene3d_create(void);
 void jfx_scene3d_destroy(jfx_scene3d_t *scene);
 /* Edits are failure-atomic and have bounded 32-step history. API 1.2 adds tube,
  * hemisphere, wedge, tetrahedron, octahedron and icosahedron to 3d.add.
+ * API 1.9: 3d.transform_begin captures object a; 3d.transform_set supplies all
+ * nine TRS channels in text for that object. Only set/end/cancel are accepted
+ * during the gesture. End records one step if changed; cancel restores without
+ * allocating. Invalid updates leave the gesture and transform unchanged.
  * See docs/modeling3d.md for the complete command/primitive catalog. */
 jfx_result_t jfx_scene3d_command(jfx_scene3d_t *scene,const char *op,
     uint32_t a,uint32_t b,uint32_t c,double value,const char *text);

@@ -53,6 +53,36 @@ static void closed_solid(jfx_scene3d_t *s,const char *kind) {
 }
 int main() {
     auto *s=jfx_scene3d_create(); assert(s);
+    {
+    edit(s,"3d.add",0,0,0,0,"cube");
+    jfx_scene3d_clear_history(s);
+    auto baseline=save(s);
+    edit(s,"3d.transform_begin",0);
+    edit(s,"3d.transform_set",0,0,0,0,"1 2 3 10 20 30 2 3 4");
+    assert(!jfx_scene3d_can_undo(s));
+    for (auto invalid:{"1 2", "nan 0 0 0 0 0 1 1 1", "0 0 0 0 0 0 1 1 1 extra"})
+        assert(jfx_scene3d_command(s,"3d.transform_set",0,0,0,0,invalid)!=JFX_SUCCESS);
+    assert(jfx_scene3d_command(s,"3d.transform_set",1,0,0,0,"0 0 0 0 0 0 1 1 1")!=JFX_SUCCESS);
+    assert(jfx_scene3d_command(s,"3d.remove",0,0,0,0,"")!=JFX_SUCCESS);
+    auto moved=save(s);
+    assert(jfx_scene3d_command(s,"3d.transform_set",0,0,0,0,"1 2 3 0 0 0 0 1 1")!=JFX_SUCCESS);
+    assert(save(s)==moved);
+    edit(s,"3d.transform_cancel"); assert(save(s)==baseline);
+    edit(s,"3d.transform_begin",0);
+    edit(s,"3d.transform_set",0,0,0,0,"1 2 3 10 20 30 2 3 4");
+    edit(s,"3d.transform_set",0,0,0,0,"2 3 4 10 20 30 2 3 4");
+    edit(s,"3d.transform_end");
+    auto transformed=save(s);
+    edit(s,"undo"); assert(save(s)==baseline && !jfx_scene3d_can_undo(s));
+    edit(s,"3d.transform_begin",0);
+    edit(s,"3d.transform_set",0,0,0,0,"1 0 0 0 0 0 1 1 1");
+    edit(s,"3d.transform_cancel"); assert(save(s)==baseline && jfx_scene3d_can_redo(s));
+    edit(s,"3d.transform_begin",0); edit(s,"3d.transform_end"); assert(jfx_scene3d_can_redo(s));
+    edit(s,"redo"); assert(save(s)==transformed);
+    jfx_scene3d_clear_history(s);
+    edit(s,"3d.transform_begin",0); edit(s,"3d.transform_end");
+    assert(!jfx_scene3d_can_undo(s));
+    }
     const char *kinds[]={"sphere","cylinder","cone","torus","capsule","pyramid","disk","nurbs","metaball",
         "tube","hemisphere","wedge","tetrahedron","octahedron","icosahedron"};
     tilly::vector<uint8_t> image(96*96*4),other(image.size());

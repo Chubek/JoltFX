@@ -1,4 +1,44 @@
 // Vector stage and exposure sheet. Included inside desktop_frontend.cpp's namespace.
+bool animation_transform_gizmo(jfx_desktop_frontend_t *f,ImVec2 corner,ImVec2 avail,ImVec2 origin,float scale) {
+    auto &e=*f->drawing; auto &io=ImGui::GetIO();
+    if (e.tool!=0 || e.selected<0 || !e.editable() || e.playing || e.dragging) return false;
+    const auto &source=e.cel().shapes[size_t(e.selected)];
+    auto lo=source.points.front(),hi=lo;
+    for (auto p:source.points) { lo.x=std::min(lo.x,p.x);lo.y=std::min(lo.y,p.y);hi.x=std::max(hi.x,p.x);hi.y=std::max(hi.y,p.y); }
+    auto matrix=f->drawing_gizmo?f->drawing_gizmo_matrix:
+        glm::translate(glm::mat4(1),glm::vec3((lo.x+hi.x)*.5f,-(lo.y+hi.y)*.5f,0));
+    auto start=matrix;
+    auto view=glm::translate(glm::mat4(1),glm::vec3(0,0,-10));
+    auto projection=glm::ortho((corner.x-origin.x)/scale,(corner.x+avail.x-origin.x)/scale,
+        (origin.y-corner.y-avail.y)/scale,(origin.y-corner.y)/scale,.1f,100.f);
+    ImGuizmo::Enable(true); ImGuizmo::SetOrthographic(true); ImGuizmo::SetDrawlist();
+    ImGuizmo::SetRect(corner.x,corner.y,avail.x,avail.y);
+    auto op=f->drawing_gizmo_operation==0?ImGuizmo::TRANSLATE_X|ImGuizmo::TRANSLATE_Y:ImGuizmo::SCALE_X|ImGuizmo::SCALE_Y;
+    float step=f->drawing_gizmo_operation==0?10.f:.1f; float snap[]={step,step,step};
+    bool changed=ImGuizmo::Manipulate(glm::value_ptr(view),glm::value_ptr(projection),op,ImGuizmo::LOCAL,
+        glm::value_ptr(matrix),nullptr,io.KeyCtrl?snap:nullptr);
+    bool using_gizmo=ImGuizmo::IsUsing(),over=ImGuizmo::IsOver(op);
+    if (using_gizmo && !f->drawing_gizmo) {
+        try { e.pending=source; f->drawing_gizmo_start=start; f->drawing_gizmo=true; }
+        catch (...) { e.allocation_failed=true; ImGuizmo::Enable(false); return true; }
+    }
+    if (f->drawing_gizmo) {
+        f->drawing_gizmo_matrix=matrix;
+        if (changed) {
+            auto delta=matrix*glm::inverse(f->drawing_gizmo_start);
+            for (size_t i=0;i<source.points.size();++i) {
+                auto p=source.points[i]; auto result=delta*glm::vec4(p.x,-p.y,0,1);
+                e.pending.points[i]={result.x,-result.y};
+            }
+        }
+        bool cancel=ImGui::IsKeyPressed(ImGuiKey_Escape);
+        if (cancel || !io.MouseDown[0]) {
+            if (!cancel && matrix!=f->drawing_gizmo_start && e.checkpoint()) e.cel().shapes[size_t(e.selected)]=std::move(e.pending);
+            f->drawing_gizmo=false; ImGuizmo::Enable(false);
+        }
+    }
+    return using_gizmo || over;
+}
 void animation_panel(jfx_desktop_frontend_t *frontend) {
     using namespace jfx_drawing;
     auto &e=*frontend->drawing;
@@ -8,7 +48,7 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
         int advance=(int)(e.elapsed*e.doc.fps);
         if(advance) { e.frame=(e.frame-1+advance)%e.doc.frames+1; e.elapsed-=(double)advance/e.doc.fps; e.selected=-1; }
     }
-    bool busy=e.dragging;
+    bool busy=e.dragging || frontend->drawing_gizmo;
     ImGui::BeginDisabled(busy);
     if(ImGui::Button(e.playing?"Pause drawing":"Play drawing")) { e.playing=!e.playing; e.elapsed=0; }
     ImGui::SameLine(); if(ImGui::Button("First frame")) { e.playing=false; e.frame=1; e.selected=-1; }
@@ -53,6 +93,8 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::BeginChild("Drawing tools",ImVec2(160,stage_height),true);
     ImGui::BeginDisabled(busy || e.playing);
     ImGui::TextUnformatted("TOOLS");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::Combo("##Planar gizmo",&frontend->drawing_gizmo_operation,"Move gizmo\0Scale gizmo\0");
     const char *tools[]={"Select / move (V)","Brush (B)","Line (L)","Rectangle (R)","Ellipse (O)","Eraser (E)","Hand (H)"};
     for(int i=0;i<7;++i) if(ImGui::Selectable(tools[i],e.tool==i)) {e.tool=i;e.selected=-1;}
     ImGui::Separator(); ImGui::TextUnformatted("NEW SHAPE STYLE");
@@ -75,15 +117,20 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::BeginChild("Vector stage",ImVec2(0,stage_height),true,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
     ImVec2 corner=ImGui::GetCursorScreenPos(),avail=ImGui::GetContentRegionAvail();
     avail.x=std::max(1.0f,avail.x); avail.y=std::max(1.0f,avail.y);
-    ImGui::InvisibleButton("Drawing canvas",avail,ImGuiButtonFlags_MouseButtonLeft);
-    bool hovered=ImGui::IsItemHovered(),active=ImGui::IsItemActive();
     float scale=std::max(0.01f,std::min((avail.x-24)/960,(avail.y-24)/540))*e.zoom;
     ImVec2 origin(corner.x+(avail.x-960*scale)/2+e.pan.x,corner.y+(avail.y-540*scale)/2+e.pan.y);
+    auto *draw=ImGui::GetWindowDrawList();
+    draw->ChannelsSplit(2); draw->ChannelsSetCurrent(1);
+    bool gizmo=animation_transform_gizmo(frontend,corner,avail,origin,scale);
+    draw->ChannelsSetCurrent(0);
+    if (gizmo || frontend->drawing_gizmo) ImGui::Dummy(avail);
+    else ImGui::InvisibleButton("Drawing canvas",avail,ImGuiButtonFlags_MouseButtonLeft);
+    bool hovered=ImGui::IsItemHovered(),active=ImGui::IsItemActive();
     auto screen=[&](Point p) {return ImVec2(origin.x+p.x*scale,origin.y+p.y*scale);};
     Point mouse{(io.MousePos.x-origin.x)/scale,(io.MousePos.y-origin.y)/scale};
     bool inside=mouse.x>=0 && mouse.x<=960 && mouse.y>=0 && mouse.y<=540;
-    if(hovered && !e.dragging && io.MouseWheel!=0) e.zoom=std::clamp(e.zoom*std::exp(io.MouseWheel*0.12f),0.25f,8.0f);
-    if(hovered && ImGui::IsMouseClicked(0) && !e.playing && (e.tool==6 || (inside && e.editable()))) {
+    if(hovered && !e.dragging && !frontend->drawing_gizmo && io.MouseWheel!=0) e.zoom=std::clamp(e.zoom*std::exp(io.MouseWheel*0.12f),0.25f,8.0f);
+    if(!gizmo && !frontend->drawing_gizmo && hovered && ImGui::IsMouseClicked(0) && !e.playing && (e.tool==6 || (inside && e.editable()))) {
         e.last=mouse;
         if(e.tool==0 || e.tool==5) {
             e.selected=e.hit(mouse);
@@ -123,7 +170,6 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
         }
         e.dragging=false;
     }
-    auto *draw=ImGui::GetWindowDrawList();
     draw->AddRectFilled(corner,ImVec2(corner.x+avail.x,corner.y+avail.y),IM_COL32(32,36,44,255));
     ImVec2 end=screen({960,540});
     draw->AddRectFilled(origin,end,IM_COL32(250,249,246,255));
@@ -160,8 +206,8 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
             if(next) for(const auto &s:next->shapes) shape(s,IM_COL32(55,130,230,65),{});
         }
         for(size_t i=0;i<current.shapes.size();++i) {
-            const auto &s=current.shapes[i]; Point offset{};
             bool selected=(int)li==e.layer && (int)i==e.selected;
+            const auto &s=selected && frontend->drawing_gizmo?e.pending:current.shapes[i]; Point offset{};
             if(selected && e.dragging && e.tool==0) offset={mouse.x-e.last.x,mouse.y-e.last.y};
             shape(s,0,offset);
             if(selected) {
@@ -174,8 +220,9 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     if(e.dragging && e.tool>0 && e.tool<5) shape(e.pending,0,{});
     draw->PopClipRect();
     draw->AddRect(origin,end,IM_COL32(140,148,160,255));
+    draw->ChannelsMerge();
     ImGui::EndChild();
-    ImGui::BeginDisabled(e.dragging);
+    ImGui::BeginDisabled(e.dragging || frontend->drawing_gizmo);
     ImGui::Text("EXPOSURE SHEET   Frame %d / %d   |   960 x 540",e.frame,e.doc.frames);
     ImGui::SameLine(); ImGui::SetNextItemWidth(85);
     int fps=e.doc.fps; if(ImGui::SliderInt("FPS",&fps,1,60) && e.checkpoint()) e.doc.fps=fps;
@@ -209,7 +256,7 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
         ImGui::PopID();
     }
     ImGui::EndChild(); ImGui::EndDisabled();
-    if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && !e.dragging) {
+    if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && !e.dragging && !frontend->drawing_gizmo) {
         if(io.KeyCtrl || io.KeySuper) {
             if(ImGui::IsKeyPressed(ImGuiKey_Z)) {if(io.KeyShift)e.redo();else e.undo();}
             if(ImGui::IsKeyPressed(ImGuiKey_S)) std::snprintf(frontend->status,sizeof(frontend->status),"%s",e.save(e.path)?"Drawing saved":"Could not save drawing");

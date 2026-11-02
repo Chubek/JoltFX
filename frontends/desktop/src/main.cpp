@@ -25,7 +25,7 @@ void print_usage(void) {
         "  --height N        Window height in pixels (default %u)\n"
         "  --effect NAME     Bundled effect to preview (default brightness)\n"
         "  --param VALUE     Effect parameter, clamped to its documented range\n"
-        "  --project FILE    .jfx project or .jolt kernel to open at startup\n"
+        "  --project FILE    .jfx project, .jolt kernel or GameDev .ing source\n"
         "  --plugin FILE     Load an SDK module (repeatable; before opening project)\n"
         "  --frames N        Exit after N frames (0, the default, runs until quit)\n"
         "  --duration SEC    Exit after SEC seconds of wall clock\n"

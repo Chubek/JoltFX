@@ -3,6 +3,7 @@
 #include "jfx_test_backend.h"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "../../../third_party/ImGuizmo/src/ImGuizmo.h"
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -18,8 +19,8 @@ static ImGuiWindow *window(const char *part) {
     for(auto *w:ImGui::GetCurrentContext()->Windows) if(w->Active && std::strstr(w->Name,part)) return w;
     assert(false);return nullptr;
 }
-static ImVec2 locate(jfx_desktop_frontend_t *f,ImGuiWindow *w,const char *name) {
-    move(f,{0,0}); ImGui::DebugLocateItem(w->GetID(name));frame(f);
+static ImVec2 locate(jfx_desktop_frontend_t *f,ImGuiWindow *w,const char *name,int index=-1) {
+    move(f,{0,0}); ImGui::DebugLocateItem(index<0?w->GetID(name):ImHashStr(name,0,w->GetID(index)));frame(f);
     ImRect bounds=w->InnerRect;bounds.Expand(4);
     ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
     for(auto &v:ImGui::GetForegroundDrawList()->VtxBuffer) if(bounds.Contains(v.pos)) {
@@ -56,6 +57,28 @@ int main() {
     move(f,middle);mouse(f,true);move(f,{middle.x+40,middle.y+20});mouse(f,false);
     ImRect moved=colored(fill);assert(std::abs(moved.Min.x-drawn.Min.x-40)<2);
     key(f,ImGuiKey_Z,true);assert(std::abs(colored(fill).Min.x-drawn.Min.x)<2);
+    // Select without moving, then use the planar gizmo's X axis. A release
+    // commits one drawing checkpoint; Escape leaves both artwork/history alone.
+    click(f,middle);
+    auto drag_gizmo=[&](bool cancel) {
+        ImVec2 handle(middle.x+25,middle.y);
+        move(f,handle);mouse(f,true);
+        assert(ImGuizmo::IsUsing());
+        for(int i=1;i<=4;++i) move(f,{handle.x+float(i)*10,handle.y});
+        if(cancel) key(f,ImGuiKey_Escape);
+        mouse(f,false);frame(f);
+    };
+    drag_gizmo(false);
+    assert(std::abs(colored(fill).Min.x-drawn.Min.x-40)<2);
+    key(f,ImGuiKey_Z,true);assert(std::abs(colored(fill).Min.x-drawn.Min.x)<2);
+    click(f,middle);drag_gizmo(true);
+    assert(std::abs(colored(fill).Min.x-drawn.Min.x)<2);
+    click(f,locate(f,window("/Drawing tools_"),"##Planar gizmo"));
+    click(f,locate(f,window("##Combo_"),"Scale gizmo",1));
+    drag_gizmo(false);
+    assert(colored(fill).GetWidth()>drawn.GetWidth()+5);
+    assert(std::abs(colored(fill).GetHeight()-drawn.GetHeight())<2);
+    key(f,ImGuiKey_Z,true);assert(std::abs(colored(fill).GetWidth()-drawn.GetWidth())<2);
     // Cancel a new shape without adding artwork or consuming undo history.
     key(f,ImGuiKey_R);move(f,{b.x+20,b.y+20});mouse(f,true);move(f,{b.x+80,b.y+80});key(f,ImGuiKey_Escape);mouse(f,false);
     assert(std::abs(colored(fill).Max.x-drawn.Max.x)<2);

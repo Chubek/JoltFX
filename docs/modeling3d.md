@@ -483,3 +483,18 @@ and compares rendered pixels and one-step gesture undo;
 `modeling3d_cli` exercises actual CLI files and failure preservation. Web tests
 cover mounted controls; `tests/wasm.test.mjs` adds real-module coverage when built
 with Emscripten.
+## Interactive transform gestures (API 1.9)
+
+`3d.transform_begin` captures object `a`. While active, only
+`3d.transform_set`, `3d.transform_end` and `3d.transform_cancel` are accepted.
+Set uses the same object `a` and a text string containing exactly nine finite
+numbers: position XYZ, Euler degrees XYZ, scale XYZ (scales at least 0.001).
+Invalid updates leave the current transform untouched. End creates one history
+step only if the transform changed; cancel restores the baseline without adding
+history. History allocation/serialization happens at begin, not each mouse move.
+Begin requires 288 bytes of spare serialization budget for growing float strings.
+
+The desktop's ImGuizmo overlay edits unanimated base transforms through these
+commands; keyed/scripted poses remain editable through the animation inspector.
+During interaction the viewport uses reduced-resolution raster inspection;
+production renderer and export quality settings are not changed.

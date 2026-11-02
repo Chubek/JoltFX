@@ -1,5 +1,50 @@
 # Progress
 
+## GameDev workspace and Ingagi Cliches (2026-11-02)
+
+- Desktop 1.14 expands the Game Engine tab into GameDev: Rooms, Objects, Cliches,
+  Ingagi, Animation, Resources and Debug, preserving workspace IDs and existing
+  uncommitted modeling/viewport work. Shared scene inspector/handles, keys,
+  source/scene persistence, PLY and IAP exchange use the existing Core paths.
+- Ingagi is canonical for room/Cliche factories and ready/step events. Added
+  validated primitive/pose/tint source builders, delegating Cliche variants,
+  instance placement, an ECS/input starter, Play/Pause/Step and bounded runtime
+  diagnostics. Delta/game-clock/input/press/placement hosts remain synchronous.
+  Lifecycle/source/external edits/errors stop simulation; scene side effects
+  survive. Instances are independent; linked Apply/Revert, 2D room rendering and
+  packaged-game export are explicitly not implemented. See `docs/gamedev.md`.
+- Added tests before implementation, covering bounded/atomic source generation,
+  comments/strings, variants, real ImGui Cliche/room creation and instantiation,
+  scene/source round trips, input edges/focus, stepping and budget failure.
+- Validation: GCC Ingagi-enabled desktop build and all three game checks pass;
+  the same three pass with Clang ASAN+UBSan and Ingagi ON. All 13 selected desktop
+  checks pass under ASAN+UBSan with optional Ingagi OFF; restored that build's
+  original OFF setting. Six real SDL/OpenGL offscreen frames open the GameDev
+  tab successfully. No new-code warnings; pre-existing warnings remain.
+  `git diff --check` passes. Plugin-gated workspace UI test is not configured in
+  these builds; its expected tab label was updated.
+
+## ImGuizmo viewport controls and responsiveness (2026-11-02)
+
+- Located the vendored library at `third_party/ImGuizmo` and inspected desktop
+  vector-stage, scene history, scheduler preview and texture-upload paths.
+- Added 3D move/rotate/scale handles, W/E/R, local/world axes and Ctrl snapping;
+  planar 2D move/scale handles preserve axis-aligned drawing formats. Core 1.9
+  transform gestures validate all channels atomically and coalesce one-step undo.
+  Escape restores the baseline; lifecycle changes finish/cancel gestures.
+- Navigation/drag/playback use half-resolution raster inspection, restoring the
+  production renderer on release without changing exports. Continuous interaction
+  can publish completed previews instead of starving on newer revisions. Unchanged
+  shared/scene previews reuse texture uploads, invalidated across workspaces.
+- Added a private vendor compilation/cleanup bridge for upstream's process-static
+  ImVectors; current-frame hover prevents the canvas stealing gizmo activation.
+- Validation: all eight configured desktop UI tests and four Core modeling/
+  shading/sculpting checks pass under Clang ASAN+UBSan (12/12), including actual
+  ImGuizmo mouse activation, move/scale, undo, cancellation and invalid updates.
+  GCC SDL/OpenGL desktop builds successfully; real OpenGL viewport readback passes.
+  Optional production renderers are OFF in the sanitizer configuration. Existing
+  unrelated compiler warnings remain; new control/gesture/bridge code is clean.
+
 ## 3D library tools and sculpting (2026-11-01)
 
 - Scanned the vendored library inventory and current 3D scene/UI integration.

@@ -4,6 +4,7 @@
 #include <string>
 #include "jfx/desktop_frontend.h"
 #include "jfx_test_backend.h"
+#include "../../../frontends/desktop/src/game_authoring.h"
 
 int main(int argc, char **argv) {
     assert(argc == 2);
@@ -121,6 +122,40 @@ int main(int argc, char **argv) {
         assert(jfx_desktop_frontend_game_load(f) == JFX_SUCCESS);
         assert(jfx_desktop_frontend_game_call(f, "main") == JFX_SUCCESS);
         assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "7"));
+        // The shipped authoring starter uses actual Ingagi ECS + host callbacks.
+        assert(jfx_desktop_frontend_edit(f, "3d.new", 0, 0, 0, 0, "") == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_set_source(f, game_authoring::starter) == JFX_SUCCESS);
+        auto starter_result = jfx_desktop_frontend_game_load(f);
+        if (starter_result != JFX_SUCCESS) std::fprintf(stderr, "Starter: %s\n", jfx_desktop_frontend_game_error(f));
+        assert(starter_result == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_call(f, "ready") == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_call(f, "step") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "1"));
+        char variant_source[8192]; std::strcpy(variant_source, game_authoring::starter);
+        game_authoring::Draft variant{}; game_authoring::defaults(variant);
+        std::strcpy(variant.name, "Variant"); variant.transform[0] = 7;
+        assert(game_authoring::append_cliche(variant_source, sizeof(variant_source), variant, "cliche_Hero"));
+        assert(game_authoring::append(variant_source, sizeof(variant_source),
+            "fn variant_value() { return engine_scene_get(1, 0); }"));
+        assert(jfx_desktop_frontend_game_set_source(f, variant_source) == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_load(f) == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_call(f, "cliche_Variant") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "1"));
+        assert(jfx_desktop_frontend_game_call(f, "variant_value") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "7"));
+        assert(jfx_desktop_frontend_game_set_source(f,
+            "fn main() { return engine_delta() + engine_game_time() + engine_spawn_offset(0); } "
+            "fn idle() { return engine_input(0) || engine_pressed(5); } "
+            "fn bad_input() { return engine_input(6); } "
+            "fn bad_pressed() { return engine_pressed(-1); } "
+            "fn bad_offset() { return engine_spawn_offset(3); }") == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_load(f) == JFX_SUCCESS);
+        assert(jfx_desktop_frontend_game_call(f, "main") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "0"));
+        assert(jfx_desktop_frontend_game_call(f, "idle") == JFX_SUCCESS);
+        assert(!std::strcmp(jfx_desktop_frontend_game_output(f), "false"));
+        for (const char *entry : {"bad_input", "bad_pressed", "bad_offset"})
+            assert(jfx_desktop_frontend_game_call(f, entry) != JFX_SUCCESS);
         assert(jfx_desktop_frontend_game_set_source(f, "fn main() { loop {} }") == JFX_SUCCESS);
         assert(jfx_desktop_frontend_game_load(f) == JFX_SUCCESS);
         assert(jfx_desktop_frontend_game_call(f, "main") != JFX_SUCCESS);

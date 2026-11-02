@@ -10,12 +10,15 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     }
     if (f->scene_preview_job && f->scene_preview_job->done.load(std::memory_order_acquire)) {
         auto *job=f->scene_preview_job;
-        if (job->revision==f->scene_revision && job->width==f->scene_width && job->height==f->scene_height &&
+        bool interactive=f->scene_navigation || f->scene_transforming || f->playing;
+        bool current=job->revision==f->scene_revision;
+        if ((current || interactive) && (interactive || !job->interactive) && job->width==f->scene_width && job->height==f->scene_height &&
             job->options.renderer==f->scene_render_options.renderer && int(job->shading)==f->scene_shading) {
             if (job->result==JFX_SUCCESS) {
                 // Publish the complete owned frame, including its dimensions.
                 // Never clear the previous image on resize, edit or failure.
                 tilly::destroy(f->scene_display); f->scene_display=job;
+                f->scene_texture=nullptr;
                 jfx_scene3d_destroy(job->scene); job->scene=nullptr;
                 const char *name=job->shading==JFX_SCENE3D_SHADING_GOURAUD?"Gouraud":
                     job->shading==JFX_SCENE3D_SHADING_WIREFRAME?"Wireframe":
@@ -25,9 +28,9 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
                     job->options.renderer==JFX_SCENE3D_RENDER_JOLT_GPU?"Jolt Renderer GPU":
                     job->options.renderer==JFX_SCENE3D_RENDER_RASTER?"Raster":"Vulkan";
                 if (job->fallback) std::snprintf(f->status,sizeof(f->status),"%s render failed; raster fallback",name);
-                else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",name,job->width,job->height);
+                else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",job->interactive?"Interactive raster":name,job->width,job->height);
             } else editor_result(f,job->result);
-            f->preview_dirty=f->playing || f->time_seconds!=job->seconds;
+            f->preview_dirty=!current || f->playing || f->time_seconds!=job->seconds;
         }
         if (job!=f->scene_display) tilly::destroy(job);
         f->scene_preview_job=nullptr;
@@ -41,7 +44,7 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
         job->width=f->scene_width; job->height=f->scene_height;
         job->seconds=f->time_seconds; job->revision=f->scene_revision; job->options=f->scene_render_options;
         job->shading=jfx_scene3d_shading_t(f->scene_shading);
-        if (f->scene_navigation || f->playing) { job->options.samples=1; job->options.bounces=std::min(job->options.bounces,1u); }
+        job->interactive=f->scene_navigation || f->scene_transforming || f->playing;
         job->pixels.resize(size_t(job->width)*job->height*4);
         if (!scheduler_submit(scene_preview_render_task,job,0)) { tilly::destroy(job); editor_result(f,JFX_ERROR_BUSY); return; }
         f->scene_preview_job=job; f->preview_dirty=false;
@@ -103,10 +106,77 @@ void modeling3d_sequence(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     }
     ImGui::TextWrapped("%s",f->status);
 }
+// Matrices match Core's camera-local-to-world quaternion and Rz * Ry * Rx TRS.
+bool modeling3d_transform_gizmo(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene,ImVec2 origin,ImVec2 size) {
+    if (f->scene_mode==3 || f->playing || f->scene_navigation) return false;
+    jfx_object3d_info_t info{}; info.size=sizeof(info);
+    if (f->scene_object<0 || jfx_scene3d_object_info(scene,uint32_t(f->scene_object),&info)!=JFX_SUCCESS || !info.visible || info.keys) return false;
+    // Base-transform handles must not pretend to edit keyed/scripted poses.
+    for (unsigned i=0;i<9;++i) {
+        char script[2]={};
+        if (jfx_scene3d_script(scene,uint32_t(f->scene_object),i,script,sizeof(script))!=JFX_SUCCESS || script[0]) return false;
+    }
+    auto &io=ImGui::GetIO();
+    if (!f->scene_transforming && !io.WantTextInput && !io.KeyCtrl && !io.KeySuper && !io.KeyAlt &&
+        ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(origin,ImVec2(origin.x+size.x,origin.y+size.y)) && !ImGui::IsAnyItemActive()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_W)) f->scene_gizmo_operation=0;
+        if (ImGui::IsKeyPressed(ImGuiKey_E)) f->scene_gizmo_operation=1;
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) f->scene_gizmo_operation=2;
+    }
+    if (f->scene_transforming && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        editor_result(f,jfx_desktop_frontend_edit(f,"3d.transform_cancel",0,0,0,0,""));
+        f->scene_transforming=false; ImGuizmo::Enable(false); return true;
+    }
+    float c[7],xyzw[4]; jfx_scene3d_camera(scene,c); jfx_scene3d_camera_quaternion(scene,xyzw);
+    glm::quat q(xyzw[3],xyzw[0],xyzw[1],xyzw[2]);
+    glm::vec3 eye=glm::vec3(c[3],c[4],c[5])+q*glm::vec3(0,0,c[2]);
+    auto view=glm::mat4_cast(glm::conjugate(q))*glm::translate(glm::mat4(1),-eye);
+    auto projection=glm::perspective(glm::radians(c[6]),size.x/size.y,.01f,20000.f);
+    auto *t=info.transform;
+    auto matrix=glm::translate(glm::mat4(1),glm::vec3(t[0],t[1],t[2]))*
+        glm::mat4_cast(glm::quat(glm::radians(glm::vec3(t[3],t[4],t[5]))))*
+        glm::scale(glm::mat4(1),glm::vec3(t[6],t[7],t[8]));
+    const ImGuizmo::OPERATION operations[]={ImGuizmo::TRANSLATE,ImGuizmo::ROTATE,ImGuizmo::SCALE};
+    int op=f->scene_gizmo_operation;
+    float step=op==0?.5f:op==1?15.f:.1f; float snap[]={step,step,step};
+    ImGuizmo::Enable(true); ImGuizmo::SetOrthographic(false); ImGuizmo::SetDrawlist();
+    ImGuizmo::SetRect(origin.x,origin.y,size.x,size.y);
+    bool changed=ImGuizmo::Manipulate(glm::value_ptr(view),glm::value_ptr(projection),operations[op],
+        f->scene_gizmo_world && op!=2?ImGuizmo::WORLD:ImGuizmo::LOCAL,glm::value_ptr(matrix),nullptr,
+        f->scene_gizmo_snap || io.KeyCtrl?snap:nullptr);
+    // The no-argument overload deliberately reports LAST frame's hover.
+    bool using_gizmo=ImGuizmo::IsUsing(),over=ImGuizmo::IsOver(operations[op]);
+    if (using_gizmo && !f->scene_transforming) {
+        auto r=jfx_desktop_frontend_edit(f,"3d.transform_begin",uint32_t(f->scene_object),0,0,0,"");
+        editor_result(f,r); f->scene_transforming=r==JFX_SUCCESS;
+    }
+    if (changed && f->scene_transforming) {
+        glm::vec3 scale(glm::length(glm::vec3(matrix[0])),glm::length(glm::vec3(matrix[1])),glm::length(glm::vec3(matrix[2])));
+        glm::mat3 rotation(matrix); for (int i=0;i<3;++i) rotation[i]/=std::max(scale[i],.001f);
+        auto angles=glm::degrees(glm::eulerAngles(glm::normalize(glm::quat_cast(rotation))));
+        // Preserve untouched channels (and multi-turn Euler values).
+        float next[9]; std::copy(t,t+9,next);
+        if (op==0) for (int i=0;i<3;++i) next[i]=matrix[3][i];
+        if (op==1) for (int i=0;i<3;++i) next[3+i]=angles[i];
+        if (op==2) for (int i=0;i<3;++i) next[6+i]=std::max(scale[i],.001f);
+        char text[256]; std::snprintf(text,sizeof(text),"%.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g",
+            double(next[0]),double(next[1]),double(next[2]),double(next[3]),double(next[4]),double(next[5]),double(next[6]),double(next[7]),double(next[8]));
+        editor_result(f,jfx_desktop_frontend_edit(f,"3d.transform_set",uint32_t(f->scene_object),0,0,0,text));
+    }
+    if (f->scene_transforming && !io.MouseDown[0]) {
+        editor_result(f,jfx_desktop_frontend_edit(f,"3d.transform_end",0,0,0,0,"")); f->scene_transforming=false;
+    }
+    return using_gizmo || over;
+}
 void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     auto command=[&](const char *op,double value=0,const char *text="") {
         auto r=jfx_desktop_frontend_edit(f,op,0,0,0,value,text); editor_result(f,r); return r==JFX_SUCCESS;
     };
+    ImGui::BeginDisabled(f->scene_transforming || f->scene_navigation);
+    ImGui::SetNextItemWidth(110); ImGui::Combo("Gizmo",&f->scene_gizmo_operation,"Move\0Rotate\0Scale\0");
+    ImGui::SameLine(); ImGui::Checkbox("World axes",&f->scene_gizmo_world);
+    ImGui::SameLine(); ImGui::Checkbox("Snap (Ctrl)",&f->scene_gizmo_snap);
+    ImGui::EndDisabled();
     auto &io=ImGui::GetIO(); auto available=ImGui::GetContentRegionAvail();
     float width=std::max(120.f,available.x),height=std::max(120.f,std::min(width*9/16,available.y-50));
     ImVec2 origin=ImGui::GetCursorScreenPos(),size(width,height);
@@ -116,18 +186,17 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
      * main fix for slow/jagged gimbal drags: the CPU rasterizer does 4x
      * supersampling, so halving each dimension quarters the work per event. */
     uint32_t rw=want_w,rh=want_h;
-    if (jfx_osg_preview_size(f->scene_navigation?1:0,want_w,want_h,&rw,&rh)!=JFX_SUCCESS) { rw=want_w; rh=want_h; }
+    if (jfx_osg_preview_size(f->scene_navigation || f->scene_transforming || f->playing?1:0,want_w,want_h,&rw,&rh)!=JFX_SUCCESS) { rw=want_w; rh=want_h; }
     if (f->scene_width!=rw || f->scene_height!=rh) {
         f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true; ++f->scene_revision;
     }
     modeling3d_preview(f,scene);
-    ImGui::InvisibleButton("##3D navigation",size,ImGuiButtonFlags_MouseButtonLeft|ImGuiButtonFlags_MouseButtonRight|ImGuiButtonFlags_MouseButtonMiddle);
     auto *draw=ImGui::GetWindowDrawList(); ImVec2 end(origin.x+width,origin.y+height);
     draw->AddRectFilled(origin,end,IM_COL32(22,26,34,255));
     if (f->window && f->scene_display) {
         const auto *frame=f->scene_display;
-        auto texture=jfx_desktop_window_upload_rgba8(f->window,frame->width,frame->height,frame->pixels.data());
-        if (texture) draw->AddImage((ImTextureID)(intptr_t)texture,origin,end);
+        if (!f->scene_texture) f->scene_texture=jfx_desktop_window_upload_rgba8(f->window,frame->width,frame->height,frame->pixels.data());
+        if (f->scene_texture) draw->AddImage((ImTextureID)(intptr_t)f->scene_texture,origin,end);
     }
     float xyzw[4]; jfx_scene3d_camera_quaternion(scene,xyzw); glm::quat q(xyzw[3],xyzw[0],xyzw[1],xyzw[2]);
     glm::quat view=glm::conjugate(q); ImVec2 center(end.x-65,origin.y+65);
@@ -163,7 +232,13 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
             previous=point;
         }
     }
+    draw->PushClipRect(origin,end,true);
+    bool gizmo=modeling3d_transform_gizmo(f,scene,origin,size);
+    draw->PopClipRect();
+    if (gizmo || f->scene_transforming) ImGui::Dummy(size);
+    else ImGui::InvisibleButton("##3D navigation",size,ImGuiButtonFlags_MouseButtonLeft|ImGuiButtonFlags_MouseButtonRight|ImGuiButtonFlags_MouseButtonMiddle);
     bool hovered=ImGui::IsItemHovered(),active=ImGui::IsItemActive();
+    if (gizmo || f->scene_transforming) return;
     bool sculpt_mode=f->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D && f->scene_mode==3;
     if (sculpt_mode && hovered && hit<0) {
         float camera[7]; jfx_scene3d_camera(scene,camera);
@@ -222,6 +297,10 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         }
     };
     auto &io=ImGui::GetIO();
+    if (f->scene_transforming && (ImGui::IsKeyPressed(ImGuiKey_Escape) || !io.MouseDown[0])) {
+        command(ImGui::IsKeyPressed(ImGuiKey_Escape)?"3d.transform_cancel":"3d.transform_end");
+        f->scene_transforming=false; ImGuizmo::Enable(false);
+    }
     if (f->scene_sculpting && (ImGui::IsKeyPressed(ImGuiKey_Escape) || !io.MouseDown[0])) {
         command(ImGui::IsKeyPressed(ImGuiKey_Escape)?"3d.sculpt_cancel":"3d.sculpt_end"); f->scene_sculpting=false;
     }
@@ -247,6 +326,9 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         }
         if (previous!=f->scene_mode && f->scene_navigation) {
             command("3d.navigation_end"); f->scene_navigation=false;
+        }
+        if (previous!=f->scene_mode && f->scene_transforming) {
+            command("3d.transform_end"); f->scene_transforming=false; ImGuizmo::Enable(false);
         }
         if (f->scene_mode==2 && !f->scene_render_initialized) {
             f->scene_render_initialized=true;

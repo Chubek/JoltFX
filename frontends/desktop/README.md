@@ -15,7 +15,7 @@ for quality, build options and the 4,096-visible-triangle limit.
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Creative Programming**, **Game Engine**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Creative Programming**, **GameDev**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 undo/redo and Export are shared across tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
@@ -109,10 +109,18 @@ not a silent OpenGL fallback. Tests `novogfx_display_conformance` (fake DRM) and
 `novogfx_desktop_pixels` (real software pixels/full editor) require no display
 takeover; physical output must additionally be checked on a dedicated VT.
 
-## Game Engine / Ingagi
+## GameDev / Ingagi
 
-Build with `JFX_INGAGI=ON` to enable Ingagi source execution in the **Game Engine**
-workspace. Its code pad opens/saves `.ing` files (under 16 KiB, import-free), loads
+Build with `JFX_INGAGI=ON` to enable Ingagi source execution in the **GameDev**
+workspace (formerly Game Engine). Desktop 1.14 adds **Rooms**, **Objects**,
+**Cliches**, **Ingagi**, **Animation**, **Resources** and **Debug** sub-tabs.
+Rooms and Cliches are editable Ingagi factories; Cliche variants call a base
+factory and override its root pose/material. Objects use the shared scene tree,
+inspector and transform handles. Play/Pause/Step drives configurable `ready` and
+`step` events through the budgeted VM. The Ingagi view offers a confirmed starter
+replacement with ECS, a room, a Hero Cliche and keyboard movement.
+
+Its code pad opens/saves `.ing` files (under 16 KiB, import-free), loads
 or reloads a per-frontend VM, and calls a zero-argument entry. **Run source** loads
 then calls. Results and compilation/runtime diagnostics appear in the workspace;
 `engine_time()` reads the shared transport clock. Calls use 100,000 instructions
@@ -122,8 +130,11 @@ printing and cannot return aggregates. The workspace remains visible in optional
 off builds, with execution availability reported explicitly. Validated
 `engine_scene_*` callbacks create/remove objects, read/write transform channels,
 set keys and sample the shared 3D scene. These edits use modeling history and
-the Game Engine tab previews/scrubs the same scene. See `ingagi/README.md` for the
-callback table and index lifetime rules, and `ingagi_tab` for integration checks.
+the GameDev tab previews/scrubs the same scene. Save `.ing` source and `.jfx`
+scene snapshots separately in Resources. Instances are independent: automatic
+linked-instance updates/Apply/Revert, tilemaps and packaged-game export are not
+implemented. See [GameDev workflow](../../docs/gamedev.md) for callbacks, input,
+limits and persistence, and `ingagi_tab`, `game_authoring`, `game_ui_tests` for checks.
 
 ## Creative Programming
 
@@ -371,3 +382,21 @@ points per stroke; loaded files are additionally limited to one million points.
 `animation_drawing` covers exposure/history/persistence and malformed files;
 `animation_ui_tests` drives actual ImGui mouse/keyboard input and checks vector
 geometry, movement, cancellation, undo/redo, cel clearing and tab retention.
+## Viewport transform handles
+
+The desktop uses vendored **ImGuizmo** for selected-object handles:
+
+- **3D:** choose Move, Rotate or Scale in the viewport (W/E/R while hovered). Toggle World axes for
+  translation/rotation (scale stays local). Ctrl or Snap constrains movement to
+  0.5 units, rotation to 15 degrees, or scale to 0.1 steps. Release commits one
+  undo step; Escape restores the original transform. These edit base transforms,
+  so handles are hidden for keyed/scripted objects, playback and Sculpting.
+- **2D Animation:** select a shape with Select / move, then choose Move gizmo or
+  Scale gizmo in Drawing tools. Ctrl snaps to 10 stage units / 0.1 scale steps.
+  Release commits once; Escape cancels. Rectangle/ellipse rotation is deliberately
+  omitted because those shapes are stored axis-aligned.
+
+Navigation, object dragging and playback use half-resolution raster inspection
+instead of production ray tracing; idle preview restores the selected renderer
+and full resolution. PNG/video exports retain their original quality settings.
+Unchanged 2D/3D preview frames reuse their uploaded texture.

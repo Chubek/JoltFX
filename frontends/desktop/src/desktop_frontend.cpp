@@ -33,8 +33,10 @@
 #include "jfx/jfx_scheduler.h"
 #include <atomic>
 #include "animation_drawing.h"
+#include "game_authoring.h"
 #include <new>
 #include "imgui.h"
+#include "ImGuizmo.h"
 #include "joltscript/effects.h"
 #include "joltscript/compiler.h"
 #include "joltscript/vm.h"
@@ -55,6 +57,10 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+void jfx_desktop_gizmo_shutdown();
 
 namespace {
 
@@ -197,7 +203,7 @@ struct ScenePreviewJob {
     uint64_t revision=0;
     uint32_t width=0,height=0;
     jfx_result_t result=JFX_ERROR_BACKEND_FAILURE;
-    bool fallback=false;
+    bool fallback=false,interactive=false;
     ~ScenePreviewJob() { jfx_scene3d_destroy(scene); }
 };
 struct SceneExportStep {
@@ -216,9 +222,9 @@ static void scene_preview_render_task(void *userdata) {
         job->result=jfx_scene3d_write_png_ex(job->scene,job->seconds,job->width,job->height,&job->options,job->path.c_str());
         job->done.store(true,std::memory_order_release); return;
     }
-    if (job->shading!=JFX_SCENE3D_SHADING_PHONG)
+    if (job->interactive || job->shading!=JFX_SCENE3D_SHADING_PHONG)
         job->result=jfx_scene3d_render_shaded(job->scene,job->seconds,job->width,job->height,
-            job->shading,job->pixels.data(),job->pixels.size());
+            job->interactive && job->shading==JFX_SCENE3D_SHADING_PHONG?JFX_SCENE3D_SHADING_GOURAUD:job->shading,job->pixels.data(),job->pixels.size());
     else job->result=jfx_scene3d_render_ex(job->scene,job->seconds,job->width,job->height,
         &job->options,job->pixels.data(),job->pixels.size());
     if (job->result==JFX_ERROR_BACKEND_FAILURE || job->result==JFX_ERROR_NOT_IMPLEMENTED) {
@@ -247,6 +253,12 @@ struct jfx_desktop_frontend {
     int scene_clone_mode,scene_clone_count;
     float scene_clone_spacing;
     bool scene_navigation;
+    bool scene_transforming,scene_gizmo_world,scene_gizmo_snap;
+    int scene_gizmo_operation;
+    void *scene_texture;
+    bool drawing_gizmo;
+    int drawing_gizmo_operation;
+    glm::mat4 drawing_gizmo_matrix,drawing_gizmo_start;
     jfx_scene3d_render_options_t scene_render_options;
     uint64_t scene_revision;
     ScenePreviewJob *scene_preview_job;
@@ -352,6 +364,16 @@ struct jfx_desktop_frontend {
     jfx_result_t creative_status;
 
     uint64_t game_session;
+    int game_mode;
+    bool game_running, game_started, game_source_dirty, game_loaded, game_call_active;
+    bool game_input[6], game_pressed[6];
+    double game_clock, game_delta;
+    uint64_t game_ticks;
+    char game_ready[64], game_step[64], game_cliche[64], game_room[64];
+    char game_source_path[512], game_scene_path[512];
+    char game_room_name[48];
+    float game_spawn_offset[3], game_spawn_position[3];
+    game_authoring::Draft game_draft;
     char game_source[16384];
     char game_error[4096];
     char game_output[128];
@@ -444,6 +466,7 @@ static void desktop_export_advance(jfx_desktop_frontend_t *f) {
 }
 namespace {
 void finish_grading(jfx_desktop_frontend_t *f); void finish_audio(jfx_desktop_frontend_t *f);
+void game_stop(jfx_desktop_frontend_t *f);
 jfx_result_t native_sync(jfx_desktop_frontend_t *f,bool finish);
 void close_inspector(jfx_desktop_frontend_t *f);
 void recording_poll(jfx_desktop_frontend_t *f);
@@ -522,9 +545,14 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_modeling3d = true;
     frontend->show_creative = true;
     frontend->show_game = true;
-    std::snprintf(frontend->game_source, sizeof(frontend->game_source),
-        "// Ingagi game logic. engine_time() reads the shared transport clock.\n"
-        "fn main() { return 42; }\n");
+    game_authoring::defaults(frontend->game_draft);
+    frontend->game_source_dirty = true;
+    std::snprintf(frontend->game_ready, sizeof(frontend->game_ready), "ready");
+    std::snprintf(frontend->game_step, sizeof(frontend->game_step), "step");
+    std::snprintf(frontend->game_source_path, sizeof(frontend->game_source_path), "game.ing");
+    std::snprintf(frontend->game_scene_path, sizeof(frontend->game_scene_path), "room.jfx");
+    std::snprintf(frontend->game_room_name, sizeof(frontend->game_room_name), "Level");
+    std::snprintf(frontend->game_source, sizeof(frontend->game_source), "%s", game_authoring::starter);
     std::snprintf(frontend->game_entry, sizeof(frontend->game_entry), "main");
     std::snprintf(frontend->drive_entry, sizeof(frontend->drive_entry), "drive");
     std::snprintf(frontend->iap_path, sizeof(frontend->iap_path), "animation.iap");
@@ -707,6 +735,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
     jfx_desktop_window_destroy(frontend->window);
     if (frontend->imgui) {
         ImGui::SetCurrentContext(frontend->imgui);
+        jfx_desktop_gizmo_shutdown();
         ImGui::DestroyContext(frontend->imgui);
     }
     tilly_free((tilly_allocator_t *)tilly_default_allocator(), frontend->preview_input);
@@ -730,6 +759,12 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     std::memcpy(owned_path, path, std::strlen(path) + 1);
     path = owned_path;
     if (frontend->recording) return JFX_ERROR_BUSY;
+    game_stop(frontend);
+    if (frontend->scene_transforming) {
+        auto r=jfx_desktop_frontend_edit(frontend,"3d.transform_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        frontend->scene_transforming=false;
+    }
     if (frontend->scene_sculpting) {
         auto r=jfx_desktop_frontend_edit(frontend,"3d.sculpt_end",0,0,0,0,"");
         if (r!=JFX_SUCCESS) return r;
@@ -751,6 +786,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
         if (result != JFX_SUCCESS) return result;
         std::snprintf(frontend->project_path, sizeof(frontend->project_path), "%s", path);
         std::snprintf(frontend->project_input, sizeof(frontend->project_input), "%s", path);
+        std::snprintf(frontend->game_source_path, sizeof(frontend->game_source_path), "%s", path);
         std::snprintf(frontend->status, sizeof(frontend->status), "opened %.152s", path);
         return JFX_SUCCESS;
     }
@@ -939,7 +975,7 @@ namespace {
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
     "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation",
-    "Creative Programming","Game Engine"};
+    "Creative Programming","GameDev"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
@@ -1049,14 +1085,19 @@ jfx_result_t creative_compile(jfx_desktop_frontend_t *f, jolt_program_t **out_pr
 #include "creative_panel.inc"
 
 void preview_panel(jfx_desktop_frontend_t *frontend) {
+    // The host has one shared preview texture; another workspace may overwrite it.
+    frontend->scene_texture=nullptr;
     ImGui::TextUnformatted("Preview");
     ImGui::Text("Backend: %s",jfx_engine_backend_name(frontend->engine));
     if (frontend->preview_dirty || frontend->playing) {
         if (jfx_desktop_frontend_render_rgba8(frontend,kPreviewWidth,kPreviewHeight,
-            frontend->preview_rgba,(size_t)kPreviewWidth*kPreviewHeight*4u)==JFX_SUCCESS) frontend->preview_dirty=false;
+            frontend->preview_rgba,(size_t)kPreviewWidth*kPreviewHeight*4u)==JFX_SUCCESS) {
+            frontend->preview_dirty=false; frontend->preview_texture=nullptr;
+        }
     }
     if (frontend->window) {
-        void *texture=jfx_desktop_window_upload_rgba8(frontend->window,kPreviewWidth,kPreviewHeight,frontend->preview_rgba);
+        if (!frontend->preview_texture) frontend->preview_texture=jfx_desktop_window_upload_rgba8(frontend->window,kPreviewWidth,kPreviewHeight,frontend->preview_rgba);
+        void *texture=frontend->preview_texture;
         if (texture) {
             frontend->preview_texture=texture;
             float width=std::fmin((float)kPreviewWidth,ImGui::GetContentRegionAvail().x);
@@ -1176,7 +1217,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("2D Animation", nullptr, &frontend->show_animation);
             ImGui::MenuItem("3D Modeling & Animation", nullptr, &frontend->show_modeling3d);
             ImGui::MenuItem("Creative Programming", nullptr, &frontend->show_creative);
-            ImGui::MenuItem("Game Engine", nullptr, &frontend->show_game);
+            ImGui::MenuItem("GameDev", nullptr, &frontend->show_game);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -1277,7 +1318,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         ImGui::SameLine();
         if (ImGui::Button("Cancel export")) desktop_export_cancel(frontend);
     } else ImGui::TextDisabled("%s",frontend->status);
-    } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":"Vector animation",frontend->status);
+    } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":frontend->workspace==JFX_DESKTOP_WORKSPACE_GAME?"GameDev / Ingagi":"Vector animation",frontend->status);
     ImGui::Separator();
     if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int i=0;i<JFX_DESKTOP_WORKSPACE_COUNT;++i) {
@@ -1366,6 +1407,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
     }
 
     if (window_open) {
+        ImGuizmo::SetImGuiContext(ImGui::GetCurrentContext());
+        ImGuizmo::BeginFrame();
         jfx_vst3_pump();
         if (frontend->native_dirty || frontend->native_edit) {
             auto r=native_sync(frontend,false); if (r!=JFX_SUCCESS) editor_result(frontend,r);
@@ -1401,6 +1444,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             frontend->duration_seconds = (double)jfx_timeline_duration(jfx_editor_timeline(frontend->editor)) / jfx_timeline_fps(jfx_editor_timeline(frontend->editor));
         else if (frontend->editing && jfx_editor_kind(frontend->editor)!=JFX_PROJECT_KIND_SCENE3D) frontend->duration_seconds=JFX_DESKTOP_DEFAULT_DURATION;
         compose_ui(frontend);
+        game_tick(frontend);
         desktop_export_advance(frontend);
         if (!frontend->playing || !frontend->editing || jfx_editor_kind(frontend->editor)!=JFX_PROJECT_KIND_SEQUENCE) reset_audio(frontend);
         else if (frontend->window) {
@@ -1557,6 +1601,10 @@ static jfx_result_t edited(jfx_desktop_frontend_t *f, jfx_result_t r) {
 extern "C" jfx_result_t jfx_desktop_frontend_edit(jfx_desktop_frontend_t *f,const char *op,uint32_t a,uint32_t b,uint32_t c,double v,const char *text) {
     if (!f || !op) return JFX_ERROR_INVALID_ARGUMENT;
     if (f->recording) return JFX_ERROR_BUSY;
+    if (!f->game_call_active && (!std::strncmp(op, "3d.", 3) || !std::strcmp(op, "undo") || !std::strcmp(op, "redo"))) game_stop(f);
+    if (f->scene_transforming && std::strcmp(op,"3d.transform_set") && std::strcmp(op,"3d.transform_end") && std::strcmp(op,"3d.transform_cancel")) {
+        auto r=jfx_editor_command(f->editor,"3d.transform_end",0,0,0,0,""); if (r!=JFX_SUCCESS) return r; f->scene_transforming=false;
+    }
     if (f->scene_sculpting && std::strcmp(op,"3d.sculpt") && std::strcmp(op,"3d.sculpt_end") && std::strcmp(op,"3d.sculpt_cancel")) {
         auto r=jfx_editor_command(f->editor,"3d.sculpt_end",0,0,0,0,""); if (r!=JFX_SUCCESS) return r; f->scene_sculpting=false;
     }
@@ -1645,6 +1693,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_game_set_source(jfx_desktop_fronten
     if (!f || !source || !source[0] || std::strlen(source) >= sizeof(f->game_source))
         return JFX_ERROR_INVALID_ARGUMENT;
     std::memmove(f->game_source, source, std::strlen(source) + 1);
+    game_stop(f);
+    f->game_source_dirty = true;
     return JFX_SUCCESS;
 }
 
@@ -1674,6 +1724,48 @@ static bool game_scene_number(const ingagi_value &value, double &number) {
     else if (value.kind == INGAGI_FLOAT) number = value.real;
     else return false;
     return std::isfinite(number);
+}
+
+static ingagi_status game_delta_callback(void *userdata, const ingagi_value *, uint32_t argc,
+    ingagi_value *result, char *, size_t) {
+    if (!userdata || !result || argc) return INGAGI_INVALID_ARGUMENT;
+    *result = {}; result->kind = INGAGI_FLOAT;
+    result->real = static_cast<jfx_desktop_frontend_t *>(userdata)->game_delta;
+    return INGAGI_OK;
+}
+static ingagi_status game_clock_callback(void *userdata, const ingagi_value *, uint32_t argc,
+    ingagi_value *result, char *, size_t) {
+    if (!userdata || !result || argc) return INGAGI_INVALID_ARGUMENT;
+    *result = {}; result->kind = INGAGI_FLOAT;
+    result->real = static_cast<jfx_desktop_frontend_t *>(userdata)->game_clock;
+    return INGAGI_OK;
+}
+static ingagi_status game_input_callback(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || argc != 1) return INGAGI_INVALID_ARGUMENT;
+    uint32_t action;
+    if (!game_scene_index(args[0], action) || action >= 6)
+        return game_scene_error(error, capacity, "engine_input/pressed expects an action from 0 to 5");
+    *result = {}; result->kind = INGAGI_BOOL;
+    result->integer = static_cast<jfx_desktop_frontend_t *>(userdata)->game_input[action] ? 1 : 0;
+    return INGAGI_OK;
+}
+static ingagi_status game_pressed_callback(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    auto status = game_input_callback(userdata, args, argc, result, error, capacity);
+    if (status == INGAGI_OK)
+        result->integer = static_cast<jfx_desktop_frontend_t *>(userdata)->game_pressed[args[0].integer] ? 1 : 0;
+    return status;
+}
+static ingagi_status game_spawn_callback(void *userdata, const ingagi_value *args, uint32_t argc,
+    ingagi_value *result, char *error, size_t capacity) {
+    if (!userdata || !result || !args || argc != 1) return INGAGI_INVALID_ARGUMENT;
+    uint32_t channel;
+    if (!game_scene_index(args[0], channel) || channel >= 3)
+        return game_scene_error(error, capacity, "engine_spawn_offset expects an XYZ channel from 0 to 2");
+    *result = {}; result->kind = INGAGI_FLOAT;
+    result->real = double(static_cast<jfx_desktop_frontend_t *>(userdata)->game_spawn_offset[channel]);
+    return INGAGI_OK;
 }
 
 static ingagi_status game_scene_count(void *userdata, const ingagi_value *, uint32_t argc,
@@ -1837,6 +1929,7 @@ static ingagi_status game_scene_color(void *userdata, const ingagi_value *args, 
 
 extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    game_stop(f);
 #ifdef JFX_DESKTOP_HAVE_INGAGI
     if (!f->game_session) {
         if (ingagi_abi_version() != INGAGI_ABI_VERSION) return JFX_ERROR_VERSION_MISMATCH;
@@ -1844,6 +1937,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f
         if (status != INGAGI_OK) return JFX_ERROR_PLUGIN_FAILURE;
         const ingagi_function functions[] = {
             {"engine_time", 11, 0, 0, game_time_callback, f},
+            {"engine_delta", 12, 0, 0, game_delta_callback, f},
+            {"engine_game_time", 16, 0, 0, game_clock_callback, f},
+            {"engine_input", 12, 1, 0, game_input_callback, f},
+            {"engine_pressed", 14, 1, 0, game_pressed_callback, f},
+            {"engine_spawn_offset", 19, 1, 0, game_spawn_callback, f},
             {"engine_scene_count", 18, 0, 0, game_scene_count, f},
             {"engine_scene_add", 16, 1, 0, game_scene_add, f},
             {"engine_scene_remove", 19, 1, 0, game_scene_remove, f},
@@ -1864,10 +1962,14 @@ extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f
             return JFX_ERROR_PLUGIN_FAILURE;
         }
     }
+    f->game_call_active = true;
     auto status = ingagi_load(f->game_session, f->game_source, std::strlen(f->game_source),
         f->game_error, sizeof(f->game_error));
+    f->game_call_active = false;
     if (status != INGAGI_OK) return status == INGAGI_BUSY ? JFX_ERROR_BUSY : JFX_ERROR_PLUGIN_FAILURE;
     f->game_output[0] = 0;
+    f->game_loaded = true;
+    f->game_source_dirty = false;
     return JFX_SUCCESS;
 #else
     std::snprintf(f->game_error, sizeof(f->game_error), "Ingagi is unavailable in this build (JFX_INGAGI=OFF)");
@@ -1876,12 +1978,21 @@ extern "C" jfx_result_t jfx_desktop_frontend_game_load(jfx_desktop_frontend_t *f
 }
 
 extern "C" jfx_result_t jfx_desktop_frontend_game_call(jfx_desktop_frontend_t *f, const char *entry) {
-    if (!f || !entry || !entry[0] || std::strlen(entry) > 255) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!entry || !entry[0] || std::strlen(entry) > 255) {
+        std::snprintf(f->game_error, sizeof(f->game_error), "Choose a nonempty entry name (at most 255 bytes).");
+        return JFX_ERROR_INVALID_ARGUMENT;
+    }
 #ifdef JFX_DESKTOP_HAVE_INGAGI
-    if (!f->game_session) return JFX_ERROR_NOT_INITIALIZED;
+    if (!f->game_session) {
+        std::snprintf(f->game_error, sizeof(f->game_error), "Load source before calling an entry.");
+        return JFX_ERROR_NOT_INITIALIZED;
+    }
     ingagi_value result{};
+    f->game_call_active = true;
     auto status = ingagi_call(f->game_session, entry, std::strlen(entry), nullptr, 0, &result,
         f->game_error, sizeof(f->game_error));
+    f->game_call_active = false;
     if (status != INGAGI_OK) return status == INGAGI_BUSY ? JFX_ERROR_BUSY : JFX_ERROR_PLUGIN_FAILURE;
     switch (result.kind) {
     case INGAGI_NIL: std::snprintf(f->game_output, sizeof(f->game_output), "nil"); break;
@@ -1937,8 +2048,16 @@ extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
     if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
+    f->scene_texture=nullptr; f->preview_texture=nullptr;
+    ImGuizmo::Enable(false);
+    if (f->workspace != workspace) game_stop(f);
     finish_grading(f);
     finish_audio(f);
+    if (f->scene_transforming) {
+        auto r=jfx_editor_command(f->editor,"3d.transform_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        f->scene_transforming=false;
+    }
     if (f->scene_sculpting) {
         auto r=jfx_editor_command(f->editor,"3d.sculpt_end",0,0,0,0,"");
         if (r!=JFX_SUCCESS) return r;
@@ -1949,14 +2068,14 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
         if (r!=JFX_SUCCESS) return r;
         f->scene_navigation=false;
     }
-    if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; }
+    if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; f->drawing_gizmo=false; }
     if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;
     ++f->scene_revision;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
     f->creative_dirty = true;
     f->nle_drag=f->node_drag=0; f->node_wiring=false;
-    if (workspace==JFX_DESKTOP_WORKSPACE_MODELING3D) {
+    if (workspace==JFX_DESKTOP_WORKSPACE_MODELING3D || workspace==JFX_DESKTOP_WORKSPACE_GAME) {
         jfx_editor_set_kind(f->editor,JFX_PROJECT_KIND_SCENE3D);
         f->editing=true; f->preview_dirty=true; f->node_preview_selected=false;
         f->duration_seconds=(double)jfx_scene3d_frames(jfx_editor_scene3d(f->editor))/jfx_scene3d_fps(jfx_editor_scene3d(f->editor));
@@ -1995,6 +2114,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->scene_transforming) {
+        auto r=jfx_desktop_frontend_edit(f,"3d.transform_end",0,0,0,0,"");
+        if (r!=JFX_SUCCESS) return r;
+        f->scene_transforming=false;
+    }
     if (f->scene_sculpting) {
         auto r=jfx_desktop_frontend_edit(f,"3d.sculpt_end",0,0,0,0,"");
         if (r!=JFX_SUCCESS) return r;
@@ -2030,6 +2154,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t
 extern "C" jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *f) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
     if (f->recording) return JFX_ERROR_BUSY;
+    game_stop(f);
     auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
     close_inspector(f);
     finish_grading(f);
