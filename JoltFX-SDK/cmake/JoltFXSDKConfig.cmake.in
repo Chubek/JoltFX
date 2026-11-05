@@ -1,7 +1,7 @@
 @PACKAGE_INIT@
 include("${CMAKE_CURRENT_LIST_DIR}/JoltFXSDKTargets.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/JoltFXSDKModules.cmake")
-foreach(component IN ITEMS headers loader @sdk_facets@)
+foreach(component IN ITEMS headers loader openfx @sdk_facets@)
     set(JoltFXSDK_${component}_FOUND TRUE)
 endforeach()
 check_required_components(JoltFXSDK)

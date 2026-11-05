@@ -1,5 +1,25 @@
 # Progress
 
+## SDK OpenFX continuation (2026-11-05)
+
+- Reviewed the previous agent's uncommitted loader inspection and OpenFX draft.
+- Added SDK 1.2 `JoltFXSDK::openfx`: standalone native module enumeration and
+  lazy Load/Describe inspection over canonical vendored OpenFX headers. Includes
+  allocator-owned typed property storage, memory/message suites, copied metadata,
+  rollback/retry, duplicate-binary protection and BUSY callback reentry guards.
+- Kept the full effect-host proposal in an uninstalled design draft. The installed
+  API exposes implemented inspection only; clip/parameter suites and rendering
+  remain the next roadmap milestone. Updated SDK guides and the working roadmap.
+- Tightened the previous loader peek implementation: reject unsupported renderer
+  minor versions and oversized plugin identifiers rather than silently truncating.
+  Added independent native fixtures proving inspection never initializes/renders.
+- Validation: complete SDK install/relocate/detached-source integration script
+  passes, including C11/C++17 facet consumers and existing gain/renderer examples.
+  Both standalone test suites pass under Clang ASAN+UBSan with `-Wall -Wextra
+  -Werror`; OpenFX tests inject failure at every allocation and verify cleanup,
+  retry, metadata lifetime, unsupported features and reentry. `git diff --check`
+  passes. Runtime validation was on Linux; other platform branches were not run.
+
 ## GameDev workspace and Ingagi Cliches (2026-11-02)
 
 - Desktop 1.14 expands the Game Engine tab into GameDev: Rooms, Objects, Cliches,
@@ -2226,3 +2246,15 @@ Follow-on from the plan audit above. Two changes, both additive.
   locate `libosg` without manual environment setup.
 - Verified `osg_viewport`, `modeling3d_shading`, `modeling3d_ui_tests` and
   `modeling3d_viewport_window` pass with OSG enabled.
+
+## 2026-11-05 — SDK roadmap
+
+- Added `JoltFX-SDK/FUTURE_OF_SDK.md`: current SDK state, in-progress work
+  (loader peek APIs, OpenFX facet contract in `openfx/include/joltfx/sdk/openfx.h`),
+  ordered next steps (OpenFX host implementation/build/tests/CLI dogfood,
+  loader dedup with the engine, IAP player, WASM parity, examples, docs) and
+  explicit non-goals.
+- In-tree deltas pending completion: `loader.h` gained
+  `jfx_renderer_module_peek`/`jfx_plugin_module_peek` (implemented in
+  `renderer_loader.c`, tests/docs still to come) and the new OpenFX facet
+  header exists without its `ofx_host.c` implementation or CMake wiring yet.

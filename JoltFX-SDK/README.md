@@ -1,4 +1,4 @@
-# JoltFX SDK 1.1
+# JoltFX SDK 1.2
 
 A C11/C++17 development package over JoltFX's existing public contracts. The SDK
 does not duplicate the engine or expose third-party implementation types.
@@ -6,13 +6,16 @@ does not duplicate the engine or expose third-party implementation types.
 The package covers native plugins/renderers, editing and export, composition and
 3D, audio and animation, runtime services, **Ingagi embedding**, and **Joltscript
 compilation/execution**. See the [complete facet guide](docs/facets.md),
-[Ingagi guide](docs/ingagi.md), and [Joltscript guide](docs/joltscript.md).
+[Ingagi guide](docs/ingagi.md), [Joltscript guide](docs/joltscript.md), and
+[OpenFX inspection guide](docs/openfx.md).
+Planned and in-progress SDK work is tracked in [FUTURE_OF_SDK.md](FUTURE_OF_SDK.md).
 
 | CMake target | Public include | Purpose |
 | --- | --- | --- |
 | `JoltFXSDK::plugins` | `joltfx/sdk/plugins.h` | Image effects, Joltscript kernels, editor actions, events |
 | `JoltFXSDK::renderer` | `joltfx/sdk/renderer.h` | Renderer-module ABI and synchronous host services |
-| `JoltFXSDK::loader` | `joltfx/sdk/loader.h` | Native renderer loading or static attachment |
+| `JoltFXSDK::loader` | `joltfx/sdk/loader.h` | Renderer loading/static attachment; renderer and plugin metadata inspection |
+| `JoltFXSDK::openfx` | `joltfx/sdk/openfx.h` | Native OpenFX module metadata inspection |
 | `JoltFXSDK::backend` | `joltfx/sdk/backend.h` | Existing backend HAL |
 | `JoltFXSDK::frontend` | `joltfx/sdk/frontend.h` | Shared editor and export API |
 | `JoltFXSDK::gui` | `joltfx/sdk/gui.h` | Toolkit-independent descriptors, transactions, viewport helpers |
@@ -28,8 +31,8 @@ compilation/execution**. See the [complete facet guide](docs/facets.md),
 | `JoltFXSDK::joltscript` | `joltfx/sdk/joltscript.h` | Compiler, typed VM, image/audio tasks and pipelines |
 
 `JoltFXSDK::headers` supplies the installed public include directory. Link the
-named facet targets for equivalent build-tree usage. `loader` is a static
-implementation library; the other targets are header-only contracts.
+named facet targets for equivalent build-tree usage. `loader` and `openfx` are
+static implementation libraries; the other targets are header-only contracts.
 
 Header-only targets supply contracts, not engine implementations. Engine API
 consumers additionally link `JoltFX::jfx_core` from the full JoltFX installation.
@@ -62,6 +65,7 @@ this repository, set these paths to canonical headers or an existing installatio
 | `JOLTFX_SDK_EXECUTION_INCLUDE_DIR` | `joltscript/layers/execution/include` | `<prefix>/include` |
 | `JOLTFX_SDK_INGAGI_API_DIR` | `ingagi/native_extension_api` | `<prefix>/include/ingagi` |
 | `JOLTFX_SDK_TILLY_INCLUDE_DIR` | `tilly/include` | `<prefix>/include` |
+| `JOLTFX_SDK_OPENFX_INCLUDE_DIR` | `third_party/openfx/include` | `<prefix>/include/openfx` |
 
 `examples/gain` is a complete standalone image-effect module:
 
@@ -71,9 +75,9 @@ joltfx_sdk_add_plugin(MyEffect effect.c) # exports jfx_plugin_entry
 joltfx_sdk_add_renderer(MyRenderer renderer.cpp) # exports jfx_renderer_entry
 ```
 
-Request new facets with `find_package(JoltFXSDK 1.1 REQUIRED CONFIG COMPONENTS
-ingagi joltscript)`. Required unknown components fail configuration. SDK package
-version 1.1.0 is additive; individual engine/language/module ABI versions are
+Request new facets with `find_package(JoltFXSDK 1.2 REQUIRED CONFIG COMPONENTS
+ingagi joltscript openfx)`. Required unknown components fail configuration. SDK package
+version 1.2.0 is additive; individual engine/language/module ABI versions are
 independent. Existing 1.0 consumers remain supported.
 
 Installed examples live in `share/joltfx/sdk/examples`; guides are under
@@ -99,6 +103,12 @@ are trusted code, **not sandboxed**. Size/version guards permit additive ABI
 evolution. A host must never dispatch its backend callback back to the same
 module. Explicit device errors propagate; availability reports build support,
 not guaranteed GPU-driver operation. Output must remain untouched on error.
+
+`jfx_renderer_module_peek` and `jfx_plugin_module_peek` copy module metadata
+without a host table or engine initialization. They call the native entry point,
+validate its size/version/strings and unload before returning. Output is unchanged
+on failure. These inspect SDK entry points, not legacy `jfx_plugin_init` modules;
+native loading still executes module code. WASM returns `NOT_IMPLEMENTED`.
 
 See repository guide `plugins/JoltRenderer/README.md` for the in-tree renderer
 implementation and CPU/GPU limits.

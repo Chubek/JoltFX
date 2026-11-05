@@ -1,6 +1,6 @@
 # SDK facets and capability inventory
 
-SDK 1.1 packages the existing public contracts. All 28 headers under
+SDK 1.2 packages the existing public contracts. All 28 headers under
 `src/include/jfx` are installed and represented by the adapters below. Names in
 the header column are relative to `include/jfx` unless explicitly qualified.
 Include adapters as `<joltfx/sdk/NAME.h>` and link `JoltFXSDK::NAME`.
@@ -10,7 +10,8 @@ Include adapters as `<joltfx/sdk/NAME.h>` and link `JoltFXSDK::NAME`.
 | `plugins` | `jfx_plugin_sdk.h`, `jfx_plugin.h` | Host-service native RGBA effects, bounded Joltscript image effects, editor actions, owned events. Other registration capabilities may return NOT_IMPLEMENTED. |
 | `module` | `jfx_plugin.h`, `jfx_plugin_sdk.h` | Plugin definitions, load/unload, static attachment and legacy lifecycle. Native modules execute trusted native code. |
 | `renderer` | SDK `renderer.h` | Separate renderer ABI 1.0; opaque scene snapshots, allocator/backend services, synchronous rendering. |
-| `loader` | SDK `loader.h` | Native renderer loading and static attachment; one serialized owner thread per handle; BUSY on recursive render/close. |
+| `loader` | SDK `loader.h` | Native renderer loading/static attachment and engine-free renderer/plugin metadata peek; one serialized owner thread per handle; BUSY on recursive render/close. |
+| `openfx` | SDK `openfx.h`; canonical `openfx/*.h` | Standalone native OpenFX Load/Describe inspection with caller allocators. No effect instances or rendering yet; see [OpenFX](openfx.md). |
 | `backend` | `backend_interface.h` | Backend HAL and bytecode dispatch contract. Actual support depends on the linked engine build and selected execution profile. |
 | `frontend` | `jfx_editor.h`, `jfx_export.h` | Shared commands/history, documents, previews, snapshot exports, cancellation and progress. This is the shared engine-facing API. |
 | `gui` | `jfx_editor.h`, `jfx_color.h`, `jfx_osg_viewport.h` | Transactional controls/color descriptors and trackball/culling helpers. Toolkit widgets belong to frontend implementations. |
@@ -36,7 +37,7 @@ included individually when linking the Glue implementation.
   `joltfx_sdk_add_renderer` helpers and host-service tables. These modules need
   no direct engine linkage. Renderer and image-effect entry points are distinct.
 - **Language hosts:** supply the runtime described in each language guide. The
-  SDK header package itself builds only the renderer loader archive.
+  SDK package builds the renderer loader and OpenFX inspector archives.
 - Initialize size/version fields as required by the individual headers. Use each
   subsystem's status type (`jfx_result_t`, `jolt_status_t`, `ingagi_status`).
 - Borrowed editor documents must be reacquired after load/new/undo/redo. Keep

@@ -10,8 +10,9 @@ function(run)
     endif()
 endfunction()
 run("${CMAKE_COMMAND}" -S "${SOURCE_DIR}/JoltFX-SDK" -B "${TEST_DIR}/sdk"
-    "-DCMAKE_INSTALL_PREFIX=${TEST_DIR}/original")
+    "-DCMAKE_INSTALL_PREFIX=${TEST_DIR}/original" -DJOLTFX_SDK_BUILD_TESTS=ON)
 run("${CMAKE_COMMAND}" --build "${TEST_DIR}/sdk")
+run("${CMAKE_CTEST_COMMAND}" --test-dir "${TEST_DIR}/sdk" --output-on-failure)
 run("${CMAKE_COMMAND}" --install "${TEST_DIR}/sdk")
 # Reinstall on repeated runs, then relocate before configuring consumers.
 file(COPY "${TEST_DIR}/original/" DESTINATION "${TEST_DIR}/relocated")
@@ -30,11 +31,13 @@ file(WRITE "${TEST_DIR}/consumer/main.c" "
 #include <joltfx/sdk/gui.h>
 #include <joltfx/sdk/libraries.h>
 #include <joltfx/sdk/loader.h>
+#include <joltfx/sdk/openfx.h>
+#include <ofxImageEffect.h>
 #include <joltfx/sdk/module.h>
 #include <joltfx/sdk/plugins.h>
 #include <joltfx/sdk/renderer.h>
 #include <joltfx/sdk/tools.h>
-int main(void) { return (int)jfx_renderer_module_close(0); }
+int main(void) { return (int)jfx_renderer_module_close(0) + (int)jfx_ofx_host_close(0); }
 ")
 file(WRITE "${TEST_DIR}/consumer/CMakeLists.txt" [=[
 cmake_minimum_required(VERSION 3.20)
@@ -42,12 +45,12 @@ project(SDKConsumer LANGUAGES C CXX)
 if(SDK_SOURCE_DIR)
     add_subdirectory("${SDK_SOURCE_DIR}" sdk)
 else()
-    find_package(JoltFXSDK 1.1 REQUIRED CONFIG COMPONENTS
+    find_package(JoltFXSDK 1.2 REQUIRED CONFIG COMPONENTS
         headers audio backend events facet frontend gui ingagi joltscript libraries
-        loader module plugins renderer runtime timeline tools)
+        loader openfx module plugins renderer runtime timeline tools)
 endif()
 foreach(facet audio backend events facet frontend gui ingagi joltscript libraries
-        loader module plugins renderer runtime timeline tools)
+        loader openfx module plugins renderer runtime timeline tools)
     list(APPEND facets JoltFXSDK::${facet})
     foreach(language c cpp)
         file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${facet}.${language}"
@@ -85,6 +88,7 @@ run("${TEST_DIR}/buildtree-consumer/consumer")
 run("${TEST_DIR}/buildtree-consumer/consumer_cpp")
 # Installed contracts must be exact copies of their canonical definitions.
 foreach(pair
+    "third_party/openfx/include/ofxImageEffect.h|openfx/ofxImageEffect.h"
     "ingagi/native_extension_api/Ingagi-Module.h|ingagi/Ingagi-Module.h"
     "ingagi/native_extension_api/Ingagi-Module.hpp|ingagi/Ingagi-Module.hpp"
     "joltscript/layers/glue/include/joltscript/compiler.h|joltscript/compiler.h"
@@ -95,11 +99,13 @@ foreach(pair
     run("${CMAKE_COMMAND}" -E compare_files "${SOURCE_DIR}/${source}"
         "${TEST_DIR}/relocated/include/${installed}")
 endforeach()
-foreach(guide facets ingagi joltscript)
+foreach(guide facets ingagi joltscript openfx)
     if(NOT EXISTS "${TEST_DIR}/relocated/share/doc/JoltFXSDK/sdk/docs/${guide}.md")
         message(FATAL_ERROR "Missing installed SDK guide: ${guide}")
     endif()
 endforeach()
+run("${CMAKE_COMMAND}" -E compare_files "${SOURCE_DIR}/third_party/openfx/LICENSE.md"
+    "${TEST_DIR}/relocated/share/doc/JoltFXSDK/sdk/openfx/LICENSE.md")
 # Detached SDK sources must also package successfully from installed contracts.
 file(COPY "${SOURCE_DIR}/JoltFX-SDK/" DESTINATION "${TEST_DIR}/detached-source")
 run("${CMAKE_COMMAND}" -S "${TEST_DIR}/detached-source" -B "${TEST_DIR}/detached-build"
@@ -107,7 +113,8 @@ run("${CMAKE_COMMAND}" -S "${TEST_DIR}/detached-source" -B "${TEST_DIR}/detached
     "-DJOLTFX_SDK_GLUE_INCLUDE_DIR=${TEST_DIR}/relocated/include"
     "-DJOLTFX_SDK_EXECUTION_INCLUDE_DIR=${TEST_DIR}/relocated/include"
     "-DJOLTFX_SDK_INGAGI_API_DIR=${TEST_DIR}/relocated/include/ingagi"
-    "-DJOLTFX_SDK_TILLY_INCLUDE_DIR=${TEST_DIR}/relocated/include")
+    "-DJOLTFX_SDK_TILLY_INCLUDE_DIR=${TEST_DIR}/relocated/include"
+    "-DJOLTFX_SDK_OPENFX_INCLUDE_DIR=${TEST_DIR}/relocated/include/openfx")
 run("${CMAKE_COMMAND}" --build "${TEST_DIR}/detached-build")
 run("${CMAKE_COMMAND}" --install "${TEST_DIR}/detached-build" --prefix "${TEST_DIR}/detached-install")
 file(MAKE_DIRECTORY "${TEST_DIR}/unknown")
