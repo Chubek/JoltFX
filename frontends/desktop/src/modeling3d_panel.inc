@@ -1,7 +1,17 @@
-/* Shared scene commands; local state is selection, paths and transport only.
- * Viewport rendering blends third_party/openscenegraph concepts through
- * jfx_osg_viewport.h: OSG-style trackball math, a wider gimbal pick radius,
- * and half-resolution drags so orbiting stays smooth instead of jagged. */
+/* Shared editing viewport for Design/Animation/Sculpting and GameDev. Production
+ * rendering stays in Rendering/export; editing never waits for a ray tracer. */
+bool modeling3d_interactive(const jfx_desktop_frontend_t *f) {
+    return f->scene_navigation || f->scene_transforming || f->scene_sculpting || f->playing ||
+        (f->workspace==JFX_DESKTOP_WORKSPACE_GAME && f->game_running);
+}
+bool modeling3d_inspection(const jfx_desktop_frontend_t *f) {
+    return f->workspace==JFX_DESKTOP_WORKSPACE_GAME || f->scene_mode!=2 || f->scene_shading!=JFX_SCENE3D_SHADING_PHONG;
+}
+bool modeling3d_navigation_released(const jfx_desktop_frontend_t *f) {
+    const auto &io=ImGui::GetIO();
+    return !io.MouseDown[0] && !io.MouseDown[1] && !io.MouseDown[2] &&
+        (!f->scene_wheel_navigation || (io.MouseWheel==0 && ImGui::GetTime()>=f->scene_wheel_deadline));
+}
 void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     if (f->scene_png_job && f->scene_png_job->done.load(std::memory_order_acquire)) {
         if (f->scene_png_job->result==JFX_SUCCESS) std::snprintf(f->status,sizeof(f->status),"3D PNG exported: %.140s",f->scene_png_job->path.c_str());
@@ -10,10 +20,12 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     }
     if (f->scene_preview_job && f->scene_preview_job->done.load(std::memory_order_acquire)) {
         auto *job=f->scene_preview_job;
-        bool interactive=f->scene_navigation || f->scene_transforming || f->playing;
+        bool interactive=modeling3d_interactive(f);
         bool current=job->revision==f->scene_revision;
         if ((current || interactive) && (interactive || !job->interactive) && job->width==f->scene_width && job->height==f->scene_height &&
-            job->options.renderer==f->scene_render_options.renderer && int(job->shading)==f->scene_shading) {
+            job->options.renderer==f->scene_render_options.renderer && int(job->shading)==f->scene_shading &&
+            job->inspection==(modeling3d_inspection(f) || interactive) &&
+            std::equal(job->background,job->background+3,f->preferences.viewport_background)) {
             if (job->result==JFX_SUCCESS) {
                 // Publish the complete owned frame, including its dimensions.
                 // Never clear the previous image on resize, edit or failure.
@@ -28,7 +40,7 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
                     job->options.renderer==JFX_SCENE3D_RENDER_JOLT_GPU?"Jolt Renderer GPU":
                     job->options.renderer==JFX_SCENE3D_RENDER_RASTER?"Raster":"Vulkan";
                 if (job->fallback) std::snprintf(f->status,sizeof(f->status),"%s render failed; raster fallback",name);
-                else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",job->interactive?"Interactive raster":name,job->width,job->height);
+                else std::snprintf(f->status,sizeof(f->status),"%s rendered %ux%u",job->interactive?"Interactive raster":job->inspection?"Editing raster":name,job->width,job->height);
             } else editor_result(f,job->result);
             f->preview_dirty=!current || f->playing || f->time_seconds!=job->seconds;
         }
@@ -44,7 +56,9 @@ void modeling3d_preview(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
         job->width=f->scene_width; job->height=f->scene_height;
         job->seconds=f->time_seconds; job->revision=f->scene_revision; job->options=f->scene_render_options;
         job->shading=jfx_scene3d_shading_t(f->scene_shading);
-        job->interactive=f->scene_navigation || f->scene_transforming || f->playing;
+        job->interactive=modeling3d_interactive(f);
+        job->inspection=modeling3d_inspection(f) || job->interactive;
+        std::copy(f->preferences.viewport_background,f->preferences.viewport_background+3,job->background);
         job->pixels.resize(size_t(job->width)*job->height*4);
         if (!scheduler_submit(scene_preview_render_task,job,0)) { tilly::destroy(job); editor_result(f,JFX_ERROR_BUSY); return; }
         f->scene_preview_job=job; f->preview_dirty=false;
@@ -180,32 +194,41 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
     auto &io=ImGui::GetIO(); auto available=ImGui::GetContentRegionAvail();
     float width=std::max(120.f,available.x),height=std::max(120.f,std::min(width*9/16,available.y-50));
     ImVec2 origin=ImGui::GetCursorScreenPos(),size(width,height);
-    uint32_t want_w=f->window?uint32_t(std::clamp(width*io.DisplayFramebufferScale.x,120.f,1280.f)):320;
-    uint32_t want_h=uint32_t(std::max(1.f,float(want_w)*height/width)); want_h=std::min(want_h,1280u);
-    /* OSG bridge: half-res while navigating, full res on release. This is the
-     * main fix for slow/jagged gimbal drags: the CPU rasterizer does 4x
-     * supersampling, so halving each dimension quarters the work per event. */
-    uint32_t rw=want_w,rh=want_h;
-    if (jfx_osg_preview_size(f->scene_navigation || f->scene_transforming || f->playing?1:0,want_w,want_h,&rw,&rh)!=JFX_SUCCESS) { rw=want_w; rh=want_h; }
-    if (f->scene_width!=rw || f->scene_height!=rh) {
-        f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true; ++f->scene_revision;
-    }
-    modeling3d_preview(f,scene);
     auto *draw=ImGui::GetWindowDrawList(); ImVec2 end(origin.x+width,origin.y+height);
-    draw->AddRectFilled(origin,end,IM_COL32(22,26,34,255));
-    if (f->window && f->scene_display) {
-        const auto *frame=f->scene_display;
-        if (!f->scene_texture) f->scene_texture=jfx_desktop_window_upload_rgba8(f->window,frame->width,frame->height,frame->pixels.data());
-        if (f->scene_texture) draw->AddImage((ImTextureID)(intptr_t)f->scene_texture,origin,end);
-    }
+    // Process input BEFORE taking a worker snapshot. Split draw channels so the
+    // resulting frame remains behind handles, despite being submitted last.
+    ImDrawListSplitter layers; layers.Split(draw,2); layers.SetCurrentChannel(draw,1);
+    auto present=[&] {
+        float pixels_w=f->window?width*io.DisplayFramebufferScale.x:320.f;
+        float pixels_h=pixels_w*height/width;
+        float limit=float(f->preferences.preview_max_dimension);
+        float scale=std::min({1.f,limit/pixels_w,limit/pixels_h});
+        uint32_t want_w=uint32_t(std::max(1.f,std::round(pixels_w*scale)));
+        uint32_t want_h=uint32_t(std::max(1.f,std::round(pixels_h*scale))),rw=want_w,rh=want_h;
+        jfx_osg_preview_size(modeling3d_interactive(f)?1:0,want_w,want_h,&rw,&rh);
+        if (f->scene_width!=rw || f->scene_height!=rh) {
+            f->scene_width=rw; f->scene_height=rh; f->preview_dirty=true; ++f->scene_revision;
+        }
+        modeling3d_preview(f,scene);
+        layers.SetCurrentChannel(draw,0);
+        const auto *color=f->preferences.viewport_background;
+        draw->AddRectFilled(origin,end,ImGui::ColorConvertFloat4ToU32(ImVec4(color[0],color[1],color[2],1)));
+        if (f->window && f->scene_display) {
+            const auto *frame=f->scene_display;
+            if (!f->scene_texture) f->scene_texture=jfx_desktop_window_upload_rgba8(f->window,frame->width,frame->height,frame->pixels.data());
+            if (f->scene_texture) draw->AddImage((ImTextureID)(intptr_t)f->scene_texture,origin,end);
+        }
+        layers.Merge(draw);
+    };
     float xyzw[4]; jfx_scene3d_camera_quaternion(scene,xyzw); glm::quat q(xyzw[3],xyzw[0],xyzw[1],xyzw[2]);
     glm::quat view=glm::conjugate(q); ImVec2 center(end.x-65,origin.y+65);
-    draw->AddCircleFilled(center,53,IM_COL32(15,18,24,190));
     /* OSG-manipulator pick radius (14px) replaces the legacy 9px so the thin
      * rings are easy to grab; the hovered ring draws thicker. */
-    float nearest=jfx_osg_gimbal_pick_px(); int hit=-1;
+    float nearest=jfx_osg_gimbal_pick_px(); int hit=-1; ImVec2 tangent(1,0);
     const ImU32 colors[]={IM_COL32(240,85,75,255),IM_COL32(105,220,125,255),IM_COL32(100,150,255,255)};
     const ImU32 hover_colors[]={IM_COL32(255,130,120,255),IM_COL32(150,255,170,255),IM_COL32(150,190,255,255)};
+    if (f->preferences.show_gimbal) {
+    draw->AddCircleFilled(center,53,IM_COL32(15,18,24,190));
     for (unsigned axis=0;axis<3;++axis) {
         glm::vec3 u(0),v(0),a(0); u[int((axis+1)%3)]=1; v[int((axis+2)%3)]=1; a[int(axis)]=1;
         ImVec2 previous;
@@ -214,7 +237,13 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
             ImVec2 point(center.x+p.x*44,center.y-p.y*44);
             if (i) draw->AddLine(previous,point,colors[axis],2.0f);
             float distance=std::hypot(io.MousePos.x-point.x,io.MousePos.y-point.y);
-            if (distance<nearest) { nearest=distance; hit=int(axis); } previous=point;
+            if (distance<nearest) {
+                nearest=distance; hit=int(axis);
+                auto direction=view*(-u*std::sin(angle)+v*std::cos(angle));
+                float length=std::hypot(direction.x,direction.y);
+                if (length>.001f) tangent=ImVec2(direction.x/length,-direction.y/length);
+            }
+            previous=point;
         }
         auto tip=view*a; ImVec2 point(center.x+tip.x*35,center.y-tip.y*35);
         draw->AddLine(center,point,colors[axis],2); const char *label=axis==0?"X":axis==1?"Y":"Z";
@@ -232,13 +261,21 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
             previous=point;
         }
     }
+    }
     draw->PushClipRect(origin,end,true);
     bool gizmo=modeling3d_transform_gizmo(f,scene,origin,size);
     draw->PopClipRect();
-    if (gizmo || f->scene_transforming) ImGui::Dummy(size);
-    else ImGui::InvisibleButton("##3D navigation",size,ImGuiButtonFlags_MouseButtonLeft|ImGuiButtonFlags_MouseButtonRight|ImGuiButtonFlags_MouseButtonMiddle);
+    bool camera_input=io.MouseWheel!=0 || io.MouseDown[1] || io.MouseDown[2];
+    if (f->scene_transforming || (gizmo && !camera_input)) ImGui::Dummy(size);
+    else ImGui::InvisibleButton("##3D navigation",size,ImGuiButtonFlags_MouseButtonLeft|
+        ImGuiButtonFlags_MouseButtonRight|ImGuiButtonFlags_MouseButtonMiddle);
     bool hovered=ImGui::IsItemHovered(),active=ImGui::IsItemActive();
-    if (gizmo || f->scene_transforming) return;
+    // A hovered ImGuizmo uses Dummy, not an item ID, to preserve activation.
+    // Still claim its wheel so zoom cannot also scroll the inspector/canvas.
+    if (gizmo && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(origin,end))
+        ImGui::SetKeyOwner(ImGuiKey_MouseWheelY,ImGui::GetID("##3D navigation"));
+    if (f->scene_transforming || (gizmo && !camera_input)) { present(); return; }
+    if (hovered) ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
     bool sculpt_mode=f->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D && f->scene_mode==3;
     if (sculpt_mode && hovered && hit<0) {
         float camera[7]; jfx_scene3d_camera(scene,camera);
@@ -260,33 +297,48 @@ void modeling3d_viewport(jfx_desktop_frontend_t *f,jfx_scene3d_t *scene) {
                 double(f->scene_sculpt_strength)*(io.KeyCtrl?-1:1),text);
             editor_result(f,r);
         }
-        return;
+        present(); return;
     }
-    /* Wheel zoom applies outside a gesture; per-frame drag deltas below are
-     * clamped so fast flicks stay smooth. Full-res returns on release. */
-    if (hovered && io.MouseWheel!=0 && !f->scene_navigation) command("3d.dolly",std::clamp(double(io.MouseWheel)*.15,-10.,10.));
+    // A scroll burst is one camera gesture and uses the same fast preview as a
+    // drag. Avoid serializing/copying every mesh once per wheel event.
+    if (hovered && io.MouseWheel!=0) {
+        if (!f->scene_navigation && command("3d.navigation_begin")) {
+            f->scene_navigation=true; f->scene_wheel_navigation=true; f->scene_gizmo_axis=-1;
+        }
+        if (f->scene_navigation) {
+            f->scene_wheel_deadline=ImGui::GetTime()+.18;
+            double direction=f->preferences.invert_zoom?-1.:1.;
+            command("3d.dolly",std::clamp(double(io.MouseWheel)*double(f->preferences.zoom_speed)*direction,-10.,10.));
+        }
+    }
     if (active && !f->scene_navigation && (io.MouseClicked[0] || io.MouseClicked[1] || io.MouseClicked[2]) &&
         (!sculpt_mode || !io.MouseClicked[0] || hit>=0 || io.KeyAlt)) {
-        if (command("3d.navigation_begin")) { f->scene_navigation=true; f->scene_gizmo_axis=io.MouseClicked[0]?hit:-1; }
+        if (command("3d.navigation_begin")) {
+            f->scene_navigation=true; f->scene_wheel_navigation=false; f->scene_gizmo_axis=io.MouseClicked[0]?hit:-1;
+            f->scene_gimbal_tangent[0]=tangent.x; f->scene_gimbal_tangent[1]=tangent.y;
+        }
     }
-    if (active && f->scene_navigation && (io.MouseDelta.x!=0 || io.MouseDelta.y!=0)) {
+    if (active && f->scene_navigation && (io.MouseClicked[0] || io.MouseClicked[1] || io.MouseClicked[2])) f->scene_wheel_navigation=false;
+    if (active && f->scene_navigation && !io.MouseClicked[0] && !io.MouseClicked[1] && !io.MouseClicked[2] && (io.MouseDelta.x!=0 || io.MouseDelta.y!=0)) {
         char text[128];
-        /* Clamp per-frame deltas: a fast flick can otherwise inject tens of
-         * degrees in one event, which reads as a jagged jump. 10px at the
-         * 0.4 deg/px rate caps each frame at 4 degrees per axis. */
-        auto clamp_delta=[](float d) { return std::clamp(d,-10.f,10.f); };
-        float mdx=clamp_delta(io.MouseDelta.x),mdy=clamp_delta(io.MouseDelta.y);
+        // Pointer displacement is already integrated by ImGui. Never clip it per
+        // frame or multiply by delta time: both make sensitivity frame-rate dependent.
+        float mdx=io.MouseDelta.x,mdy=io.MouseDelta.y;
+        double speed=double(f->preferences.orbit_speed);
         if (f->scene_gizmo_axis>=0) {
-            const char *axes[]={"1 0 0","0 1 0","0 0 1"}; command("3d.orbit_axis",double(mdx-mdy)*.4,axes[f->scene_gizmo_axis]);
+            const char *axes[]={"1 0 0","0 1 0","0 0 1"};
+            double along=double(mdx)*double(f->scene_gimbal_tangent[0])+double(mdy)*double(f->scene_gimbal_tangent[1]);
+            command("3d.orbit_axis",along*speed*2,axes[f->scene_gizmo_axis]);
         } else if (io.MouseDown[1] || io.MouseDown[2] || io.KeyShift) {
-            float camera[7]; jfx_scene3d_camera(scene,camera); float scale=2*camera[2]*std::tan(camera[6]*.00872664626f)/height;
+            float camera[7]; jfx_scene3d_camera(scene,camera); float scale=2*camera[2]*std::tan(camera[6]*.00872664626f)/height*f->preferences.pan_speed;
             std::snprintf(text,sizeof(text),"%.9g %.9g 0",double(-mdx*scale),double(mdy*scale)); command("3d.pan",0,text);
         } else {
             bool roll=io.KeyAlt && !sculpt_mode;
-            std::snprintf(text,sizeof(text),"%.9g %.9g %.9g",roll?0.:double(-mdx)*.4,roll?0.:double(-mdy)*.4,roll?double(mdx)*.4:0.);
+            std::snprintf(text,sizeof(text),"%.9g %.9g %.9g",roll?0.:double(-mdx)*speed,roll?0.:double(-mdy)*speed,roll?double(mdx)*speed:0.);
             command("3d.orbit",0,text);
         }
     }
+    present();
 }
 void modeling3d_panel(jfx_desktop_frontend_t *f) {
     auto *scene=jfx_editor_scene3d(f->editor);
@@ -304,7 +356,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
     if (f->scene_sculpting && (ImGui::IsKeyPressed(ImGuiKey_Escape) || !io.MouseDown[0])) {
         command(ImGui::IsKeyPressed(ImGuiKey_Escape)?"3d.sculpt_cancel":"3d.sculpt_end"); f->scene_sculpting=false;
     }
-    if (f->scene_navigation && (ImGui::IsKeyPressed(ImGuiKey_Escape) || (!io.MouseDown[0] && !io.MouseDown[1] && !io.MouseDown[2]))) {
+    if (f->scene_navigation && (ImGui::IsKeyPressed(ImGuiKey_Escape) || modeling3d_navigation_released(f))) {
         command(ImGui::IsKeyPressed(ImGuiKey_Escape)?"3d.navigation_cancel":"3d.navigation_end"); f->scene_navigation=false;
     }
     uint32_t fps=jfx_scene3d_fps(scene),frames=jfx_scene3d_frames(scene);
@@ -568,7 +620,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
         if (ImGui::Combo("Viewport shading",&f->scene_shading,"Rendered\0Gouraud Shading\0Wireframe Shading\0")) {
             f->preview_dirty=true; ++f->scene_revision;
         }
-        ImGui::TextDisabled("Inspection modes use CPU; exports use Rendering engine.");
+        ImGui::TextDisabled(rendering?"Rendered preview uses the production engine.":"Fast editing raster; production engine is used in Rendering/export.");
         const char *renderers[]={"Raster viewport","MonkeyTrace (CPU ray tracing)","Vulkan rasterizer","Filament (GPU rasterizer)","Jolt Renderer (CPU / Ingagi)","Jolt Renderer (GPU / Vulkan)"};
         int renderer=int(f->scene_render_options.renderer);
         ImGui::SetNextItemWidth(250);
@@ -591,7 +643,7 @@ void modeling3d_panel(jfx_desktop_frontend_t *f) {
             ImGui::SameLine(); ImGui::SetNextItemWidth(115); changed=ImGui::SliderInt("Reflections",&bounces,0,8)||changed;
             ImGui::SetNextItemWidth(200); changed=ImGui::SliderFloat("Mirror fraction",&options.reflectivity,0,1)||changed;
             if (changed) { options.samples=uint32_t(samples); options.bounces=uint32_t(bounces); editor_result(f,jfx_desktop_frontend_set_scene3d_render_options(f,&options)); }
-            ImGui::TextWrapped("Ingagi ECS / MonkeyTrace BVH. Up to 4096 visible instance triangles; flat normals. Navigation/playback use 1 sample and at most 1 reflection; idle/export use the selected quality.");
+            ImGui::TextWrapped("Ingagi ECS / MonkeyTrace BVH. Up to 4096 visible instance triangles; flat normals. Editing/navigation use the fast raster; Rendering/export use the selected quality.");
         }
         // Always occupy one line: conditional text here caused a resize/render
         // feedback loop that discarded completed snapshots and flashed black.

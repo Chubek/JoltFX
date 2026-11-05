@@ -1,4 +1,5 @@
 #include "jfx/jfx_osg_viewport.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #ifdef JFX_HAVE_OSG
@@ -12,7 +13,9 @@
 
 static bool finite_float(float v) { return std::isfinite(v); }
 static bool finite_double(double v) { return std::isfinite(v); }
+#ifdef JFX_HAVE_OSG
 static constexpr double kPi = 3.14159265358979323846;
+#endif
 
 extern "C" jfx_result_t jfx_osg_trackball_orbit(const float in_xyzw[4],
     double dx_deg, double dy_deg, double roll_deg, float out_xyzw[4]) {
@@ -100,12 +103,9 @@ extern "C" jfx_result_t jfx_osg_preview_size(int navigating,
         return JFX_ERROR_INVALID_ARGUMENT;
     uint32_t w = want_w, h = want_h;
     if (navigating) {
-        w = w / 2;
-        h = h / 2;
-        if (w < 160) w = 160;
-        if (h < 160) h = 160;
-        if (w > want_w) w = want_w;
-        if (h > want_h) h = want_h;
+        double scale = std::min(1., std::max(.5, 160. / double(std::max(w, h))));
+        w = std::max(1u, uint32_t(std::lround(double(w) * scale)));
+        h = std::max(1u, uint32_t(std::lround(double(h) * scale)));
     }
     if (!w || !h) return JFX_ERROR_BACKEND_FAILURE;
     *out_w = w;

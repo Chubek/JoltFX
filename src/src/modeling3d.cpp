@@ -2,6 +2,7 @@
 #include "jfx/jfx_iap.h"
 #include "jfx/jfx_osg_viewport.h"
 #include "jfx/jfx_project.h"
+#include "modeling3d_preview.h"
 #include "tilly/memory.hpp"
 #include "tilly/memory.h"
 #include "joltscript/compiler.h"
@@ -709,6 +710,7 @@ struct jfx_scene3d {
     tilly::string sculpt_before;
     std::array<float,7> navigation_camera;
     glm::quat navigation_orientation;
+    tilly::string navigation_before;
 };
 extern "C" jfx_scene3d_t *jfx_scene3d_create() {
     // Bullet is private to this engine; install its process-lifetime hooks once.
@@ -832,12 +834,30 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
         }
         require(std::strcmp(op,"3d.transform_set") && std::strcmp(op,"3d.transform_end") && std::strcmp(op,"3d.transform_cancel"));
         if (!std::strcmp(op,"3d.navigation_begin")) {
-            require(!s->navigating); s->navigation_camera=s->document.camera; s->navigation_orientation=s->document.orientation; s->navigating=true; return JFX_SUCCESS;
+            require(!s->navigating);
+            auto before=serialize(s->document);
+            require(before.size()+11*32<JFX_PROJECT_MAX_BYTES);
+            s->undo.reserve(s->undo.size()+1);
+            s->navigation_before=std::move(before);
+            s->navigation_camera=s->document.camera; s->navigation_orientation=s->document.orientation; s->navigating=true; return JFX_SUCCESS;
         }
         if (!std::strcmp(op,"3d.navigation_cancel")) {
-            require(s->navigating); s->document.camera=s->navigation_camera; s->document.orientation=s->navigation_orientation; s->navigating=false; return JFX_SUCCESS;
+            require(s->navigating); s->document.camera=s->navigation_camera; s->document.orientation=s->navigation_orientation;
+            s->navigation_before.clear(); s->navigating=false; return JFX_SUCCESS;
         }
         bool finish=!std::strcmp(op,"3d.navigation_end");
+        if (finish) {
+            require(s->navigating);
+            if (s->document.camera!=s->navigation_camera || s->document.orientation!=s->navigation_orientation) {
+                for (auto &entry:s->redo) s->history_bytes-=entry.size();
+                s->redo.clear(); s->history_bytes+=s->navigation_before.size();
+                s->undo.push_back(std::move(s->navigation_before));
+                while (s->undo.size()>32 || s->history_bytes>history_limit) {
+                    s->history_bytes-=s->undo.front().size(); s->undo.erase(s->undo.begin());
+                }
+            }
+            s->navigation_before.clear(); s->navigating=false; return JFX_SUCCESS;
+        }
         if (s->navigating && !finish) {
             require(!std::strcmp(op,"3d.orbit") || !std::strcmp(op,"3d.orbit_axis") || !std::strcmp(op,"3d.pan") || !std::strcmp(op,"3d.dolly") || !std::strcmp(op,"3d.view") || !std::strcmp(op,"3d.camera"));
             // Camera gestures cannot change geometry: avoid copying/validating
@@ -857,7 +877,7 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
             Document next=s->document;
             if (a<next.objects.size() && (!std::strcmp(op,"3d.vertex") || !std::strcmp(op,"3d.subdivide") ||
                 !std::strcmp(op,"3d.align") || !std::strcmp(op,"3d.smooth") || !std::strcmp(op,"3d.make_editable"))) next.objects[a].normals.reset();
-            auto r=finish?JFX_SUCCESS:apply(next,op,a,b,c,value,text); if (r!=JFX_SUCCESS) return r;
+            auto r=apply(next,op,a,b,c,value,text); if (r!=JFX_SUCCESS) return r;
             if (!std::strcmp(op,"3d.export_ply")) return r;
             if (s->sculpting) {
                 if (next.objects[a].vertices==s->document.objects[a].vertices) return JFX_SUCCESS;
@@ -865,11 +885,7 @@ extern "C" jfx_result_t jfx_scene3d_command(jfx_scene3d_t *s,const char *op,uint
                 s->sculpt_changed=true;
                 s->document=std::move(next); return JFX_SUCCESS;
             }
-            validate(next); tilly::string before;
-            if (finish) {
-                require(s->navigating); Document old=next; old.camera=s->navigation_camera; old.orientation=s->navigation_orientation; before=serialize(old);
-                if (before==serialize(next)) { s->navigating=false; return JFX_SUCCESS; }
-            } else before=serialize(s->document);
+            validate(next); auto before=serialize(s->document);
             auto after=serialize(next);
             if (!std::strcmp(op,"3d.sculpt") && before==after) return JFX_SUCCESS;
             s->undo.reserve(s->undo.size()+1);
@@ -895,7 +911,7 @@ extern "C" jfx_result_t jfx_iap_import(jfx_scene3d_t *s,const char *path) {
 }
 extern "C" jfx_result_t jfx_scene3d_load(jfx_scene3d_t *s,const char *text,size_t length,char *err,size_t cap) {
     if (!s || !text) return JFX_ERROR_INVALID_ARGUMENT;
-    auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false;
+    auto r=boundary([&] { Document d=parse(text,length); s->document=std::move(d); s->undo.clear(); s->redo.clear(); s->history_bytes=0; s->navigating=false; s->navigation_before.clear();
         s->sculpting=false; s->sculpt_baseline=Document{}; s->sculpt_before.clear();
         s->transforming=false; s->transform_before.clear(); return JFX_SUCCESS; });
     if (err && cap) std::snprintf(err,cap,"%s",r==JFX_SUCCESS?"":"Invalid or oversized 3D scene (check mesh indices, keys and camera)");
@@ -939,6 +955,18 @@ extern "C" jfx_result_t jfx_scene3d_sample(const jfx_scene3d_t *s,uint32_t objec
 extern "C" jfx_result_t jfx_scene3d_sample_instance(const jfx_scene3d_t *s,uint32_t object,uint32_t instance,double seconds,float out[9]) {
     if (!s || !out || object>=s->document.objects.size() || !std::isfinite(seconds) || seconds<0 || seconds>1e9) return JFX_ERROR_INVALID_ARGUMENT;
     return boundary([&] { auto t=sample_instance(s->document.objects[object],instance,seconds,s->document.fps); std::copy(t.begin(),t.end(),out); return JFX_SUCCESS; });
+}
+jfx_result_t jfx::detail::scene3d_render_preview(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,
+    jfx_scene3d_shading_t shading,const float background[3],bool antialias,uint8_t *out,size_t cap) {
+    if (!s || !background || !out || !w || !h || w>2048 || h>2048 || cap<size_t(w)*h*4 ||
+        !std::isfinite(seconds) || seconds<0 || seconds>1e9 || shading<JFX_SCENE3D_SHADING_PHONG || shading>JFX_SCENE3D_SHADING_WIREFRAME)
+        return JFX_ERROR_INVALID_ARGUMENT;
+    std::array<uint8_t,3> clear;
+    for (size_t i=0;i<3;++i) {
+        if (!std::isfinite(background[i]) || background[i]<0 || background[i]>1) return JFX_ERROR_INVALID_ARGUMENT;
+        clear[i]=uint8_t(std::lround(background[i]*255.f));
+    }
+    return boundary([&] { return render_document(s->document,seconds,w,h,out,shading,clear,antialias); });
 }
 extern "C" jfx_result_t jfx_scene3d_render(const jfx_scene3d_t *s,double seconds,uint32_t w,uint32_t h,uint8_t *out,size_t cap) {
     return jfx_scene3d_render_shaded(s,seconds,w,h,JFX_SCENE3D_SHADING_PHONG,out,cap);

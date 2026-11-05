@@ -1118,6 +1118,27 @@ Validate loaded documents before replacement, preserve load undo, and extend
 
 ### 3D modeling and animation
 
+Desktop 1.15 adds File > Preferences as a separate non-modal ImGui window.
+`preferences.cpp` uses vendored yyjson with Tilly allocation callbacks, strict
+bounded validation and failure-atomic sibling publication; saves run on the
+scheduler. Respect JOLTFX_HOME_DIR overrides and Linux's case-sensitive
+XDG_CONFIG_HOME/JoltFX/Config.json (HOME/.config fallback); imgui.ini lives beside
+it, with non-destructive lowercase-layout migration. Keep settings independent
+of project/render ABIs. Themes, scaling, looping/snapping and navigation controls
+must actually apply; report failed loads/saves without silently replacing files.
+Extend `preferences_ui_tests` for config/window behavior.
+
+Design/Animation/Sculpting/GameDev use the private Core editing raster profile,
+with a black/configurable clear color. Only idle Rendering-tab Rendered previews
+use the production engine/environment. Navigation, wheel bursts, sculpting and
+playback use aspect-preserving reduced dimensions and one coverage sample;
+restore four samples when idle. Process input before queuing snapshots; never
+clip mouse deltas per frame or multiply displacement by frame time. Gimbal drags
+capture a screen tangent instead of subtracting X/Y deltas. Wheel bursts share a
+bounded camera gesture, ending after inactivity. Keep completed images while
+workers run, and use linear magnification for reduced previews. Extend
+`viewport_navigation_ui_tests`, `modeling3d_preview` and OpenGL viewport tests.
+
 Desktop transform overlays compile vendored `third_party/ImGuizmo/src` against
 the same ImGui context. `imguizmo_bridge.cpp` releases upstream's process-static
 ImVectors before Tilly teardown; preserve this cleanup when updating the vendor.

@@ -1,5 +1,40 @@
 # Progress
 
+## 3D viewport navigation and global preferences (2026-11-05)
+
+- Traced the shared Design/Animation/GameDev viewport, scheduler snapshots,
+  raster/production dispatch and platform texture upload. Confirmed navigation
+  discards pointer deltas beyond 10 px/frame and wheel zoom bypasses the fast
+  navigation path; editing defaults to production ray tracing.
+- Desktop 1.15 adds File > Preferences as a separate non-modal window: black
+  editing backgrounds, orbit/pan/zoom sensitivity, zoom inversion, gimbal
+  visibility, preview limits, themes/scaling and playback/snapping defaults.
+  Vendored yyjson uses Tilly callbacks; bounded loads are transactional and
+  scheduler saves publish a closed exclusive sibling atomically. Config.json
+  and imgui.ini respect JOLTFX_HOME_DIR overrides, Linux's case-sensitive
+  XDG_CONFIG_HOME/JoltFX and HOME/.config fallback; legacy layouts are retained.
+- Design/Animation/Sculpting/GameDev now use a dedicated editing raster. Input
+  precedes snapshots, pointer displacement is not clipped, gimbals capture a
+  screen tangent and scroll bursts group history/use interactive rendering.
+  Reduced previews preserve aspect ratio, disable supersampling and use linear
+  magnification; idle restores four samples. Production Rendering/export
+  settings and backgrounds remain independent. Camera history is reserved once
+  at begin, with allocation-free release/cancel instead of geometry serialization.
+- Added JSON/path/failure, real File-menu Preferences, camera-rate/diagonal
+  gimbal/wheel, raster-profile and actual OpenGL texture/framebuffer regressions.
+  Both viewports display the saved color, not an opaque production background.
+  Linux GCC debug eight-sphere benchmark: 177.2 ms full raster versus 32.9 ms
+  interactive (5.4x); camera updates/release around 0.001 ms. This is a profile
+  comparison, not a guaranteed frame rate for arbitrary scenes.
+- Validation: all 18 selected Core/desktop checks pass with Clang ASAN+UBSan,
+  with no sanitizer diagnostics. All 12 selected GCC checks pass with Ingagi,
+  MonkeyTrace, Filament and real OSG enabled, including actual SDL/OpenGL
+  framebuffer/color readback and production-render/export UI regressions.
+  The sanitizer configuration retains its original optional-renderer/Ingagi OFF
+  settings. `git diff --check` passes. Runtime checks were on Linux; macOS and
+  Windows paths are implemented but were not run here. Existing unrelated
+  warnings remain; vendored ImGui headers are treated as system headers.
+
 ## SDK OpenFX continuation (2026-11-05)
 
 - Reviewed the previous agent's uncommitted loader inspection and OpenFX draft.

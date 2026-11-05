@@ -29,6 +29,7 @@ extern "C" {
 
 #define JFX_OSG_VIEWPORT_API_MAJOR 1
 #define JFX_OSG_VIEWPORT_API_MINOR 0
+#define JFX_OSG_VIEWPORT_API_PATCH 1
 
 /* Applies an OSG trackball-style orbit delta to a normalized XYZW
  * quaternion. `dx_deg`/`dy_deg` are yaw/pitch increments in degrees,
@@ -49,8 +50,9 @@ jfx_result_t jfx_osg_axis_orbit(const float in_xyzw[4],
 jfx_result_t jfx_osg_damp_velocity(float velocity_deg[3], double damping);
 
 /* Adaptive preview size. While `navigating` is true the bridge suggests
- * half resolution (clamped to >=160px) so drags stay interactive; otherwise
- * it echoes the requested size clamped to 1280. Never returns 0. */
+ * half resolution (longest side >=160px when the request allows), preserving
+ * aspect ratio to pixel rounding. Otherwise it echoes the request. Dimensions
+ * outside 1..1280 are rejected; successful results never contain zero. */
 jfx_result_t jfx_osg_preview_size(int navigating,
     uint32_t want_w, uint32_t want_h, uint32_t *out_w, uint32_t *out_h);
 

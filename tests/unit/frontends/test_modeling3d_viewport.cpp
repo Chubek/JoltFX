@@ -2,6 +2,8 @@
 #include "jfx/jfx_scheduler.h"
 #include "jfx_test_backend.h"
 #include "tilly/memory.hpp"
+#include "modeling3d_preview.h"
+#include "preferences.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include <GL/gl.h>
@@ -11,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 static void draw(jfx_desktop_frontend_t *f) { assert(jfx_desktop_frontend_draw(f)==JFX_SUCCESS); }
 static ImGuiWindow *window(const char *part) {
@@ -20,8 +23,8 @@ static ImGuiWindow *window(const char *part) {
     assert(false); return nullptr;
 }
 struct Frame { GLint width=0,height=0; tilly::vector<uint8_t> pixels; };
-static Frame frame() {
-    auto *w=window("3D viewport");
+static Frame frame(const char *part="3D viewport") {
+    auto *w=window(part);
     auto atlas=ImGui::GetIO().Fonts->TexRef.GetTexID();
     for (const auto &cmd:w->DrawList->CmdBuffer) if (cmd.ElemCount && cmd.GetTexID()!=atlas) {
         Frame f;
@@ -36,11 +39,24 @@ static Frame frame() {
         size_t visible=0;
         for (size_t i=0;i<f.pixels.size();i+=4) {
             assert(f.pixels[i+3]==255);
-            visible+=f.pixels[i]!=22 || f.pixels[i+1]!=26 || f.pixels[i+2]!=34;
+            visible+=f.pixels[i]!=0 || f.pixels[i+1]!=0 || f.pixels[i+2]!=0;
         }
         assert(visible>0); return f;
     }
     assert(false); return {};
+}
+static void screen_corner(const char *part,uint8_t red,uint8_t green,uint8_t blue) {
+    auto *w=window(part); auto atlas=ImGui::GetIO().Fonts->TexRef.GetTexID();
+    for (const auto &cmd:w->DrawList->CmdBuffer) if (cmd.ElemCount && cmd.GetTexID()!=atlas) {
+        const auto &vertex=w->DrawList->VtxBuffer[int(cmd.VtxOffset+w->DrawList->IdxBuffer[int(cmd.IdxOffset)])];
+        auto *data=ImGui::GetDrawData(); GLint viewport[4]; glGetIntegerv(GL_VIEWPORT,viewport);
+        int x=int((vertex.pos.x+8-data->DisplayPos.x)*data->FramebufferScale.x);
+        int y=viewport[3]-1-int((vertex.pos.y+8-data->DisplayPos.y)*data->FramebufferScale.y);
+        uint8_t pixel[4]{}; glReadPixels(x,y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+        assert(glGetError()==GL_NO_ERROR);
+        assert(pixel[0]==red && pixel[1]==green && pixel[2]==blue); return;
+    }
+    assert(false);
 }
 static void settle(jfx_desktop_frontend_t *f) {
     for (unsigned i=0;i<4;++i) { scheduler_wait_idle(); draw(f); }
@@ -62,9 +78,11 @@ int main() {
     ImGui::GetIO().IniFilename=nullptr;
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_MODELING3D)==JFX_SUCCESS);
     assert(jfx_desktop_frontend_edit(f,"3d.add",8,0,0,0,"sphere")==JFX_SUCCESS);
-    // Use the default async renderer, including MonkeyTrace when available.
+    // Editing stays on the fast raster even when production ray tracing is available.
     if (jfx_desktop_frontend_run(f,1,0)!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(f); return 77; }
     settle(f); auto initial=frame();
+    assert(initial.pixels[0]==0 && initial.pixels[1]==0 && initial.pixels[2]==0);
+    screen_corner("3D viewport",0,0,0);
     for (unsigned i=0;i<12;++i) {
         scheduler_wait_idle(); draw(f); auto current=frame();
         assert(current.width==initial.width && current.height==initial.height && current.pixels==initial.pixels);
@@ -89,8 +107,9 @@ int main() {
         if (mode) {
             assert(current.pixels!=colored.pixels);
             tilly::vector<uint8_t> expected(current.pixels.size());
-            assert(jfx_scene3d_render_shaded(reference,0,uint32_t(current.width),uint32_t(current.height),
-                jfx_scene3d_shading_t(mode),expected.data(),expected.size())==JFX_SUCCESS);
+            const float black[]={0,0,0};
+            assert(jfx::detail::scene3d_render_preview(reference,0,uint32_t(current.width),uint32_t(current.height),
+                jfx_scene3d_shading_t(mode),black,true,expected.data(),expected.size())==JFX_SUCCESS);
             assert(expected==current.pixels);
         }
         else assert(current.pixels==colored.pixels);
@@ -108,4 +127,22 @@ int main() {
     auto full=frame(); assert(full.width==colored.width && full.height==colored.height);
     assert(full.pixels==colored.pixels);
     jfx_desktop_frontend_destroy(f);
+    // The saved global color affects actual uploaded pixels in both workspaces,
+    // not just a rectangle behind an opaque white production-rendered image.
+    jfx_preferences::Paths paths{}; assert(jfx_preferences::resolve_paths(paths));
+    auto preferences=jfx_preferences::defaults();
+    preferences.viewport_background[0]=.125f; preferences.viewport_background[1]=.25f; preferences.viewport_background[2]=.5f;
+    char error[256]; assert(jfx_preferences::save(paths.config,preferences,error,sizeof(error)));
+    assert(jfx_desktop_frontend_create(&config,&f)==JFX_SUCCESS); ImGui::GetIO().IniFilename=nullptr;
+    assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_MODELING3D)==JFX_SUCCESS);
+    if (jfx_desktop_frontend_run(f,1,0)!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(f); return 77; }
+    for (auto workspace:{JFX_DESKTOP_WORKSPACE_MODELING3D,JFX_DESKTOP_WORKSPACE_GAME}) {
+        assert(jfx_desktop_frontend_set_workspace(f,workspace)==JFX_SUCCESS); draw(f); settle(f);
+        auto current=frame(workspace==JFX_DESKTOP_WORKSPACE_GAME?"/Editor interface_":"3D viewport");
+        for (size_t i=0;i<current.pixels.size();i+=4)
+            assert(current.pixels[i]==32 && current.pixels[i+1]==64 && current.pixels[i+2]==128);
+        screen_corner(workspace==JFX_DESKTOP_WORKSPACE_GAME?"/Editor interface_":"3D viewport",32,64,128);
+    }
+    jfx_desktop_frontend_destroy(f);
+    std::filesystem::remove(paths.config);
 }

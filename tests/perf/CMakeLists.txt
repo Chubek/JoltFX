@@ -1,6 +1,7 @@
 add_executable(jfx_engine_benchmark engine_benchmark.c)
 add_executable(jfx_modeling_benchmark modeling_benchmark.cpp)
 target_link_libraries(jfx_modeling_benchmark PRIVATE jfx_core)
+target_include_directories(jfx_modeling_benchmark PRIVATE "${PROJECT_SOURCE_DIR}/src/src")
 foreach(variant simd scalar)
     add_executable(jfx_numeric_benchmark_${variant} numeric_benchmark.cpp "${PROJECT_SOURCE_DIR}/src/src/cpu_numeric.cpp")
     target_include_directories(jfx_numeric_benchmark_${variant} PRIVATE "${PROJECT_SOURCE_DIR}/src/src" "${PROJECT_SOURCE_DIR}/third_party/xsimd/include")

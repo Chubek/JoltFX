@@ -161,6 +161,14 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+The private `modeling3d_preview.h` editing profile accepts a clear color and
+single-/four-sample raster coverage without changing public production renders.
+Keep outputs failure-atomic and settings out of serialized scenes. OSG viewport
+1.0.1 preserves preview aspect ratio at small dimensions. Camera gestures reserve
+their serialized baseline/history at begin; end/cancel must not copy, revalidate
+or reserialize geometry. Preserve redo for cancelled/no-op navigation, reject
+unrelated edits and cover these paths in modeling3d_tools/preview tests.
+
 Modeling3D 1.9 adds command-only base-transform gestures. Begin serializes and
 reserves history once; set parses/validates all nine TRS channels before replacing
 the captured object's transform without copying geometry. End coalesces changes;

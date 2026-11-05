@@ -19,7 +19,7 @@ static ImRect navigation(jfx_desktop_frontend_t *f) {
   if (candidate->Active && std::strstr(candidate->Name,"3D viewport")) { w=candidate; break; }
  assert(w);
  ImVec2 lo(FLT_MAX,FLT_MAX),hi(-FLT_MAX,-FLT_MAX);
- for (auto &v:w->DrawList->VtxBuffer) if (v.col==IM_COL32(22,26,34,255)) {
+ for (auto &v:w->DrawList->VtxBuffer) if (v.col==IM_COL32(0,0,0,255)) {
   lo.x=std::fmin(lo.x,v.pos.x); lo.y=std::fmin(lo.y,v.pos.y);
   hi.x=std::fmax(hi.x,v.pos.x); hi.y=std::fmax(hi.y,v.pos.y);
  }

@@ -308,7 +308,7 @@ void ingagi_panel(jfx_desktop_frontend_t *f) {
         game_message(f, jfx_desktop_frontend_edit(f, escape ? "3d.transform_cancel" : "3d.transform_end", 0, 0, 0, 0, ""));
         f->scene_transforming = false;
     }
-    if (f->scene_navigation && (escape || (!io.MouseDown[0] && !io.MouseDown[1] && !io.MouseDown[2]))) {
+    if (f->scene_navigation && (escape || modeling3d_navigation_released(f))) {
         game_message(f, jfx_desktop_frontend_edit(f, escape ? "3d.navigation_cancel" : "3d.navigation_end", 0, 0, 0, 0, ""));
         f->scene_navigation = false;
     }

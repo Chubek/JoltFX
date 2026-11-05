@@ -58,6 +58,10 @@ int main() {
     assert(w == 640 && h == 360);
     assert(jfx_osg_preview_size(0, 1280, 720, &w, &h) == 0);
     assert(w == 1280 && h == 720);
+    assert(jfx_osg_preview_size(1, 320, 180, &w, &h) == 0);
+    assert(w == 160 && h == 90); // Never squash a landscape preview into a square.
+    assert(jfx_osg_preview_size(1, 180, 320, &w, &h) == 0);
+    assert(w == 90 && h == 160);
     assert(jfx_osg_preview_size(0, 0, 720, &w, &h) != 0);
     assert(jfx_osg_preview_size(0, 2000, 720, &w, &h) != 0);
 

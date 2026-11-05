@@ -42,7 +42,7 @@ typedef enum {
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 14
+#define JFX_DESKTOP_API_MINOR 15
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -71,8 +71,10 @@ typedef enum {
  * Output/error strings are borrowed until the next load/call or destruction.
  * Script print output is discarded by the native embedding ABI. */
 bool jfx_desktop_frontend_game_available(void);
-/* 3D viewport, explicit RGBA renders and PNG/sequence/video exports share this selection.
- * Viewport-local Gouraud/wireframe inspection overrides only the preview.
+/* Rendering-tab preview, explicit RGBA renders and PNG/sequence/video exports
+ * share this selection. Design/Animation/Sculpting/GameDev use an independent
+ * fast editing raster and the global Preferences background. Navigation uses
+ * reduced-resolution, single-sample inspection; exports are never reduced.
  * Defaults to MonkeyTrace CPU when available, otherwise the rasterizer. UI
  * previews use scheduler-owned scene copies; synchronous render calls remain
  * failure-atomic and report unavailable/over-budget renderers directly. */

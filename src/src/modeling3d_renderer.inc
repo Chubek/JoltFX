@@ -30,11 +30,12 @@ void ensure_normals(const Object &o) {
     }
     o.normals=std::move(cached);
 }
-jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_t h,uint8_t *out,jfx_scene3d_shading_t shading) {
-    uint32_t sw=w*2,sh=h*2;
+jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_t h,uint8_t *out,jfx_scene3d_shading_t shading,
+    const std::array<uint8_t,3> &background={22,26,34},bool antialias=true) {
+    uint32_t samples=antialias?2u:1u,sw=w*samples,sh=h*samples;
     tilly::vector<uint8_t> pixels(size_t(sw)*sh*4);
     tilly::vector<float> depth(size_t(sw)*sh,std::numeric_limits<float>::infinity());
-    for (size_t i=0;i<depth.size();++i) { pixels[i*4]=22; pixels[i*4+1]=26; pixels[i*4+2]=34; pixels[i*4+3]=255; }
+    for (size_t i=0;i<depth.size();++i) { pixels[i*4]=background[0]; pixels[i*4+1]=background[1]; pixels[i*4+2]=background[2]; pixels[i*4+3]=255; }
     auto &c=d.camera; glm::vec3 eye=glm::vec3(c[3],c[4],c[5])+d.orientation*glm::vec3(0,0,c[2]);
     glm::quat view=glm::conjugate(d.orientation); float focal=float(sh)*.5f/std::tan(glm::radians(c[6])*.5f);
     glm::vec3 sun=glm::normalize(glm::vec3(.4f,.8f,.3f));
@@ -160,6 +161,7 @@ jfx_result_t render_document(const Document &d,double seconds,uint32_t w,uint32_
         }
     }
     // Publish only after every instance's script and geometry has succeeded.
+    if (!antialias) { std::memcpy(out,pixels.data(),pixels.size()); return JFX_SUCCESS; }
     for (uint32_t y=0;y<h;++y) for (uint32_t x=0;x<w;++x) for (unsigned ch=0;ch<4;++ch) {
         size_t i=(size_t(y)*2*sw+x*2)*4+ch;
         out[(size_t(y)*w+x)*4+ch]=uint8_t((unsigned(pixels[i])+pixels[i+4]+pixels[i+sw*4]+pixels[i+sw*4+4]+2)/4);

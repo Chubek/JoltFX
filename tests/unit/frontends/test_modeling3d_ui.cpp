@@ -46,7 +46,7 @@ int main() {
         auto *v=window("3D viewport"); auto &input=ImGui::GetIO();
         input.AddMousePosEvent(0,0); draw(f);
         ImRect rect(FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX);
-        for (auto &vertex:v->DrawList->VtxBuffer) if (vertex.col==IM_COL32(22,26,34,255)) rect.Add(vertex.pos);
+        for (auto &vertex:v->DrawList->VtxBuffer) if (vertex.col==IM_COL32(0,0,0,255)) rect.Add(vertex.pos);
         assert(rect.GetWidth()>100); auto center=rect.GetCenter();
         unsigned char original[96*96*4],moved[sizeof(original)];
         assert(jfx_desktop_frontend_render_rgba8(f,96,96,original,sizeof(original))==JFX_SUCCESS);
@@ -76,6 +76,14 @@ int main() {
         click(f,"Undo 3D");
         assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))==0);
         click(f,"Gizmo","3D viewport"); click(f,"Move","##Combo_",0);
+        // Hovering an object handle must not swallow camera wheel input.
+        input.AddMousePosEvent(center.x,center.y); draw(f);
+        float scroll=v->Scroll.y;
+        input.AddMouseWheelEvent(0,1); draw(f);
+        assert(v->Scroll.y==scroll);
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))!=0);
+        input.AddKeyEvent(ImGuiKey_Escape,true); draw(f); input.AddKeyEvent(ImGuiKey_Escape,false); draw(f);
+        assert(jfx_desktop_frontend_render_rgba8(f,96,96,moved,sizeof(moved))==JFX_SUCCESS && std::memcmp(original,moved,sizeof(moved))==0);
     }
     // Nested views share the document, selection and history without adding
     // top-level workspace IDs or duplicating the scene.

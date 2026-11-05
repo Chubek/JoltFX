@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Desktop 1.15: separate File > Preferences window with shared black/configurable
+  3D editing backgrounds, navigation sensitivity/inversion, gimbal visibility,
+  preview limits, themes/scaling and playback/snapping defaults. Validated JSON
+  saves atomically to JOLTFX_HOME_DIR/Config.json (Linux XDG_CONFIG_HOME/JoltFX).
+  Design/Animation/GameDev now use a fast editing raster instead of production
+  ray tracing; interaction is single-sample at reduced resolution. Fixed lost
+  mouse deltas, diagonal gimbal cancellation and small-preview aspect distortion;
+  wheel bursts group undo and camera release no longer reserializes geometry.
+
 - Creative-programming tab (Desktop API 1.7): Zoltan sketch code pad beside a
   collapsible result view, hand-rolled syntax colors, Run/Animate, t/mx/my and
   canvas controls, and object/HTML/WASM export. Zoltan 0.3.0 adds `new`, `run`,

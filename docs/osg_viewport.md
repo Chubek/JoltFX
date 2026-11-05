@@ -12,24 +12,24 @@ each `3d.orbit`/`3d.orbit_axis` command re-ran the whole scene at up to
 
 ## What the bridge does
 
-Public header `src/include/jfx/jfx_osg_viewport.h` (API 1.0), implemented in
+Public header `src/include/jfx/jfx_osg_viewport.h` (API 1.0.1), implemented in
 `src/src/osg_viewport.cpp`:
 
 - OSG-style trackball orbit (`jfx_osg_trackball_orbit`, `jfx_osg_axis_orbit`)
   over normalized XYZW quaternions, matching `osgGA::TrackballManipulator`
   axis rotation semantics.
 - Velocity damping (`jfx_osg_damp_velocity`) for smoothing per-event deltas.
-- Adaptive preview (`jfx_osg_preview_size`): half resolution while
-  `scene_navigation` is true, full resolution on release. Halving each
-  dimension quarters the supersampled raster work per drag event; this is
-  the main gimbal smoothness fix.
+- Adaptive preview (`jfx_osg_preview_size`): half resolution during interaction,
+  full resolution on release. Preserve aspect ratio, rounding to whole pixels;
+  the longest side is at least 160px when the request allows. Desktop interaction
+  also disables four-sample supersampling, reducing pixel work by up to 16x.
 - Sphere/frustum instance culling (`jfx_osg_instance_visible`) for
   cloner-heavy scenes.
 - Wider gimbal pick radius (`14px` vs the legacy `9px`) so the thin colored
   rings are easy to grab.
 
 The desktop `modeling3d_panel.inc` viewport uses adaptive size, 14px picking
-with a hover highlight pass, per-frame delta clamping (10px cap ≈ 4°/axis),
+with a hover highlight pass, full un-clipped pointer displacement and configurable sensitivity,
 and a status line showing `Viewport WxH | OSG headers/fallback`. The Core
 `3d.orbit` / `3d.orbit_axis` commands themselves route through
 `jfx_osg_trackball_orbit` / `jfx_osg_axis_orbit` (`src/src/modeling3d.cpp`),
@@ -67,8 +67,9 @@ damping, adaptive sizes, culling and pick radius in both modes.
 
 ## Limits
 
-- The default preview/export path stays the Core CPU rasterizer so
-  headless tests, PNG/video export and `.jfx` determinism are unchanged.
+- Editing uses the Core rasterizer; production Rendering/export selection and
+  `.jfx` determinism are unchanged. The desktop background is a preference, not
+  a scene material or export environment.
 - A full `osgViewer` embedded viewer (GL context, scene-graph nodes,
   shadows, LOD) is future work; the bridge only uses OSG math types today.
 - Web/mobile use the same adaptive-size contract through shared commands;

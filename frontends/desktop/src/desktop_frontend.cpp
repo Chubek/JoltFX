@@ -25,6 +25,8 @@
 #include "jfx/jfx_automation.h"
 
 #include "host_window.h"
+#include "preferences.h"
+#include "modeling3d_preview.h"
 #ifdef JFX_DESKTOP_HAVE_INGAGI
 #include "Ingagi-Module.h"
 #endif
@@ -36,6 +38,7 @@
 #include "game_authoring.h"
 #include <new>
 #include "imgui.h"
+#include "imgui_internal.h" // Wheel ownership for the custom gizmo/canvas overlay.
 #include "ImGuizmo.h"
 #include "joltscript/effects.h"
 #include "joltscript/compiler.h"
@@ -143,51 +146,23 @@ uint8_t to_unorm8(float value) {
     return (uint8_t)std::lrintf(value * 255.0f);
 }
 
-/* Resolves a writable ImGui settings path in the platform's per-user config
- * directory, so window positions persist without ever writing into the source
- * tree. Returns nullptr when no suitable directory exists, which leaves ImGui
- * running without persistence. */
-const char *imgui_ini_path(void) {
-    static char path[512];
-    static bool resolved = false;
-    static bool have_path = false;
-    if (resolved) {
-        return have_path ? path : nullptr;
-    }
-    resolved = true;
-    std::filesystem::path directory;
-#if defined(_WIN32)
-    if (const char *appdata = std::getenv("APPDATA")) {
-        directory = std::filesystem::path(appdata) / "JoltFX";
-    }
-#elif defined(__APPLE__)
-    if (const char *home = std::getenv("HOME")) {
-        directory = std::filesystem::path(home) / "Library" / "Application Support" / "JoltFX";
-    }
-#else
-    if (const char *xdg = std::getenv("XDG_CONFIG_HOME")) {
-        if (xdg[0] == '/') {
-            directory = std::filesystem::path(xdg) / "joltfx";
+/* Paths belong to the frontend, not a process-static cache: embedders/tests may
+ * create another frontend with a different JOLTFX_HOME_DIR. */
+const char *imgui_ini_path(const jfx_preferences::Paths &paths) {
+    if (!paths.ini[0]) return nullptr;
+    try {
+        std::filesystem::path file(paths.ini); std::error_code error;
+        std::filesystem::create_directories(file.parent_path(),error);
+        if (error) return nullptr;
+#if !defined(_WIN32) && !defined(__APPLE__)
+        // Preserve existing Linux layouts when moving from the lowercase path.
+        if (!std::getenv("JOLTFX_HOME_DIR") && !std::filesystem::exists(file,error)) {
+            auto legacy=file.parent_path().parent_path()/"joltfx"/"imgui.ini";
+            std::filesystem::copy_file(legacy,file,std::filesystem::copy_options::skip_existing,error);
         }
-    }
-    if (directory.empty()) {
-        if (const char *home = std::getenv("HOME")) {
-            directory = std::filesystem::path(home) / ".config" / "joltfx";
-        }
-    }
 #endif
-    if (directory.empty()) {
-        return nullptr;
-    }
-    std::error_code error;
-    std::filesystem::create_directories(directory, error);
-    if (error) {
-        return nullptr;
-    }
-    const std::filesystem::path file = directory / "imgui.ini";
-    std::snprintf(path, sizeof(path), "%s", file.string().c_str());
-    have_path = path[0] != '\0';
-    return have_path ? path : nullptr;
+        return paths.ini;
+    } catch (...) { return nullptr; }
 }
 
 } // namespace
@@ -203,9 +178,21 @@ struct ScenePreviewJob {
     uint64_t revision=0;
     uint32_t width=0,height=0;
     jfx_result_t result=JFX_ERROR_BACKEND_FAILURE;
-    bool fallback=false,interactive=false;
+    float background[3]{};
+    bool fallback=false,interactive=false,inspection=false;
     ~ScenePreviewJob() { jfx_scene3d_destroy(scene); }
 };
+struct PreferencesSaveJob {
+    std::atomic<bool> done{false};
+    jfx_preferences::Values values{};
+    char path[4096]{},message[256]{};
+    bool success=false;
+};
+static void preferences_save_task(void *userdata) {
+    auto *job=static_cast<PreferencesSaveJob *>(userdata);
+    job->success=jfx_preferences::save(job->path,job->values,job->message,sizeof(job->message));
+    job->done.store(true,std::memory_order_release);
+}
 struct SceneExportStep {
     std::atomic<bool> done{false};
     jfx_export_job_t *job=nullptr;
@@ -222,19 +209,26 @@ static void scene_preview_render_task(void *userdata) {
         job->result=jfx_scene3d_write_png_ex(job->scene,job->seconds,job->width,job->height,&job->options,job->path.c_str());
         job->done.store(true,std::memory_order_release); return;
     }
-    if (job->interactive || job->shading!=JFX_SCENE3D_SHADING_PHONG)
-        job->result=jfx_scene3d_render_shaded(job->scene,job->seconds,job->width,job->height,
-            job->interactive && job->shading==JFX_SCENE3D_SHADING_PHONG?JFX_SCENE3D_SHADING_GOURAUD:job->shading,job->pixels.data(),job->pixels.size());
+    if (job->inspection || job->interactive)
+        job->result=jfx::detail::scene3d_render_preview(job->scene,job->seconds,job->width,job->height,
+            job->interactive && job->shading==JFX_SCENE3D_SHADING_PHONG?JFX_SCENE3D_SHADING_GOURAUD:job->shading,
+            job->background,!job->interactive,job->pixels.data(),job->pixels.size());
     else job->result=jfx_scene3d_render_ex(job->scene,job->seconds,job->width,job->height,
         &job->options,job->pixels.data(),job->pixels.size());
     if (job->result==JFX_ERROR_BACKEND_FAILURE || job->result==JFX_ERROR_NOT_IMPLEMENTED) {
         job->fallback=true;
-        job->result=jfx_scene3d_render(job->scene,job->seconds,job->width,job->height,job->pixels.data(),job->pixels.size());
+        job->result=jfx::detail::scene3d_render_preview(job->scene,job->seconds,job->width,job->height,
+            job->shading,job->background,!job->interactive,job->pixels.data(),job->pixels.size());
     }
     job->done.store(true,std::memory_order_release);
 }
 
 struct jfx_desktop_frontend {
+    jfx_preferences::Values preferences;
+    jfx_preferences::Paths preferences_paths;
+    PreferencesSaveJob *preferences_save_job;
+    char preferences_message[256];
+    bool show_preferences;
     bool novogfx_output;
     jfx_engine_t *engine;
     jfx_editor_t *editor;
@@ -253,6 +247,9 @@ struct jfx_desktop_frontend {
     int scene_clone_mode,scene_clone_count;
     float scene_clone_spacing;
     bool scene_navigation;
+    bool scene_wheel_navigation;
+    double scene_wheel_deadline;
+    float scene_gimbal_tangent[2];
     bool scene_transforming,scene_gizmo_world,scene_gizmo_snap;
     int scene_gizmo_operation;
     void *scene_texture;
@@ -526,6 +523,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
         alignof(jfx_desktop_frontend_t)));
     if (!frontend) return JFX_ERROR_OUT_OF_MEMORY;
     std::memset(frontend, 0, sizeof(*frontend));
+    frontend->preferences=jfx_preferences::defaults();
+    jfx_preferences::resolve_paths(frontend->preferences_paths);
+    jfx_preferences::load(frontend->preferences_paths.config,frontend->preferences,
+        frontend->preferences_message,sizeof(frontend->preferences_message));
     frontend->novogfx_output = config && config->backend_name &&
         std::strcmp(config->backend_name, "novogfx") == 0;
 
@@ -536,7 +537,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_viewport = true;
     frontend->show_timeline = true;
     frontend->show_properties = true;
-    frontend->show_grade = true; frontend->show_nodes = true; frontend->looping = true;
+    frontend->show_grade = true; frontend->show_nodes = true; frontend->looping = frontend->preferences.loop_playback;
+    frontend->nle_snap=frontend->preferences.timeline_snap;
     frontend->show_calibration = true;
     frontend->show_plugins = true;
     frontend->show_audio = true;
@@ -660,13 +662,17 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     }
     ImGui::SetCurrentContext(frontend->imgui);
     ImGui::StyleColorsDark();
+    if (frontend->preferences.theme==1) ImGui::StyleColorsLight();
+    if (frontend->preferences.theme==2) ImGui::StyleColorsClassic();
+    ImGui::GetStyle().ScaleAllSizes(frontend->preferences.ui_scale);
+    ImGui::GetStyle().FontScaleMain=frontend->preferences.ui_scale;
     /* The font atlas is deliberately not built here. The renderer backend
      * (ImGui_ImplOpenGL3) owns font texture creation and flags the atlas as
      * renderer-backed when it initializes; building it first would trip
      * ImFontAtlas::Build's "RendererHasTextures" assertion on the next frame. */
     /* Layout persists in the platform's per-user config directory, never in the
      * source tree. */
-    ImGui::GetIO().IniFilename = imgui_ini_path();
+    ImGui::GetIO().IniFilename = imgui_ini_path(frontend->preferences_paths);
     frontend->editor = jfx_editor_create(kPreviewWidth, kPreviewHeight);
     if (!frontend->editor) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     frontend->animation_tab = jfx_animation_tab_create(kPreviewWidth, kPreviewHeight);
@@ -705,10 +711,11 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
 }
 
 extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
-    if (frontend && (frontend->scene_preview_job || frontend->scene_png_job || frontend->scene_export_step)) {
+    if (frontend && (frontend->scene_preview_job || frontend->scene_png_job || frontend->scene_export_step || frontend->preferences_save_job)) {
         scheduler_wait_idle(); tilly::destroy(frontend->scene_preview_job); frontend->scene_preview_job=nullptr;
         tilly::destroy(frontend->scene_png_job); frontend->scene_png_job=nullptr;
         tilly::destroy(frontend->scene_export_step); frontend->scene_export_step=nullptr;
+        tilly::destroy(frontend->preferences_save_job); frontend->preferences_save_job=nullptr;
     }
     if (frontend) {
 #ifdef JFX_DESKTOP_HAVE_INGAGI
@@ -1163,6 +1170,8 @@ void plugin_panel(jfx_desktop_frontend_t *f) {
     ImGui::TextWrapped("%s",f->status);
 }
 
+#include "preferences_panel.inc"
+
 /* Composes the menu bar and every panel. Called between NewFrame and Render. */
 void compose_ui(jfx_desktop_frontend_t *frontend) {
     bool open_requested=false;
@@ -1187,6 +1196,8 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                         jfx_timeline_width(t),jfx_timeline_height(t),frontend->nle_export_path));
                 }
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Preferences...")) { frontend->show_preferences=true; ImGui::SetWindowFocus("Preferences"); }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit")) {
                 frontend->quit_requested = true;
@@ -1381,6 +1392,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     }
     if ((frontend->grading_edit || frontend->audio_edit) && !ImGui::IsAnyItemActive()) finish_grading(frontend);
     ImGui::End();
+    preferences_panel(frontend);
 }
 
 } // namespace
@@ -1483,7 +1495,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
 #if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__)
         if ((frontend->scene_preview_job && !frontend->scene_preview_job->done.load(std::memory_order_acquire)) ||
             (frontend->scene_png_job && !frontend->scene_png_job->done.load(std::memory_order_acquire)) ||
-            (frontend->scene_export_step && !frontend->scene_export_step->done.load(std::memory_order_acquire)))
+            (frontend->scene_export_step && !frontend->scene_export_step->done.load(std::memory_order_acquire)) ||
+            (frontend->preferences_save_job && !frontend->preferences_save_job->done.load(std::memory_order_acquire)))
             return JFX_SUCCESS;
 #endif
         return jfx_engine_tick(frontend->engine);

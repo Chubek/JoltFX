@@ -166,6 +166,13 @@ int main() {
     assert(jfx_scene3d_command(s,"3d.remove",0,0,0,0,"")!=JFX_SUCCESS);
     edit(s,"3d.navigation_end"); assert(jfx_scene3d_can_undo(s)); edit(s,"undo"); assert(save(s)==baseline && !jfx_scene3d_can_undo(s));
     edit(s,"3d.navigation_begin"); edit(s,"3d.orbit",0,0,0,0,"5 10 15"); edit(s,"3d.navigation_cancel"); assert(save(s)==baseline);
+    assert(jfx_scene3d_can_redo(s));
+    edit(s,"3d.navigation_begin"); edit(s,"3d.navigation_end");
+    assert(save(s)==baseline && !jfx_scene3d_can_undo(s) && jfx_scene3d_can_redo(s));
+    edit(s,"3d.navigation_begin"); edit(s,"3d.dolly",0,0,0,.3);
+    assert(jfx_scene3d_command(s,"3d.dolly",0,0,0,11,"")==JFX_ERROR_INVALID_ARGUMENT);
+    edit(s,"3d.navigation_cancel");
+    assert(save(s)==baseline && jfx_scene3d_can_redo(s));
     auto *invalid=jfx_scene3d_create(); assert(invalid);
     tilly::string bad=baseline; auto at=bad.find("quaternion "); assert(at!=tilly::string::npos);
     bad.replace(at,bad.find('\n',at)-at,"quaternion 0 0 0 0");

@@ -42,9 +42,16 @@ set_property(GLOBAL PROPERTY JFX_DESKTOP_WINDOW_ENABLED ${JFX_DESKTOP_WINDOW_ENA
 
 add_library(jfx_desktop_frontend STATIC
     src/desktop_frontend.cpp
+    src/preferences.cpp
     src/host_window.cpp
     ${JFX_IMGUI_SOURCES}
 )
+# Keep the vendored JSON parser private; every allocation uses Tilly callbacks.
+target_sources(jfx_desktop_frontend PRIVATE "${PROJECT_SOURCE_DIR}/third_party/yyjson/src/yyjson.c")
+target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/yyjson/src")
+set_source_files_properties("${PROJECT_SOURCE_DIR}/third_party/yyjson/src/yyjson.c" PROPERTIES
+    COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion;-Wno-double-promotion;-Wno-shadow")
+target_include_directories(jfx_desktop_frontend PRIVATE "${PROJECT_SOURCE_DIR}/src/src")
 if(JFX_AUDIO_VST3)
     target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${JFX_VST3_INCLUDE_DIR}")
     if(APPLE)
@@ -55,7 +62,7 @@ target_include_directories(jfx_desktop_frontend PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_include_directories(jfx_desktop_frontend PRIVATE ${JFX_IMGUI_DIR})
+target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE ${JFX_IMGUI_DIR})
 target_include_directories(jfx_desktop_frontend PRIVATE "${PROJECT_SOURCE_DIR}/third_party/ImGuizmo/src")
 target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/glm")
 target_link_libraries(jfx_desktop_frontend PUBLIC jfx_core jolt_effects)

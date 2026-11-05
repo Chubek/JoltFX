@@ -60,7 +60,8 @@ tablet-pressure input, UV preservation or ZBrush feature parity.
 
 The desktop **Viewport shading** selector offers:
 
-- **Rendered**: preview using the selected **Rendering engine**.
+- **Rendered**: lit raster in Design/Animation/Sculpting/GameDev; the selected
+  **Rendering engine** in the Rendering sub-tab.
 - **Gouraud Shading**: CPU raster preview with lighting evaluated at mesh
   vertices and perspective-correct interpolation across each triangle.
 - **Wireframe Shading**: antialiased triangle edges, including rear edges, with
@@ -77,6 +78,14 @@ completed image stays visible during rendering, navigation, resize and failed
 renders. Only a successful result matching the current scene revision, size and
 shading selection replaces it. Progress messages occupy fixed layout space so
 their appearance cannot repeatedly resize and invalidate the preview.
+
+**File > Preferences...** controls the global editing background (black by
+default), orbit/pan/zoom sensitivity, inverted wheel zoom, gimbal visibility and
+maximum preview dimension. Settings apply to both the 3D authoring and GameDev
+viewports and persist independently of scenes in `$JOLTFX_HOME_DIR/Config.json`
+(Linux: `$XDG_CONFIG_HOME/JoltFX/Config.json`, falling back to
+`~/.config/JoltFX/Config.json`). Production Rendering previews/exports retain
+their own environment. See the [desktop preferences guide](../frontends/desktop/README.md#preferences).
 
 ### Optional Filament renderer
 
@@ -110,8 +119,8 @@ continuations. Over-budget or unavailable previews show a raster fallback status
 explicit renders and exports report failure instead.
 
 Preview and PNG work runs on scheduler workers over independent scene snapshots.
-Edits invalidate stale results. Playback/navigation use one sample and at most
-one reflection; idle previews return to selected quality. PNG and encoded video
+Edits invalidate stale results. Editing, playback and navigation use a lightweight
+raster, not ray tracing; idle Rendering-tab previews return to selected quality. PNG and encoded video
 exports capture both scene and quality. Video advances one frame per scheduler
 job; cancellation takes effect after the active bounded frame. Successful exports
 atomically replace the destination.
@@ -153,7 +162,11 @@ GLM quaternion, allowing unrestricted orbit and roll through either pole. Deskto
 drag to orbit, Shift-drag/middle/right-drag to pan, wheel to zoom, Alt-drag to roll.
 The colored gimbal rings rotate about world X/Y/Z; view buttons snap to front,
 back, left, right, top or bottom. Escape cancels a drag; release commits one undo
-step. Desktop preview follows the viewport's size up to 1280 pixels per dimension.
+step. Wheel events within a burst share one undo step. Pointer travel is never
+clipped per frame; gimbal movement follows the grabbed ring's screen tangent.
+Desktop preview follows the viewport's size up to the Preferences maximum
+(1280 pixels by default). Interaction uses half resolution with preserved aspect
+ratio and one coverage sample; idle editing restores four-sample antialiasing.
 Web supports the same mouse gestures and axis controls. Android uses one-finger
 orbit and two-finger pan/pinch/roll; iOS provides pan, pinch and rotation gestures.
 Numeric camera channels retain legacy yaw/pitch, distance, target XYZ and vertical

@@ -154,6 +154,35 @@ Opening a `.jolt` file loads it into the sketch buffer. Preview compiles with
 the Glue compiler and evaluates per pixel with the VM, bounded to 320x180.
 See [creative programming](../../docs/creative.md).
 
+## Preferences
+
+**File > Preferences...** opens a separate, non-modal window. Changes apply
+immediately; **Save Preferences** persists them for the next launch. **Restore
+Defaults** resets the controls (save again to persist the reset).
+
+- 3D editing viewport background (black by default), shared by Design,
+  Animation, Sculpting and GameDev.
+- Orbit, pan and wheel-zoom sensitivity, inverted zoom and navigation-gimbal
+  visibility. Pointer travel is not clipped per frame, so fast drags do not
+  become slower on a busy machine.
+- Maximum preview dimension (320–1280 pixels), theme, UI scale, playback looping
+  and timeline-snapping defaults.
+
+Settings are validated JSON in `$JOLTFX_HOME_DIR/Config.json`. An explicit
+`JOLTFX_HOME_DIR` overrides the platform default:
+
+| Platform | Default configuration file |
+|---|---|
+| Linux | `$XDG_CONFIG_HOME/JoltFX/Config.json`, or `~/.config/JoltFX/Config.json` if XDG_CONFIG_HOME is unset, empty or relative |
+| Windows | `%APPDATA%\JoltFX\Config.json` |
+| macOS | `~/Library/Application Support/JoltFX/Config.json` |
+
+Saving runs through the scheduler and atomically replaces a closed temporary
+file; a failed save preserves the previous config. Missing files use defaults;
+malformed/unsupported files report a warning in Preferences and are not replaced
+unless you save. These settings are not part of a `.jfx` scene. Production
+Rendering previews and PNG/video exports retain their own renderer/environment.
+
 ## Options
 
 The **3D Modeling & Animation** tab has its own scene outliner, mesh/transform
@@ -193,15 +222,19 @@ primitive**; the new object is selected automatically. Generator inspectors
 edit control points/weights or ball centers/radii; cloners arrange instances in
 lines, rings or grids. **Joltscript animation** assigns a source or `.jolt` file
 to a transform channel, with time/frame/index/keyed-value inputs.
-The viewport uses smooth shading and four-sample antialiasing at its display size.
+Editing uses a lightweight raster with smooth shading and four-sample
+antialiasing at its display size. Dragging, wheel zoom, sculpting and playback
+use reduced resolution and one coverage sample; full quality returns when idle.
+The aspect ratio is retained across resolution changes.
 **Viewport shading** selects **Rendered**, **Gouraud Shading** (interpolated
 vertex lighting), or **Wireframe Shading** (triangle edges, including rear edges).
-Inspection modes use the CPU without changing materials, undo history or the
-renderer used for PNG/video exports. The last completed frame remains visible
+Editing/inspection modes use the CPU without changing materials, undo history
+or the renderer used in the Rendering tab and PNG/video exports. The last completed frame remains visible
 while the next snapshot renders, including during resize and navigation.
 Drag to orbit, Shift/middle/right-drag to pan, wheel to zoom and Alt-drag to roll.
 Drag the GLM quaternion gimbal rings to rotate individual world axes. Escape
-cancels; release commits one undo step. Numeric target/distance/FOV and axis-view
+cancels; release commits one undo step. A wheel-zoom burst also commits once.
+Numeric target/distance/FOV and axis-view
 buttons are also available. PLY import/export and PNG/video output use explicit paths. File > Open/
 Save handles embedded `.jfx` scenes. See [3D usage](../../docs/modeling3d.md).
 
@@ -246,9 +279,9 @@ What the UI shows is real state:
 - the statistics panel (View > Statistics) reports engine and UI frame counts,
   frame times, and live buffer/texture/kernel counts.
 
-ImGui layout persists in the platform's per-user config directory
-(`$XDG_CONFIG_HOME/joltfx`, `%APPDATA%\JoltFX`,
-`~/Library/Application Support/JoltFX`) and never writes into the source tree.
+ImGui layout persists as `imgui.ini` beside `Config.json`, never in the source
+tree. Existing Linux layouts in the old lowercase `joltfx` directory are copied
+on first use when the new layout is absent.
 
 ## Building without a window
 
