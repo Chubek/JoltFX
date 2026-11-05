@@ -458,6 +458,17 @@ Similar steps for Premiere and DaVinci. Consult each plugin's `README.md` for SD
 
 ## Desktop Frontend Architecture
 
+Workspace Undo/Redo buttons, Edit-menu actions and document shortcuts route through
+the private workspace history dispatcher in `desktop_frontend.cpp`. Drawing and
+EZDesign retain independent histories; Creative source/canvas and GameDev source
+use bounded, Tilly-owned `workspace_history.h` snapshots. Group text/canvas edits
+on widget deactivation or tab changes. GameDev's Ingagi sub-tab targets source;
+other modes retain scene history with separate source buttons. Do not route
+Creative shortcuts to the shared scene/NLE editor. Keep text-field shortcuts
+local and invalidate ImGui's active/deactivated source copies on external source
+replacement or history restoration. Extend `workspace_history_ui_tests` plus
+the affected workspace tests when changing dispatch or gesture boundaries.
+
 The implemented desktop is Dear ImGui/SDL2/OpenGL with interface tabs and a
 shared preview/toolbar. The Qt6 docking descriptions below are the design target;
 see `desktop/README.md` for the shipped controls and tests.
@@ -1103,6 +1114,31 @@ input/placement after pause/calls. Preserve optional-off authoring, source reloa
 failure behavior and the 16 KiB/100,000-instruction/256-frame bounds. Resources
 save source and scene separately; do not imply a packaged game export. Extend
 `game_authoring`, `game_ui_tests` and `ingagi_tab`; see `docs/gamedev.md`.
+
+### EZDesign direct-modeling workspace
+
+Desktop 1.16 appends EZDesign panel/workspace identifiers without renumbering
+existing tabs. `desktop/ezdesign/model.*` is a private GUI/GPU-independent C++17
+topology/command document; `tools.*` owns inference, camera, BVH and preview state;
+`desktop/src/ezdesign_workspace.*` adapts ImGui and the shared editing raster.
+Use Tilly storage and candidate validation before bounded history publication.
+Cancel tools/gizmos on tab changes, preserve selection on command failure, and
+never write preview meshes into the canonical vertex/edge/holed-face document.
+Native `ezdesign 1` `.jfx` payloads dispatch through desktop open/save, with their
+own history like vector drawings, not the NLE/scene parser. Keep IDs independent
+of buffers, use doubles until the camera-relative renderer boundary, and retain
+cycle/budget checks for component definitions. Advanced unavailable tools must
+remain labeled as such. Extend `ezdesign_core`, `ezdesign_tools`,
+`ezdesign_ui_tests`, `ezdesign_exchange` and `ezdesign_room`; see `docs/ezdesign.md`
+for supported prism cuts, dependency licenses, scope/snapping and export limits.
+Subobject ImGuizmo transforms operate on unique vertex IDs (including face holes)
+around a double-precision pivot; shared neighbors must pass candidate validation.
+Keep camera-relative handle displacement separate from the absolute model pivot.
+Release commits once; Escape and workspace changes discard the preview.
+Palette edits/creation and front/back painting use candidate commands and bounded
+history. Material RGB widgets stage values until Apply/Create; reload staged data
+on document revision changes. Face reversal reverses every loop and swaps its
+front/back slots. The existing native format stores all palette entries/slots.
 
 ### Desktop vector animation
 

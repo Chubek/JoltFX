@@ -26,6 +26,7 @@
 
 #include "host_window.h"
 #include "preferences.h"
+#include "workspace_history.h"
 #include "modeling3d_preview.h"
 #ifdef JFX_DESKTOP_HAVE_INGAGI
 #include "Ingagi-Module.h"
@@ -35,6 +36,7 @@
 #include "jfx/jfx_scheduler.h"
 #include <atomic>
 #include "animation_drawing.h"
+#include "ezdesign_workspace.h"
 #include "game_authoring.h"
 #include <new>
 #include "imgui.h"
@@ -241,6 +243,8 @@ struct jfx_desktop_frontend {
     bool show_modeling3d;
     bool show_creative;
     bool show_game;
+    bool show_ezdesign;
+    jfx::ez::Workspace *ezdesign;
     int scene_object,scene_vertex,scene_channel,scene_interpolation;
     int scene_bake_frames;
     int scene_primitive,scene_segments,scene_control,scene_ball,scene_gizmo_axis;
@@ -347,6 +351,9 @@ struct jfx_desktop_frontend {
      * compiler and evaluates per pixel with the VM. Bounded so preview and
      * export stay cheap: source < 8 KiB, raster <= 320x180. */
     char creative_source[8192];
+    jfx_history::SketchHistory *creative_history;
+    jfx_history::GameHistory *game_history;
+    ImGuiID creative_source_id,game_source_id;
     char creative_error[512];
     char creative_export_path[512];
     bool creative_show_code;
@@ -406,6 +413,8 @@ struct jfx_desktop_frontend {
     char project_input[kMaxProjectPath];
 };
 
+jfx::ez::Workspace *jfx::ez::workspace(jfx_desktop_frontend *f) { return f?f->ezdesign:nullptr; }
+
 static void reset_audio(jfx_desktop_frontend_t *f) {
     jfx_audio_mixer_destroy(f->audio_mixer); f->audio_mixer=nullptr;
     jfx_desktop_window_clear_audio(f->window);
@@ -464,6 +473,47 @@ static void desktop_export_advance(jfx_desktop_frontend_t *f) {
 namespace {
 void finish_grading(jfx_desktop_frontend_t *f); void finish_audio(jfx_desktop_frontend_t *f);
 void game_stop(jfx_desktop_frontend_t *f);
+void forget_source_input(jfx_desktop_frontend_t *f,bool game) {
+    ImGuiID id=game?f->game_source_id:f->creative_source_id;
+    if(!f->imgui || !id)return;
+    auto *previous=ImGui::GetCurrentContext();ImGui::SetCurrentContext(f->imgui);
+    // InputText retains a deactivation copy. External replacements/history must
+    // invalidate it too, otherwise returning to the tab reapplies obsolete text.
+    if(f->imgui->ActiveId==id)ImGui::ClearActiveID();
+    if(f->imgui->InputTextState.ID==id)f->imgui->InputTextState.ID=0;
+    if(f->imgui->InputTextDeactivatedState.ID==id)f->imgui->InputTextDeactivatedState.ID=0;
+    ImGui::SetCurrentContext(previous);
+}
+jfx_history::Sketch creative_snapshot(const jfx_desktop_frontend_t *f) {
+    jfx_history::Sketch state;
+    std::memcpy(state.source.text,f->creative_source,sizeof(f->creative_source));
+    state.width=f->creative_width;state.height=f->creative_height;return state;
+}
+jfx_history::Source<16384> game_snapshot(const jfx_desktop_frontend_t *f) {
+    jfx_history::Source<16384> state;
+    std::memcpy(state.text,f->game_source,sizeof(f->game_source));return state;
+}
+void creative_checkpoint(jfx_desktop_frontend_t *f) { if(f->creative_history)f->creative_history->record(creative_snapshot(f)); }
+void game_checkpoint(jfx_desktop_frontend_t *f) { if(f->game_history)f->game_history->record(game_snapshot(f)); }
+bool source_can_history(const jfx_desktop_frontend_t *f,bool game,bool redo) {
+    if(game){auto &h=*f->game_history;return redo?h.redo_count && !h.changed(game_snapshot(f)):h.undo_count || h.changed(game_snapshot(f));}
+    auto &h=*f->creative_history;return redo?h.redo_count && !h.changed(creative_snapshot(f)):h.undo_count || h.changed(creative_snapshot(f));
+}
+void source_history(jfx_desktop_frontend_t *f,bool game,bool redo) {
+    if(game){
+        game_checkpoint(f);if(!f->game_history->step(redo))return;
+        forget_source_input(f,true);
+        std::memcpy(f->game_source,f->game_history->current.text,sizeof(f->game_source));
+        game_stop(f);f->game_source_dirty=true;f->game_error[0]=0;f->game_cliche[0]=f->game_room[0]=0;
+    }else{
+        creative_checkpoint(f);if(!f->creative_history->step(redo))return;
+        forget_source_input(f,false);
+        const auto &state=f->creative_history->current;
+        std::memcpy(f->creative_source,state.source.text,sizeof(f->creative_source));
+        f->creative_width=state.width;f->creative_height=state.height;f->creative_playing=false;
+        f->creative_dirty=true;f->creative_error[0]=0;f->creative_status=JFX_SUCCESS;
+    }
+}
 jfx_result_t native_sync(jfx_desktop_frontend_t *f,bool finish);
 void close_inspector(jfx_desktop_frontend_t *f);
 void recording_poll(jfx_desktop_frontend_t *f);
@@ -547,6 +597,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_modeling3d = true;
     frontend->show_creative = true;
     frontend->show_game = true;
+    frontend->show_ezdesign = true;
     game_authoring::defaults(frontend->game_draft);
     frontend->game_source_dirty = true;
     std::snprintf(frontend->game_ready, sizeof(frontend->game_ready), "ready");
@@ -679,6 +730,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     if (!frontend->animation_tab) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     frontend->drawing=tilly::create<jfx_drawing::Editor>();
     if (!frontend->drawing) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    frontend->ezdesign=tilly::create<jfx::ez::Workspace>();
+    if (!frontend->ezdesign) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    frontend->creative_history=tilly::create<jfx_history::SketchHistory>();
+    frontend->game_history=tilly::create<jfx_history::GameHistory>();
+    if(!frontend->creative_history || !frontend->game_history){jfx_desktop_frontend_destroy(frontend);return JFX_ERROR_OUT_OF_MEMORY;}
+    frontend->creative_history->current=creative_snapshot(frontend);
+    frontend->game_history->current=game_snapshot(frontend);
     result=jfx_plugin_host_create(frontend->engine,&frontend->plugins);
     if (result!=JFX_SUCCESS) { jfx_desktop_frontend_destroy(frontend); return result; }
 
@@ -725,6 +783,9 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
         close_inspector(frontend); jfx_export_destroy(frontend->export_job); reset_audio(frontend);
         jfx_animation_tab_destroy(frontend->animation_tab);
         tilly::destroy(frontend->drawing);
+        tilly::destroy(frontend->ezdesign);
+        tilly::destroy(frontend->creative_history);
+        tilly::destroy(frontend->game_history);
     }
     if (!frontend) return;
     event_unsubscribe(JFX_EVENT_KERNEL_SUBMIT, engine_event_sink);
@@ -807,6 +868,15 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
         if (!text) { std::fclose(file); return JFX_ERROR_OUT_OF_MEMORY; }
         size_t n = std::fread(text, 1, JFX_PROJECT_MAX_BYTES + 1, file);
         bool failed = std::ferror(file) != 0; std::fclose(file);
+        if (!failed && n>=10 && !std::memcmp(text,"ezdesign ",9)) {
+            imgui_free(text,nullptr);
+            if (!frontend->ezdesign->load(path)) return JFX_ERROR_INVALID_ARGUMENT;
+            auto r=jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_EZDESIGN);
+            if (r!=JFX_SUCCESS) return r;
+            std::snprintf(frontend->project_path,sizeof(frontend->project_path),"%s",path);
+            std::snprintf(frontend->project_input,sizeof(frontend->project_input),"%s",path);
+            return JFX_SUCCESS;
+        }
         jfx_result_t result = failed ? JFX_ERROR_INVALID_ARGUMENT : jfx_editor_load(frontend->editor,
             text, n, frontend->status, sizeof(frontend->status));
         imgui_free(text, nullptr);
@@ -824,13 +894,13 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     if (const char *dot = std::strrchr(path, '.'); dot && !std::strcmp(dot, ".jolt")) {
         FILE *kernel = std::fopen(path, "rb");
         if (kernel) {
-            size_t n = std::fread(frontend->creative_source, 1,
-                sizeof(frontend->creative_source) - 1, kernel);
+            char source[sizeof(frontend->creative_source)];
+            size_t n = std::fread(source, 1, sizeof(source), kernel);
             bool failed = std::ferror(kernel) != 0;
             std::fclose(kernel);
-            if (!failed && n < sizeof(frontend->creative_source) - 1) {
-                frontend->creative_source[n] = 0;
-                frontend->creative_error[0] = 0;
+            if (!failed && n>0 && n < sizeof(source) && !std::memchr(source,0,n)) {
+                source[n] = 0;
+                jfx_desktop_frontend_creative_set_source(frontend,source);
                 jfx_desktop_frontend_set_workspace(frontend, JFX_DESKTOP_WORKSPACE_CREATIVE);
             }
         }
@@ -982,12 +1052,12 @@ namespace {
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
     "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation",
-    "Creative Programming","GameDev"};
+    "Creative Programming","GameDev","EZDesign"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION,JFX_DESKTOP_PANEL_MODELING3D,
-    JFX_DESKTOP_PANEL_CREATIVE,JFX_DESKTOP_PANEL_GAME};
+    JFX_DESKTOP_PANEL_CREATIVE,JFX_DESKTOP_PANEL_GAME,JFX_DESKTOP_PANEL_EZDESIGN};
 
 #include "animation_panel.inc"
 #include "modeling3d_panel.inc"
@@ -1172,22 +1242,64 @@ void plugin_panel(jfx_desktop_frontend_t *f) {
 
 #include "preferences_panel.inc"
 
+bool workspace_can_history(jfx_desktop_frontend_t *f,bool redo) {
+    if(f->recording)return false;
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE)return source_can_history(f,false,redo);
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_GAME && f->game_mode==3)return source_can_history(f,true,redo);
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION)return redo?!f->drawing->future.empty():!f->drawing->past.empty();
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN)return redo?f->ezdesign->tools.editor.can_redo():f->ezdesign->tools.editor.can_undo();
+    if(!redo && (f->grading_edit || f->audio_edit || f->scene_transforming || f->scene_sculpting || f->scene_navigation))return true;
+    return redo?jfx_editor_can_redo(f->editor):jfx_editor_can_undo(f->editor);
+}
+void workspace_history(jfx_desktop_frontend_t *f,bool redo) {
+    if(!workspace_can_history(f,redo))return;
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE){source_history(f,false,redo);return;}
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_GAME && f->game_mode==3){source_history(f,true,redo);return;}
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION){
+        f->drawing->dragging=false;f->drawing_gizmo=false;ImGuizmo::Enable(false);
+        if(redo)f->drawing->redo();else f->drawing->undo();return;
+    }
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN){f->ezdesign->deactivate();f->ezdesign->tools.history(redo);return;}
+    finish_grading(f);editor_result(f,jfx_desktop_frontend_edit(f,redo?"redo":"undo",0,0,0,0,""));f->nle_drag=0;
+}
+void workspace_history_buttons(jfx_desktop_frontend_t *f) {
+    ImGui::BeginDisabled(!workspace_can_history(f,false));
+    if(ImGui::Button("Undo"))workspace_history(f,false);
+    ImGui::EndDisabled();ImGui::SameLine();ImGui::BeginDisabled(!workspace_can_history(f,true));
+    if(ImGui::Button("Redo"))workspace_history(f,true);
+    ImGui::EndDisabled();
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_GAME){
+        ImGui::SameLine();ImGui::TextDisabled("%s history",f->game_mode==3?"Source":"Scene");
+        if(f->game_mode!=3){
+            ImGui::SameLine();ImGui::BeginDisabled(f->recording || !source_can_history(f,true,false));
+            if(ImGui::Button("Undo source"))source_history(f,true,false);
+            ImGui::EndDisabled();ImGui::SameLine();ImGui::BeginDisabled(f->recording || !source_can_history(f,true,true));
+            if(ImGui::Button("Redo source"))source_history(f,true,true);
+            ImGui::EndDisabled();
+        }
+    }
+}
+
 /* Composes the menu bar and every panel. Called between NewFrame and Render. */
 void compose_ui(jfx_desktop_frontend_t *frontend) {
     bool open_requested=false;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             bool drawing=frontend->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION;
+            bool ezdesign=frontend->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN;
             if (ImGui::MenuItem(drawing?"Open drawing...":"Open Project...")) {
-                if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
+                if(ezdesign) frontend->ezdesign->tools.files_requested=true;
+                else if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
             }
-            if (ImGui::MenuItem("New sequence")) { finish_grading(frontend); jfx_desktop_frontend_close_project(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_NLE); }
+            if (ImGui::MenuItem("New sequence")) { finish_grading(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_NLE); jfx_desktop_frontend_close_project(frontend); }
             if (ImGui::MenuItem("New composition")) { finish_grading(frontend); jfx_desktop_frontend_node_compositing_new_graph(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_COMPOSITING); }
             if (ImGui::MenuItem(drawing?"Save drawing...":"Save project...")) {
-                if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
+                if(ezdesign) frontend->ezdesign->tools.files_requested=true;
+                else if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
             }
             if (ImGui::MenuItem(drawing?"Export drawing SVG...":"Export Frame...")) {
-                if(drawing) frontend->drawing->files_requested=true;
+                if(ezdesign) frontend->ezdesign->tools.files_requested=true;
+                else if(drawing) frontend->drawing->files_requested=true;
                 else {
                 auto *t=jfx_editor_timeline(frontend->editor);
                 editor_result(frontend,jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_GRAPH?
@@ -1204,7 +1316,12 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Playback")) {
+        if(ImGui::BeginMenu("Edit")){
+            if(ImGui::MenuItem("Undo","Ctrl/Cmd+Z",false,workspace_can_history(frontend,false)))workspace_history(frontend,false);
+            if(ImGui::MenuItem("Redo","Ctrl/Cmd+Shift+Z / Ctrl+Y",false,workspace_can_history(frontend,true)))workspace_history(frontend,true);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Playback",frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN)) {
             if (ImGui::MenuItem("Play", "Space", frontend->playing)) {
                 if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
             }
@@ -1229,6 +1346,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("3D Modeling & Animation", nullptr, &frontend->show_modeling3d);
             ImGui::MenuItem("Creative Programming", nullptr, &frontend->show_creative);
             ImGui::MenuItem("GameDev", nullptr, &frontend->show_game);
+            ImGui::MenuItem("EZDesign", nullptr, &frontend->show_ezdesign);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -1278,12 +1396,12 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     ImGui::SetNextWindowPos(viewport->WorkPos); ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::Begin("JoltFX workspace",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|
         ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
-    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
         ImGui::GetIO().KeyCtrl && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f) {
         const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
         jfx_desktop_frontend_set_zoom(frontend, next);
     }
-    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE && frontend->workspace!=JFX_DESKTOP_WORKSPACE_GAME) {
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE && frontend->workspace!=JFX_DESKTOP_WORKSPACE_GAME) {
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -1297,11 +1415,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     ImGui::SetNextItemWidth(120);
     if (ImGui::SliderFloat("Zoom", &zoom, 0.25f, 4.0f, "%.2fx"))
         jfx_desktop_frontend_set_zoom(frontend, zoom);
-    ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_undo(frontend->editor));
-    if (ImGui::Button("Undo")) { finish_grading(frontend); editor_result(frontend,jfx_desktop_frontend_edit(frontend,"undo",0,0,0,0,"")); }
-    ImGui::EndDisabled(); ImGui::SameLine(); ImGui::BeginDisabled(!jfx_editor_can_redo(frontend->editor));
-    if (ImGui::Button("Redo")) { finish_grading(frontend); editor_result(frontend,jfx_desktop_frontend_edit(frontend,"redo",0,0,0,0,"")); }
-    ImGui::EndDisabled();
+    ImGui::SameLine();workspace_history_buttons(frontend);
     ImGui::SameLine();
     if (ImGui::Button("Export...")) { finish_grading(frontend); ImGui::OpenPopup("Encoded export"); }
     if (ImGui::BeginPopupModal("Encoded export",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -1329,7 +1443,10 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         ImGui::SameLine();
         if (ImGui::Button("Cancel export")) desktop_export_cancel(frontend);
     } else ImGui::TextDisabled("%s",frontend->status);
-    } else ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":frontend->workspace==JFX_DESKTOP_WORKSPACE_GAME?"GameDev / Ingagi":"Vector animation",frontend->status);
+    } else {
+        workspace_history_buttons(frontend);ImGui::SameLine();
+        ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN?"EZDesign":frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":frontend->workspace==JFX_DESKTOP_WORKSPACE_GAME?"GameDev / Ingagi":"Vector animation",frontend->status);
+    }
     ImGui::Separator();
     if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
         for (int i=0;i<JFX_DESKTOP_WORKSPACE_COUNT;++i) {
@@ -1342,7 +1459,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     frontend->workspace_requested=false;
                 }
                 bool wide=ImGui::GetContentRegionAvail().x>=760;
-                bool animation=i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE || i==JFX_DESKTOP_WORKSPACE_GAME;
+                bool animation=i==JFX_DESKTOP_WORKSPACE_EZDESIGN || i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE || i==JFX_DESKTOP_WORKSPACE_GAME;
                 bool columns=!animation && frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
                 if (columns) {
                     ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
@@ -1368,6 +1485,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_MODELING3D: modeling3d_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_CREATIVE: creative_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_GAME: ingagi_panel(frontend); break;
+                    case JFX_DESKTOP_WORKSPACE_EZDESIGN: frontend->ezdesign->draw(frontend->window,frontend->preferences.viewport_background); break;
                     default: break;
                     }
                 }
@@ -1382,13 +1500,10 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         }
         ImGui::EndTabBar();
     }
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput && !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId)) {
         const auto &io=ImGui::GetIO();
-        if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && (io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_Z)) {
-            finish_grading(frontend);
-            editor_result(frontend,jfx_desktop_frontend_edit(frontend,io.KeyShift?"redo":"undo",0,0,0,0,""));
-            frontend->nle_drag=0;
-        }
+        if((io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_Z))workspace_history(frontend,io.KeyShift);
+        else if(io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y))workspace_history(frontend,true);
     }
     if ((frontend->grading_edit || frontend->audio_edit) && !ImGui::IsAnyItemActive()) finish_grading(frontend);
     ImGui::End();
@@ -1496,7 +1611,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
         if ((frontend->scene_preview_job && !frontend->scene_preview_job->done.load(std::memory_order_acquire)) ||
             (frontend->scene_png_job && !frontend->scene_png_job->done.load(std::memory_order_acquire)) ||
             (frontend->scene_export_step && !frontend->scene_export_step->done.load(std::memory_order_acquire)) ||
-            (frontend->preferences_save_job && !frontend->preferences_save_job->done.load(std::memory_order_acquire)))
+            (frontend->preferences_save_job && !frontend->preferences_save_job->done.load(std::memory_order_acquire)) ||
+            (frontend->ezdesign && frontend->ezdesign->busy()))
             return JFX_SUCCESS;
 #endif
         return jfx_engine_tick(frontend->engine);
@@ -1689,7 +1805,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative, &f->show_game };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative, &f->show_game, &f->show_ezdesign };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
@@ -1705,7 +1821,10 @@ extern "C" bool jfx_desktop_frontend_game_available(void) {
 extern "C" jfx_result_t jfx_desktop_frontend_game_set_source(jfx_desktop_frontend_t *f, const char *source) {
     if (!f || !source || !source[0] || std::strlen(source) >= sizeof(f->game_source))
         return JFX_ERROR_INVALID_ARGUMENT;
+    game_checkpoint(f);
+    forget_source_input(f,true);
     std::memmove(f->game_source, source, std::strlen(source) + 1);
+    game_checkpoint(f);
     game_stop(f);
     f->game_source_dirty = true;
     return JFX_SUCCESS;
@@ -2056,11 +2175,12 @@ extern "C" jfx_result_t jfx_desktop_frontend_iap_info(const char *path,
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative, f->show_game };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative, f->show_game, f->show_ezdesign };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
     if (!f || (unsigned)workspace>=JFX_DESKTOP_WORKSPACE_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
+    creative_checkpoint(f);game_checkpoint(f);
     f->scene_texture=nullptr; f->preview_texture=nullptr;
     ImGuizmo::Enable(false);
     if (f->workspace != workspace) game_stop(f);
@@ -2082,7 +2202,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
         f->scene_navigation=false;
     }
     if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; f->drawing_gizmo=false; }
-    if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION) jfx_desktop_frontend_pause(f);
+    if (f->ezdesign && f->workspace!=workspace) f->ezdesign->deactivate();
+    if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION || workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;
     ++f->scene_revision;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
@@ -2127,6 +2248,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN)
+        return f->ezdesign->save(path)?JFX_SUCCESS:JFX_ERROR_INVALID_ARGUMENT;
     if (f->scene_transforming) {
         auto r=jfx_desktop_frontend_edit(f,"3d.transform_end",0,0,0,0,"");
         if (r!=JFX_SUCCESS) return r;
@@ -2166,6 +2289,14 @@ extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t
 }
 extern "C" jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *f) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN) {
+        f->ezdesign->deactivate();
+        jfx::ez::Command command; command.op=jfx::ez::Op::New;
+        if (!f->ezdesign->tools.editor.execute(command)) return JFX_ERROR_INVALID_ARGUMENT;
+        f->ezdesign->tools.active_scope=1; f->ezdesign->tools.context.clear();
+        f->ezdesign->tools.selected={}; f->ezdesign->tools.cached_revision=0;
+        return JFX_SUCCESS;
+    }
     if (f->recording) return JFX_ERROR_BUSY;
     game_stop(f);
     auto synced=native_sync(f,true); if (synced!=JFX_SUCCESS) return synced;
@@ -2284,7 +2415,10 @@ extern "C" jfx_result_t jfx_desktop_frontend_creative_set_source(jfx_desktop_fro
     if (!f || !source || !source[0] || std::strlen(source) >= sizeof(f->creative_source)) {
         return JFX_ERROR_INVALID_ARGUMENT;
     }
-    std::snprintf(f->creative_source, sizeof(f->creative_source), "%s", source);
+    creative_checkpoint(f);
+    forget_source_input(f,false);
+    std::memmove(f->creative_source, source, std::strlen(source)+1);
+    creative_checkpoint(f);
     f->creative_error[0] = 0;
     f->creative_status = JFX_SUCCESS;
     f->creative_dirty = true;

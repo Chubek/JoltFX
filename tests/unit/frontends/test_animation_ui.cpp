@@ -52,6 +52,8 @@ int main() {
     ImRect drawn=colored(fill);assert(drawn.GetWidth()>95 && drawn.GetHeight()>75);
     key(f,ImGuiKey_Z,true);assert(colored(fill).Min.x==FLT_MAX);
     key(f,ImGuiKey_Z,true,true);assert(colored(fill).GetWidth()>95);
+    click(f,locate(f,ImGui::FindWindowByName("JoltFX workspace"),"Undo"));assert(colored(fill).Min.x==FLT_MAX);
+    click(f,locate(f,ImGui::FindWindowByName("JoltFX workspace"),"Redo"));assert(colored(fill).GetWidth()>95);
     key(f,ImGuiKey_V);
     ImVec2 middle((a.x+b.x)/2,(a.y+b.y)/2);
     move(f,middle);mouse(f,true);move(f,{middle.x+40,middle.y+20});mouse(f,false);

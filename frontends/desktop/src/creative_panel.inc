@@ -179,11 +179,13 @@ void creative_panel(jfx_desktop_frontend_t *f) {
                 creative_highlight_preview(f->creative_source);
             }
             ImGui::SetNextItemWidth(-1);
+            f->creative_source_id=ImGui::GetID("##Creative source");
             if (ImGui::InputTextMultiline("##Creative source", f->creative_source,
                     sizeof(f->creative_source), ImVec2(-1, 220))) {
                 f->creative_error[0] = 0;
                 f->creative_dirty = true;
             }
+            if(ImGui::IsItemDeactivatedAfterEdit())creative_checkpoint(f);
             ImGui::TextWrapped("Core: let/var/set!, do, if/cond/when/unless, for/while/loop, fn/defn and typed arithmetic.");
             ImGui::TextWrapped("Libraries: jolt.math, jolt.graphics, jolt.geometry, jolt.time, jolt.collections, jolt.strings (262 exports). Import selects typed CPU execution.");
             ImGui::TextDisabled("Reference: joltscript/docs/language.md and stdlib.md. Syntax colors show a basic subset.");
@@ -205,11 +207,15 @@ void creative_panel(jfx_desktop_frontend_t *f) {
             if (ImGui::InputInt("Canvas W", &f->creative_width)) {
                 f->creative_dirty = true;
             }
+            f->creative_width=std::clamp(f->creative_width,1,320);
+            if(ImGui::IsItemDeactivatedAfterEdit())creative_checkpoint(f);
             ImGui::SameLine();
             ImGui::SetNextItemWidth(100);
             if (ImGui::InputInt("Canvas H", &f->creative_height)) {
                 f->creative_dirty = true;
             }
+            f->creative_height=std::clamp(f->creative_height,1,180);
+            if(ImGui::IsItemDeactivatedAfterEdit())creative_checkpoint(f);
             if (f->creative_width < 1) {
                 f->creative_width = 1;
             }

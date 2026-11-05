@@ -1,5 +1,106 @@
 # Progress
 
+## Desktop undo/redo coverage (2026-11-06)
+
+- Audited all workspace tabs: shared Core editor history covers NLE/effects/color/
+  composition/audio/DAW/plugins/3D and GameDev scenes; drawing and EZDesign have
+  independent histories. Creative and persistent GameDev source history are gaps.
+- Added 32-entry local sketch/source histories with preallocated Tilly-owned
+  snapshots; Creative records source/canvas dimensions and GameDev records source
+  edits, generators and replacements. Text-widget deactivation/tab switches group
+  edits; new branches discard redo. Source restoration stops preview execution.
+- Every workspace now exposes top-level Undo/Redo and an Edit menu. Ctrl/Cmd-Z,
+  Ctrl/Cmd-Shift-Z and Ctrl-Y route to the correct document; text-field undo remains
+  local. GameDev's Ingagi mode targets source, while other modes retain scene
+  history plus explicit source buttons. Drawing/EZDesign keep their own stacks.
+- Fixed external source replacement/history restoration invalidating ImGui's
+  active/deactivated text copies, preventing old buffers from overwriting restored
+  revisions after tab switches. Joltscript file reads now use a bounded temporary
+  before replacing source and recording history.
+- New real-widget tests cover all shared-document tabs, toolbar/menu shortcuts,
+  source/scene isolation, text focus, branching, bounded history, GameDev source
+  modes and tab retention. Drawing and EZDesign tests also verify global controls.
+  All 14 configured UI/Creative checks pass in GCC Debug and Clang ASan/UBSan;
+  native desktop builds and `git diff --check` passes. Optional renderer checks
+  exercise the availability supported by each build.
+
+## EZDesign material authoring continuation (2026-11-06)
+
+- Added undoable custom palette creation/editing (32-entry limit), front/back
+  painting and face reversal in the inspector, using the existing native format.
+  RGB edits are staged until Apply/Create. Palette swatches wrap to inspector
+  width. Reversal flips every face loop and swaps front/back assignments.
+- Core tests cover holed-face winding, triangulated side assignments, invalid
+  RGB/index rejection, palette bounds, history and native persistence. Real ImGui
+  tests exercise creation, staged RGB dragging, Apply/undo/redo, back painting,
+  reversal and save/reopen with linked components.
+- All five EZDesign tests pass with GCC Debug and Clang ASan/UBSan. Native
+  desktop builds successfully; `git diff --check` passes. Documentation and
+  frontend guidance reflect the new material controls and remaining limits.
+
+## EZDesign subobject transform continuation (2026-11-05)
+
+- Added vertex/edge/face Move/Rotate/Scale through the existing ImGuizmo
+  preview/commit path, with shared-vertex edits and transactional validation.
+  Face holes participate; double-precision pivots preserve far-origin geometry.
+  Vertex preview markers follow candidate positions. Copies, intersection welding
+  and solid contact resolution remain outside this operation.
+- Core coverage checks face/edge/vertex edits, rotation/scale with holes, shared
+  shells, far-origin precision, invalid matrix/warped-face rejection and history.
+  Real ImGui face drags verify preview isolation, one-step undo, Escape and tab
+  cancellation. All five EZDesign tests pass with GCC and Clang ASan/UBSan;
+  native desktop builds and `git diff --check` passes.
+
+## EZDesign native direct-modeling workspace (2026-11-05)
+
+- Traced `main.cpp` → `desktop_frontend.cpp` workspace registration/input,
+  `animation_panel.inc` / `animation_drawing.h` independent document/history,
+  and the shared 3D editing raster, scheduler snapshots and texture uploader.
+  Existing native projects dispatch by a versioned text header; desktop vector
+  documents already have independent bounded history. Tests use assert-based
+  CTest executables and real headless ImGui input, not the aspirational Qt tests.
+- Inspected actual earcut, Clipper2, Manifold and ImGuizmo headers/CMake/licenses.
+  OpenMesh rejects complex vertices/edges and has single-loop faces, so it is
+  unsuitable as the authoritative loose-edge/holed-face document store.
+- Desktop 1.16 appends a native workspace/panel, backed by a GUI/GPU-independent
+  C++17 topology/command core and separate camera/inference/tool controller.
+  Double-precision metres, stable IDs/change maps, explicit edge/holed-face loops,
+  planar arrangement splitting, triangulation, candidate validation and bounded
+  independent history follow the vector editor extension pattern. Existing tab
+  IDs/public config layouts are unchanged.
+- Added Line/Rectangle/Circle/Arc, numeric input, inference/locks, perspective and
+  orthographic navigation, scoped picking/BVH, signed Push/Pull, isolated-prism
+  window cuts and Clipper2 boundary door notches, standalone offsets, deletion/
+  cleanup, nested groups, linked instances/Make Unique, instance ImGuizmo TRS,
+  endpoint/point dimensions and basic front/back face-color assignments.
+- Reuses the editing raster via a private camera-relative triangle adapter;
+  immutable scheduler snapshots preserve completed frames, reject obsolete
+  document/scope/cancelled gestures and restore exact idle samples. Existing
+  production scene pixels/defaults remain unchanged. Topology edges/measurements
+  are overlays, not triangulation diagonals.
+- Desktop native File API detects `ezdesign 1` .jfx payloads and atomically saves
+  IDs, topology, scopes, transforms, materials, dimensions, units and camera with
+  17-digit doubles. OBJ/PLY flatten mesh geometry; existing Core/tinyply reads the
+  PLY independently. Native .skp, general Booleans, sweeps, UVs, section planes,
+  import and incremental/shared instance buffers remain explicitly unavailable.
+  See `docs/ezdesign.md` for the full supported contract and remaining limits.
+- Added five CTest executables: topology/offset holes and multiple contours,
+  inference/tools, real ImGui editing/gizmo/focus, independent raster/PLY exchange,
+  and a complete 6 m room fixture with door/window, dimensions/materials, linked
+  furniture edits and undo/redo of every command. Both sanitizer and GCC suites
+  pass all five. Seven additional desktop/raster regressions pass under Clang
+  ASAN+UBSan (12 total), with no sanitizer findings. GCC real SDL/OpenGL offscreen
+  startup opens the saved room for 12 frames; the sanitizer configuration retains
+  its window-OFF setting and passes the two-frame native-project headless smoke.
+  Native Windows/macOS/manual mouse
+  placement remain unverified. No new-code compiler warnings; existing unrelated
+  desktop warnings remain. `git diff --check` passes.
+- Profiled 4 windowed walls (128 triangles) and 200 instances (6400 triangles),
+  Linux i7-11700K/GCC Debug: roughly 0.001–0.004 ms pick/snap queries, 0.184/13.460
+  ms BVH rebuild and 1.664/12.219 ms definition-preview plus mesh rebuild. Full
+  conditions and sanitizer measurements are in the guide. Expanded instance pick
+  data and synchronous candidate/mesh work are the measured scaling bottlenecks.
+
 ## 3D viewport navigation and global preferences (2026-11-05)
 
 - Traced the shared Design/Animation/GameDev viewport, scheduler snapshots,

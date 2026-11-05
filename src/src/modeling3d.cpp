@@ -712,6 +712,33 @@ struct jfx_scene3d {
     glm::quat navigation_orientation;
     tilly::string navigation_before;
 };
+jfx_result_t jfx::detail::render_editing_triangles(const EditingTriangle *triangles,size_t count,
+    const float quaternion[4],float distance,float orthographic_height,
+    uint32_t w,uint32_t h,const float background[3],bool antialias,uint8_t *out,size_t capacity) {
+    if ((!triangles && count) || count>131072 || !quaternion || !background || !out ||
+        !w || !h || w>2048 || h>2048 || capacity<size_t(w)*h*4 ||
+        !std::isfinite(distance) || distance<=0 || !std::isfinite(orthographic_height) || orthographic_height<0)
+        return JFX_ERROR_INVALID_ARGUMENT;
+    return boundary([&] {
+        Document d; d.camera={0,0,distance,0,0,0,45};
+        d.orientation={quaternion[3],quaternion[0],quaternion[1],quaternion[2]};
+        require(std::abs(glm::dot(d.orientation,d.orientation)-1.f)<.0001f);
+        // Batch by material color, retaining flat normals and no topology diagonals
+        // in the overlay. This adapter does not modify any scene editor document.
+        for (size_t i=0;i<count;++i) {
+            const auto &t=triangles[i];
+            for (float c:t.color) require(std::isfinite(c) && c>=0 && c<=1);
+            auto at=std::find_if(d.objects.begin(),d.objects.end(),[&](const Object &o){return o.color==t.color;});
+            if (at==d.objects.end()) { d.objects.emplace_back(); at=d.objects.end()-1; at->color=t.color; }
+            uint32_t first=uint32_t(at->vertices.size());
+            for (const auto &v:t.positions) { for (float c:v) require(std::isfinite(c)); at->vertices.push_back(v); }
+            at->triangles.push_back({first,first+1,first+2});
+        }
+        std::array<uint8_t,3> clear{};
+        for (size_t i=0;i<3;++i) { require(std::isfinite(background[i])); clear[i]=uint8_t(std::clamp(background[i],0.f,1.f)*255.f); }
+        return render_document(d,0,w,h,out,JFX_SCENE3D_SHADING_GOURAUD,clear,antialias,orthographic_height,.0001f);
+    });
+}
 extern "C" jfx_scene3d_t *jfx_scene3d_create() {
     // Bullet is private to this engine; install its process-lifetime hooks once.
     static const bool configured=[] {

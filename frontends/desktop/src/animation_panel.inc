@@ -258,7 +258,6 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
     ImGui::EndChild(); ImGui::EndDisabled();
     if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput && !e.dragging && !frontend->drawing_gizmo) {
         if(io.KeyCtrl || io.KeySuper) {
-            if(ImGui::IsKeyPressed(ImGuiKey_Z)) {if(io.KeyShift)e.redo();else e.undo();}
             if(ImGui::IsKeyPressed(ImGuiKey_S)) std::snprintf(frontend->status,sizeof(frontend->status),"%s",e.save(e.path)?"Drawing saved":"Could not save drawing");
         } else if(!ImGui::IsAnyItemActive()) {
             const ImGuiKey keys[]={ImGuiKey_V,ImGuiKey_B,ImGuiKey_L,ImGuiKey_R,ImGuiKey_O,ImGuiKey_E,ImGuiKey_H};

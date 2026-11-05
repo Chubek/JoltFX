@@ -163,6 +163,12 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 The private `modeling3d_preview.h` editing profile accepts a clear color and
 single-/four-sample raster coverage without changing public production renders.
+Its private `render_editing_triangles` adapter also serves the desktop EZDesign
+topology workspace. Inputs are immutable camera-relative triangles, with an
+explicit quaternion, optional orthographic height and 0.1 mm near plane. Reuse
+the existing raster's depth/clipping/coverage, preserve public scene defaults
+and failure-atomic output, and keep topology/vendor types out of this boundary.
+`ezdesign_exchange` checks orthographic/perspective openings and invalid output.
 Keep outputs failure-atomic and settings out of serialized scenes. OSG viewport
 1.0.1 preserves preview aspect ratio at small dimensions. Camera gestures reserve
 their serialized baseline/history at begin; end/cancel must not copy, revalidate

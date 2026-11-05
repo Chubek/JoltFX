@@ -1,4 +1,5 @@
 set(JFX_IMGUI_DIR "${PROJECT_SOURCE_DIR}/third_party/imgui")
+add_subdirectory(ezdesign)
 
 set(JFX_IMGUI_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/imguizmo_bridge.cpp
@@ -43,6 +44,7 @@ set_property(GLOBAL PROPERTY JFX_DESKTOP_WINDOW_ENABLED ${JFX_DESKTOP_WINDOW_ENA
 add_library(jfx_desktop_frontend STATIC
     src/desktop_frontend.cpp
     src/preferences.cpp
+    src/ezdesign_workspace.cpp
     src/host_window.cpp
     ${JFX_IMGUI_SOURCES}
 )
@@ -65,7 +67,7 @@ target_include_directories(jfx_desktop_frontend PUBLIC
 target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE ${JFX_IMGUI_DIR})
 target_include_directories(jfx_desktop_frontend PRIVATE "${PROJECT_SOURCE_DIR}/third_party/ImGuizmo/src")
 target_include_directories(jfx_desktop_frontend SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/glm")
-target_link_libraries(jfx_desktop_frontend PUBLIC jfx_core jolt_effects)
+target_link_libraries(jfx_desktop_frontend PUBLIC jfx_core jolt_effects PRIVATE jfx_ezdesign)
 
 # NovoGFX presents a CPU-rasterized editor directly through DRM/KMS. SDL is
 # used only as a software rasterizer/audio library on this path, never to open

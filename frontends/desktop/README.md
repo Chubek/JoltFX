@@ -1,5 +1,11 @@
 # JoltFX desktop frontend
 
+**EZDesign** adds an editable vertex/edge/planar-face modeler with drawing,
+Push/Pull, prism door/window openings, offsets, linked components, dimensions,
+native `.jfx` save/reopen and OBJ/PLY export. It has independent history and uses
+the shared editing raster. Scroll the workspace tab bar right to open it, or use
+View > EZDesign. See [controls, acceptance workflow and current limitations](../../docs/ezdesign.md).
+
 `-DJFX_FILAMENT=ON` adds **Filament (GPU rasterizer)** to the 3D workspace's
 Rendering engine selector, with lit PBR surfaces, smooth normals, shadows and
 FXAA. It shares animated scene/camera inputs and PNG/video export snapshots.
@@ -16,10 +22,34 @@ for quality, build options and the 4,096-visible-triangle limit.
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
 **Creative Programming**, **GameDev**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
-undo/redo and Export are shared across tabs. View controls tab visibility; on
+Export and the shared editor controls are available across the relevant tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
 Ctrl/Cmd plus mouse wheel; the zoom value is independent of render resolution.
+
+### Undo and redo in every workspace
+
+Every tab has top-level **Undo / Redo** buttons and **Edit > Undo / Redo**.
+Use **Ctrl/Cmd+Z**, **Ctrl/Cmd+Shift+Z**, or **Ctrl+Y**. Controls are disabled
+when their history is empty. While typing, shortcuts operate on the active text
+field; toolbar/menu actions operate on the workspace document.
+
+- NLE, effects, color, compositing, audio, DAW, Plugins, Console and Statistics
+  use the shared editor document history. 3D Design/Animation/Rendering/Sculpting
+  and GameDev scene edits use the Core scene history.
+- 2D Animation and EZDesign use their own document histories.
+- Creative Programming retains 32 sketch edits (source and canvas dimensions),
+  including source replacements and loads. Leaving an edited widget or switching
+  tabs finishes one edit. Undo refreshes the preview and pauses animation.
+- GameDev retains 32 source edits, including room/Cliche generation and source
+  replacement/loading. In its **Ingagi** sub-tab, the main controls/shortcuts
+  operate on source; other GameDev sub-tabs show scene controls plus explicit
+  **Undo source / Redo source** buttons. Source undo stops playback and marks the
+  source for reload; it does not execute code or restore VM state.
+
+Histories survive tab switches. New edits after undo clear the corresponding redo
+branch. Playback, preview-only controls, log output and plugin loading are not
+document edits.
 
 **Color Grading** has Resolve-inspired Lift/Gamma/Gain and Shadows/Midtones/
 Highlights wheels, master dials and rotary scalar controls generated from kernel

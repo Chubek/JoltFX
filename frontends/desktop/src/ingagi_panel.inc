@@ -10,8 +10,9 @@ void game_pause(jfx_desktop_frontend_t *f) {
 void game_stop(jfx_desktop_frontend_t *f) {
     game_pause(f); f->game_started = false;
 }
-void game_source_changed(jfx_desktop_frontend_t *f) {
+void game_source_changed(jfx_desktop_frontend_t *f,bool checkpoint=true) {
     game_stop(f); f->game_source_dirty = true;
+    if(checkpoint)game_checkpoint(f);
 }
 void game_message(jfx_desktop_frontend_t *f, jfx_result_t result) {
     if (result != JFX_SUCCESS)
@@ -226,8 +227,10 @@ void game_scripts(jfx_desktop_frontend_t *f) {
         ImGui::SameLine(); if (ImGui::Button("Keep source")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
+    f->game_source_id=ImGui::GetID("##Ingagi source");
     if (ImGui::InputTextMultiline("##Ingagi source", f->game_source, sizeof(f->game_source), ImVec2(-1, 300), ImGuiInputTextFlags_AllowTabInput))
-        game_source_changed(f);
+        game_source_changed(f,false);
+    if(ImGui::IsItemDeactivatedAfterEdit())game_checkpoint(f);
     ImGui::Text("%zu / %zu source bytes | %s", std::strlen(f->game_source), sizeof(f->game_source) - 1,
         f->game_source_dirty ? "unloaded changes" : "loaded");
     ImGui::InputText("Entry", f->game_entry, sizeof(f->game_entry));
@@ -330,6 +333,7 @@ void ingagi_panel(jfx_desktop_frontend_t *f) {
         int previous = f->game_mode;
         for (int i = 0; i < 7; ++i) if (ImGui::BeginTabItem(tabs[i])) { f->game_mode = i; ImGui::EndTabItem(); }
         ImGui::EndTabBar();
+        if(previous!=f->game_mode)game_checkpoint(f);
         if (previous != f->game_mode && f->scene_transforming) {
             game_message(f, jfx_desktop_frontend_edit(f, "3d.transform_end", 0, 0, 0, 0, "")); f->scene_transforming = false;
         }
