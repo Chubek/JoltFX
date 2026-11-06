@@ -38,12 +38,13 @@ typedef enum {
     JFX_DESKTOP_PANEL_CREATIVE,
     JFX_DESKTOP_PANEL_GAME,
     JFX_DESKTOP_PANEL_EZDESIGN,
+    JFX_DESKTOP_PANEL_PAGE_DESIGN,
     JFX_DESKTOP_PANEL_COUNT
 } jfx_desktop_panel_t;
 
 /* Each editor interface occupies one workspace tab; transport and preview are shared. */
 #define JFX_DESKTOP_API_MAJOR 1
-#define JFX_DESKTOP_API_MINOR 17
+#define JFX_DESKTOP_API_MINOR 18
 #define JFX_DESKTOP_API_PATCH 0
 typedef enum {
     JFX_DESKTOP_WORKSPACE_NLE = 0,
@@ -61,6 +62,7 @@ typedef enum {
     JFX_DESKTOP_WORKSPACE_CREATIVE,
     JFX_DESKTOP_WORKSPACE_GAME,
     JFX_DESKTOP_WORKSPACE_EZDESIGN,
+    JFX_DESKTOP_WORKSPACE_PAGE_DESIGN,
     JFX_DESKTOP_WORKSPACE_COUNT
 } jfx_desktop_workspace_t;
 
@@ -118,7 +120,7 @@ typedef struct {
     uint32_t width;                /* 0 selects 1280 */
     uint32_t height;               /* 0 selects 720 */
     const char *backend_name;      /* "vulkan"/"metal"/"d3d12"/"webgpu"/"auto"/NULL */
-    const char *project_path;      /* optional .jolt kernel or .jfx project to load at startup */
+    const char *project_path;      /* optional .jolt kernel, .jfx project or .jtype page document */
     const char *effect_name;       /* optional bundled effect to preview */
     float effect_parameter;        /* effect parameter, clamped by the catalog */
     bool show_timeline;            /* initial panel visibility */

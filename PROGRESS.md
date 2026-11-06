@@ -1,5 +1,85 @@
 # Progress
 
+## JoltType primary libharu PDF exporter (2026-11-07)
+
+- Making vendored libharu the default final PDF publisher across desktop export,
+  Typelet builds and the SDK. PoDoFo remains an explicitly selectable alternative
+  and continues to generate Progress Display PDFs. Both outputs use qpdf checks.
+- Added libharu's vendored build/install dependency and Tilly allocator adapter,
+  embedded TrueType/BMP UTF-8 text, positioned shapes and PNG/JPEG output. The
+  existing font resolver supplies font bytes; libharu draws/serializes final PDF.
+- `pdf` / `Target::PDF` selects libharu; `pdf-podofo` / `Target::PDFPoDoFo`
+  selects the previous exporter. Export and package dialogs expose both choices;
+  preview jobs explicitly request PoDoFo. JoltType is 0.3, C API minor is 1.1.
+- Native publishing, Typelet, C API and real-widget tests pass: default/alternative
+  identity, multi-page/color output, embedded images, BMP text, failure retention,
+  default GUI export and the independent PoDoFo preview path. Both final PDFs
+  pass external `qpdf --check`; relocated SDK install/C11/C++17 checks pass.
+- Targeted publishing/project/API/Page Design checks also pass under Clang
+  ASan/UBSan (adapters instrumented, native vendor prefix reused). Native desktop
+  builds, no new-code compiler warnings were reported, and diff checks pass.
+
+## JoltType publishing, Typelets and IDE (2026-11-07)
+
+- Extending the existing staged Page Design implementation with real PDF
+  generation/validation/raster preview, Edit/IDE modes, restorable source hatch,
+  shared tagged inventory, portable target/module APIs and zstd Typelets.
+- Inspected vendored PoDoFo/qpdf/PDFium, Binaryen/WAMR and Klib KSON. KSON lives
+  in `third_party/klib`; PDFium requires an explicit native runtime library
+  because the checkout lacks Chromium's GN/build dependency tree. The existing
+  shared WAMR adapter will own runtime initialization, budgets and module calls.
+- Implemented PoDoFo PDF output, qpdf validation/rewrite, dynamically loaded
+  PDFium rasterization, PostScript/DVI output, embedded PNG/JPEG and inventory
+  text resources. Compiler/package outputs remain failure-atomic.
+- Added Edit/IDE source hatch/restore, shared tagged inventory, structured package
+  builder, module actions and scheduler-owned Progress Display snapshots.
+- Added zstd Typelets, strict bounded KSON manifests, JTBC1 document objects,
+  Binaryen scalar-expression modules and the existing metered WAMR host.
+- Added canonical C target/frontend/project API and SDK 1.3 facet; relocated
+  standalone SDK C11/C++17/install checks pass.
+- Fixed a real desktop startup collision between Binaryen's bundled LLVM and
+  driver LLVM by restricting the shared library's ELF exports to its C API.
+- Native compiler/publishing/package/API tests pass, including real PDFium
+  pixels, resource revision undo/redo, WASM execution and failed-load retention.
+- Verification complete: five JoltType/Page Design checks, all 14 configured
+  desktop UI tests, and five extension conformance checks pass. Real widgets cover
+  hatch restore, PDF split visibility, IDE switching, metadata and Typelet output.
+- Clang ASan/UBSan passes compiler, publishing, project, C API and real Page Design
+  widget tests. JoltType/WAMR/zstd are instrumented; PDF/Binaryen vendor archives
+  reuse the native Release prefix. External qpdf, dvitype and Ghostscript accept
+  generated PDF, DVI and PostScript output. Native desktop builds; diff checks pass.
+- PDFium testing uses the 5.7.1 pypdfium2 shared runtime under
+  `/tmp/opencode/jolttype-pdfium`, through vendored PDFium headers. Shipping builds
+  must provide a PDFium runtime as documented. DVI/PS text and module expressions
+  remain bounded profiles; the desktop UI and frontend-neutral API are implemented,
+  while toolkit adapters for other frontends are not added by this change.
+
+## JoltType / Page Design (2026-11-06)
+
+- Added the standalone, installable C++17 `jolttype` library (0.1): versioned
+  LaTeX-inspired markup, multiple physical-size pages, positioned/wrapped text,
+  colored rectangles, source spans, bounded UTF-8 validation and diagnostics.
+  Tilly owns all library strings/vectors. Compilation/output is failure-atomic.
+- Desktop 1.18 appends Page Design IDs and an independent source/page workspace:
+  frame dragging, inspector text, source edits, explicit Commit/Revert, bounded
+  revision undo/redo, page navigation and zoom. Visual edits preserve untouched
+  source/comments. Invalid commits retain the published page; live drags cancel
+  on Escape/tab changes. Global history routes to the page document.
+- Preferences persist `page_auto_commit_seconds` (default 60, 0 disables,
+  maximum 3600). Dirty deadlines run off-tab and defer during mouse/file jobs;
+  failed commits retry at the configured interval. Commit is separate from Save.
+- Added `.jtype` project dispatch, scheduler-owned source open/save and per-page
+  SVG export with atomic sibling publication. Installed headers, library, guide
+  and a two-page newsletter example. The documented initial typography profile
+  is fixed-em; complex shaping, embedded fonts, images and PDF are not implemented.
+- Native desktop builds; all 14 configured UI tests pass. Compiler/session tests
+  cover malformed input, units/wrapping/UTF-8, limits, failure preservation,
+  timers, history bounds/branching and persistence. Real widgets cover moves,
+  cancellations, source/text commits, errors, history, SVG output and persisted
+  off-tab auto-commit. JoltType/Page Design/preferences/history checks pass with
+  Clang ASan/UBSan. No new-code warnings; existing desktop double-promotion
+  warnings remain. `git diff --check` passes.
+
 ## Ingagi 2D animation and lib2geom (2026-11-06)
 
 - Traced the independent desktop vector/cel editor, skeletal JFA1 evaluator,

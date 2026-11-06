@@ -24,6 +24,7 @@ file(WRITE "${TEST_DIR}/consumer/main.c" "
 #include <joltfx/sdk/events.h>
 #include <joltfx/sdk/ingagi.h>
 #include <joltfx/sdk/joltscript.h>
+#include <joltfx/sdk/jolttype.h>
 #include <joltfx/sdk/runtime.h>
 #include <joltfx/sdk/timeline.h>
 #include <joltfx/sdk/facet.h>
@@ -45,11 +46,11 @@ project(SDKConsumer LANGUAGES C CXX)
 if(SDK_SOURCE_DIR)
     add_subdirectory("${SDK_SOURCE_DIR}" sdk)
 else()
-    find_package(JoltFXSDK 1.2 REQUIRED CONFIG COMPONENTS
-        headers audio backend events facet frontend gui ingagi joltscript libraries
+    find_package(JoltFXSDK 1.3 REQUIRED CONFIG COMPONENTS
+        headers audio backend events facet frontend gui ingagi joltscript jolttype libraries
         loader openfx module plugins renderer runtime timeline tools)
 endif()
-foreach(facet audio backend events facet frontend gui ingagi joltscript libraries
+foreach(facet audio backend events facet frontend gui ingagi joltscript jolttype libraries
         loader openfx module plugins renderer runtime timeline tools)
     list(APPEND facets JoltFXSDK::${facet})
     foreach(language c cpp)
@@ -88,6 +89,7 @@ run("${TEST_DIR}/buildtree-consumer/consumer")
 run("${TEST_DIR}/buildtree-consumer/consumer_cpp")
 # Installed contracts must be exact copies of their canonical definitions.
 foreach(pair
+    "jolttype/include/jolttype/api.h|jolttype/api.h"
     "third_party/openfx/include/ofxImageEffect.h|openfx/ofxImageEffect.h"
     "ingagi/native_extension_api/Ingagi-Module.h|ingagi/Ingagi-Module.h"
     "ingagi/native_extension_api/Ingagi-Module.hpp|ingagi/Ingagi-Module.hpp"
@@ -114,7 +116,8 @@ run("${CMAKE_COMMAND}" -S "${TEST_DIR}/detached-source" -B "${TEST_DIR}/detached
     "-DJOLTFX_SDK_EXECUTION_INCLUDE_DIR=${TEST_DIR}/relocated/include"
     "-DJOLTFX_SDK_INGAGI_API_DIR=${TEST_DIR}/relocated/include/ingagi"
     "-DJOLTFX_SDK_TILLY_INCLUDE_DIR=${TEST_DIR}/relocated/include"
-    "-DJOLTFX_SDK_OPENFX_INCLUDE_DIR=${TEST_DIR}/relocated/include/openfx")
+    "-DJOLTFX_SDK_OPENFX_INCLUDE_DIR=${TEST_DIR}/relocated/include/openfx"
+    "-DJOLTFX_SDK_JOLTTYPE_INCLUDE_DIR=${TEST_DIR}/relocated/include")
 run("${CMAKE_COMMAND}" --build "${TEST_DIR}/detached-build")
 run("${CMAKE_COMMAND}" --install "${TEST_DIR}/detached-build" --prefix "${TEST_DIR}/detached-install")
 file(MAKE_DIRECTORY "${TEST_DIR}/unknown")

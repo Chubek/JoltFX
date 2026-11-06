@@ -90,6 +90,21 @@ design targets. Use `joltscript/docs/language.md`, `joltscript/docs/stdlib.md` a
 `JOLTSCRIPT_PLAN.md` for the implemented contract rather than the aspirational
 language examples elsewhere in this guide.
 
+### JoltType
+
+JoltType is the C++17 desktop-publishing language in `jolttype/`. Its version-1
+markup describes pages, positioned fixed-em text frames and filled rectangles.
+The Page Design workspace stages source/visual edits until Commit or the global
+auto-commit deadline (60 seconds by default). Compilation is failure-atomic;
+committed source saves as `.jtype`; PDF/SVG/PostScript/DVI publishing uses bounded
+target profiles. Edit/IDE modes share tagged dependencies, restorable source hatch,
+zstd Typelets with KSON manifests and Binaryen/WAMR scalar modules. The optional
+PDF Progress Display uses PoDoFo, qpdf and a separately supplied PDFium runtime.
+Final PDF defaults to vendored libharu, with PoDoFo retained as the `pdf-podofo`
+alternative and preview generator. The SDK exposes a frontend-neutral C API and custom target callbacks. This is
+a bounded declarative language, not a TeX interpreter. See `jolttype/README.md`
+for the syntax, typography limits, C++ API and independent history semantics.
+
 ### Tilly
 
 Tilly is the language in which the Core engine itself is implemented. It is fully interoperable with Joltscript. Tilly is implemented in Go and supports the following execution strategies:

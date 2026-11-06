@@ -21,7 +21,7 @@ for quality, build options and the 4,096-visible-triangle limit.
 
 The Dear ImGui desktop editor has one tab per interface: **NLE**, **Layer
 Effects**, **Color Calibration**, **Color Grading**, **Node Compositing**,
-**Creative Programming**, **GameDev**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
+**Creative Programming**, **GameDev**, **Audio Mixing**, **DAW**, **2D Animation**, **3D Modeling & Animation**, **EZDesign**, **Page Design**, **Plugins**, **Console** and **Statistics**. Transport, clip selection, preview,
 Export and the shared editor controls are available across the relevant tabs. View controls tab visibility; on
 narrow layouts the shared preview is collapsible above the active interface.
 The shared workspace preview supports 0.25x–8x zoom through the Zoom control or
@@ -472,3 +472,20 @@ to create undoable vector cels. Save source as `.ing`; save artwork as `.jfxdraw
 Current-frame SVG and manual drawing also work with Ingagi disabled.
 See [the animation guide](../../docs/animation.md) and
 [`animation2d.ing`](../../ingagi/examples/animation2d.ing).
+## Page Design / JoltType
+
+The **Page Design** tab is a staged desktop-publishing workspace backed by the
+C++17 JoltType compiler. Edit `.jtype` markup or move/text-edit frames, then press
+**Commit**. File → Preferences configures auto-commit (60 seconds by default;
+0 disables it). **Edit** offers restorable source hatch; **IDE Mode** offers direct
+source editing, Compile and package tools. Both share a tagged dependency inventory
+for images, text and code. **Show Progress Display** opens a collapsible/resizable
+PDF pane backed by PoDoFo, qpdf and PDFium, with scheduler progress.
+Commit publishes in memory; **Files…** saves source or exports PDF/SVG/PS/DVI.
+Final PDF defaults to **PDF (libharu)**; **PDF (PoDoFo alternative)** retains the
+previous exporter. Package build targets offer the same choice. Progress Display
+continues to use PoDoFo/qpdf/PDFium independently of final-output selection.
+Typelet tools build/package raw and compiled documents and WASM code modules;
+manifest-defined actions generate numeric controls. It has independent undo/redo and preserves the previous
+published page on compile errors. See [JoltType](../../jolttype/README.md) for
+the language, limits, examples and workflow.

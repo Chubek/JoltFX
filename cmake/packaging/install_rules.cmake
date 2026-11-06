@@ -18,6 +18,7 @@ endif()
 list(APPEND JFX_INSTALL_TARGETS
     tillyz
     tilly
+    jolttype
     joltscript_execution
     pcre2-8-static
     joltscript_glue
@@ -111,6 +112,9 @@ foreach(extension IN ITEMS lua mruby quickjs python wasm)
 endforeach()
 install(DIRECTORY tilly/include/tilly tilly/tillyz/include/tillyz DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+install(DIRECTORY jolttype/include/jolttype DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES jolttype/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/jolttype)
+install(DIRECTORY jolttype/examples DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/jolttype)
 install(DIRECTORY backends/common/include/jfx
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING

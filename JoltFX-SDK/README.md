@@ -1,4 +1,4 @@
-# JoltFX SDK 1.2
+# JoltFX SDK 1.3
 
 A C11/C++17 development package over JoltFX's existing public contracts. The SDK
 does not duplicate the engine or expose third-party implementation types.
@@ -29,6 +29,7 @@ Planned and in-progress SDK work is tracked in [FUTURE_OF_SDK.md](FUTURE_OF_SDK.
 | `JoltFXSDK::runtime` | `joltfx/sdk/runtime.h` | Engine lifecycle, memory, scheduler and result codes |
 | `JoltFXSDK::ingagi` | `joltfx/sdk/ingagi.h` | Canonical Ingagi native-module/embedding ABI 1.0.0 |
 | `JoltFXSDK::joltscript` | `joltfx/sdk/joltscript.h` | Compiler, typed VM, image/audio tasks and pipelines |
+| `JoltFXSDK::jolttype` | `joltfx/sdk/jolttype.h` | Page projects, inventory/Typelets, output targets and WASM module actions |
 
 `JoltFXSDK::headers` supplies the installed public include directory. Link the
 named facet targets for equivalent build-tree usage. `loader` and `openfx` are
@@ -66,6 +67,7 @@ this repository, set these paths to canonical headers or an existing installatio
 | `JOLTFX_SDK_INGAGI_API_DIR` | `ingagi/native_extension_api` | `<prefix>/include/ingagi` |
 | `JOLTFX_SDK_TILLY_INCLUDE_DIR` | `tilly/include` | `<prefix>/include` |
 | `JOLTFX_SDK_OPENFX_INCLUDE_DIR` | `third_party/openfx/include` | `<prefix>/include/openfx` |
+| `JOLTFX_SDK_JOLTTYPE_INCLUDE_DIR` | `jolttype/include` | `<prefix>/include` |
 
 `examples/gain` is a complete standalone image-effect module:
 
@@ -75,10 +77,13 @@ joltfx_sdk_add_plugin(MyEffect effect.c) # exports jfx_plugin_entry
 joltfx_sdk_add_renderer(MyRenderer renderer.cpp) # exports jfx_renderer_entry
 ```
 
-Request new facets with `find_package(JoltFXSDK 1.2 REQUIRED CONFIG COMPONENTS
-ingagi joltscript openfx)`. Required unknown components fail configuration. SDK package
-version 1.2.0 is additive; individual engine/language/module ABI versions are
+Request new facets with `find_package(JoltFXSDK 1.3 REQUIRED CONFIG COMPONENTS
+ingagi joltscript jolttype openfx)`. Required unknown components fail configuration. SDK package
+version 1.3.0 is additive; individual engine/language/module ABI versions are
 independent. Existing 1.0 consumers remain supported.
+
+JoltType consumers link `JoltFX::jolttype` separately; see
+[JoltType target/frontend guide](docs/jolttype.md).
 
 Installed examples live in `share/joltfx/sdk/examples`; guides are under
 `${CMAKE_INSTALL_DOCDIR}/sdk`. Language examples check results and release their

@@ -1,6 +1,6 @@
 # SDK facets and capability inventory
 
-SDK 1.2 packages the existing public contracts. All 28 headers under
+SDK 1.3 packages the existing public contracts. All 28 headers under
 `src/include/jfx` are installed and represented by the adapters below. Names in
 the header column are relative to `include/jfx` unless explicitly qualified.
 Include adapters as `<joltfx/sdk/NAME.h>` and link `JoltFXSDK::NAME`.
@@ -24,6 +24,7 @@ Include adapters as `<joltfx/sdk/NAME.h>` and link `JoltFXSDK::NAME`.
 | `runtime` | `jfx_engine.h`, `jfx_memory.h`, `jfx_scheduler.h`, `jfx_result.h`; `tilly/allocator.h` | Engine lifecycle, scheduler jobs and engine-managed heaps/pools/frame scratch. Release storage with the matching API. |
 | `ingagi` | `ingagi/Ingagi-Module.h`, optional `.hpp` | Scalar C embedding with native callbacks; C++17 owning session wrapper. See [Ingagi](ingagi.md). |
 | `joltscript` | `jfx_kernel.h`; `joltscript/{compiler,bindings,vm,value,image_program,image_task,audio_task,pipeline}.h` | JBC1 compiler/runtime and separate CPU image execution. See [Joltscript](joltscript.md). |
+| `jolttype` | `jolttype/api.h` | Page/source/history, tagged dependencies, Typelets, custom output targets, WASM and frontend action descriptors. Separate `JoltFX::jolttype` runtime. See [JoltType](jolttype.md). |
 
 The installed Joltscript headers also include `audio_io.h`, `video_io.h`,
 `media_writer.h` and `color_io.h` for direct Glue media adapters. They may be

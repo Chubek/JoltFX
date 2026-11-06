@@ -55,6 +55,16 @@ option(JFX_EXT_MRUBY "Build the mruby extension runtime" ON)
 option(JFX_EXT_QUICKJS "Build the QuickJS extension runtime" OFF)
 option(JFX_EXT_PYTHON "Build the MicroPython extension runtime" OFF)
 option(JFX_EXT_WASM "Build the vendored WAMR WebAssembly extension runtime" OFF)
+set(jt_native_default ON)
+if(CMAKE_CROSSCOMPILING OR EMSCRIPTEN)
+    set(jt_native_default OFF)
+endif()
+option(JFX_JOLTTYPE_PDF "Build JoltType PDF publishing with vendored libharu, PoDoFo and qpdf" ${jt_native_default})
+option(JFX_JOLTTYPE_MODULES "Build JoltType modules with vendored Binaryen and WAMR" ${jt_native_default})
+if(JFX_JOLTTYPE_MODULES)
+    # Share the existing metered, allocator-aware WAMR host with extensions.
+    set(JFX_EXT_WASM ON)
+endif()
 
 # Frontends.
 option(JFX_FRONTEND_CLI "Build the command-line frontend" ON)
@@ -83,6 +93,7 @@ target_include_directories(jfx_api INTERFACE
 )
 
 add_subdirectory(tilly)
+add_subdirectory(jolttype)
 add_subdirectory(joltscript)
 add_subdirectory(backends)
 include(cmake/MonkeyTrace.cmake)

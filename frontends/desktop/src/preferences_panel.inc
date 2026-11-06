@@ -37,6 +37,9 @@ void preferences_panel(jfx_desktop_frontend_t *f) {
         changed=ImGui::SliderFloat("UI scale",&p.ui_scale,.75f,2.f,"%.2fx",ImGuiSliderFlags_AlwaysClamp)||changed;
         changed=ImGui::Checkbox("Loop playback by default",&p.loop_playback)||changed;
         changed=ImGui::Checkbox("Timeline snapping by default",&p.timeline_snap)||changed;
+        ImGui::SeparatorText("Page Design");
+        changed=ImGui::SliderInt("Auto-commit interval (seconds)",&p.page_auto_commit_seconds,0,3600,"%d",ImGuiSliderFlags_AlwaysClamp)||changed;
+        ImGui::TextWrapped("0 disables auto-commit. Default: 60 seconds. Commit publishes a validated page revision; Save writes it to disk.");
         ImGui::Separator();
         ImGui::BeginDisabled(f->preferences_save_job || !f->preferences_paths.config[0]);
         if (ImGui::Button("Save Preferences")) {

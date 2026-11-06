@@ -38,6 +38,7 @@
 #include "animation_drawing.h"
 #include "animation_script.h"
 #include "ezdesign_workspace.h"
+#include "page_design_workspace.h"
 #include "game_authoring.h"
 #include <new>
 #include "imgui.h"
@@ -246,6 +247,8 @@ struct jfx_desktop_frontend {
     bool show_game;
     bool show_ezdesign;
     jfx::ez::Workspace *ezdesign;
+    bool show_page_design;
+    jfx::page::Workspace *page_design;
     int scene_object,scene_vertex,scene_channel,scene_interpolation;
     int scene_bake_frames;
     int scene_primitive,scene_segments,scene_control,scene_ball,scene_gizmo_axis;
@@ -415,6 +418,7 @@ struct jfx_desktop_frontend {
 };
 
 jfx::ez::Workspace *jfx::ez::workspace(jfx_desktop_frontend *f) { return f?f->ezdesign:nullptr; }
+jfx::page::Workspace *jfx::page::workspace(jfx_desktop_frontend *f) { return f?f->page_design:nullptr; }
 
 static void reset_audio(jfx_desktop_frontend_t *f) {
     jfx_audio_mixer_destroy(f->audio_mixer); f->audio_mixer=nullptr;
@@ -599,6 +603,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->show_creative = true;
     frontend->show_game = true;
     frontend->show_ezdesign = true;
+    frontend->show_page_design = true;
     game_authoring::defaults(frontend->game_draft);
     frontend->game_source_dirty = true;
     std::snprintf(frontend->game_ready, sizeof(frontend->game_ready), "ready");
@@ -733,6 +738,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     if (!frontend->drawing) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     frontend->ezdesign=tilly::create<jfx::ez::Workspace>();
     if (!frontend->ezdesign) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
+    frontend->page_design=tilly::create<jfx::page::Workspace>();
+    if (!frontend->page_design) { jfx_desktop_frontend_destroy(frontend); return JFX_ERROR_OUT_OF_MEMORY; }
     frontend->creative_history=tilly::create<jfx_history::SketchHistory>();
     frontend->game_history=tilly::create<jfx_history::GameHistory>();
     if(!frontend->creative_history || !frontend->game_history){jfx_desktop_frontend_destroy(frontend);return JFX_ERROR_OUT_OF_MEMORY;}
@@ -785,6 +792,7 @@ extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
         jfx_animation_tab_destroy(frontend->animation_tab);
         tilly::destroy(frontend->drawing);
         tilly::destroy(frontend->ezdesign);
+        tilly::destroy(frontend->page_design);
         tilly::destroy(frontend->creative_history);
         tilly::destroy(frontend->game_history);
     }
@@ -828,6 +836,15 @@ extern "C" jfx_result_t jfx_desktop_frontend_open_project(jfx_desktop_frontend_t
     std::memcpy(owned_path, path, std::strlen(path) + 1);
     path = owned_path;
     if (frontend->recording) return JFX_ERROR_BUSY;
+    if (const char *ext = std::strrchr(path, '.'); ext && std::strcmp(ext, ".jtype") == 0) {
+        if (!frontend->page_design->load(path)) return JFX_ERROR_INVALID_ARGUMENT;
+        auto result=jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_PAGE_DESIGN);
+        if (result!=JFX_SUCCESS) return result;
+        std::snprintf(frontend->project_path,sizeof(frontend->project_path),"%s",path);
+        std::snprintf(frontend->project_input,sizeof(frontend->project_input),"%s",path);
+        std::snprintf(frontend->status,sizeof(frontend->status),"opened %.152s",path);
+        return JFX_SUCCESS;
+    }
     game_stop(frontend);
     if (frontend->scene_transforming) {
         auto r=jfx_desktop_frontend_edit(frontend,"3d.transform_end",0,0,0,0,"");
@@ -1053,12 +1070,12 @@ namespace {
 
 constexpr const char *workspace_names[]={"NLE","Layer Effects","Color Calibration","Color Grading",
     "Node Compositing","Plugins","Console","Statistics","Audio Mixing","DAW","2D Animation","3D Modeling & Animation",
-    "Creative Programming","GameDev","EZDesign"};
+    "Creative Programming","GameDev","EZDesign","Page Design"};
 constexpr jfx_desktop_panel_t workspace_panels[]={JFX_DESKTOP_PANEL_TIMELINE,JFX_DESKTOP_PANEL_LAYER_EFFECTS,
     JFX_DESKTOP_PANEL_COLOR_CALIBRATION,JFX_DESKTOP_PANEL_COLOR_GRADING,JFX_DESKTOP_PANEL_NODE_COMPOSITING,
     JFX_DESKTOP_PANEL_PLUGINS,JFX_DESKTOP_PANEL_CONSOLE,JFX_DESKTOP_PANEL_STATISTICS,JFX_DESKTOP_PANEL_AUDIO,
     JFX_DESKTOP_PANEL_DAW,JFX_DESKTOP_PANEL_ANIMATION,JFX_DESKTOP_PANEL_MODELING3D,
-    JFX_DESKTOP_PANEL_CREATIVE,JFX_DESKTOP_PANEL_GAME,JFX_DESKTOP_PANEL_EZDESIGN};
+    JFX_DESKTOP_PANEL_CREATIVE,JFX_DESKTOP_PANEL_GAME,JFX_DESKTOP_PANEL_EZDESIGN,JFX_DESKTOP_PANEL_PAGE_DESIGN};
 
 #include "animation_panel.inc"
 #include "modeling3d_panel.inc"
@@ -1245,6 +1262,7 @@ void plugin_panel(jfx_desktop_frontend_t *f) {
 
 bool workspace_can_history(jfx_desktop_frontend_t *f,bool redo) {
     if(f->recording)return false;
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN)return f->page_design->can_history(redo);
     if(f->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE)return source_can_history(f,false,redo);
     if(f->workspace==JFX_DESKTOP_WORKSPACE_GAME && f->game_mode==3)return source_can_history(f,true,redo);
     if(f->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION)return redo?!f->drawing->future.empty():!f->drawing->past.empty();
@@ -1254,6 +1272,7 @@ bool workspace_can_history(jfx_desktop_frontend_t *f,bool redo) {
 }
 void workspace_history(jfx_desktop_frontend_t *f,bool redo) {
     if(!workspace_can_history(f,redo))return;
+    if(f->workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN){f->page_design->history(redo);return;}
     if(f->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE){source_history(f,false,redo);return;}
     if(f->workspace==JFX_DESKTOP_WORKSPACE_GAME && f->game_mode==3){source_history(f,true,redo);return;}
     if(f->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION){
@@ -1288,18 +1307,22 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
         if (ImGui::BeginMenu("File")) {
             bool drawing=frontend->workspace==JFX_DESKTOP_WORKSPACE_ANIMATION;
             bool ezdesign=frontend->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN;
+            bool page_design=frontend->workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN;
             if (ImGui::MenuItem(drawing?"Open drawing...":"Open Project...")) {
-                if(ezdesign) frontend->ezdesign->tools.files_requested=true;
+                if(page_design) frontend->page_design->files_requested=true;
+                else if(ezdesign) frontend->ezdesign->tools.files_requested=true;
                 else if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
             }
             if (ImGui::MenuItem("New sequence")) { finish_grading(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_NLE); jfx_desktop_frontend_close_project(frontend); }
             if (ImGui::MenuItem("New composition")) { finish_grading(frontend); jfx_desktop_frontend_node_compositing_new_graph(frontend); jfx_desktop_frontend_set_workspace(frontend,JFX_DESKTOP_WORKSPACE_COMPOSITING); }
             if (ImGui::MenuItem(drawing?"Save drawing...":"Save project...")) {
-                if(ezdesign) frontend->ezdesign->tools.files_requested=true;
+                if(page_design) frontend->page_design->files_requested=true;
+                else if(ezdesign) frontend->ezdesign->tools.files_requested=true;
                 else if(drawing) frontend->drawing->files_requested=true; else open_requested=true;
             }
             if (ImGui::MenuItem(drawing?"Export drawing SVG...":"Export Frame...")) {
-                if(ezdesign) frontend->ezdesign->tools.files_requested=true;
+                if(page_design) frontend->page_design->files_requested=true;
+                else if(ezdesign) frontend->ezdesign->tools.files_requested=true;
                 else if(drawing) frontend->drawing->files_requested=true;
                 else {
                 auto *t=jfx_editor_timeline(frontend->editor);
@@ -1322,7 +1345,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             if(ImGui::MenuItem("Redo","Ctrl/Cmd+Shift+Z / Ctrl+Y",false,workspace_can_history(frontend,true)))workspace_history(frontend,true);
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Playback",frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN)) {
+        if (ImGui::BeginMenu("Playback",frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && frontend->workspace!=JFX_DESKTOP_WORKSPACE_PAGE_DESIGN)) {
             if (ImGui::MenuItem("Play", "Space", frontend->playing)) {
                 if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
             }
@@ -1348,6 +1371,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
             ImGui::MenuItem("Creative Programming", nullptr, &frontend->show_creative);
             ImGui::MenuItem("GameDev", nullptr, &frontend->show_game);
             ImGui::MenuItem("EZDesign", nullptr, &frontend->show_ezdesign);
+            ImGui::MenuItem("Page Design", nullptr, &frontend->show_page_design);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Extensions")) {
@@ -1397,12 +1421,12 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     ImGui::SetNextWindowPos(viewport->WorkPos); ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::Begin("JoltFX workspace",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|
         ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings);
-    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_PAGE_DESIGN && frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
         ImGui::GetIO().KeyCtrl && std::fabs(ImGui::GetIO().MouseWheel) > 0.0f) {
         const double next = frontend->workspace_zoom * std::exp((double)ImGui::GetIO().MouseWheel * 0.12);
         jfx_desktop_frontend_set_zoom(frontend, next);
     }
-    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE && frontend->workspace!=JFX_DESKTOP_WORKSPACE_GAME) {
+    if (frontend->workspace!=JFX_DESKTOP_WORKSPACE_PAGE_DESIGN && frontend->workspace!=JFX_DESKTOP_WORKSPACE_EZDESIGN && frontend->workspace!=JFX_DESKTOP_WORKSPACE_ANIMATION && frontend->workspace!=JFX_DESKTOP_WORKSPACE_MODELING3D && frontend->workspace!=JFX_DESKTOP_WORKSPACE_CREATIVE && frontend->workspace!=JFX_DESKTOP_WORKSPACE_GAME) {
     if (ImGui::Button(frontend->playing?"Pause":"Play")) {
         if (frontend->playing) jfx_desktop_frontend_pause(frontend); else jfx_desktop_frontend_play(frontend);
     }
@@ -1446,7 +1470,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     } else ImGui::TextDisabled("%s",frontend->status);
     } else {
         workspace_history_buttons(frontend);ImGui::SameLine();
-        ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN?"EZDesign":frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":frontend->workspace==JFX_DESKTOP_WORKSPACE_GAME?"GameDev / Ingagi":"Vector animation",frontend->status);
+        ImGui::TextDisabled("%s | %s",frontend->workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN?"Page Design / JoltType":frontend->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN?"EZDesign":frontend->workspace==JFX_DESKTOP_WORKSPACE_MODELING3D?"3D scene":frontend->workspace==JFX_DESKTOP_WORKSPACE_CREATIVE?"Creative sketch":frontend->workspace==JFX_DESKTOP_WORKSPACE_GAME?"GameDev / Ingagi":"Vector animation",frontend->status);
     }
     ImGui::Separator();
     if (ImGui::BeginTabBar("Interfaces",ImGuiTabBarFlags_FittingPolicyScroll)) {
@@ -1460,7 +1484,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     frontend->workspace_requested=false;
                 }
                 bool wide=ImGui::GetContentRegionAvail().x>=760;
-                bool animation=i==JFX_DESKTOP_WORKSPACE_EZDESIGN || i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE || i==JFX_DESKTOP_WORKSPACE_GAME;
+                bool animation=i==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN || i==JFX_DESKTOP_WORKSPACE_EZDESIGN || i==JFX_DESKTOP_WORKSPACE_ANIMATION || i==JFX_DESKTOP_WORKSPACE_MODELING3D || i==JFX_DESKTOP_WORKSPACE_CREATIVE || i==JFX_DESKTOP_WORKSPACE_GAME;
                 bool columns=!animation && frontend->show_viewport && wide && ImGui::BeginTable("Workspace layout",2,ImGuiTableFlags_Resizable);
                 if (columns) {
                     ImGui::TableSetupColumn("Editor",ImGuiTableColumnFlags_WidthStretch);
@@ -1487,6 +1511,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
                     case JFX_DESKTOP_WORKSPACE_CREATIVE: creative_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_GAME: ingagi_panel(frontend); break;
                     case JFX_DESKTOP_WORKSPACE_EZDESIGN: frontend->ezdesign->draw(frontend->window,frontend->preferences.viewport_background); break;
+                    case JFX_DESKTOP_WORKSPACE_PAGE_DESIGN: frontend->page_design->draw(frontend->window); break;
                     default: break;
                     }
                 }
@@ -1509,6 +1534,7 @@ void compose_ui(jfx_desktop_frontend_t *frontend) {
     if ((frontend->grading_edit || frontend->audio_edit) && !ImGui::IsAnyItemActive()) finish_grading(frontend);
     ImGui::End();
     preferences_panel(frontend);
+    frontend->page_design->tick(ImGui::GetTime(),frontend->preferences.page_auto_commit_seconds,ImGui::IsMouseDown(0));
 }
 
 } // namespace
@@ -1613,7 +1639,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             (frontend->scene_png_job && !frontend->scene_png_job->done.load(std::memory_order_acquire)) ||
             (frontend->scene_export_step && !frontend->scene_export_step->done.load(std::memory_order_acquire)) ||
             (frontend->preferences_save_job && !frontend->preferences_save_job->done.load(std::memory_order_acquire)) ||
-            (frontend->ezdesign && frontend->ezdesign->busy()))
+            (frontend->ezdesign && frontend->ezdesign->busy()) ||
+            (frontend->page_design && frontend->page_design->background_busy()))
             return JFX_SUCCESS;
 #endif
         return jfx_engine_tick(frontend->engine);
@@ -1806,7 +1833,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_audio_mixer(jfx_desktop_frontend_t 
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_panel_visible(jfx_desktop_frontend_t *f, jfx_desktop_panel_t p, bool v) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
-    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative, &f->show_game, &f->show_ezdesign };
+    bool *panels[] = { &f->show_viewport, &f->show_timeline, &f->show_properties, &f->show_grade, &f->show_nodes, &f->show_console, &f->show_stats, &f->show_calibration, &f->show_plugins, &f->show_audio, &f->show_daw, &f->show_animation, &f->show_modeling3d, &f->show_creative, &f->show_game, &f->show_ezdesign, &f->show_page_design };
     if ((unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return JFX_ERROR_INVALID_ARGUMENT;
     *panels[p] = v; return JFX_SUCCESS;
 }
@@ -2176,7 +2203,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_iap_info(const char *path,
 }
 extern "C" bool jfx_desktop_frontend_panel_visible(const jfx_desktop_frontend_t *f, jfx_desktop_panel_t p) {
     if (!f || (unsigned)p >= JFX_DESKTOP_PANEL_COUNT) return false;
-    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative, f->show_game, f->show_ezdesign };
+    const bool panels[] = { f->show_viewport, f->show_timeline, f->show_properties, f->show_grade, f->show_nodes, f->show_console, f->show_stats, f->show_calibration, f->show_plugins, f->show_audio, f->show_daw, f->show_animation, f->show_modeling3d, f->show_creative, f->show_game, f->show_ezdesign, f->show_page_design };
     return panels[p];
 }
 extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_t *f,jfx_desktop_workspace_t workspace) {
@@ -2204,7 +2231,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_set_workspace(jfx_desktop_frontend_
     }
     if (f->drawing && f->workspace!=workspace) { f->drawing->dragging=false; f->drawing->playing=false; f->drawing_gizmo=false; }
     if (f->ezdesign && f->workspace!=workspace) f->ezdesign->deactivate();
-    if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION || workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN) jfx_desktop_frontend_pause(f);
+    if (f->page_design && f->workspace!=workspace) f->page_design->deactivate();
+    if (workspace==JFX_DESKTOP_WORKSPACE_ANIMATION || workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN || workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN) jfx_desktop_frontend_pause(f);
     f->workspace=workspace; f->workspace_requested=true;
     ++f->scene_revision;
     jfx_desktop_frontend_set_panel_visible(f,workspace_panels[workspace],true);
@@ -2249,6 +2277,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_invoke_plugin(jfx_desktop_frontend_
 }
 extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t *f, const char *path) {
     if (!f || !path || !*path) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN)
+        return f->page_design->save(path)?JFX_SUCCESS:JFX_ERROR_INVALID_ARGUMENT;
     if (f->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN)
         return f->ezdesign->save(path)?JFX_SUCCESS:JFX_ERROR_INVALID_ARGUMENT;
     if (f->scene_transforming) {
@@ -2290,6 +2320,8 @@ extern "C" jfx_result_t jfx_desktop_frontend_save_project(jfx_desktop_frontend_t
 }
 extern "C" jfx_result_t jfx_desktop_frontend_close_project(jfx_desktop_frontend_t *f) {
     if (!f) return JFX_ERROR_INVALID_ARGUMENT;
+    if (f->workspace==JFX_DESKTOP_WORKSPACE_PAGE_DESIGN)
+        return f->page_design->reset()?JFX_SUCCESS:JFX_ERROR_INVALID_ARGUMENT;
     if (f->workspace==JFX_DESKTOP_WORKSPACE_EZDESIGN) {
         f->ezdesign->deactivate();
         jfx::ez::Command command; command.op=jfx::ez::Op::New;

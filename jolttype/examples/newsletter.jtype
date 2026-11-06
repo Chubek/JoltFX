@@ -1,0 +1,20 @@
+\jolttype{1}
+% A simple two-page newsletter, in print points and millimetres.
+\page{210mm}{297mm}
+\rect{banner}{15mm}{15mm}{180mm}{18mm}{#182840}
+\text{masthead}{20mm}{18mm}{170mm}{24pt}{#ffffff}{JoltFX / Studio Notes}
+\text{date}{20mm}{40mm}{170mm}{10pt}{#707070}{Issue 01 - November 2026}
+\text{headline}{20mm}{52mm}{170mm}{22pt}{#182840}{Design with source.}
+\text{left}{20mm}{75mm}{80mm}{11pt}{#303030}{JoltType keeps your layout readable. Every frame has a name, position and dimensions.
+
+Drag a frame in Page Design and its coordinates change in the source. Your comments remain intact.}
+\text{right}{110mm}{75mm}{80mm}{11pt}{#303030}{Drafts let you experiment before publishing a revision.
+
+Press Commit when ready, or configure the global auto-commit interval. Save the committed source for later and export the page as SVG.}
+\rect{footerRule}{20mm}{275mm}{170mm}{1pt}{#e46b36}
+\text{folio}{20mm}{280mm}{170mm}{9pt}{#707070}{Studio Notes / 1}
+\page{210mm}{297mm}
+\text{notes}{20mm}{20mm}{170mm}{24pt}{#182840}{Notes for next time}
+\text{closing}{20mm}{45mm}{170mm}{12pt}{#303030}{Source and visual editing share the same JoltType compiler.
+
+Use millimetres, centimetres, inches or points.}

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(JoltFXSDK VERSION 1.2.0 LANGUAGES C CXX)
+    project(JoltFXSDK VERSION 1.3.0 LANGUAGES C CXX)
 endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -13,7 +13,9 @@ set(JOLTFX_SDK_EXECUTION_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../joltscript/
 set(JOLTFX_SDK_INGAGI_API_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ingagi/native_extension_api" CACHE PATH "Ingagi native embedding headers")
 set(JOLTFX_SDK_TILLY_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tilly/include" CACHE PATH "Tilly public include directory")
 set(JOLTFX_SDK_OPENFX_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openfx/include" CACHE PATH "OpenFX canonical headers")
+set(JOLTFX_SDK_JOLTTYPE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jolttype/include" CACHE PATH "JoltType canonical C API headers")
 foreach(contract IN ITEMS
+        "${JOLTFX_SDK_JOLTTYPE_INCLUDE_DIR}/jolttype/api.h"
         "${JOLTFX_SDK_OPENFX_INCLUDE_DIR}/ofxImageEffect.h"
         "${JOLTFX_SDK_TILLY_INCLUDE_DIR}/tilly/allocator.h"
         "${JOLTFX_SDK_GLUE_INCLUDE_DIR}/joltscript/compiler.h"
@@ -36,7 +38,7 @@ add_library(JoltFXSDK::headers ALIAS jfx_sdk_headers)
 target_include_directories(jfx_sdk_headers INTERFACE
     $<BUILD_INTERFACE:${JOLTFX_SDK_API_ROOT}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-set(sdk_facets audio backend events facet frontend gui ingagi joltscript libraries
+set(sdk_facets audio backend events facet frontend gui ingagi joltscript jolttype libraries
     module plugins renderer runtime timeline tools)
 foreach(facet IN LISTS sdk_facets)
     add_library(jfx_sdk_${facet} INTERFACE)
@@ -53,6 +55,8 @@ target_include_directories(jfx_sdk_ingagi INTERFACE
 target_include_directories(jfx_sdk_joltscript INTERFACE
     $<BUILD_INTERFACE:${JOLTFX_SDK_GLUE_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${JOLTFX_SDK_EXECUTION_INCLUDE_DIR}>)
+target_include_directories(jfx_sdk_jolttype INTERFACE $<BUILD_INTERFACE:${JOLTFX_SDK_JOLTTYPE_INCLUDE_DIR}>)
+install(FILES "${JOLTFX_SDK_JOLTTYPE_INCLUDE_DIR}/jolttype/api.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/jolttype)
 target_compile_features(jfx_sdk_ingagi INTERFACE c_std_11)
 target_include_directories(jfx_sdk_runtime INTERFACE
     $<BUILD_INTERFACE:${JOLTFX_SDK_TILLY_INCLUDE_DIR}>)
@@ -121,7 +125,7 @@ configure_package_config_file(cmake/JoltFXSDKConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfig.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JoltFXSDK)
 write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfigVersion.cmake"
-    VERSION 1.2.0 COMPATIBILITY SameMajorVersion)
+    VERSION 1.3.0 COMPATIBILITY SameMajorVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfigVersion.cmake" cmake/JoltFXSDKModules.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JoltFXSDK)

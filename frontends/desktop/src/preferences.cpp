@@ -25,7 +25,8 @@ bool range(float n, float lo, float hi) { return std::isfinite(n) && n >= lo && 
 bool valid(const Values &v) {
     return range(v.viewport_background[0], 0, 1) && range(v.viewport_background[1], 0, 1) && range(v.viewport_background[2], 0, 1) &&
         range(v.orbit_speed, .05f, 5) && range(v.pan_speed, .1f, 5) && range(v.zoom_speed, .05f, 2) &&
-        range(v.ui_scale, .75f, 2) && v.preview_max_dimension >= 320 && v.preview_max_dimension <= 1280 && v.theme >= 0 && v.theme <= 2;
+        range(v.ui_scale, .75f, 2) && v.preview_max_dimension >= 320 && v.preview_max_dimension <= 1280 && v.theme >= 0 && v.theme <= 2 &&
+        v.page_auto_commit_seconds >= 0 && v.page_auto_commit_seconds <= 3600;
 }
 void *allocate(void *, size_t bytes) {
     return tilly_alloc((tilly_allocator_t *)tilly_default_allocator(), bytes, alignof(max_align_t));
@@ -47,7 +48,7 @@ struct Temporary {
 }
 
 Values defaults() {
-    return {{0, 0, 0}, .6f, 1, .3f, 1, 1280, 0, false, true, true, false};
+    return {{0, 0, 0}, .6f, 1, .3f, 1, 1280, 0, false, true, true, false, 60};
 }
 bool resolve_paths(Paths &out) {
     out = {};
@@ -93,7 +94,7 @@ LoadResult load(const char *path, Values &out, char *error, size_t capacity) {
         auto *root = yyjson_doc_get_root(owner.doc);
         if (!yyjson_is_obj(root)) return invalid();
         const char *keys[] = {"schema_version", "viewport_background", "orbit_speed", "pan_speed", "zoom_speed", "ui_scale",
-            "preview_max_dimension", "theme", "invert_zoom", "show_gimbal", "loop_playback", "timeline_snap"};
+            "preview_max_dimension", "theme", "invert_zoom", "show_gimbal", "loop_playback", "timeline_snap", "page_auto_commit_seconds"};
         unsigned seen = 0; size_t index, size; yyjson_val *key, *value;
         yyjson_obj_foreach(root, index, size, key, value) {
             for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) if (yyjson_equals_str(key, keys[i])) {
@@ -125,7 +126,8 @@ LoadResult load(const char *path, Values &out, char *error, size_t capacity) {
             !real("pan_speed", next.pan_speed) || !real("zoom_speed", next.zoom_speed) || !real("ui_scale", next.ui_scale) ||
             !integer("preview_max_dimension", next.preview_max_dimension) || !integer("theme", next.theme) ||
             !boolean("invert_zoom", next.invert_zoom) || !boolean("show_gimbal", next.show_gimbal) ||
-            !boolean("loop_playback", next.loop_playback) || !boolean("timeline_snap", next.timeline_snap)) return invalid();
+            !boolean("loop_playback", next.loop_playback) || !boolean("timeline_snap", next.timeline_snap) ||
+            !integer("page_auto_commit_seconds", next.page_auto_commit_seconds)) return invalid();
         if (auto *color = yyjson_obj_get(root, "viewport_background")) {
             if (!yyjson_is_arr(color) || yyjson_arr_size(color) != 3) return invalid();
             for (size_t i = 0; i < 3; ++i) {
@@ -160,7 +162,8 @@ bool save(const char *path, const Values &v, char *error, size_t capacity) {
             !yyjson_mut_obj_add_bool(owner.doc, root, "invert_zoom", v.invert_zoom) ||
             !yyjson_mut_obj_add_bool(owner.doc, root, "show_gimbal", v.show_gimbal) ||
             !yyjson_mut_obj_add_bool(owner.doc, root, "loop_playback", v.loop_playback) ||
-            !yyjson_mut_obj_add_bool(owner.doc, root, "timeline_snap", v.timeline_snap)) throw std::bad_alloc();
+            !yyjson_mut_obj_add_bool(owner.doc, root, "timeline_snap", v.timeline_snap) ||
+            !yyjson_mut_obj_add_int(owner.doc, root, "page_auto_commit_seconds", v.page_auto_commit_seconds)) throw std::bad_alloc();
         size_t count = 0;
         TextOwner json{yyjson_mut_write_opts(owner.doc, YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_END, &allocator, &count, nullptr)};
         if (!json.text) throw std::bad_alloc();

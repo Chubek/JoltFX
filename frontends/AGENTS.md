@@ -458,6 +458,28 @@ Similar steps for Premiere and DaVinci. Consult each plugin's `README.md` for SD
 
 ## Desktop Frontend Architecture
 
+Desktop 1.18 appends Page Design workspace/panel IDs. The standalone C++17
+`jolttype` library owns bounded parsing, fixed-em page layout, source spans,
+draft/committed sessions, history and SVG generation. `page_design_workspace.*`
+owns ImGui controls and scheduler file snapshots. Commit publishes atomically;
+raw source and inspector text may remain invalid drafts. Keep visual drag
+previews separate, cancel live drags on Escape/tab switches, and preserve drafts
+across tabs. Never send Page Design history to the NLE/scene editor. File actions
+require resolved drafts, use snapshot jobs and poll on every workspace; teardown
+waits for jobs before releasing their storage. Auto-commit is global
+`page_auto_commit_seconds` (default 60, 0 disables, maximum 3600), independent of
+disk saving. Extend `jolttype`, `page_design_ui_tests` and `preferences_ui_tests`;
+the exact implemented language and rendering limits are in `jolttype/README.md`.
+
+JoltType 0.2 adds Edit/IDE, source hatch, a shared inventory and Typelet package
+tools. PDF preview jobs own committed documents and publish only matching
+revision/page results. PDFium calls serialize; Binaryen compiles on workers,
+while WAMR module lifecycle/invocations stay on the extension owner thread.
+Never treat package compile steps as shell commands. Invalidate the shared host
+texture after tab changes; document output remains separate from draft visuals.
+Final PDF uses libharu by default (`pdf`); `pdf-podofo` is the explicit alternative.
+Keep Progress Display on its PoDoFo/qpdf/PDFium pipeline when changing exporters.
+
 Workspace Undo/Redo buttons, Edit-menu actions and document shortcuts route through
 the private workspace history dispatcher in `desktop_frontend.cpp`. Drawing and
 EZDesign retain independent histories; Creative source/canvas and GameDev source

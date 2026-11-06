@@ -10,6 +10,7 @@ struct Values {
     float orbit_speed, pan_speed, zoom_speed, ui_scale;
     int preview_max_dimension, theme; // theme: dark=0, light=1, classic=2
     bool invert_zoom, show_gimbal, loop_playback, timeline_snap;
+    int page_auto_commit_seconds; // 0 disables; otherwise 1..3600 seconds
 };
 struct Paths { char config[4096], ini[4096]; };
 enum class LoadResult { Loaded, Missing, Invalid, IOError };

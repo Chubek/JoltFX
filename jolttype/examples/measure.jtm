@@ -1,0 +1,5 @@
+% Typelet scalar module. Build with target "wasm".
+\module{measure}
+\export{area}{width,height}{width*height}
+\export{diagonal}{width,height}{sqrt(width*width+height*height)}
+\export{points}{millimeters}{millimeters*72/25.4}

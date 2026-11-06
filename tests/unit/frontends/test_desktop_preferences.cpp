@@ -65,6 +65,7 @@ int main(int argc, char **argv) {
     assert(prefs::resolve_paths(paths));
     std::filesystem::remove(paths.config);
     auto defaults = prefs::defaults(), values = defaults;
+    assert(defaults.page_auto_commit_seconds == 60);
     assert(values.viewport_background[0] == 0 && values.viewport_background[1] == 0 && values.viewport_background[2] == 0);
     assert(values.orbit_speed > .4f && values.zoom_speed > .15f);
     char error[256]{};
@@ -74,6 +75,7 @@ int main(int argc, char **argv) {
     values.invert_zoom = true; values.show_gimbal = false; values.ui_scale = 1.25f;
     values.theme = 1; values.loop_playback = false; values.timeline_snap = true;
     values.preview_max_dimension = 800;
+    values.page_auto_commit_seconds = 120;
     assert(prefs::save(paths.config, values, error, sizeof(error)));
     auto loaded = defaults;
     assert(prefs::load(paths.config, loaded, error, sizeof(error)) == prefs::LoadResult::Loaded);
@@ -81,6 +83,7 @@ int main(int argc, char **argv) {
     assert(loaded.zoom_speed == .45f && loaded.invert_zoom && !loaded.show_gimbal);
     assert(loaded.ui_scale == 1.25f && loaded.theme == 1 && !loaded.loop_playback && loaded.timeline_snap);
     assert(loaded.preview_max_dimension == 800);
+    assert(loaded.page_auto_commit_seconds == 120);
     auto invalid = values; invalid.ui_scale = NAN;
     assert(!prefs::save(paths.config, invalid, error, sizeof(error)) && error[0]);
     assert(prefs::load(paths.config, loaded, error, sizeof(error)) == prefs::LoadResult::Loaded && loaded.ui_scale == 1.25f);
@@ -95,7 +98,9 @@ int main(int argc, char **argv) {
             "{\"viewport_background\":[0,1,2]}", "{\"viewport_background\":[0,1]}",
             "{\"show_gimbal\":1}", "{\"theme\":9}", "{\"ui_scale\":null}",
             "{\"preview_max_dimension\":320.5}", "{\"orbit_speed\":NaN}",
-            "{\"orbit_speed\":1,\"orbit_speed\":2}"}) {
+            "{\"orbit_speed\":1,\"orbit_speed\":2}", "{\"page_auto_commit_seconds\":-1}",
+            "{\"page_auto_commit_seconds\":3601}", "{\"page_auto_commit_seconds\":1.5}",
+            "{\"page_auto_commit_seconds\":true}", "{\"page_auto_commit_seconds\":0,\"page_auto_commit_seconds\":1}"}) {
         write(paths.config, text); loaded = defaults;
         assert(prefs::load(paths.config, loaded, error, sizeof(error)) == prefs::LoadResult::Invalid && error[0]);
         assert(loaded.orbit_speed == defaults.orbit_speed && loaded.ui_scale == defaults.ui_scale);
@@ -105,6 +110,7 @@ int main(int argc, char **argv) {
     write(paths.config, "{\"schema_version\":1,\"orbit_speed\":1.5,\"future_option\":{\"value\":true}}");
     assert(prefs::load(paths.config, loaded, error, sizeof(error)) == prefs::LoadResult::Loaded);
     assert(loaded.orbit_speed == 1.5f && loaded.show_gimbal && loaded.viewport_background[0] == 0);
+    assert(loaded.page_auto_commit_seconds == 60);
 
     // Real File menu, separate non-modal Preferences window, live global options,
     // scheduler-owned save and reload on the next frontend creation.

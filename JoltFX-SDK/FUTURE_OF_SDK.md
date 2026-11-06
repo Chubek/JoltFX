@@ -5,10 +5,17 @@ Keep this file current: mark items done when they land, record follow-ups in
 the root `PROGRESS.md`, and bump the SDK package minor version for additive
 component changes (see `AGENTS.md`).
 
-## Current state (SDK 1.2)
+## Current state (SDK 1.3)
 
-- Sixteen header-only facet targets re-exporting the 28 canonical `jfx/*.h`
+- Seventeen header-only facet targets re-exporting the 28 canonical `jfx/*.h`
   contracts, plus Ingagi, Joltscript and Tilly allocator headers.
+- JoltType C API 1.1 facet: staged page projects, tagged inventories, Typelets,
+  target emitters, WASM modules and frontend-neutral controls. Runtime linkage is
+  separate; the standalone package installs only canonical headers and guidance.
+  Relocated SDK C11/C++17 checks, native callback/package/module tests and targeted
+  ASan/UBSan checks pass. Desktop owns the implemented toolkit adapter.
+  Final `pdf` export defaults to libharu; `pdf-podofo` retains PoDoFo as an
+  alternative. The desktop progress preview continues to use PoDoFo/PDFium.
 - Two implementation libraries: `JoltFXSDK::loader` (renderer-module loading,
   static attachment, serialized render/close with BUSY semantics and engine-free
   renderer/plugin metadata peek) and `JoltFXSDK::openfx` (native OpenFX inspection).

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "name": "Newsletter tools",
+  "version": "1.0.0",
+  "author": "JoltFX",
+  "description": "Two-page newsletter with a scalar measurement module",
+  "kind": "mixed",
+  "entry": "main",
+  "dependencies": [
+    {"id":"main","path":"newsletter.jtype","kind":"source","tags":["layout"],"requires":[]},
+    {"id":"measure","path":"measure.jtm","kind":"code","tags":["module"],"requires":[]}
+  ],
+  "compile": [
+    {"input":"main","output":"newsletter.jtbc","target":"jtbc"},
+    {"input":"measure","output":"measure.wasm","target":"wasm"}
+  ],
+  "interfaces": [
+    {"id":"measure.area","module":"measure.wasm","export":"area","label":"Area","parameters":["width","height"]},
+    {"id":"measure.points","module":"measure.wasm","export":"points","label":"Millimeters to points","parameters":["millimeters"]}
+  ]
+}
