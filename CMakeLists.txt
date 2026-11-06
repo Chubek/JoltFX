@@ -95,6 +95,7 @@ if(JFX_JOLT_RENDERER)
 endif()
 add_subdirectory(extif)
 add_subdirectory(kernels)
+include(cmake/Animation2D.cmake)
 add_subdirectory(frontends)
 
 if(JOLTFX_BUILD_TESTS)

@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"github.com/Chubek/JoltFX/ingagi/animation"
 	fe "github.com/Chubek/JoltFX/ingagi/frontend"
 	"strings"
 )
@@ -74,12 +75,18 @@ var spatialSignatures = map[string]spatialSignature{
 }
 
 func spatialBuiltin(name string) bool {
+	if _, ok := animation.Signatures[name]; ok {
+		return true
+	}
 	_, ok := spatialSignatures[name]
 	return ok || name == "mat4" || name == "dot" || name == "normalize" || name == "length"
 }
 
 func (c *typeChecker) spatialCall(name string, args []string, sp fe.Span) (string, bool) {
 	sig, ok := spatialSignatures[name]
+	if a, found := animation.Signatures[name]; found {
+		sig, ok = spatialSignature{a.Result, a.Args}, true
+	}
 	switch name {
 	case "mat4":
 		sig, ok = spatialSignature{result: "mat4"}, true
@@ -124,6 +131,11 @@ func (c *typeChecker) spatialCall(name string, args []string, sp fe.Span) (strin
 	}
 	for i, a := range args {
 		if i < len(sig.args) {
+			// Numeric animation arrays accept integer elements just like scalar
+			// float arguments; the VM converts each finite element independently.
+			if sig.args[i] == "[float]" && a == "[int]" {
+				continue
+			}
 			c.expect(sig.args[i], a, sp)
 		}
 	}

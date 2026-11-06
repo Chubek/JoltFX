@@ -675,8 +675,16 @@ add_custom_command(TARGET validate_kernels POST_BUILD
     COMMAND $<TARGET_FILE:test_image_kernels>
     COMMAND $<TARGET_FILE:test_image_program>)
 
-jfx_test_target(test_animation_drawing SOURCES frontends/test_animation_drawing.cpp LIBRARIES tilly)
+jfx_test_target(test_animation_drawing SOURCES frontends/test_animation_drawing.cpp LIBRARIES tilly jfx_animation_geometry)
 jfx_register_test(animation_drawing test_animation_drawing)
+if(JFX_INGAGI)
+    jfx_test_target(test_animation_ingagi SOURCES frontends/test_animation_ingagi.cpp LIBRARIES tilly jfx_animation_geometry ingagi_embed)
+    target_compile_definitions(test_animation_ingagi PRIVATE JFX_DESKTOP_HAVE_INGAGI=1)
+    jfx_register_test(animation_ingagi test_animation_ingagi)
+    if(TARGET test_animation_ui)
+        target_compile_definitions(test_animation_ui PRIVATE JFX_TEST_ANIMATION_INGAGI=1)
+    endif()
+endif()
 
 # LSan sees backing pages; explicitly check remaining process-heap objects too.
 get_property(memory_tests DIRECTORY PROPERTY TESTS)

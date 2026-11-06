@@ -1142,6 +1142,16 @@ front/back slots. The existing native format stores all palette entries/slots.
 
 ### Desktop vector animation
 
+Desktop 1.17 adds **Ingagi script...** authoring through the private
+`animation_script.h` bridge (`JFX_INGAGI`). A bounded `frame(t)` returns shapes;
+bake publishes validated cels as one independent drawing undo step. `.ing` source
+and `.jfxdraw` artwork save separately. `JFXDRAW2` adds concave polygon kind 4 and
+retains v1 reads. Picking uses private lib2geom point kernels; Ingagi uses its
+Bernstein evaluator. Canvas exports expand held visible cels through the shared
+Ingagi document exporter; no source execution occurs in the browser. Keep
+optional-off drawing/SVG working, and cover `animation_ingagi`,
+`animation_drawing`, `animation_ui_tests` plus Go/browser animation tests.
+
 The 2D Animation workspace uses `desktop/src/animation_drawing.h` for its private
 vector document/history and `animation_panel.inc` for the ImGui stage and exposure
 sheet. Keep its frame clock, selection and history separate from the NLE editor.

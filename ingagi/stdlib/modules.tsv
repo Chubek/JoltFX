@@ -1,4 +1,5 @@
 group	module	description
+gameplay-animation-ui	std.animation2d	Implemented: bounded vector shapes, Bezier/motion paths, transforms, morphing, easing, keyframes and layers; Canvas/SVG/drawing export.
 core-runtime	std.core	Fundamental types, built-ins, common traits, and language intrinsics.
 core-runtime	std.types	Fixed-width integers, floating-point types, and numeric aliases.
 core-runtime	std.convert	Explicit conversions and parsing/formatting conversions.

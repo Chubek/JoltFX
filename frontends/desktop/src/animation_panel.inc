@@ -63,6 +63,37 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
         ImGui::SameLine(); if(ImGui::Button("Load drawing")) std::snprintf(frontend->status,sizeof(frontend->status),"%s",e.load(e.path)?"Drawing loaded (Undo restores previous drawing)":"Could not load drawing: invalid or unreadable file");
         ImGui::InputText("SVG path",e.svg_path,sizeof(e.svg_path));
         if(ImGui::Button("Export frame SVG")) std::snprintf(frontend->status,sizeof(frontend->status),"%s",e.export_svg(e.svg_path)?"Current frame exported as SVG":"Could not export SVG");
+        ImGui::InputText("HTML path",e.html_path,sizeof(e.html_path));
+        if(ImGui::Button("Export HTML5 Canvas")) {
+            if(export_canvas(e,frontend->status,sizeof(frontend->status)))
+                std::snprintf(frontend->status,sizeof(frontend->status),"Animation exported as standalone HTML5 Canvas");
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine(); if(ImGui::Button("Ingagi script...")) ImGui::OpenPopup("Ingagi 2D animation");
+    if(ImGui::BeginPopup("Ingagi 2D animation")) {
+        ImGui::TextUnformatted("frame(t: f64) returns shapes; t is seconds, stage is 960 x 540.");
+        ImGui::TextUnformatted("std::animation2d: paths, Bezier curves, transforms, morphs, easing, keys and layers.");
+        ImGui::InputTextMultiline("##Animation Ingagi source",e.script,sizeof(e.script),ImVec2(620,250),ImGuiInputTextFlags_AllowTabInput);
+        if(ImGui::Button("Bake Ingagi animation")) {
+            if(bake_ingagi(e,frontend->status,sizeof(frontend->status)))
+                std::snprintf(frontend->status,sizeof(frontend->status),"Ingagi animation baked; Undo drawing restores previous cels");
+        }
+        ImGui::SameLine(); if(ImGui::Button("Close script")) ImGui::CloseCurrentPopup();
+        ImGui::InputText("Ingagi path",e.script_path,sizeof(e.script_path));
+        if(ImGui::Button("Save animation .ing"))
+            std::snprintf(frontend->status,sizeof(frontend->status),"%s",Editor::write_file(e.script_path,e.script,std::strlen(e.script))?"Ingagi source saved":"Could not save Ingagi source");
+        ImGui::SameLine(); if(ImGui::Button("Load animation .ing")) {
+            try {
+                tilly::string source;
+                if(Editor::read_file(e.script_path,source,sizeof(e.script)-1)) {
+                    std::memcpy(e.script,source.c_str(),source.size()+1);
+                    ImGui::GetCurrentContext()->InputTextDeactivatedState.ClearFreeMemory();
+                    std::snprintf(frontend->status,sizeof(frontend->status),"Ingagi source loaded; Bake to update cels");
+                } else std::snprintf(frontend->status,sizeof(frontend->status),"Could not load bounded Ingagi source");
+            } catch (...) {e.allocation_failed=true;}
+        }
+        ImGui::TextUnformatted("Source saves as .ing; baked artwork saves as .jfxdraw. Canvas exports all cels.");
         ImGui::EndPopup();
     }
     ImGui::SameLine(); if(ImGui::Button("Skeleton...")) ImGui::OpenPopup("Skeletal runtime");
@@ -192,6 +223,13 @@ void animation_panel(jfx_desktop_frontend_t *frontend) {
                 draw->AddEllipse(center,radius,stroke,0,0,width);
             }
         } else {
+            if(s.kind==Kind::Polygon) {
+                ImVec2 points[2048];
+                for(size_t i=0;i<s.points.size();++i) points[i]=pos(s.points[i]);
+                if(s.filled) draw->AddConcavePolyFilled(points,static_cast<int>(s.points.size()),fill);
+                draw->AddPolyline(points,static_cast<int>(s.points.size()),stroke,ImDrawFlags_Closed,width);
+                return;
+            }
             for(size_t i=1;i<s.points.size();++i) draw->AddLine(pos(s.points[i-1]),pos(s.points[i]),stroke,width);
             for(auto p:s.points) draw->AddCircleFilled(pos(p),width/2,stroke,8);
         }

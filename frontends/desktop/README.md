@@ -463,3 +463,12 @@ Navigation, object dragging and playback use half-resolution raster inspection
 instead of production ray tracing; idle preview restores the selected renderer
 and full resolution. PNG/video exports retain their original quality settings.
 Unchanged 2D/3D preview frames reuse their uploaded texture.
+## Ingagi 2D animation
+
+Build with `-DJFX_INGAGI=ON` to use **2D Animation → Ingagi script...**. Write a
+`frame(t: f64)` function using `std::animation2d`, then **Bake Ingagi animation**
+to create undoable vector cels. Save source as `.ing`; save artwork as `.jfxdraw`.
+**Drawing files... → Export HTML5 Canvas** writes a self-contained animated page.
+Current-frame SVG and manual drawing also work with Ingagi disabled.
+See [the animation guide](../../docs/animation.md) and
+[`animation2d.ing`](../../ingagi/examples/animation2d.ing).

@@ -1,6 +1,15 @@
 # Ingagi implementation notes
 
 - Follow the root `AGENTS.md`; record progress in root `PROGRESS.md`.
+- `animation` owns bounded 2D geometry/timing and sampled vector documents;
+  `animation/author` runs fresh budgeted Ingagi `frame(t)` authoring. The embedded
+  `std::animation2d` module uses ordinary arrays/maps and 23 checked VM builtins.
+  Keep signatures, local shadows, malformed aggregate tests and CGO-off parity.
+  lib2geom Bernstein/point kernels use synchronous fixed-size borrowed buffers;
+  desktop picking shares the bridge. `animation/native.h` is a private output-
+  callback bridge, independent of the scalar public embedding ABI. Publish only
+  complete documents. Canvas is a baked animation artifact, not general JS lowering.
+  Extend held-cel/export/CLI tests and `INGAGI_CANVAS_BROWSER_TEST=1` Firefox checks.
 - Run Go commands with `GOROOT=/usr/lib/go`.
 - `DEVELOPMENT.md` tracks implemented versus reserved subsystems. The shader
   implementation is in `monkeyshade` (package shader); `shader` is a compatibility

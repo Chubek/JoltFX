@@ -48,8 +48,11 @@ file(GLOB_RECURSE ingagi_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cc" "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.sexp" "${CMAKE_CURRENT_SOURCE_DIR}/*.ing"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.html")
+file(GLOB_RECURSE ingagi_animation_scripts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/animation/*.js")
+list(APPEND ingagi_sources ${ingagi_animation_scripts})
 file(GLOB_RECURSE ingagi_math_headers CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glm/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lib2geom/include/2geom/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glm/*.inl"
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/simdette/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libigl/include/igl/*.h"
@@ -89,6 +92,8 @@ install(FILES native_extension_api/Ingagi-Module.rs DESTINATION "${CMAKE_INSTALL
 install(FILES native_extension_api/Ingagi-Module.java DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/bindings" RENAME IngagiModule.java)
 install(DIRECTORY compiler/targets/ DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/targets" FILES_MATCHING PATTERN "*.sexp")
 install(FILES README.md DEVELOPMENT.md DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/docs")
+install(FILES stdlib/animation2d.md DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/docs")
+install(FILES examples/animation2d.ing DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/examples")
 install(FILES native_extension_api/README.md DESTINATION "${CMAKE_INSTALL_DATADIR}/ingagi/docs" RENAME native-extension-api.md)
 
 if(INGAGI_BUILD_TESTS)

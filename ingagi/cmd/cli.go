@@ -22,6 +22,7 @@ import (
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
+		fmt.Fprintln(stderr, "       ingagi animation -target canvas|svg|drawing -o OUTPUT [-fps 24 -frames 120 -frame 1] FILE.ing")
 		fmt.Fprintln(stderr, "usage: ingagi {run|check|dump} [-entry main] [-budget 1000000] FILE\n       ingagi build [-emit obj|bin|asm|qbe|wasm] [-target amd64_sysv|wasm32] [-entry main] -o OUTPUT FILE\n       ingagi shader [-shader NAME] [-stage compute] [-emit glsl|spirv|reflect] -o OUTPUT FILE\n       ingagi shader -pipeline NAME -emit reflect -o OUTPUT FILE\n       ingagi shader-capabilities\n       ingagi targets")
 	}
 	if len(args) == 0 {
@@ -29,6 +30,9 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	command := args[0]
+	if command == "animation" {
+		return animationCLI(args[1:], stderr)
+	}
 	if command == "shader-capabilities" {
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, "usage: ingagi shader-capabilities")

@@ -1,6 +1,9 @@
 # Ingagi Standard Library Catalog
 
-This archive contains a proposed catalog of Ingagi standard-library modules, grouped by subsystem. It is a design catalog, not an implementation or finalized language specification.
+This directory contains a proposed catalog of Ingagi standard-library modules,
+grouped by subsystem, plus explicitly implemented modules. **`std::animation2d`**
+is implemented and embedded; see [its 23-operation API](animation2d.md).
+The other catalog entries remain design proposals unless documented otherwise.
 
 ## Suggested profiles
 

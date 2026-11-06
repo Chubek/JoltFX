@@ -14,6 +14,7 @@ import (
 
 func registerBuiltins(vm *VM) {
 	registerProcedural(vm)
+	registerAnimation(vm)
 	registerGeometry(vm)
 	registerLinearAlgebra(vm)
 	vm.builtins["print"] = bPrint

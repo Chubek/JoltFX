@@ -7,6 +7,13 @@ typed scalar QBE and WebAssembly backends, shader artifact lowering, an ECS
 package, native math bridges, and a CLI. The desktop Game Engine tab uses the
 native embedding ABI when built with `JFX_INGAGI=ON`.
 
+The **2D Animation** workspace also uses Ingagi. Its implemented
+[`std::animation2d`](stdlib/animation2d.md) module supplies 23 vector-animation
+operations; `ingagi animation -target canvas|svg|drawing -o OUTPUT FILE.ing`
+bakes budgeted `frame(t)` functions for desktop or standalone HTML5 Canvas.
+See [`examples/animation2d.ing`](examples/animation2d.ing) and
+[the desktop/export guide](../docs/animation.md).
+
 See [the implementation inventory and remaining milestones](DEVELOPMENT.md).
 The full-tree build now includes working procedural-noise and mesh foundations;
 the original `shader` import path forwards to the compiler in `monkeyshade`.
@@ -36,7 +43,8 @@ optimized bytecode. Exit codes are 0 for success, 1 for input/compilation/runtim
 errors, and 2 for CLI usage errors.
 
 CGO builds require a C++20 compiler and repository-relative vendored GLM,
-simdette, libigl and Eigen 3.4 headers (see [dependencies](DEPENDENCIES.md)).
+simdette, libigl, Eigen 3.4 and lib2geom headers plus Boost headers
+(see [dependencies](DEPENDENCIES.md)).
 `CGO_ENABLED=0` selects portable Go math and geometry implementations.
 
 ## QBE native compilation and Keystone assembly

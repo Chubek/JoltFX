@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	fe "github.com/Chubek/JoltFX/ingagi/frontend"
+	"github.com/Chubek/JoltFX/ingagi/stdlib"
 )
 
 // Loader resolves a::b as a/b.ing below FS. Modules may omit their module
@@ -43,7 +44,14 @@ func (l *Loader) Load(filename string) (*fe.File, error) {
 		if u := units[filename]; u != nil {
 			return u, nil
 		}
-		data, err := fs.ReadFile(l.FS, filename)
+		var data []byte
+		var err error
+		// The std namespace is bundled and cannot be replaced by a project file.
+		if strings.HasPrefix(name, "std::") {
+			data, err = fs.ReadFile(stdlib.Sources, filename)
+		} else {
+			data, err = fs.ReadFile(l.FS, filename)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("ingagi: module %s: %w", filename, err)
 		}

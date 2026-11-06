@@ -36,6 +36,7 @@
 #include "jfx/jfx_scheduler.h"
 #include <atomic>
 #include "animation_drawing.h"
+#include "animation_script.h"
 #include "ezdesign_workspace.h"
 #include "game_authoring.h"
 #include <new>

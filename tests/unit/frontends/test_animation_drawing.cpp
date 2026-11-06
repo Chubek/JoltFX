@@ -29,6 +29,20 @@ int main() {
     FILE *bad=std::fopen("drawing-test.bad","w"); assert(bad);
     std::fputs("JFXDRAW1 999999999 24 1",bad); std::fclose(bad);
     assert(!loaded.load("drawing-test.bad"));
+    // lib2geom point kernels, including degenerate and far-from-origin segments.
+    assert(std::abs(Editor::distance({3,4},{0,0},{0,0})-5)<1e-6f);
+    assert(std::abs(Editor::distance({100003,100004},{100000,100000},{100006,100000})-4)<1e-6f);
+    Editor polygon;
+    const char *poly="JFXDRAW2 3 24 1\n1 0 1\n1 1\n4 4278190080 4278190335 2 1 5\n0 0\n100 0\n50 50\n100 100\n0 100\n";
+    assert(polygon.load_data(poly,std::strlen(poly)));
+    assert(polygon.hit({20,50})==0 && polygon.hit({90,50})==-1);
+    auto serialized=polygon.serialize();Editor copy;
+    assert(copy.load_data(serialized.data(),serialized.size()));
+    assert(copy.cel().shapes[0].kind==Kind::Polygon);
+    assert(!copy.load_data(poly,std::strlen(poly)-8));
+    assert(copy.cel().shapes.size()==1);
+    const char *overflow="JFXDRAW2 99999999999999999999 24 1";
+    assert(!copy.load_data(overflow,std::strlen(overflow)));
     loaded.frame=12; assert(loaded.cel().shapes.size()==1);
     loaded.undo(); assert(loaded.cel().shapes.empty()); // load is one undo step
     // Unfilled shapes select only their outline; ellipses reject bounding-box corners.

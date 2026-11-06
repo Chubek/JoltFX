@@ -48,6 +48,8 @@ func canonical(t string) string {
 		return canonical(strings.TrimSuffix(t, "?")) + "?"
 	}
 	switch t {
+	case "any":
+		return "?"
 	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "int", "uint", "char":
 		return "int"
 	case "f32", "f64", "float", "double":

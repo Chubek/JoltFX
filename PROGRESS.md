@@ -1,5 +1,35 @@
 # Progress
 
+## Ingagi 2D animation and lib2geom (2026-11-06)
+
+- Traced the independent desktop vector/cel editor, skeletal JFA1 evaluator,
+  Ingagi VM/embedding and proposed stdlib catalog. The existing 2D workspace has
+  no scripting implementation; Joltscript channel drivers belong to 3D.
+- Added 23 checked VM operations and the embedded `std::animation2d` module:
+  shapes, RGBA/opacity/layers, Bezier/arc/star paths, arc-length motion, affine
+  transforms, morphs, 15 easing curves, scalar tracks and looping clocks.
+- lib2geom's allocation-free Bernstein and point kernels serve CGO curve
+  evaluation and desktop segment picking. Portable Go retains equivalent curve
+  math. No upstream sources changed; dependency/license notes are documented.
+- Desktop 1.17 adds bounded Ingagi source load/save and failure-atomic, undoable
+  baking. JFXDRAW2 adds polygon cels and keeps v1 reads. CLI/desktop export
+  sampled timelines as standalone HTML5 Canvas, with SVG and drawing targets.
+  Canvas handles layer order, alpha, pause, frame seeking and looping playback.
+- Native and CGO-off full Go suites pass, including malformed aggregates,
+  signatures, real CLI publication, held cels and Node execution of the generated
+  player. NovoParse regeneration/full tagged tests and subsequent targeted
+  arithmetic/ownership/signature regressions pass; targeted `go vet` passes.
+- GCC desktop builds and all five animation/history/Ingagi CTests pass. Clang
+  ASan/UBSan drawing, real-widget and workspace-history checks pass with Ingagi
+  disabled; a separately sanitizer-instrumented C++ animation bridge consumer
+  also passes against the real Ingagi shared library. The Go shared library is
+  not sanitizer-instrumented. No new-code warnings; existing desktop warnings
+  remain. `git diff --check` passes.
+- Real Firefox Canvas tests verify alpha pixels, cleared previous positions,
+  frame movement, seeking and playback. Playwright Firefox was installed under
+  `/tmp/opencode/playwright-browsers` for this check. The UI test exercises the
+  actual source popup, Bake, Close and one-step drawing undo.
+
 ## Desktop undo/redo coverage (2026-11-06)
 
 - Audited all workspace tabs: shared Core editor history covers NLE/effects/color/

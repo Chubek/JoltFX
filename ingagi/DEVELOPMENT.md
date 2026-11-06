@@ -5,6 +5,13 @@ working subsystem. Empty adapters/IR placeholders are not executable backends.
 
 ## Completed in this development pass
 
+- `std::animation2d`: an embedded importable module over 23 bounded VM operations
+  for vector shapes, layers/style, Bezier/motion paths, affine transforms, morphing,
+  easing and scalar keyframes. Animation authoring runs budgeted `frame(t)` and
+  bakes owned cels for desktop, standalone HTML5 Canvas and current-frame SVG.
+  CGO uses vendored lib2geom Bernstein kernels; portable Go keeps equivalent math.
+  This artifact exporter does not implement a general JavaScript execution backend.
+
 - Filament surface-material artifacts: `shader(target:"filament")` reuses the
   MonkeyShade parser/body emitter and interface linker to generate `.mat`, then
   bounded `matc` compilation generates `.filamat` for OpenGL/Vulkan/Metal. Supports
@@ -80,8 +87,9 @@ working subsystem. Empty adapters/IR placeholders are not executable backends.
    bytecode cannot safely be translated by copying opcodes. Bundle/linker/rewriter
    and lower-IR files containing only package declarations remain architectural
    scaffolds, not alternate implementations of the working compiler/runtime.
-6. **Standard-library modules.** `stdlib/modules.tsv` describes proposed modules,
-   not 300+ implemented imports. Procedural operations added here are VM builtins;
+6. **Standard-library modules.** `std::animation2d` is implemented; the remaining
+   `stdlib/modules.tsv` entries describe proposals, not 300+ implemented imports.
+   Procedural operations added here are VM builtins;
    they do not implement the entire proposed `std.math.noise`/`std.geometry` APIs.
 
 ## Verification

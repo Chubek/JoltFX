@@ -1,0 +1,20 @@
+import std::animation2d as a;
+
+// A deterministic frame function. The desktop and Canvas player use the same
+// 24 fps baked cels, with frame 1 corresponding to time zero.
+fn frame(t: f64) {
+    let phase = a::pingpong(t, 2.5);
+    let x = a::tween(150, 810, phase, "sine-in-out");
+    let ink = a::rgba(0.12, 0.16, 0.20, 1);
+    let blue = a::rgba(0.20, 0.60, 0.95, 0.85);
+    let gold = a::rgba(1, 0.65, 0.12, 1);
+    let star = a::star(vec2(x,270), 65, 30, 5, t);
+    let curve = a::curve([vec2(100,400), vec2(200,50), vec2(750,50), vec2(860,400)], 64);
+    let dot = a::along(curve, a::loop(t,5));
+    return [
+        a::rect(vec2(0,0),vec2(960,540),a::rgba(0.98,0.97,0.95,1),0,1),
+        a::path(curve,false,0,blue,4),
+        a::path(star,true,gold,ink,3),
+        a::ellipse(dot-vec2(12,12),dot+vec2(12,12),blue,ink,2)
+    ];
+}

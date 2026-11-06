@@ -6,7 +6,12 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <charconv>
+#include <string_view>
+#include <cctype>
+#include <stdexcept>
 #include "tilly/memory.hpp"
+#include "../../../ingagi/animation/geometry_bridge.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -18,7 +23,7 @@
 // projects. Coordinates are in a 960 x 540 stage; cels hold until the next key.
 namespace jfx_drawing {
 struct Point { float x=0, y=0; };
-enum class Kind { Brush, Line, Rectangle, Ellipse };
+enum class Kind { Brush, Line, Rectangle, Ellipse, Polygon };
 struct Shape {
     Kind kind=Kind::Brush;
     tilly::vector<Point> points;
@@ -29,6 +34,19 @@ struct Shape {
 struct Cel { int frame=1; tilly::vector<Shape> shapes; };
 struct Layer { bool visible=true, locked=false; tilly::vector<Cel> cels{Cel{}}; };
 struct Document { int frames=120, fps=24; tilly::vector<Layer> layers{Layer{}}; };
+struct Reader {
+    std::string_view remaining;
+    std::string_view token() {
+        while(!remaining.empty() && std::isspace(static_cast<unsigned char>(remaining.front()))) remaining.remove_prefix(1);
+        size_t n=0; while(n<remaining.size() && !std::isspace(static_cast<unsigned char>(remaining[n]))) ++n;
+        auto t=remaining.substr(0,n); remaining.remove_prefix(n); return t;
+    }
+    template<class T> bool number(T &out) {
+        auto t=token(); if(t.empty()) return false;
+        auto r=std::from_chars(t.data(),t.data()+t.size(),out);
+        return r.ec==std::errc{} && r.ptr==t.data()+t.size();
+    }
+};
 struct Editor {
     Document doc;
     tilly::vector<Document> past, future;
@@ -40,6 +58,8 @@ struct Editor {
     Point pan{}, last{};
     Shape pending;
     char path[512]="animation.jfxdraw", svg_path[512]="animation.svg";
+    char script[16384]="import std::animation2d as a;\nfn frame(t: f64) {\n    let x = a::tween(120, 840, a::pingpong(t, 2.5), \"smooth\");\n    return [a::ellipse(vec2(x-40,230), vec2(x+40,310),\n        a::rgba(0.2,0.6,0.95,1), a::rgba(0.1,0.15,0.2,1), 3)];\n}\n";
+    char script_path[512]="animation.ing", html_path[512]="animation.html";
     const Cel &exposure(const Layer &l,int at) const {
         const Cel *out=&l.cels.front();
         for (const auto &c:l.cels) if (c.frame<=at && c.frame>=out->frame) out=&c;
@@ -84,9 +104,7 @@ struct Editor {
         shapes.push_back(std::move(pending)); selected=(int)shapes.size()-1;
     } catch (...) { allocation_failed=true; } }
     static float distance(Point p,Point a,Point b) {
-        float dx=b.x-a.x,dy=b.y-a.y, length=dx*dx+dy*dy;
-        float t=length>0?std::clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/length,0.0f,1.0f):0;
-        return std::hypot(p.x-a.x-t*dx,p.y-a.y-t*dy);
+        return static_cast<float>(ig_anim_segment_distance(double(p.x),double(p.y),double(a.x),double(a.y),double(b.x),double(b.y)));
     }
     int hit(Point p) {
         auto &shapes=cel().shapes;
@@ -107,28 +125,42 @@ struct Editor {
                 }
             } else {
                 for(size_t i=1;i<s.points.size();++i) if(distance(p,s.points[i-1],s.points[i])<=tolerance) return (int)n-1;
+                if(s.kind==Kind::Polygon) {
+                    if(distance(p,s.points.back(),s.points.front())<=tolerance) return (int)n-1;
+                    bool inside=false;
+                    for(size_t i=0,j=s.points.size()-1;i<s.points.size();j=i++) {
+                        auto a=s.points[i],b=s.points[j];
+                        if((a.y>p.y)!=(b.y>p.y) && p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x) inside=!inside;
+                    }
+                    if(s.filled && inside) return (int)n-1;
+                }
             }
         }
         return -1;
     }
     // Bounded, versioned text format. Load validates a temporary document before
     // replacing the current one, so malformed files never erase artwork.
-    bool save(const char *name) const try {
-        if(!name) return false;
-        tilly::string temporary=tilly::string(name)+".tmp";
-        FILE *f=std::fopen(temporary.c_str(),"wb"); if(!f) return false;
-        std::fprintf(f,"JFXDRAW1 %d %d %zu\n",doc.frames,doc.fps,doc.layers.size());
+    tilly::string serialize() const {
+        tilly::string out;char line[256];
+        auto append=[&](int n) {if(n<=0 || size_t(n)>=sizeof(line)) throw std::runtime_error("drawing serialization failed");out.append(line,size_t(n));};
+        append(std::snprintf(line,sizeof(line),"JFXDRAW2 %d %d %zu\n",doc.frames,doc.fps,doc.layers.size()));
         for(const auto &l:doc.layers) {
-            std::fprintf(f,"%d %d %zu\n",l.visible?1:0,l.locked?1:0,l.cels.size());
+            append(std::snprintf(line,sizeof(line),"%d %d %zu\n",l.visible?1:0,l.locked?1:0,l.cels.size()));
             for(const auto &c:l.cels) {
-                std::fprintf(f,"%d %zu\n",c.frame,c.shapes.size());
+                append(std::snprintf(line,sizeof(line),"%d %zu\n",c.frame,c.shapes.size()));
                 for(const auto &s:c.shapes) {
-                    std::fprintf(f,"%d %u %u %.9g %d %zu\n",(int)s.kind,s.stroke,s.fill,(double)s.width,s.filled?1:0,s.points.size());
-                    for(auto p:s.points) std::fprintf(f,"%.9g %.9g\n",(double)p.x,(double)p.y);
+                    append(std::snprintf(line,sizeof(line),"%d %u %u %.9g %d %zu\n",(int)s.kind,s.stroke,s.fill,(double)s.width,s.filled?1:0,s.points.size()));
+                    for(auto p:s.points) append(std::snprintf(line,sizeof(line),"%.9g %.9g\n",(double)p.x,(double)p.y));
                 }
             }
         }
-        bool ok=!std::ferror(f); ok=std::fclose(f)==0 && ok;
+        return out;
+    }
+    static bool write_file(const char *name,const char *data,size_t size) noexcept try {
+        if(!name) return false;
+        tilly::string temporary=tilly::string(name)+".tmp";
+        FILE *f=std::fopen(temporary.c_str(),"wb"); if(!f) return false;
+        bool ok=std::fwrite(data,1,size,f)==size; ok=std::fclose(f)==0 && ok;
 #ifdef _WIN32
         if(ok) ok=MoveFileExA(temporary.c_str(),name,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
 #else
@@ -137,28 +169,40 @@ struct Editor {
         if(!ok) std::remove(temporary.c_str());
         return ok;
     } catch (...) { return false; }
+    bool save(const char *name) const try {auto data=serialize();return write_file(name,data.data(),data.size());} catch (...) {return false;}
+    static bool read_file(const char *name,tilly::string &out,size_t limit) {
+        FILE *f=std::fopen(name,"rb");if(!f)return false;
+        auto close=[](FILE *p){std::fclose(p);};std::unique_ptr<FILE,decltype(close)> file(f,close);
+        tilly::string data;char block[4096];size_t n;
+        while((n=std::fread(block,1,sizeof(block),f))) {if(n>limit-data.size())return false;data.append(block,n);}
+        if(std::ferror(f)||data.find('\0')!=tilly::string::npos)return false;
+        out=std::move(data);return true;
+    }
     bool load(const char *name) try {
         if(!name) return false;
-        FILE *f=std::fopen(name,"rb"); if(!f) return false;
-        auto close_file=[](FILE *handle) { std::fclose(handle); };
-        std::unique_ptr<FILE,decltype(close_file)> file(f,close_file);
-        Document next; next.layers.clear(); char magic[16]{}; unsigned count=0; size_t total=0;
-        bool ok=std::fscanf(f,"%15s %d %d %u",magic,&next.frames,&next.fps,&count)==4;
-        ok=ok && std::strcmp(magic,"JFXDRAW1")==0 && next.frames>=1 && next.frames<=240 && next.fps>=1 && next.fps<=60 && count>=1 && count<=8;
+        tilly::string data;if(!read_file(name,data,64*1024*1024))return false;
+        return load_data(data.data(),data.size());
+    } catch (...) { return false; }
+    bool load_data(const char *data,size_t size) noexcept try {
+        if(!data||size>64*1024*1024)return false;
+        Reader r{std::string_view(data,size)};auto magic=r.token();
+        Document next; next.layers.clear(); unsigned count=0; size_t total=0;
+        bool ok=r.number(next.frames)&&r.number(next.fps)&&r.number(count);
+        ok=ok && (magic=="JFXDRAW1"||magic=="JFXDRAW2") && next.frames>=1 && next.frames<=240 && next.fps>=1 && next.fps<=60 && count>=1 && count<=8;
         for(unsigned i=0;ok && i<count;++i) {
             Layer l; l.cels.clear(); int visible=0,locked=0; unsigned keys=0;
-            ok=std::fscanf(f,"%d %d %u",&visible,&locked,&keys)==3 && (visible==0 || visible==1) && (locked==0 || locked==1) && keys>=1 && keys<=(unsigned)next.frames;
+            ok=r.number(visible)&&r.number(locked)&&r.number(keys) && (visible==0 || visible==1) && (locked==0 || locked==1) && keys>=1 && keys<=(unsigned)next.frames;
             l.visible=visible!=0; l.locked=locked!=0;
             for(unsigned k=0;ok && k<keys;++k) {
                 Cel c; unsigned shapes=0;
-                ok=std::fscanf(f,"%d %u",&c.frame,&shapes)==2 && c.frame>=1 && c.frame<=next.frames && shapes<=256 && (k?c.frame>l.cels.back().frame:c.frame==1);
+                ok=r.number(c.frame)&&r.number(shapes) && c.frame>=1 && c.frame<=next.frames && shapes<=256 && (k?c.frame>l.cels.back().frame:c.frame==1);
                 for(unsigned j=0;ok && j<shapes;++j) {
                     Shape s; int kind=0,filled_value=0; unsigned points=0;
-                    ok=std::fscanf(f,"%d %u %u %f %d %u",&kind,&s.stroke,&s.fill,&s.width,&filled_value,&points)==6;
-                    ok=ok && kind>=0 && kind<=3 && std::isfinite(s.width) && s.width>=0.5f && s.width<=40 && (filled_value==0 || filled_value==1) && points>=2 && points<=2048 && (kind==0 || points==2);
+                    ok=r.number(kind)&&r.number(s.stroke)&&r.number(s.fill)&&r.number(s.width)&&r.number(filled_value)&&r.number(points);
+                    ok=ok && kind>=0 && kind<=(magic=="JFXDRAW2"?4:3) && std::isfinite(s.width) && s.width>=0.5f && s.width<=40 && (filled_value==0 || filled_value==1) && points>=2 && points<=2048 && (kind==0 || (kind==4?points>=3:points==2));
                     total+=points; ok=ok && total<=1000000; s.kind=(Kind)kind; s.filled=filled_value!=0;
                     for(unsigned p=0;ok && p<points;++p) {
-                        Point v; ok=std::fscanf(f,"%f %f",&v.x,&v.y)==2 && std::isfinite(v.x) && std::isfinite(v.y) && std::abs(v.x)<=100000 && std::abs(v.y)<=100000;
+                        Point v; ok=r.number(v.x)&&r.number(v.y) && std::isfinite(v.x) && std::isfinite(v.y) && std::abs(v.x)<=100000 && std::abs(v.y)<=100000;
                         if(ok) s.points.push_back(v);
                     }
                     if(ok) c.shapes.push_back(s);
@@ -167,7 +211,7 @@ struct Editor {
             }
             if(ok) next.layers.push_back(l);
         }
-        if(ok) { int ch; do { ch=std::fgetc(f); } while(ch==' ' || ch=='\n' || ch=='\r' || ch=='\t'); ok=ch==EOF && !std::ferror(f); }
+        if(ok) ok=r.token().empty();
         if(!ok) return false;
         if(!checkpoint()) return false;
         doc=std::move(next); reset_selection(); return true;
@@ -182,9 +226,9 @@ struct Editor {
             Point a=s.points.front(),b=s.points.back();
             if(s.kind==Kind::Rectangle) std::fprintf(f,"<rect x=\"%g\" y=\"%g\" width=\"%g\" height=\"%g\"",(double)std::min(a.x,b.x),(double)std::min(a.y,b.y),(double)std::abs(b.x-a.x),(double)std::abs(b.y-a.y));
             else if(s.kind==Kind::Ellipse) std::fprintf(f,"<ellipse cx=\"%g\" cy=\"%g\" rx=\"%g\" ry=\"%g\"",(double)(a.x+b.x)/2,(double)(a.y+b.y)/2,(double)std::abs(b.x-a.x)/2,(double)std::abs(b.y-a.y)/2);
-            else { std::fputs("<polyline points=\"",f); for(auto p:s.points) std::fprintf(f,"%g,%g ",(double)p.x,(double)p.y); std::fputs("\"",f); }
+            else { std::fputs(s.kind==Kind::Polygon?"<polygon points=\"":"<polyline points=\"",f); for(auto p:s.points) std::fprintf(f,"%g,%g ",(double)p.x,(double)p.y); std::fputs("\"",f); }
             std::fprintf(f," stroke=\"#%06x\" stroke-opacity=\"%g\" stroke-width=\"%g\" stroke-linecap=\"round\" stroke-linejoin=\"round\"",rgb(s.stroke),(double)(s.stroke>>24)/255,(double)s.width);
-            if(s.filled && (s.kind==Kind::Rectangle || s.kind==Kind::Ellipse)) std::fprintf(f," fill=\"#%06x\" fill-opacity=\"%g\"",rgb(s.fill),(double)(s.fill>>24)/255);
+            if(s.filled && (s.kind==Kind::Rectangle || s.kind==Kind::Ellipse || s.kind==Kind::Polygon)) std::fprintf(f," fill=\"#%06x\" fill-opacity=\"%g\"",rgb(s.fill),(double)(s.fill>>24)/255);
             else std::fputs(" fill=\"none\"",f);
             std::fputs("/>\n",f);
         }

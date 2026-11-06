@@ -91,5 +91,15 @@ int main() {
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_NLE)==JFX_SUCCESS);frame(f);
     assert(jfx_desktop_frontend_set_workspace(f,JFX_DESKTOP_WORKSPACE_ANIMATION)==JFX_SUCCESS);frame(f);frame(f);
     assert(colored(fill).GetWidth()>95);
+    // Bake through the actual popup and restore artwork as one drawing undo.
+#ifdef JFX_TEST_ANIMATION_INGAGI
+    click(f,locate(f,window("/Editor interface_"),"Ingagi script..."));
+    auto *popup=window("##Popup_");
+    click(f,locate(f,popup,"Bake Ingagi animation"));
+    assert(colored(fill).Min.x==FLT_MAX);
+    click(f,locate(f,popup,"Close script"));
+    click(f,locate(f,ImGui::FindWindowByName("JoltFX workspace"),"Undo"));
+    assert(colored(fill).GetWidth()>95);
+#endif
     jfx_desktop_frontend_destroy(f);
 }

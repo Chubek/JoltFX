@@ -1,0 +1,25 @@
+module std::animation2d;
+
+public fn rgba(r: f64,g: f64,b: f64,a: f64) -> i64 { return anim_rgba(r,g,b,a); }
+public fn ease(name: string,t: f64) -> f64 { return anim_ease(name,t); }
+public fn tween(a: f64,b: f64,t: f64,easing: string) -> f64 { return anim_tween(a,b,t,easing); }
+public fn track(times: any,values: any,t: f64,easing: string) -> f64 { return anim_track(times,values,t,easing); }
+public fn loop(t: f64,duration: f64) -> f64 { return anim_loop(t,duration); }
+public fn pingpong(t: f64,duration: f64) -> f64 { return anim_pingpong(t,duration); }
+public fn bezier(points: any,t: f64) -> vec2 { return anim_bezier(points,t); }
+public fn curve(points: any,steps: i64) { return anim_curve(points,steps); }
+public fn length(points: any) -> f64 { return anim_length(points); }
+public fn along(points: any,t: f64) -> vec2 { return anim_along(points,t); }
+public fn morph(a: any,b: any,t: f64) { return anim_morph(a,b,t); }
+public fn transform(points: any,matrix: any) { return anim_transform(points,matrix); }
+public fn translate(points: any,offset: vec2) { return anim_translate(points,offset); }
+public fn rotate(points: any,angle: f64,pivot: vec2) { return anim_rotate(points,angle,pivot); }
+public fn scale(points: any,factors: vec2,pivot: vec2) { return anim_scale(points,factors,pivot); }
+public fn arc(center: vec2,radii: vec2,start: f64,end: f64,steps: i64) { return anim_arc(center,radii,start,end,steps); }
+public fn star(center: vec2,outer: f64,inner: f64,tips: i64,angle: f64) { return anim_star(center,outer,inner,tips,angle); }
+public fn rect(a: vec2,b: vec2,fill: i64,stroke: i64,width: f64) { return anim_rect(a,b,fill,stroke,width); }
+public fn ellipse(a: vec2,b: vec2,fill: i64,stroke: i64,width: f64) { return anim_ellipse(a,b,fill,stroke,width); }
+public fn line(a: vec2,b: vec2,stroke: i64,width: f64) { return anim_line(a,b,stroke,width); }
+public fn path(points: any,closed: bool,fill: i64,stroke: i64,width: f64) { return anim_path(points,closed,fill,stroke,width); }
+public fn opacity(shape: any,alpha: f64) { return anim_opacity(shape,alpha); }
+public fn layer(shapes: any,index: i64) { return anim_layer(shapes,index); }

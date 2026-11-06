@@ -2,6 +2,14 @@
 
 ## Default math and geometry libraries
 
+- 2D animation: vendored `third_party/lib2geom/include` Bernstein/point kernels
+  through `animation/geometry_bridge.cc`, also compiled by the desktop for picking.
+  Requires Boost headers (host include path or `CGO_CXXFLAGS=-I...`); no GTK, GSL,
+  double-conversion or lib2geom toy/runtime archive is required. The fixed-size
+  bridge allocates nothing and retains no pointers. Header sources retain their
+  LGPL-2.1-only OR MPL-1.1 notices; license texts are in the vendor directory.
+  Portable Go evaluates the same Bernstein formula with CGO disabled.
+
 - Linear algebra: header-only `third_party/glm`; the private synchronous bridge
   in `runtime/math_bridge.cc` uses double-precision GLM matrices. Existing batch
   addition/scaling also uses `third_party/simdette` scalar double vectors.
