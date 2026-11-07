@@ -1,0 +1,13 @@
+\jolttype{1}
+\pagelet{Byline}{
+\component{author}{Alex Morgan}
+\component{role}{Writer and designer}
+\component{date}{7 November 2026}
+\config{ink}{#182840}
+\config{muted}{#657184}
+\config{accent}{#e46b36}
+\rect{accent}{0}{0}{3}{50}{@accent}
+\text{author}{14}{0}{300}{13}{@ink}{@author}
+\text{role}{14}{21}{300}{10}{@muted}{@role}
+\text{date}{14}{38}{300}{9}{@muted}{@date}
+}

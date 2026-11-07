@@ -1,0 +1,20 @@
+\jolttype{1}
+\pagelet{InvoiceTotals}{
+\component{subtotallabel}{Subtotal}
+\component{subtotal}{$1,000.00}
+\component{taxlabel}{Tax (10%)}
+\component{tax}{$100.00}
+\component{totallabel}{Total due}
+\component{total}{$1,100.00}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#f1f4f7}
+\text{subtotallabel}{12}{0}{128}{11}{@ink}{@subtotallabel}
+\text{subtotal}{154}{0}{134}{11}{@ink}{@subtotal}
+\text{taxlabel}{12}{28}{128}{11}{@ink}{@taxlabel}
+\text{tax}{154}{28}{134}{11}{@ink}{@tax}
+\rect{background}{0}{58}{300}{44}{@paper}
+\rect{rule}{0}{58}{300}{2}{@accent}
+\text{totallabel}{12}{72}{128}{13}{@ink}{@totallabel}
+\text{total}{154}{72}{134}{13}{@accent}{@total}
+}

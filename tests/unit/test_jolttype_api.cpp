@@ -41,5 +41,22 @@ int main() {
     assert(jt_project_unpack(other,bytes.data(),bytes.size(),4,&error)==JT_OK);
     doc=jt_project_document(other);assert(jt_document_line(doc,0,0,&line)==JT_OK && std::strcmp(line.utf8,"Second version")==0);jt_document_destroy(doc);
     assert(jt_project_asset_count(other)==2);
+    const char *pagelet="\\jolttype{1}\\pagelet{Title}{\\component{content}{Default}\\text{label}{0}{0}{200}{12}{#123456}{@content}}\\page{600}{800}\\place{heading}{Title}{20}{20}{}";
+    assert(jt_project_stage(other,pagelet,std::strlen(pagelet),5,&error)==JT_OK);
+    assert(jt_project_refresh(other,&error)==JT_OK);
+    doc=jt_project_preview_document(other);assert(doc && jt_document_entity_count(doc)==1);
+    jt_entity_info entity{};jt_component_info component{};
+    assert(jt_document_entity(doc,0,&entity)==JT_OK && std::strcmp(entity.id,"heading")==0);
+    assert(jt_document_component(doc,0,0,&component)==JT_OK && !component.configuration && std::strcmp(component.value,"Default")==0);
+    assert(std::strcmp(jt_document_element_entity(doc,0),"heading")==0);
+    jt_document_destroy(doc);
+    assert(jt_project_set_component(other,"heading","content","New contents",6,&error)==JT_OK);
+    assert(jt_project_export(other,"jtbc",0,sink,&error)==JT_ERROR);
+    assert(jt_project_commit(other,7,&error)==JT_OK);
+    bytes.clear();assert(jt_project_export(other,"jtbc",0,sink,&error)==JT_OK);
+    jolttype::Document frozen;jolttype::Diagnostic d;
+    assert(jolttype::load_object(bytes,frozen,d) && frozen.elements[0].text=="New contents");
+    bytes.clear();assert(jt_project_export(other,"jtype",0,sink,&error)==JT_OK);
+    assert(jolttype::compile(bytes,frozen,d) && frozen.entities.empty());
     jt_project_destroy(other);jt_project_destroy(p);
 }

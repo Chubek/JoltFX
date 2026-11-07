@@ -1,0 +1,21 @@
+\jolttype{1}
+\pagelet{FactBox}{
+\component{heading}{At a glance}
+\component{labelone}{Founded}
+\component{valueone}{2020}
+\component{labeltwo}{Location}
+\component{valuetwo}{Worldwide}
+\component{labelthree}{Focus}
+\component{valuethree}{Design}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#f1f4f7}
+\rect{background}{0}{0}{300}{142}{@paper}
+\text{heading}{16}{14}{268}{16}{@ink}{@heading}
+\text{labelone}{16}{52}{120}{11}{@ink}{@labelone}
+\text{valueone}{154}{52}{130}{11}{@accent}{@valueone}
+\text{labeltwo}{16}{80}{120}{11}{@ink}{@labeltwo}
+\text{valuetwo}{154}{80}{130}{11}{@accent}{@valuetwo}
+\text{labelthree}{16}{108}{120}{11}{@ink}{@labelthree}
+\text{valuethree}{154}{108}{130}{11}{@accent}{@valuethree}
+}

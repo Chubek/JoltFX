@@ -1,0 +1,14 @@
+\jolttype{1}
+\pagelet{SignatureBlock}{
+\component{name}{Alex Morgan}
+\component{role}{Authorized signatory}
+\component{datelabel}{Date}
+\config{ink}{#182840}
+\config{muted}{#657184}
+\config{rule}{#657184}
+\rect{signatureline}{0}{42}{220}{1}{@rule}
+\rect{dateline}{250}{42}{110}{1}{@rule}
+\text{name}{0}{54}{220}{12}{@ink}{@name}
+\text{role}{0}{76}{220}{9}{@muted}{@role}
+\text{datelabel}{250}{54}{110}{10}{@muted}{@datelabel}
+}

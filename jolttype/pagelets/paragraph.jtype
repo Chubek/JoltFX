@@ -1,0 +1,10 @@
+\jolttype{1}
+\pagelet{Paragraph}{
+\component{lead}{An idea worth sharing}
+\component{body}{Replace this paragraph with your story. Keep the opening clear, then build on it with useful detail and a memorable conclusion.}
+\config{ink}{#303030}
+\config{headingink}{#182840}
+\config{size}{11}
+\text{lead}{0}{0}{330}{15}{@headingink}{@lead}
+\text{body}{0}{30}{330}{@size}{@ink}{@body}
+}

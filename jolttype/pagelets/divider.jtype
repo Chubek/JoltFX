@@ -1,0 +1,10 @@
+\jolttype{1}
+\pagelet{Divider}{
+\component{label}{NEXT}
+\config{ink}{#657184}
+\config{rule}{#ccd2da}
+\config{thickness}{1}
+\rect{left}{0}{7}{120}{@thickness}{@rule}
+\text{label}{136}{0}{64}{10}{@ink}{@label}
+\rect{right}{216}{7}{120}{@thickness}{@rule}
+}

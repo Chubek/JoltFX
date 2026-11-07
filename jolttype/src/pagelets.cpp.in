@@ -1,0 +1,12 @@
+#include "jolttype/pagelets.hpp"
+
+namespace jolttype {
+namespace {
+const BundledPagelet catalog[]={
+@JOLT_PAGELET_ENTRIES@
+};
+}
+const BundledPagelet *bundled_pagelets(size_t &count) noexcept {
+    count=sizeof(catalog)/sizeof(catalog[0]);return catalog;
+}
+}

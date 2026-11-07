@@ -1,0 +1,9 @@
+\jolttype{1}
+\pagelet{DropCap}{
+\component{initial}{L}
+\component{body}{et the opening set the tone. An oversized initial gives this paragraph a distinctive editorial beginning.}
+\config{ink}{#303030}
+\config{accent}{#e46b36}
+\text{initial}{0}{0}{44}{48}{@accent}{@initial}
+\text{body}{54}{3}{276}{11}{@ink}{@body}
+}

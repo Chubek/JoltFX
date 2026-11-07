@@ -478,10 +478,23 @@ The **Page Design** tab is a staged desktop-publishing workspace backed by the
 C++17 JoltType compiler. Edit `.jtype` markup or move/text-edit frames, then press
 **Commit**. File → Preferences configures auto-commit (60 seconds by default;
 0 disables it). **Edit** offers restorable source hatch; **IDE Mode** offers direct
-source editing, Compile and package tools. Both share a tagged dependency inventory
-for images, text and code. **Show Progress Display** opens a collapsible/resizable
+source editing, Compile and package tools. Its one-third-width page preview can
+be hidden; auto-update can be disabled independently, with manual **Update preview**.
+Typing updates only the draft preview, preserving the last valid page on errors.
+Edit mode fits the page to its available width beside the existing tools.
+**Elements / Pagelets** inserts 32 bundled JoltType Pagelets, the DoubleRuleTable
+Kliche, and user libraries. Search by name, category or description. The catalog
+includes typography, navigation, editorial, business, data and layout modules;
+see the [complete catalog](../../jolttype/README.md#shipped-pagelet-catalog).
+Selected instances expose editable components and configuration;
+**Create Kliche** captures only configuration, never instance contents.
+Both modes share a tagged inventory for images, fonts, text, code, Pagelets and
+Kliches, including module source editors and **New Pagelet** authoring.
+Font inventory storage does not change the current fixed-em typesetting font.
+**Show Progress Display** opens a collapsible/resizable
 PDF pane backed by PoDoFo, qpdf and PDFium, with scheduler progress.
-Commit publishes in memory; **Files…** saves source or exports PDF/SVG/PS/DVI.
+Commit publishes in memory; **Files…** saves source or exports PDF/SVG/PS/DVI,
+frozen JoltType source or JTBC bytecode with resolved contents/configuration.
 Final PDF defaults to **PDF (libharu)**; **PDF (PoDoFo alternative)** retains the
 previous exporter. Package build targets offer the same choice. Progress Display
 continues to use PoDoFo/qpdf/PDFium independently of final-output selection.

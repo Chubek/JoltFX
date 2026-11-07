@@ -1,5 +1,44 @@
 # Progress
 
+## Thirty additional bundled Pagelets (2026-11-07)
+
+- JoltType 0.5 adds 30 editable modules covering typography, navigation,
+  editorial layouts, business documents, data displays and layout helpers.
+  The catalog now contains 32 Pagelets plus the DoubleRuleTable Kliche.
+- Bundled `.jtype` files generate the embedded C++ catalog and install as editable
+  resources. The picker searches names/categories/descriptions and imports only
+  the selected module. Document-owned library edits survive subsequent insertion.
+- All entries pass A4/Letter compilation, default text-overlap checks, individual
+  data/config edits, moves/history, SVG/PDF publishing and Typelet/JTBC round-trips.
+  Native and Clang ASan/UBSan catalog/widget tests pass. The resource-only install
+  and the same tests against installed source pass; desktop builds successfully.
+- All 14 relinked desktop UI regression checks pass. Documentation and compiler
+  version updated; no new-code warnings or whitespace errors reported.
+
+## Pagelets, Kliches and Page Design revamp (2026-11-07)
+
+- JoltType 0.4 implements Pagelet definitions, entity instances and independent
+  data components, configuration-only Kliches, inline Pagelets and bounded,
+  cycle-checked inventory imports. Nested composition lowers through the same
+  layout system; instance moves/component edits preserve other source/comments.
+- Added Title/Table/DoubleRuleTable modules, insertion and component inspection,
+  grouped dragging, editable inventory Pagelets, and Kliche capture that excludes
+  instance contents. Inventory kinds now include fonts, Pagelets and Kliches;
+  Typelets preserve them. Fonts are stored dependencies, not a new font renderer.
+- Edit canvas fills its assigned width beside the existing 420px tools. IDE has
+  a 2:1 code/page split, hide/show, independent auto-update and manual refresh.
+  Debounced live compilation works while hidden, retains last-good output on
+  errors, and does not publish history or save the document.
+- Added frozen source/JTBC export and canonical C API 1.2 draft-preview/entity
+  inspection/component editing operations. Updated language, frontend and SDK
+  guides, including syntax, expansion budgets and current typography limits.
+- Native desktop builds. Compiler/session, publishing, inventory/package and C
+  API checks pass; all 14 relinked desktop UI checks pass. Real widgets cover
+  preview sizing/toggles, invalid drafts, insertion, data edits, Kliche capture,
+  double-rule tables and grouped dragging. Targeted Clang ASan/UBSan checks pass.
+- Relocated SDK installation/C11/C++17 checks and diff checks pass. No warnings
+  in changed code; existing desktop double-promotion warnings remain.
+
 ## JoltType primary libharu PDF exporter (2026-11-07)
 
 - Making vendored libharu the default final PDF publisher across desktop export,

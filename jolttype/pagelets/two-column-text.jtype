@@ -1,0 +1,15 @@
+\jolttype{1}
+\pagelet{TwoColumnText}{
+\component{leftheading}{The idea}
+\component{leftbody}{Introduce the central idea and explain why it matters to the reader.}
+\component{rightheading}{In practice}
+\component{rightbody}{Use this column for practical steps, examples or a second perspective.}
+\config{ink}{#303030}
+\config{headingink}{#182840}
+\config{rule}{#ccd2da}
+\text{leftheading}{0}{0}{180}{14}{@headingink}{@leftheading}
+\text{leftbody}{0}{30}{180}{11}{@ink}{@leftbody}
+\rect{gutter}{199}{0}{1}{112}{@rule}
+\text{rightheading}{220}{0}{180}{14}{@headingink}{@rightheading}
+\text{rightbody}{220}{30}{180}{11}{@ink}{@rightbody}
+}

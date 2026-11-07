@@ -1,0 +1,11 @@
+\jolttype{1}
+\pagelet{Subtitle}{
+\component{overline}{DESIGN JOURNAL}
+\component{content}{A fresh perspective}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{size}{18}
+\text{overline}{0}{0}{320}{9}{@accent}{@overline}
+\text{subtitle}{0}{20}{320}{@size}{@ink}{@content}
+\rect{accent}{0}{52}{48}{2}{@accent}
+}

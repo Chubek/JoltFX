@@ -1,0 +1,22 @@
+\jolttype{1}
+\pagelet{PriceCard}{
+\component{product}{Studio plan}
+\component{price}{$29}
+\component{period}{per month}
+\component{features}{Unlimited projects
+Shared libraries
+Priority support}
+\component{action}{Start creating}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#f1f4f7}
+\config{buttonink}{#ffffff}
+\rect{background}{0}{0}{220}{246}{@paper}
+\rect{toprule}{0}{0}{220}{4}{@accent}
+\text{product}{16}{20}{188}{16}{@ink}{@product}
+\text{price}{16}{54}{188}{36}{@accent}{@price}
+\text{period}{16}{102}{188}{10}{@ink}{@period}
+\text{features}{16}{132}{188}{10}{@ink}{@features}
+\rect{button}{16}{204}{188}{28}{@accent}
+\text{action}{28}{211}{164}{11}{@buttonink}{@action}
+}

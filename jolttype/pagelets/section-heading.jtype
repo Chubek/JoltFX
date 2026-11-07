@@ -1,0 +1,11 @@
+\jolttype{1}
+\pagelet{SectionHeading}{
+\component{number}{01}
+\component{heading}{The next chapter}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{rule}{#ccd2da}
+\text{number}{0}{0}{42}{18}{@accent}{@number}
+\text{heading}{54}{0}{276}{18}{@ink}{@heading}
+\rect{rule}{0}{32}{330}{1}{@rule}
+}

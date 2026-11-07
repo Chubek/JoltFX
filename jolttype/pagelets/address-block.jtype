@@ -1,0 +1,18 @@
+\jolttype{1}
+\pagelet{AddressBlock}{
+\component{label}{DELIVER TO}
+\component{recipient}{Alex Morgan}
+\component{organization}{Studio North}
+\component{street}{12 Example Street
+Suite 4}
+\component{city}{London, AB1 2CD}
+\component{country}{United Kingdom}
+\config{ink}{#182840}
+\config{muted}{#657184}
+\text{label}{0}{0}{260}{9}{@muted}{@label}
+\text{recipient}{0}{24}{260}{12}{@ink}{@recipient}
+\text{organization}{0}{44}{260}{11}{@ink}{@organization}
+\text{street}{0}{64}{260}{11}{@ink}{@street}
+\text{city}{0}{100}{260}{11}{@ink}{@city}
+\text{country}{0}{120}{260}{11}{@ink}{@country}
+}

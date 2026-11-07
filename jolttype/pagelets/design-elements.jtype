@@ -1,0 +1,21 @@
+\jolttype{1}
+\pagelet{Title}{
+\component{content}{New title}
+\config{ink}{#182840}
+\config{size}{24}
+\config{width}{280}
+\text{label}{0}{0}{@width}{@size}{@ink}{@content}
+}
+\pagelet{Table}{
+\component{heading}{Item                 Value}
+\component{rows}{First                100
+Second               200}
+\config{ink}{#303030}
+\config{rule}{#182840}
+\config{separator}{24}
+\text{header}{6}{4}{288}{12}{@ink}{@heading}
+\rect{ruleone}{0}{24}{300}{1}{@rule}
+\rect{ruletwo}{0}{@separator}{300}{1}{@rule}
+\text{body}{6}{38}{288}{12}{@ink}{@rows}
+}
+\kliche{DoubleRuleTable}{Table}{\config{separator}{28}}

@@ -25,7 +25,7 @@ bool load_object(std::string_view bytes,Document &out,Diagnostic &error) noexcep
             size_t lines=r.u32();need(lines<=4096 && (e.kind==Kind::Text || lines==0),"Invalid compiled line count.");
             if(e.kind==Kind::Text)need(e.size>=4 && e.size<=240 && lines>0 && std::abs(e.height-double(lines)*e.size*1.2)<1e-6,"Invalid compiled text metrics.");
             for(size_t j=0;j<lines;++j){Line line;line.text=r.text(max_source_bytes);line.width=r.real();text_bytes+=line.text.size();need(line.width>=0 && line.width<=e.width+1e-6 && utf8(line.text),"Invalid compiled text line.");e.lines.push_back(std::move(line));}
-            need(text_bytes<=2*max_source_bytes,"Compiled text exceeds its budget.");doc.elements.push_back(std::move(e));
+            need(text_bytes<=2*max_expansion_bytes,"Compiled text exceeds its budget.");doc.elements.push_back(std::move(e));
         }
         r.end();out=std::move(doc);error={};return true;
     }catch(const std::exception &e){fail(error,e.what());return false;}

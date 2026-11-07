@@ -41,8 +41,8 @@ bool utf8(std::string_view s, size_t &bad) {
     }
     return true;
 }
-tilly::string number(double value) {
-    char text[64]; auto r = std::to_chars(text, text + sizeof(text), value, std::chars_format::general, 12);
+tilly::string number(double value,int precision=12) {
+    char text[64]; auto r = std::to_chars(text, text + sizeof(text), value, std::chars_format::general, precision);
     if (r.ec != std::errc()) throw std::bad_alloc();
     return tilly::string(text, r.ptr);
 }
@@ -51,14 +51,26 @@ tilly::string escaped(std::string_view value) {
     for (char c : value) { if (c == '\\' || c == '{' || c == '}' || c == '%') out += '\\'; out += c; }
     return out;
 }
+bool identifier(std::string_view s) {
+    if(s.empty() || s.size()>63 || !letter(s[0]))return false;
+    for(char c:s)if(!letter(c) && !digit(c) && c!='_' && c!='-')return false;
+    return true;
+}
+struct ExpansionBudget {
+    size_t bytes=0;
+    tilly::vector<tilly::string> importing, imported;
+};
 struct Parser {
     std::string_view source;
     size_t pos = 0;
     Diagnostic &error;
     const Inventory *inventory = nullptr;
     size_t image_bytes = 0;
+    ExpansionBudget *budget=nullptr;
+    unsigned depth=0;
     bool fail(const char *message, size_t at) {
-        failure(error, message); error.offset = at;
+        char copy[256];std::snprintf(copy,sizeof(copy),"%s",message);
+        failure(error, copy); error.offset = at;
         for (size_t i = 0; i < at && i < source.size(); ++i) {
             if (source[i] == '\n') { ++error.line; error.column = 1; } else ++error.column;
         }
@@ -95,6 +107,162 @@ struct Parser {
         if (pos == source.size()) return fail("Unclosed argument.", begin - 1);
         if (span) *span = {begin, pos};
         ++pos; return true;
+    }
+    // Blocks preserve nested markup and escapes; unlike text arguments they
+    // are syntax, never interpolated by concatenating unescaped user values.
+    bool signature(std::string_view cmd,unsigned &args,bool &has_block) {
+        has_block=cmd=="pagelet" || cmd=="kliche" || cmd=="place" || cmd=="inline";
+        if(cmd=="text" || cmd=="textfile")args=7;
+        else if(cmd=="rect" || cmd=="image")args=6;
+        else if(cmd=="place")args=4;
+        else if(cmd=="inline")args=3;
+        else if(cmd=="page" || cmd=="component" || cmd=="config" || cmd=="kliche")args=2;
+        else if(cmd=="jolttype" || cmd=="use" || cmd=="pagelet")args=1;
+        else return fail("Unknown JoltType command in markup block.",pos);
+        return true;
+    }
+    bool block(tilly::string &value,Span *span=nullptr,unsigned nesting=0) {
+        skip();size_t begin=pos;
+        if(nesting==64)return fail("Markup nesting exceeds 64 levels.",begin);
+        if(pos==source.size() || source[pos++]!='{')return fail("Expected a markup block.",begin);
+        begin=pos;
+        while(pos<source.size()) {
+            skip();if(pos==source.size())break;
+            if(source[pos]=='}'){value.assign(source.substr(begin,pos-begin));if(span)*span={begin,pos};++pos;return true;}
+            std::string_view cmd;unsigned args=0;bool nested=false;tilly::string ignored;
+            if(!command(cmd) || !signature(cmd,args,nested))return false;
+            for(unsigned i=0;i<args;++i)if(!argument(ignored))return false;
+            if(nested && !block(ignored,nullptr,nesting+1))return false;
+        }
+        return fail("Unclosed markup block.",begin-1);
+    }
+    bool interpolate(const tilly::vector<Component> &components,tilly::string &out) {
+        while(true) {
+            skip();if(pos==source.size())return true;
+            std::string_view cmd;unsigned args=0;bool nested=false;
+            if(!command(cmd) || !signature(cmd,args,nested))return false;
+            out+='\\';out.append(cmd);
+            for(unsigned i=0;i<args;++i) {
+                tilly::string value;if(!argument(value))return false;
+                if(!value.empty() && value[0]=='@') {
+                    auto key=std::string_view(value).substr(1);
+                    auto it=std::find_if(components.begin(),components.end(),[&](const Component &c){return c.name==key;});
+                    if(it==components.end())return fail("Unknown Pagelet component reference.",pos);
+                    value=it->value;
+                }
+                out+="{"+escaped(value)+"}";
+            }
+            if(nested) {
+                tilly::string body,expanded;if(!block(body))return false;
+                // An inline Pagelet owns its own lexical component scope.
+                if(cmd=="inline")expanded=std::move(body);
+                else {Parser sub{body,0,error,inventory};if(!sub.interpolate(components,expanded))return false;}
+                out+="{"+expanded+"}";
+            }
+            out+='\n';
+            if(out.size()>max_source_bytes)return fail("Expanded Pagelet exceeds 64 KiB.",pos);
+        }
+    }
+    bool declarations(tilly::vector<Component> &values,bool overrides,bool config_only=false) {
+        tilly::vector<tilly::string> seen;
+        while(true) {
+            skip();if(pos==source.size())return true;
+            size_t begin=pos;std::string_view cmd;
+            if(!command(cmd))return false;
+            if(cmd!="component" && cmd!="config") {pos=begin;return !overrides || fail("Expected component or config assignment.",begin);}
+            Component c;c.configuration=cmd=="config";
+            if(!argument(c.name) || !argument(c.value))return false;
+            if(!identifier(c.name))return fail("Invalid component/configuration name.",begin);
+            if(config_only && !c.configuration)return fail("Kliches capture configuration only, never data components.",begin);
+            if(std::find(seen.begin(),seen.end(),c.name)!=seen.end())return fail("Duplicate component/configuration assignment.",begin);
+            seen.push_back(c.name);
+            if(overrides) {
+                auto it=std::find_if(values.begin(),values.end(),[&](const Component &v){return v.name==c.name;});
+                if(it==values.end() || it->configuration!=c.configuration)return fail("Unknown component or wrong component/configuration category.",begin);
+                it->value=std::move(c.value);
+            } else {
+                if(values.size()==64)return fail("Maximum 64 components/configurations per Pagelet.",begin);
+                values.push_back(std::move(c));
+            }
+        }
+    }
+    bool definition(Document &doc,bool kliche,size_t begin) {
+        if(depth)return fail("Declare Pagelets and Kliches at library/document scope.",begin);
+        Pagelet p;tilly::string body;
+        if(!argument(p.id) || (kliche && !argument(p.base)) || !block(body))return false;
+        if(!identifier(p.id) || doc.pagelets.size()==128)return fail("Invalid Pagelet ID or more than 128 definitions.",begin);
+        for(const auto &old:doc.pagelets)if(old.id==p.id)return fail("Duplicate Pagelet/Kliche ID.",begin);
+        if(kliche) {
+            auto base=std::find_if(doc.pagelets.begin(),doc.pagelets.end(),[&](const Pagelet &v){return v.id==p.base;});
+            if(base==doc.pagelets.end())return fail("Kliche base must be a previously declared Pagelet or Kliche.",begin);
+            p.body=base->body;p.components=base->components;
+        }
+        Parser sub{body,0,error,inventory};
+        if(!sub.declarations(p.components,kliche,kliche))return fail(error.message,begin);
+        if(!kliche)p.body=body.substr(sub.pos);
+        doc.pagelets.push_back(std::move(p));
+        // Validate even unused definitions. The system lays out defaults on a
+        // maximum-size validation page; actual placement checks the real page.
+        Document check;check.pagelets=doc.pagelets;Page page;page.width=page.height=14400;check.pages.push_back(page);
+        auto validation="{v}{"+doc.pagelets.back().id+"}{0}{0}{}";
+        Parser tester{validation,0,error,inventory};tester.budget=budget;
+        if(!tester.instance(check,false,0))return fail(error.message,begin);
+        return true;
+    }
+    bool use(Document &doc,size_t begin) {
+        tilly::string id;if(!argument(id))return false;
+        if(depth)return fail("Use inventory libraries at document/library scope.",begin);
+        const auto *asset=inventory?inventory->find(id):nullptr;
+        if(!asset || (asset->kind!=AssetKind::Pagelet && asset->kind!=AssetKind::Kliche && asset->kind!=AssetKind::Source))return fail("Pagelet/Kliche source library missing from inventory.",begin);
+        if(std::find(budget->importing.begin(),budget->importing.end(),id)!=budget->importing.end())return fail("Cyclic Pagelet library import.",begin);
+        if(std::find(budget->imported.begin(),budget->imported.end(),id)!=budget->imported.end())return true;
+        if(budget->importing.size()==16 || (budget->bytes+=asset->bytes.size())>max_expansion_bytes)return fail("Pagelet library budget exceeded.",begin);
+        budget->importing.push_back(id);
+        Parser sub{asset->bytes,0,error,inventory};sub.budget=budget;
+        if(!sub.parse(doc,true))return fail(error.message,begin);
+        budget->importing.pop_back();budget->imported.push_back(id);return true;
+    }
+    bool instance(Document &doc,bool inlined,size_t begin) {
+        if(doc.pages.empty())return fail("Declare a page before placing Pagelets.",begin);
+        if(depth>=16 || doc.entities.size()==max_elements)return fail("Pagelet expansion depth/entity limit exceeded.",begin);
+        Entity entity;tilly::string body,values;
+        if(!argument(entity.id) || (!inlined && !argument(entity.type)) || !length(entity.x,&entity.x_span) || !length(entity.y,&entity.y_span) || !block(values,&entity.values_span))return false;
+        if(!identifier(entity.id))return fail("Invalid entity ID.",begin);
+        for(const auto &e:doc.entities)if(e.id==entity.id)return fail("Duplicate entity ID.",begin);
+        for(const auto &e:doc.elements)if(e.id==entity.id)return fail("Entity ID conflicts with an element.",begin);
+        entity.inline_pagelet=inlined;entity.page=doc.pages.size()-1;
+        if(!inlined) {
+            auto definition=std::find_if(doc.pagelets.begin(),doc.pagelets.end(),[&](const Pagelet &p){return p.id==entity.type;});
+            if(definition==doc.pagelets.end())return fail("Unknown Pagelet or Kliche.",begin);
+            body=definition->body;entity.components=definition->components;
+        }
+        Parser assignments{values,0,error,inventory};
+        if(!assignments.declarations(entity.components,!inlined))return fail(error.message,begin);
+        if(inlined)body=values.substr(assignments.pos);
+        // Only an entire argument {@name} is a component reference. Escaping
+        // values here prevents data from introducing commands or nested markup.
+        tilly::string expanded;Parser interpolator{body,0,error,inventory};
+        if(!interpolator.interpolate(entity.components,expanded))return fail(error.message,begin);
+        const auto page=doc.pages.back();
+        auto input="\\jolttype{1}\\page{"+number(page.width)+"}{"+number(page.height)+"}\n"+expanded;
+        if((budget->bytes+=input.size())>max_expansion_bytes)return fail("Pagelet expansion exceeds 1 MiB.",begin);
+        Document local;local.pagelets=doc.pagelets;
+        Parser sub{input,0,error,inventory};sub.depth=depth+1;sub.budget=budget;
+        if(!sub.parse(local))return fail(error.message,begin);
+        if(local.pages.size()!=1 || local.elements.empty())return fail("Pagelets require elements on exactly one page.",begin);
+        if(doc.elements.size()+local.elements.size()>max_elements)return fail("Maximum 1024 expanded elements exceeded.",begin);
+        for(auto &e:local.elements) {
+            e.id=entity.id+"-"+e.id;e.entity=entity.id;e.page=entity.page;
+            if(!identifier(e.id))return fail("Expanded element ID exceeds 63 characters.",begin);
+            for(const auto &old:doc.elements)if(old.id==e.id)return fail("Expanded element ID collision.",begin);
+            for(const auto &old:doc.entities)if(old.id==e.id)return fail("Expanded element ID conflicts with an entity.",begin);
+            entity.width=std::max(entity.width,e.x+e.width);entity.height=std::max(entity.height,e.y+e.height);
+            e.x+=entity.x;e.y+=entity.y;e.x_span=e.y_span=e.text_span={};
+            if(e.x+e.width>page.width+1e-6 || e.y+e.height>page.height+1e-6)return fail("Pagelet overflows the page.",begin);
+            image_bytes+=e.pixels.size();if(image_bytes>max_inventory_bytes)return fail("Decoded image budget exceeds 64 MiB.",begin);
+            doc.elements.push_back(std::move(e));
+        }
+        doc.entities.push_back(std::move(entity));return true;
     }
     bool length(double &out, Span *span = nullptr) {
         tilly::string arg; Span location;
@@ -150,7 +318,7 @@ struct Parser {
             return fail("Element overflows the page; resize or move it to another page.", e.y_span.begin);
         return true;
     }
-    bool parse(Document &doc) {
+    bool parse(Document &doc,bool library=false) {
         size_t bad = 0;
         if (source.size() > max_source_bytes) return fail("Source exceeds 64 KiB.", 0);
         if (!utf8(source, bad)) return fail("Invalid UTF-8 or control character.", bad);
@@ -163,7 +331,12 @@ struct Parser {
             skip(); if (pos == source.size()) break;
             size_t begin = pos;
             if (!command(name)) return false;
+            if(name=="pagelet" || name=="kliche") {if(!definition(doc,name=="kliche",begin))return false;continue;}
+            if(name=="use") {if(!use(doc,begin))return false;continue;}
+            if(library)return fail("Libraries contain only Pagelet/Kliche definitions and imports.",begin);
+            if(name=="place" || name=="inline") {if(!instance(doc,name=="inline",begin))return false;continue;}
             if (name == "page") {
+                if(depth && !doc.pages.empty())return fail("Pagelet bodies cannot declare pages.",begin);
                 Page p;
                 p.source_begin=begin;p.source_end=source.size();
                 if (!length(p.width) || !length(p.height)) return false;
@@ -180,6 +353,7 @@ struct Parser {
             if (e.id.empty() || e.id.size() > 63 || !letter(e.id[0])) return fail("Element IDs must start with a letter and contain 1..63 letters, digits, _ or -.", begin);
             for (char c : e.id) if (!letter(c) && !digit(c) && c != '_' && c != '-') return fail("Invalid element ID.", begin);
             for (const auto &other : doc.elements) if (e.id == other.id) return fail("Duplicate element ID.", begin);
+            for (const auto &other : doc.entities) if (e.id == other.id) return fail("Element ID conflicts with an entity.",begin);
             if (!length(e.x, &e.x_span) || !length(e.y, &e.y_span) || !length(e.width) ||
                 !length(e.kind == Kind::Text ? e.size : e.height) || !argument(arg)) return false;
             if(e.kind==Kind::Image) {
@@ -216,7 +390,7 @@ struct Parser {
             if (!layout(e, doc.pages.back())) return false;
             doc.elements.push_back(std::move(e));
         }
-        return !doc.pages.empty() || fail("Document requires at least one page.", pos);
+        return library || !doc.pages.empty() || fail("Document requires at least one page.", pos);
     }
 };
 tilly::string xml(std::string_view text) {
@@ -235,7 +409,7 @@ template<class T> void remember(tilly::vector<T> &history, const T &source) {
 
 bool compile(std::string_view source, Document &out, Diagnostic &error, const Inventory *inventory) noexcept {
     try {
-        error = {}; Document candidate; Parser p{source, 0, error, inventory};
+        error = {}; Document candidate; Parser p{source, 0, error, inventory};ExpansionBudget budget;p.budget=&budget;
         if (!p.parse(candidate)) return false;
         out = std::move(candidate); return true;
     } catch (...) { failure(error, "Not enough memory to compile JoltType."); return false; }
@@ -271,6 +445,24 @@ bool export_svg(const Document &doc, size_t page, tilly::string &out, Diagnostic
         }
         svg += "</svg>\n"; out.swap(svg); error = {}; return true;
     } catch (...) { failure(error, "Not enough memory to export SVG."); return false; }
+}
+bool export_source(const Document &doc,tilly::string &out,Diagnostic &error) noexcept {
+    try {
+        tilly::string next="\\jolttype{1}\n% Frozen Pagelet components and geometry.\n";
+        for(size_t page=0;page<doc.pages.size();++page) {
+            next+="\\page{"+number(doc.pages[page].width,17)+"}{"+number(doc.pages[page].height,17)+"}\n";
+            for(const auto &e:doc.elements)if(e.page==page) {
+                char color[8];std::snprintf(color,sizeof(color),"#%06x",unsigned(e.color));
+                next+=e.kind==Kind::Text?"\\text{":e.kind==Kind::Image?"\\image{":"\\rect{";
+                next+=e.id+"}{"+number(e.x,17)+"}{"+number(e.y,17)+"}{"+number(e.width,17)+"}{"+number(e.kind==Kind::Text?e.size:e.height,17)+"}{";
+                next+=e.kind==Kind::Image?escaped(e.asset):tilly::string(color);next+="}";
+                if(e.kind==Kind::Text)next+="{"+escaped(e.text)+"}";
+                next+='\n';
+            }
+        }
+        if(next.size()>max_source_bytes){failure(error,"Frozen source exceeds 64 KiB; export JTBC instead.");return false;}
+        out.swap(next);error={};return true;
+    }catch(...){failure(error,"Not enough memory to export frozen source.");return false;}
 }
 bool write_file(const char *path, std::string_view bytes, Diagnostic &error) noexcept {
     struct Temporary {
@@ -321,11 +513,48 @@ bool Session::visual(tilly::string source, double now) noexcept {
     if (!stage(source, now)) return false;
     preview_ = std::move(next); synchronized_ = true; return true;
 }
+bool Session::refresh() noexcept {
+    Document next;
+    if(!compile(draft_,next,error_,inventory_.get()))return false;
+    preview_=std::move(next);synchronized_=true;return true;
+}
+bool Session::set_component(std::string_view id,std::string_view name,std::string_view value,double now) noexcept {
+    try {
+        if(!synchronized_){failure(error_,"Refresh the draft before editing components.");return false;}
+        for(const auto &entity:preview_.entities)if(entity.id==id) {
+            auto it=std::find_if(entity.components.begin(),entity.components.end(),[&](const Component &c){return c.name==name;});
+            if(it==entity.components.end()){failure(error_,"Unknown entity component.");return false;}
+            Parser p{draft_,entity.values_span.begin,error_};
+            while(p.pos<entity.values_span.end) {
+                p.skip();if(p.pos>=entity.values_span.end)break;
+                std::string_view cmd;tilly::string key,old;Span span;
+                if(!p.command(cmd))return false;
+                if(cmd!="component" && cmd!="config")break;
+                if(!p.argument(key) || !p.argument(old,&span))return false;
+                if(key==name) {
+                    auto next=draft_;next.replace(span.begin,span.end-span.begin,escaped(value));
+                    return visual(std::move(next),now);
+                }
+            }
+            auto next=draft_;
+            next.insert(entity.values_span.begin,(it->configuration?"\\config{":"\\component{")+it->name+"}{"+escaped(value)+"}\n");
+            return visual(std::move(next),now);
+        }
+        failure(error_,"Select a Pagelet entity.");return false;
+    }catch(...){failure(error_,"Not enough memory to edit a component.");return false;}
+}
 bool Session::move(std::string_view id, double x, double y, double now) noexcept {
     try {
         if (!synchronized_) { failure(error_, "Commit or revert source edits before visual editing."); return false; }
         if (!std::isfinite(x) || !std::isfinite(y) || x < 0 || y < 0) { failure(error_, "Invalid frame position."); return false; }
+        for(const auto &entity:preview_.entities)if(entity.id==id) {
+            auto next=draft_;
+            next.replace(entity.y_span.begin,entity.y_span.end-entity.y_span.begin,number(y));
+            next.replace(entity.x_span.begin,entity.x_span.end-entity.x_span.begin,number(x));
+            return visual(std::move(next),now);
+        }
         for (const auto &e : preview_.elements) if (e.id == id) {
+            if(!e.entity.empty()){failure(error_,"Move the owning Pagelet entity.");return false;}
             auto next = draft_;
             next.replace(e.y_span.begin, e.y_span.end - e.y_span.begin, number(y));
             next.replace(e.x_span.begin, e.x_span.end - e.x_span.begin, number(x));
@@ -339,6 +568,7 @@ bool Session::set_text(std::string_view id, std::string_view text, double now) n
         if (!synchronized_) { failure(error_, "Commit or revert source edits before visual editing."); return false; }
         if (text.size() > max_source_bytes) { failure(error_, "Text exceeds 64 KiB."); return false; }
         for (const auto &e : preview_.elements) if (e.id == id && e.kind == Kind::Text) {
+            if(!e.entity.empty()){failure(error_,"Edit the owning Pagelet's components.");return false;}
             if(!e.asset.empty()){failure(error_,"Edit resource-backed text in the inventory.");return false;}
             auto next = draft_; next.replace(e.text_span.begin, e.text_span.end - e.text_span.begin, escaped(text));
             return visual(std::move(next), now);
@@ -415,7 +645,7 @@ bool Session::set_inventory(const Inventory &inventory,Diagnostic &error) noexce
                 if(a.id!=b.id || a.path!=b.path || a.kind!=b.kind || a.tags!=b.tags || a.dependencies!=b.dependencies || a.bytes!=b.bytes){same=false;break;}}
             if(same)return true;
         }
-        inventory_=std::allocate_shared<Inventory>(tilly::allocator<Inventory>{},inventory);error={};return true;
+        inventory_=std::allocate_shared<Inventory>(tilly::allocator<Inventory>{},inventory);synchronized_=false;error={};return true;
     }
     catch(...){failure(error,"Not enough memory to snapshot inventory.");return false;}
 }

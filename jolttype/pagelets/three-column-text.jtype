@@ -1,0 +1,20 @@
+\jolttype{1}
+\pagelet{ThreeColumnText}{
+\component{firstheading}{Discover}
+\component{firstbody}{Observe, ask questions and gather useful information.}
+\component{secondheading}{Develop}
+\component{secondbody}{Explore ideas and test the most promising directions.}
+\component{thirdheading}{Deliver}
+\component{thirdbody}{Refine the details and share the finished work.}
+\config{ink}{#303030}
+\config{accent}{#e46b36}
+\config{rule}{#ccd2da}
+\text{firstheading}{0}{0}{116}{12}{@accent}{@firstheading}
+\text{firstbody}{0}{28}{116}{10}{@ink}{@firstbody}
+\rect{firstgutter}{129}{0}{1}{124}{@rule}
+\text{secondheading}{142}{0}{116}{12}{@accent}{@secondheading}
+\text{secondbody}{142}{28}{116}{10}{@ink}{@secondbody}
+\rect{secondgutter}{271}{0}{1}{124}{@rule}
+\text{thirdheading}{284}{0}{116}{12}{@accent}{@thirdheading}
+\text{thirdbody}{284}{28}{116}{10}{@ink}{@thirdbody}
+}

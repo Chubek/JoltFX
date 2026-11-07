@@ -1,0 +1,18 @@
+\jolttype{1}
+\pagelet{ContactCard}{
+\component{name}{Alex Morgan}
+\component{role}{Creative director}
+\component{email}{alex@studio.example}
+\component{phone}{+1 555 0100}
+\component{website}{studio.example}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#f1f4f7}
+\rect{background}{0}{0}{300}{140}{@paper}
+\rect{accent}{0}{0}{5}{140}{@accent}
+\text{name}{18}{14}{264}{18}{@ink}{@name}
+\text{role}{18}{42}{264}{10}{@accent}{@role}
+\text{email}{18}{70}{264}{10}{@ink}{@email}
+\text{phone}{18}{90}{264}{10}{@ink}{@phone}
+\text{website}{18}{110}{264}{10}{@ink}{@website}
+}

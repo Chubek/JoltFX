@@ -7,13 +7,13 @@
 extern "C" {
 #endif
 #define JOLTTYPE_API_MAJOR 1u
-#define JOLTTYPE_API_MINOR 1u
+#define JOLTTYPE_API_MINOR 2u
 typedef struct jt_project jt_project;
 typedef struct jt_document jt_document;
 typedef struct jt_module jt_module;
 typedef struct {size_t line,column;char message[256];} jt_error;
 typedef enum {JT_OK=0,JT_ERROR=-1,JT_UNAVAILABLE=-2} jt_result;
-typedef enum {JT_IMAGE,JT_TEXT,JT_CODE,JT_SOURCE,JT_COMPILED,JT_MODULE,JT_OTHER} jt_asset_kind;
+typedef enum {JT_IMAGE,JT_TEXT,JT_CODE,JT_SOURCE,JT_COMPILED,JT_MODULE,JT_OTHER,JT_FONT,JT_PAGELET,JT_KLICHE} jt_asset_kind;
 typedef struct {void *user;bool (*write)(void *user,const void *bytes,size_t length);} jt_sink;
 typedef struct {
     size_t size;const char *id,*path;jt_asset_kind kind;
@@ -32,6 +32,11 @@ typedef struct {
     const uint8_t *rgba;unsigned image_width,image_height;
 } jt_element_info;
 typedef struct {const char *utf8;double width;} jt_line_info;
+typedef struct {
+    const char *id,*pagelet;size_t page,component_count;
+    double x,y,width,height;bool inline_pagelet;
+} jt_entity_info;
+typedef struct {const char *name,*value;bool configuration;} jt_component_info;
 // Targets are synchronous; callback/userdata remain valid until project destroy.
 // Emit into the supplied sink and return failure if any sink write fails.
 typedef struct {
@@ -57,6 +62,9 @@ void jt_project_destroy(jt_project *);
 // Borrowed views last until the next successful mutation of this project.
 const char *jt_project_source(const jt_project *,bool committed);
 jt_result jt_project_stage(jt_project *,const char *,size_t length,double now,jt_error *);
+// Refresh only the draft preview; committed snapshots and history are unchanged.
+jt_result jt_project_refresh(jt_project *,jt_error *);
+jt_result jt_project_set_component(jt_project *,const char *entity,const char *name,const char *value,double now,jt_error *);
 jt_result jt_project_commit(jt_project *,double now,jt_error *);
 jt_result jt_project_revert(jt_project *,jt_error *);
 jt_result jt_project_history(jt_project *,bool redo,jt_error *);
@@ -74,14 +82,20 @@ jt_result jt_project_build(jt_project *,jt_error *);
 jt_result jt_project_pack(jt_project *,jt_sink,jt_error *);
 jt_result jt_project_unpack(jt_project *,const void *,size_t length,double now,jt_error *);
 jt_document *jt_project_document(const jt_project *);
+jt_document *jt_project_preview_document(const jt_project *);
 void jt_document_destroy(jt_document *);
 size_t jt_document_page_count(const jt_document *);
 size_t jt_document_element_count(const jt_document *);
 jt_result jt_document_page(const jt_document *,size_t,jt_page_info *);
 jt_result jt_document_element(const jt_document *,size_t,jt_element_info *);
 jt_result jt_document_line(const jt_document *,size_t element,size_t line,jt_line_info *);
+size_t jt_document_entity_count(const jt_document *);
+jt_result jt_document_entity(const jt_document *,size_t entity,jt_entity_info *);
+jt_result jt_document_component(const jt_document *,size_t entity,size_t component,jt_component_info *);
+// Empty string for a primitive without a Pagelet owner. Views live with snapshot.
+const char *jt_document_element_entity(const jt_document *,size_t element);
 jt_result jt_project_register_target(jt_project *,const jt_target_desc *,jt_error *);
-// Built-ins: pdf (libharu final output), pdf-podofo (alternative), svg, ps, dvi.
+// Built-ins: pdf, pdf-podofo, svg, ps, dvi, jtbc and jtype (frozen source).
 jt_result jt_project_export(const jt_project *,const char *target,size_t page,jt_sink,jt_error *);
 jt_result jt_compile_module(const char *,size_t,jt_sink,jt_error *);
 jt_module *jt_module_create(void);

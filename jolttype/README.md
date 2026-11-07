@@ -1,4 +1,4 @@
-# JoltType 0.3
+# JoltType 0.5
 
 JoltType is JoltFX's C++17 page-design language and document library. Its first
 format is a small, LaTeX-inspired declarative language for multi-page layouts.
@@ -31,6 +31,11 @@ Text wraps inside this frame.}
 | `\rect{id}{x}{y}{width}{height}{color}` | Filled rectangle |
 | `\image{id}{x}{y}{width}{height}{asset-id}` | PNG/JPEG from the inventory |
 | `\textfile{id}{x}{y}{width}{size}{color}{asset-id}` | UTF-8 text/code inventory asset |
+| `\pagelet{name}{body}` | Reusable JoltType element definition |
+| `\kliche{name}{base}{configuration}` | Configuration-only Pagelet variant |
+| `\place{id}{pagelet-or-kliche}{x}{y}{values}` | Create a Pagelet entity |
+| `\inline{id}{x}{y}{body}` | Define and place an anonymous Pagelet |
+| `\use{asset-id}` | Import an inventory Pagelet/Kliche/source library |
 
 Elements paint in source order. IDs are unique across the document, start with
 an ASCII letter, and contain 1–63 letters, digits, underscores or hyphens.
@@ -41,13 +46,83 @@ Numbers are locale-independent. Coordinates are nonnegative, page sizes are
 
 `%` starts a comment **outside arguments**. Inside a text argument it is literal.
 Escape backslashes and braces with `\\`, `\{`, `\}`; `\%` is also accepted.
-Nested markup, unknown commands and other escapes produce diagnostics with
+Nested markup is accepted in Pagelet/Kliche/instance blocks; text arguments
+still require escaped braces. Unknown commands and other escapes produce diagnostics with
 1-based line/byte-column positions. Literal newlines create line breaks; CRLF
 and CR normalize to LF, and tabs become one space.
 
+### Pagelets, components and Kliches
+
+Pagelets are design modules written in JoltType, such as titles, tables and
+compound layouts. Their ECS-style **entities** have stable document-local IDs,
+independent data **components**, and presentation **configuration**. The layout
+system resolves these values into ordinary drawing elements; all publishing
+targets use the same resulting geometry. A named definition is a reusable
+schema, not a shared mutable instance.
+
+```tex
+\jolttype{1}
+\pagelet{Table}{
+  \component{header}{Item                 Value}
+  \component{rows}{First                100
+Second               200}
+  \config{ink}{#182840}
+  \config{separator}{24}
+  \text{heading}{6}{4}{288}{12}{@ink}{@header}
+  \rect{first}{0}{24}{300}{1}{@ink}
+  \rect{second}{0}{@separator}{300}{1}{@ink}
+  \text{body}{6}{38}{288}{12}{@ink}{@rows}
+}
+% Move the second rule down to make a double-line header separator.
+\kliche{DoubleRuleTable}{Table}{\config{separator}{28}}
+\page{600}{800}
+\place{prices}{DoubleRuleTable}{30}{50}{
+  \component{header}{Product              Price}
+  \component{rows}{Print                25
+Poster               40}
+}
+\inline{title}{30}{20}{
+  \component{content}{Price list}
+  \text{label}{0}{0}{300}{20}{#182840}{@content}
+}
+```
+
+Declare `\component{name}{default}` and `\config{name}{default}` at the start
+of a Pagelet body. A whole argument `{@name}` substitutes a declared value;
+values are escaped as data and cannot inject markup. No expressions, loops or
+partial-string interpolation are implied. Bodies compose `text`, `rect`,
+`image`, `textfile` and nested `place` elements in local coordinates. In an
+inline body, declare its own values before its drawing commands.
+
+`place` supplies optional component/config assignments of the declared category.
+Omitted values come from the definition. **Kliche definitions accept only
+`config` assignments**; assigning a data component, inventing a parameter or
+changing its category is an error. A Kliche inherits its base's data schema and
+defaults, but cannot capture instance contents. Kliches may derive from earlier
+Kliches. Export a committed document as frozen `.jtype` or `.jtbc` when contents
+must be fixed along with the presentation. Frozen source contains ordinary
+elements; JTBC contains laid-out text and embedded images, without editable
+Pagelet schemas. Image references in frozen source still need the inventory.
+
+Definitions precede use, with unique names in a separate definition namespace.
+Instance and primitive IDs share a document namespace. Generated drawing IDs
+are `instance-local` (nested IDs are similarly prefixed), still limited to 63
+characters. Nested drawings belong to their outer placed entity for visual
+group moves; edit nested composition in source. Moving an entity or editing a
+component patches only that instance's argument, preserving other source/comments.
+Changing a definition rebuilds all of its instances on the next preview/commit.
+Even unused definitions are validated with their defaults.
+
+Libraries start with `\jolttype{1}` and contain only definitions and `use`
+imports. They load from the shared inventory, never from arbitrary filesystem
+paths. Repeated imports are idempotent; cycles fail. Limits are 128 definitions,
+64 component/config slots per Pagelet, 16 expansion/import levels, 64 markup
+nesting levels, 1 MiB cumulative library/expansion input and 1024 final drawing
+elements. A Pagelet must produce at least one element and cannot create pages.
+
 ### Typesetting profile
 
-Version 0.3 uses a deterministic **fixed-em** profile: one cell per Unicode
+Version 0.5 uses a deterministic **fixed-em** profile: one cell per Unicode
 scalar, a 0.6-em advance, and 1.2-em line height. Wrapping prefers spaces and
 breaks oversized words at scalar boundaries. It does not flow text across pages;
 overflow is an error. The desktop uses ImGui's available font glyphs at these
@@ -70,12 +145,19 @@ overflow are rejected. Compilation never executes commands or loads files/fonts.
 2. Use **Hatch into JoltType** to edit the visible source, or select and drag a
    frame on the white page. **Restore hatch** restores the source at hatch entry,
    even after intervening commits; restored changes still require Commit.
-   **IDE Mode** enables direct editing and adds Compile and Package tools.
+    **IDE Mode** enables direct editing and adds Compile and Package tools.
+    Its page preview takes one third of the workspace width; **Hide page preview**
+    / **Show page preview** changes visibility, independently of **Auto-update
+    preview**. Live compilation runs after a 200 ms typing pause, including while
+    hidden. **Update preview** refreshes manually when auto-update is off. Invalid
+    drafts retain the last valid page with a diagnostic. Preview updates never
+    publish history, save files or replace the committed revision.
    **Current page code** shows the selected committed page's markup. A released
    drag changes the draft source and preview. Escape or a tab change cancels an
    in-progress drag. The inspector provides an editable **Frame text** field.
 3. Press **Commit** to validate and publish one revision. Source edits update
-   the page on commit; visual editing is disabled while source needs compiling.
+    the page on commit; IDE live updates can compile the preview sooner. Visual
+    editing is disabled while source needs compiling.
    Invalid source or overflowing text leaves the published revision intact and
    displays a diagnostic. **Revert draft** discards pending changes.
 4. **File → Preferences → Page Design → Auto-commit interval (seconds)** controls
@@ -91,10 +173,60 @@ overflow are rejected. Compilation never executes commands or loads files/fonts.
    snapshots and atomic sibling-file replacement. Commit and auto-commit update
    the document in memory; they do **not** save to disk.
 
-**Add text**, **Add rectangle** and **Add page** insert markup into the draft;
-commit it to update the preview. Frames append to the final source page. Use
+**Elements / Pagelets → Insert Pagelet** offers 32 Pagelets and the DoubleRuleTable
+Kliche, plus definitions loaded from the document/inventory. Search the picker by
+name, category or description; the selected entry shows a brief description.
+Select an entity on the page to edit its components or configuration. **Create
+Kliche** stores a reusable, configuration-only library in the inventory; its
+base retains definition defaults, never the selected instance's data. **New
+Pagelet** in the inventory creates an editable module using the Dependency ID.
+Imported Pagelet/Kliche assets offer **Load design library** and a source editor.
+An inline Pagelet must be named in source before capturing a reusable Kliche.
+
+### Shipped Pagelet catalog
+
+Version 0.5 adds **30 Pagelets** to the original Title, Table and DoubleRuleTable
+catalog. These are actual editable JoltType modules, with independent content
+components and presentation configuration suitable for Kliche capture.
+
+| Category | New Pagelets |
+|---|---|
+| Typography (6) | Subtitle, SectionHeading, Paragraph, PullQuote, DropCap, Byline |
+| Navigation (5) | PageHeader, PageFooter, ContentsList, Breadcrumbs, ChapterOpener |
+| Editorial (5) | Callout, Sidebar, Caption, FactBox, Footnote |
+| Business (6) | ContactCard, AddressBlock, InvoiceHeader, InvoiceTotals, PriceCard, SignatureBlock |
+| Data (4) | KeyValueList, ComparisonTable, Checklist, Timeline |
+| Layout (4) | Divider, TwoColumnText, ThreeColumnText, FigurePlaceholder |
+
+All defaults fit A4 and US Letter at the insertion position (20pt, 20pt), use
+the standard fixed-em profile, and require no external assets. Multi-row and
+multi-column modules have explicit editable slots. Page numbers, contents
+references, dates and invoice totals are supplied text, not automatic numbering
+or calculated values. Checklist boxes are printable shapes; FigurePlaceholder
+is a placeholder, not an image importer. Edit module source to change its
+structure or accommodate longer copy; these templates do not auto-paginate.
+
+Sources live in `jolttype/pagelets/*.jtype`. CMake embeds those exact files in
+the library and installs them under `share/joltfx/jolttype/pagelets` (component
+`JoltTypePagelets`); the application does not depend on runtime file paths.
+Insertion copies only the required module into the document's inventory, using
+its catalog asset ID. Existing document-owned source edits are preserved. Save a
+Typelet to retain these inventory dependencies with the document.
+
+Other C++ frontends can include `jolttype/pagelets.hpp` and enumerate
+`bundled_pagelets(count)`. Entries supply a name, category, description, inventory
+asset ID and source with process lifetime. Copy the source into a Pagelet asset,
+then use `\use{asset-id}` and `\place{id}{name}{x}{y}{values}` as usual. The
+original three entries share `design-elements`; every new Pagelet has its own
+standalone module. Catalog definitions use the same compiler as user modules.
+
+**Add text**, **Add rectangle**, **Add page** and Pagelet insertion update the
+draft and preview; commit to publish. Frames append to the final source page. Use
 source editing to adjust size, color, page placement or remove elements. The page
 selector, zoom control and scrollable canvas navigate a multi-page document.
+The canvas fills its assigned width at 1x while retaining the page's aspect ratio;
+scroll vertically for long pages. Edit mode keeps the tools at their 420px default
+width, and gives the rest of the workspace to the page.
 
 Each successful commit is one independent undo step (32 retained revisions).
 Global Undo/Redo and Ctrl/Cmd-Z, Ctrl/Cmd-Shift-Z or Ctrl-Y route to this document;
@@ -116,11 +248,14 @@ if (jolttype::compile(source, document, error)) {
 }
 ```
 
-`compile` and `export_svg` replace outputs only on success. The structured
+`compile`, `export_source` and `export_svg` replace outputs only on success. The structured
 document exposes pages, frames, source spans and laid-out lines. SVG export
 expects a compiler-produced document. `Session` owns separate draft and committed
 source/layouts, failure-atomic commits, source-preserving frame/text edits,
-history, loading and committed-source saving. Its timestamps use a caller-provided
+history, loading and committed-source saving. `refresh` compiles only the preview;
+`set_component` edits one entity and `move` accepts its entity ID for group moves.
+`Document::pagelets` and `entities` retain definition/component metadata alongside
+the flattened drawing elements. Its timestamps use a caller-provided
 monotonic seconds clock. Session operations are single-owner-thread calls;
 independent snapshots may be processed on the scheduler.
 
@@ -130,8 +265,8 @@ manage their own internal allocations. The desktop uses existing ImGui and
 preference code.
 
 ```sh
-cmake --build build --target test_jolttype test_page_design_ui jfx_desktop
-ctest --test-dir build -R '^(jolttype|page_design_ui_tests|preferences_ui_tests)$' --output-on-failure
+cmake --build build --target test_jolttype test_jolttype_pagelets test_page_design_ui jfx_desktop
+ctest --test-dir build -R '^(jolttype|jolttype_pagelets|page_design_ui_tests|preferences_ui_tests)$' --output-on-failure
 ```
 
 ## Progress Display and publishing
@@ -179,9 +314,12 @@ bitmap images are rejected. PDF and SVG support Unicode text and PNG/JPEG images
 ## Shared inventory and Typelets
 
 **Dependency inventory** is identical in Edit and IDE. Import files with a unique
-ID, choose a kind, filter by name/path/tag, edit tags and dependency IDs, edit text
+ID, choose a kind, filter by name/path/tag/kind, edit tags and dependency IDs, edit text
 or code, remove unused assets, and insert images/text into the document. Changes
-require Commit to rebuild the page. A Typelet saves the inventory; `.jtype` alone
+require preview refresh or Commit to rebuild the page. Images, fonts, text, code,
+Pagelet libraries and Kliche libraries share this inventory. Font assets are
+stored/tagged/packaged dependencies; selecting one does not change the current
+fixed-em target font. A Typelet saves the inventory; `.jtype` alone
 saves only source. Images are limited to 4096 per dimension and 4 megapixels each;
 decoded page images total at most 64 MiB. Inventory limits are 128 assets,
 16 MiB per asset and 64 MiB total. Missing dependencies/cycles are errors.
@@ -210,7 +348,7 @@ MANIFEST uses a strict JSON subset deserialized by Klib **KSON**. Schema 1:
 ```
 
 Kinds: `document`, `module`, `mixed`. Dependency kinds: `image`, `text`, `code`,
-`source`, `compiled`, `module`, `other`. Build targets: `pdf`, `svg`, `ps`, `dvi`,
+`source`, `compiled`, `module`, `other`, `font`, `pagelet`, `kliche`. Build targets: `pdf`, `svg`, `ps`, `dvi`,
 `jtbc`, `wasm`, `pdf-podofo`. Steps execute in declared order, in a candidate inventory, and
 publish together only on success. They are compiler operations, not shell commands.
 JTBC1 stores validated page geometry, text lines and embedded images. Manifest
@@ -240,10 +378,11 @@ creates numeric inputs and a **Run action** button under **Typelet module action
 Opening a package does not execute its modules. Native runtime lifecycle/calls
 share the extension owner's serialized thread; background build jobs only compile.
 
-The canonical C API is `jolttype/api.h`, re-exported by SDK 1.3 as
+The canonical C API 1.2 is `jolttype/api.h`, re-exported by SDK 1.3 as
 `joltfx/sdk/jolttype.h`. It provides project/source/history/hatch operations,
 inventory and manifests, package build/import/export, immutable document snapshots,
-custom target callbacks, module compilation/execution and frontend-neutral action
+draft preview refresh/snapshots, entity/component inspection and edits, frozen
+`jtbc`/`jtype` export, custom target callbacks, module compilation/execution and frontend-neutral action
 descriptors. A frontend may supply a WASM executor/result callback (for example a
 browser host) instead of WAMR. Widgets remain frontend-owned; the desktop adapter
 is implemented here. See `JoltFX-SDK/docs/jolttype.md` for target integration.

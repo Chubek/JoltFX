@@ -1,0 +1,20 @@
+\jolttype{1}
+\pagelet{KeyValueList}{
+\component{keyone}{Format}
+\component{valueone}{Print and digital}
+\component{keytwo}{Dimensions}
+\component{valuetwo}{210 x 297 mm}
+\component{keythree}{Edition}
+\component{valuethree}{First edition}
+\config{ink}{#182840}
+\config{muted}{#657184}
+\config{rule}{#ccd2da}
+\text{keyone}{0}{0}{120}{11}{@muted}{@keyone}
+\text{valueone}{140}{0}{190}{11}{@ink}{@valueone}
+\rect{ruleone}{0}{26}{330}{1}{@rule}
+\text{keytwo}{0}{38}{120}{11}{@muted}{@keytwo}
+\text{valuetwo}{140}{38}{190}{11}{@ink}{@valuetwo}
+\rect{ruletwo}{0}{64}{330}{1}{@rule}
+\text{keythree}{0}{76}{120}{11}{@muted}{@keythree}
+\text{valuethree}{140}{76}{190}{11}{@ink}{@valuethree}
+}

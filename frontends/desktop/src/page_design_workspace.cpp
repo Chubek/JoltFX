@@ -1,4 +1,5 @@
 #include "page_design_workspace.h"
+#include "jolttype/pagelets.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "jfx/jfx_scheduler.h"
@@ -18,6 +19,7 @@ struct FileJob {
     char path[1024]{};
     int action = 0, page = 0;
     jolttype::Target target=jolttype::Target::PDF;
+    int output_format=0;
     jolttype::Asset imported;
     double now = 0;
     bool success = false;
@@ -50,7 +52,9 @@ void file_task(void *userdata) {
     else if (job.action == 1) job.success = job.session.save(job.path);
     else if(job.action==2 || job.action==3) {
         tilly::string svg;
-        job.success = jolttype::publish(job.session.committed(),job.action==2?jolttype::Target::SVG:job.target,size_t(job.page), svg, job.error) &&
+        job.success = (job.action==3 && job.output_format==5?jolttype::compile_object(job.session.committed(),svg,job.error):
+            job.action==3 && job.output_format==6?jolttype::export_source(job.session.committed(),svg,job.error):
+            jolttype::publish(job.session.committed(),job.action==2?jolttype::Target::SVG:job.target,size_t(job.page), svg, job.error)) &&
             jolttype::write_file(job.path, svg, job.error);
     } else if(job.action==4) {
         tilly::string bytes;
@@ -96,6 +100,24 @@ const jolttype::Element *find(const jolttype::Document &doc, const char *id) {
     for (const auto &e : doc.elements) if (e.id == id) return &e;
     return nullptr;
 }
+const jolttype::Entity *find_entity(const jolttype::Document &doc,const char *id) {
+    for(const auto &e:doc.entities)if(e.id==id)return &e;
+    return nullptr;
+}
+const char *asset_kind_name(jolttype::AssetKind kind) {
+    static const char *names[]={"image","text","code","source","compiled","module","other","font","pagelet","kliche"};
+    return names[unsigned(kind)];
+}
+tilly::string quote_argument(std::string_view text) {
+    tilly::string out;
+    for(char c:text){if(c=='\\' || c=='{' || c=='}' || c=='%')out+='\\';out+=c;}
+    return out;
+}
+const jolttype::BundledPagelet *bundled(std::string_view name) {
+    size_t count=0;const auto *catalog=jolttype::bundled_pagelets(count);
+    for(size_t i=0;i<count;++i)if(name==catalog[i].name)return &catalog[i];
+    return nullptr;
+}
 }
 Workspace::Workspace() {
     if (!session.stage(jolttype::example_source(), 0) || !session.commit(0)) throw std::bad_alloc();
@@ -124,7 +146,7 @@ void Workspace::queue_file(int action) {
     auto *job = tilly::create<FileJob>(session,project);
     if (!job) { std::snprintf(message, sizeof(message), "Not enough memory for file operation."); return; }
     job->action = action; job->page = page; job->now = ImGui::GetTime();
-    job->target=jolttype::Target(output_target);
+    job->output_format=output_target;job->target=jolttype::Target(std::min(output_target,4));
     std::snprintf(job->path, sizeof(job->path), "%s", action==6?asset_path:action==4 || action==5?package_path:action==3?output_path:action == 2 ? export_path : path);
     if(action==6) {
         try {job->imported.id=asset_id;job->imported.kind=jolttype::AssetKind(asset_kind);job->imported.tags=split_tags(asset_tags);}
@@ -194,13 +216,13 @@ void Workspace::sync() {
         const auto *e = find(session.preview(), selected);
         if (e && e->kind == jolttype::Kind::Text) {
             if (e->text != text) { invalidate(text_id); std::memcpy(text, e->text.c_str(), e->text.size() + 1); }
-        } else { invalidate(text_id); text[0] = 0; if (!e) selected[0] = 0; }
+        } else { invalidate(text_id); text[0] = 0; if (!e && !find_entity(session.preview(),selected)) selected[0] = 0; }
     }
 }
 void Workspace::select(const jolttype::Element *e) {
     if (text_pending) return;
     invalidate(text_id);
-    std::snprintf(selected, sizeof(selected), "%s", e ? e->id.c_str() : ""); sync();
+    std::snprintf(selected, sizeof(selected), "%s", e ? (e->entity.empty()?e->id.c_str():e->entity.c_str()) : ""); sync();
 }
 bool Workspace::commit(double now) {
     if (busy()) return false;
@@ -218,6 +240,14 @@ void Workspace::tick(double now, int interval, bool busy) {
     poll_file();
     preview_tick();
     if (file_job) return;
+    if(ide_mode && auto_update && !dragging && !text_pending) {
+        try {
+            if(live_source!=session.draft() || live_inventory!=session.inventory()) {
+                live_source=session.draft();live_inventory=session.inventory();live_pending=true;live_deadline=now+.2;
+            }
+            if(live_pending && now>=live_deadline) {live_pending=false;session.refresh();sync();}
+        }catch(...){std::snprintf(message,sizeof(message),"Not enough memory for live preview.");}
+    }
     if (!dirty()) { was_dirty = false; return; }
     if (!was_dirty) { was_dirty = true; dirty_since = now; }
     if (now < dirty_since) dirty_since = now;
@@ -268,8 +298,113 @@ void Workspace::append(const char *kind) {
                 "\n\\rect{%s}{20}{20}{100}{40}{#e46b36}\n", name);
             next += command;
         }
-        if (session.stage(next, ImGui::GetTime())) sync();
+        if (session.stage(next, ImGui::GetTime())) {session.refresh();sync();}
     } catch (...) { std::snprintf(message, sizeof(message), "Not enough memory to add a frame."); }
+}
+void Workspace::insert_pagelet(const char *type) {
+    try {
+        auto next=session;auto inventory=project.inventory;jolttype::Diagnostic error;
+        tilly::string draft=next.draft();bool found=false;
+        for(const auto &p:next.preview().pagelets)if(p.id==type)found=true;
+        const auto *entry=bundled(type);
+        if(!found && entry) {
+            jolttype::Asset asset;asset.id=entry->asset_id;asset.path="pagelets/"+asset.id+".jtype";
+            asset.kind=jolttype::AssetKind::Pagelet;asset.tags={"design",entry->category};asset.bytes=entry->source;
+            const auto *old=inventory.find(asset.id);
+            // Existing inventory modules belong to the document, including edits
+            // made to a shipped template. Never replace them with factory source.
+            if(old && old->kind!=jolttype::AssetKind::Pagelet){std::snprintf(message,sizeof(message),"The '%s' inventory ID is already in use by another kind.",entry->asset_id);return;}
+            if(!old && !inventory.put(std::move(asset),error)){std::snprintf(message,sizeof(message),"%s",error.message);return;}
+            draft+="\n\\use{"+tilly::string(entry->asset_id)+"}\n";
+        }
+        unsigned n=1;char id[64];do{std::snprintf(id,sizeof(id),"element%u",n++);}while(find(next.preview(),id) || find_entity(next.preview(),id));
+        draft+="\n\\place{"+tilly::string(id)+"}{"+quote_argument(type)+"}{20}{20}{}\n";
+        if(!next.set_inventory(inventory,error) || !next.stage(draft,ImGui::GetTime()) || !next.refresh()) {
+            std::snprintf(message,sizeof(message),"%s",error.message[0]?error.message:next.error().message);return;
+        }
+        session=std::move(next);project.inventory=std::move(inventory);std::snprintf(selected,sizeof(selected),"%s",id);
+        page=int(session.preview().pages.size())-1;message[0]=0;sync();
+    }catch(...){std::snprintf(message,sizeof(message),"Not enough memory to insert Pagelet.");}
+}
+void Workspace::pagelet_panel() {
+    if(!ImGui::CollapsingHeader("Elements / Pagelets",ImGuiTreeNodeFlags_DefaultOpen))return;
+    if(ImGui::BeginCombo("Pagelet / Kliche",pagelet_type)) {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##Pagelet filter","Search name, category or description",pagelet_filter,sizeof(pagelet_filter));
+        size_t count=0;const auto *catalog=jolttype::bundled_pagelets(count);
+        for(size_t i=0;i<count;++i) {
+            const auto &entry=catalog[i];
+            if(pagelet_filter[0] && !ImStristr(entry.name,nullptr,pagelet_filter,nullptr) && !ImStristr(entry.category,nullptr,pagelet_filter,nullptr) && !ImStristr(entry.description,nullptr,pagelet_filter,nullptr))continue;
+            if(ImGui::Selectable(entry.name,!std::strcmp(pagelet_type,entry.name)))std::snprintf(pagelet_type,sizeof(pagelet_type),"%s",entry.name);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("%s: %s",entry.category,entry.description);
+        }
+        for(const auto &p:session.preview().pagelets) {
+            if(bundled(p.id) || (pagelet_filter[0] && !ImStristr(p.id.c_str(),nullptr,pagelet_filter,nullptr)))continue;
+            if(ImGui::Selectable(p.id.c_str(),p.id==pagelet_type))std::snprintf(pagelet_type,sizeof(pagelet_type),"%s",p.id.c_str());
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::BeginDisabled(!session.visual_ready() || text_pending);
+    if(ImGui::Button("Insert Pagelet"))insert_pagelet(pagelet_type);
+    ImGui::EndDisabled();
+    if(const auto *entry=bundled(pagelet_type))ImGui::TextWrapped("%s: %s",entry->category,entry->description);
+    ImGui::TextWrapped("Pagelets are JoltType elements. Kliches reuse configuration; contents belong to each instance.");
+}
+void Workspace::capture_kliche() {
+    try {
+        const auto *entity=find_entity(session.preview(),selected);if(!entity)return;
+        if(entity->inline_pagelet){std::snprintf(message,sizeof(message),"Name the inline Pagelet in source before creating a Kliche.");return;}
+        const jolttype::Pagelet *base=nullptr;
+        for(const auto &p:session.preview().pagelets)if(p.id==entity->type)base=&p;
+        if(!base)return;
+        jolttype::Asset asset;asset.id=kliche_name;asset.path="kliches/"+asset.id+".jtype";asset.kind=jolttype::AssetKind::Kliche;asset.tags={"design","kliche"};
+        if(project.inventory.find(asset.id)){std::snprintf(message,sizeof(message),"Choose an unused Kliche inventory ID.");return;}
+        auto base_id=asset.id+"-Base";
+        asset.bytes="\\jolttype{1}\n\\pagelet{"+base_id+"}{\n";
+        // Serialize the definition's defaults, never the selected entity's data.
+        for(const auto &c:base->components)asset.bytes+=(c.configuration?"\\config{":"\\component{")+c.name+"}{"+quote_argument(c.value)+"}\n";
+        asset.bytes+=base->body+"\n}\n\\kliche{"+asset.id+"}{"+base_id+"}{\n";
+        for(const auto &c:entity->components)if(c.configuration)asset.bytes+="\\config{"+c.name+"}{"+quote_argument(c.value)+"}\n";
+        asset.bytes+="}\n";
+        auto inventory=project.inventory;auto next=session;jolttype::Diagnostic error;
+        auto id=asset.id;
+        if(!inventory.put(std::move(asset),error) || !next.set_inventory(inventory,error) ||
+            !next.stage(next.draft()+"\n\\use{"+id+"}\n",ImGui::GetTime()) || !next.refresh()) {
+            std::snprintf(message,sizeof(message),"%s",error.message[0]?error.message:next.error().message);return;
+        }
+        session=std::move(next);project.inventory=std::move(inventory);select_asset(project.inventory.find(id));
+        std::snprintf(pagelet_type,sizeof(pagelet_type),"%s",id.c_str());sync();
+        std::snprintf(message,sizeof(message),"Kliche saved to inventory with configuration only.");
+    }catch(...){std::snprintf(message,sizeof(message),"Not enough memory to create Kliche.");}
+}
+void Workspace::component_panel() {
+    const auto *entity=find_entity(session.preview(),selected);if(!entity)return;
+    ImGui::SeparatorText("Pagelet entity");
+    ImGui::TextWrapped("%s | %s",entity->id.c_str(),entity->inline_pagelet?"inline Pagelet":entity->type.c_str());
+    if(std::strcmp(component_owner,selected)) {std::snprintf(component_owner,sizeof(component_owner),"%s",selected);component_name[0]=component_value[0]=component_model_value[0]=0;}
+    if(ImGui::BeginCombo("Component / configuration",component_name)) {
+        for(const auto &c:entity->components)if(ImGui::Selectable(c.name.c_str(),c.name==component_name)) {
+            std::snprintf(component_name,sizeof(component_name),"%s",c.name.c_str());std::snprintf(component_value,sizeof(component_value),"%s",c.value.c_str());
+            std::snprintf(component_model_value,sizeof(component_model_value),"%s",c.value.c_str());
+        }
+        ImGui::EndCombo();
+    }
+    for(const auto &c:entity->components)if(c.name==component_name) {
+        if(c.value!=component_model_value) {
+            invalidate(ImGui::GetID("##Component value"));
+            std::snprintf(component_value,sizeof(component_value),"%s",c.value.c_str());
+            std::snprintf(component_model_value,sizeof(component_model_value),"%s",c.value.c_str());
+        }
+        ImGui::TextDisabled("%s",c.configuration?"Configuration (included in Kliches)":"Data component (instance contents)");
+    }
+    ImGui::BeginDisabled(!session.visual_ready() || !component_name[0]);
+    ImGui::InputTextMultiline("##Component value",component_value,sizeof(component_value),{-1,80});
+    if(ImGui::Button("Apply component")){session.set_component(selected,component_name,component_value,ImGui::GetTime());sync();}
+    ImGui::EndDisabled();
+    ImGui::InputText("Kliche name",kliche_name,sizeof(kliche_name));
+    ImGui::BeginDisabled(!session.visual_ready());
+    if(ImGui::Button("Create Kliche"))capture_kliche();
+    ImGui::EndDisabled();
 }
 void Workspace::files() {
     if (files_requested) { ImGui::OpenPopup("Page Design files"); files_requested = false; }
@@ -281,7 +416,7 @@ void Workspace::files() {
         ImGui::SameLine(); if (ImGui::Button("Save source")) queue_file(1);
         ImGui::EndDisabled();
         ImGui::SeparatorText("Publishing targets");
-        ImGui::Combo("Target",&output_target,"PDF (libharu)\0SVG\0PostScript\0DVI\0PDF (PoDoFo alternative)\0");
+        ImGui::Combo("Target",&output_target,"PDF (libharu)\0SVG\0PostScript\0DVI\0PDF (PoDoFo alternative)\0JoltType bytecode (frozen)\0JoltType source (frozen)\0");
         ImGui::SetNextItemWidth(480);ImGui::InputText("Output path",output_path,sizeof(output_path));
         ImGui::BeginDisabled(dirty());if(ImGui::Button("Export document"))queue_file(3);ImGui::EndDisabled();
         if (dirty()) ImGui::TextWrapped("Commit or revert pending changes before opening or saving.");
@@ -312,7 +447,18 @@ void Workspace::inventory_action(int action) {
         jolttype::Diagnostic error;
         const auto *asset=project.inventory.find(inventory_selection);
         bool ok=false;
-        if(action==3) {
+        if(action==6) {
+            jolttype::Asset code;code.id=asset_id[0]?asset_id:"MyPagelet";code.path="pagelets/"+code.id+".jtype";
+            code.kind=jolttype::AssetKind::Pagelet;code.tags={"design","source"};
+            code.bytes="\\jolttype{1}\n\\pagelet{"+code.id+"}{\n\\component{content}{New element}\n\\config{ink}{#182840}\n\\text{label}{0}{0}{200}{18}{@ink}{@content}\n}\n";
+            if(project.inventory.find(code.id)){std::snprintf(message,sizeof(message),"Choose an unused dependency ID.");return;}
+            auto id=code.id;auto inventory=project.inventory;auto next=session;
+            if(inventory.put(std::move(code),error) && next.set_inventory(inventory,error) &&
+                next.stage(next.draft()+"\n\\use{"+id+"}\n",ImGui::GetTime()) && next.refresh()) {
+                session=std::move(next);project.inventory=std::move(inventory);select_asset(project.inventory.find(id));
+                std::snprintf(pagelet_type,sizeof(pagelet_type),"%s",id.c_str());sync();ok=true;
+            } else if(!error.message[0])error=next.error();
+        } else if(action==3) {
             jolttype::Typelet next=project;jolttype::Asset code;
             code.id=asset_id[0]?asset_id:"tools";code.path="modules/"+code.id+".jtm";code.kind=jolttype::AssetKind::Code;code.tags={"module","source"};
             code.bytes="\\module{"+code.id+"}\n\\export{area}{width,height}{width*height}\n\\export{diagonal}{width,height}{sqrt(width*width+height*height)}\n";
@@ -332,12 +478,17 @@ void Workspace::inventory_action(int action) {
         } else if(action==1) {
             if(asset->id==project.manifest.entry){std::snprintf(message,sizeof(message),"The package entry cannot be removed.");return;}
             ok=project.inventory.remove(inventory_selection,error);if(ok)select_asset(nullptr);
+        } else if(action==5) {
+            auto draft=session.draft()+"\n\\use{"+quote_argument(asset->id)+"}\n";
+            auto next=session;
+            if(next.set_inventory(project.inventory,error) && next.stage(draft,ImGui::GetTime()) && next.refresh()) {session=std::move(next);sync();ok=true;}
+            else if(!error.message[0])error=next.error();
         } else if(action==4) {
             unsigned n=1;char id[64];do{std::snprintf(id,sizeof(id),"resource%u",n++);}while(find(session.preview(),id));
             char command[512];
             std::snprintf(command,sizeof(command),asset->kind==jolttype::AssetKind::Image?
                 "\n\\image{%s}{20}{20}{120}{80}{%s}\n":"\n\\textfile{%s}{20}{20}{200}{12}{#202020}{%s}\n",id,asset->id.c_str());
-            if(session.set_inventory(project.inventory,error)){auto draft=session.draft()+command;ok=session.stage(draft,ImGui::GetTime());if(ok)sync();else error=session.error();}
+            if(session.set_inventory(project.inventory,error)){auto draft=session.draft()+command;ok=session.stage(draft,ImGui::GetTime());if(ok){session.refresh();sync();}else error=session.error();}
         }
         if(ok)ok=session.set_inventory(project.inventory,error);
         std::snprintf(message,sizeof(message),"%s",ok?"Inventory updated. Commit to rebuild the page.":error.message);
@@ -349,13 +500,13 @@ void Workspace::inventory_panel() {
     ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##Inventory filter","Filter names, paths or tags",asset_filter,sizeof(asset_filter));
     if(ImGui::BeginChild("Inventory list",{0,130},ImGuiChildFlags_Borders)) {
         for(const auto &a:project.inventory.assets()) {
-            bool matches=!asset_filter[0] || a.id.find(asset_filter)!=a.id.npos || a.path.find(asset_filter)!=a.path.npos;
+            bool matches=!asset_filter[0] || a.id.find(asset_filter)!=a.id.npos || a.path.find(asset_filter)!=a.path.npos || std::strstr(asset_kind_name(a.kind),asset_filter);
             for(const auto &tag:a.tags)if(tag.find(asset_filter)!=tag.npos)matches=true;
             if(matches && ImGui::Selectable(a.id.c_str(),a.id==inventory_selection))select_asset(&a);
         }
     }ImGui::EndChild();
     if(const auto *asset=project.inventory.find(inventory_selection)) {
-        ImGui::TextWrapped("%s | %zu bytes",asset->path.c_str(),asset->bytes.size());
+        ImGui::TextWrapped("%s | %s | %zu bytes",asset->path.c_str(),asset_kind_name(asset->kind),asset->bytes.size());
         ImGui::InputText("Tags (comma-separated)",asset_tags,sizeof(asset_tags));
         ImGui::InputText("Requires IDs",asset_dependencies,sizeof(asset_dependencies));
         if(ImGui::Button("Apply tags / dependencies"))inventory_action(0);
@@ -367,7 +518,10 @@ void Workspace::inventory_panel() {
             if(ImGui::Button("Insert into page"))inventory_action(4);
             ImGui::EndDisabled();
         }
-        bool editable=asset->kind==jolttype::AssetKind::Text || asset->kind==jolttype::AssetKind::Code || asset->kind==jolttype::AssetKind::Source;
+        bool design=asset->kind==jolttype::AssetKind::Pagelet || asset->kind==jolttype::AssetKind::Kliche;
+        if(design && ImGui::Button("Load design library"))inventory_action(5);
+        if(asset->kind==jolttype::AssetKind::Font)ImGui::TextWrapped("Font resource stored in Typelets. The current fixed-em typesetter uses the publishing target's font.");
+        bool editable=design || asset->kind==jolttype::AssetKind::Text || asset->kind==jolttype::AssetKind::Code || asset->kind==jolttype::AssetKind::Source;
         if(editable && asset->bytes.size()<sizeof(asset_editor) && asset->bytes.find('\0')==asset->bytes.npos && ImGui::TreeNode("Dependency editor")) {
             ImGui::InputTextMultiline("##Asset source",asset_editor,sizeof(asset_editor),{-1,160},ImGuiInputTextFlags_AllowTabInput);
             if(ImGui::Button("Apply asset edits"))inventory_action(2);
@@ -377,12 +531,13 @@ void Workspace::inventory_panel() {
     ImGui::Separator();
     ImGui::InputText("Import path",asset_path,sizeof(asset_path));
     ImGui::InputText("Dependency ID",asset_id,sizeof(asset_id));
-    ImGui::Combo("Kind",&asset_kind,"Image\0Text\0Code\0JoltType source\0Compiled document\0WASM module\0Other\0");
+    ImGui::Combo("Kind",&asset_kind,"Image\0Text\0Code\0JoltType source\0Compiled document\0WASM module\0Other\0Font\0Pagelet library\0Kliche library\0");
     ImGui::BeginDisabled(dirty());
     if(ImGui::Button("Import dependency"))queue_file(6);
     ImGui::SameLine();if(ImGui::Button("Build dependencies"))queue_file(7);
     ImGui::EndDisabled();
     if(ImGui::Button("New code module"))inventory_action(3);
+    ImGui::SameLine();if(ImGui::Button("New Pagelet"))inventory_action(6);
     ImGui::SameLine();if(ImGui::Button("Typelet tools")) {
         if(sync_project()){jolttype::Diagnostic d;tilly::string value;if(jolttype::manifest_text(project,value,d)){std::snprintf(manifest_editor,sizeof(manifest_editor),"%s",value.c_str());ImGui::OpenPopup("Typelet package");}}
     }
@@ -448,7 +603,11 @@ void Workspace::canvas() {
     if (doc.pages.empty()) return;
     const auto &p = doc.pages[size_t(page)];
     ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImVec2 size(float(p.width) * zoom, float(p.height) * zoom);
+    // Fit the page to the entire assigned width; scrolling retains its physical
+    // aspect ratio. Zoom is relative to this fit, including after a resize.
+    canvas_scale=std::max(1.f,ImGui::GetContentRegionAvail().x)/float(p.width)*zoom;
+    const float scale=canvas_scale;
+    ImVec2 size(float(p.width) * scale, float(p.height) * scale);
     ImGui::InvisibleButton("Page canvas", size, ImGuiButtonFlags_MouseButtonLeft);
     bool hovered = ImGui::IsItemHovered(); auto *draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y), IM_COL32_WHITE);
@@ -456,26 +615,30 @@ void Workspace::canvas() {
     auto &io = ImGui::GetIO();
     if (hovered && ImGui::IsMouseClicked(0) && session.visual_ready() && !text_pending) {
         const jolttype::Element *hit = nullptr;
-        double x = double(io.MousePos.x - origin.x) / double(zoom), y = double(io.MousePos.y - origin.y) / double(zoom);
+        double x = double(io.MousePos.x - origin.x) / double(scale), y = double(io.MousePos.y - origin.y) / double(scale);
         for (const auto &e : doc.elements) if (e.page == size_t(page) && x >= e.x && x <= e.x + e.width && y >= e.y && y <= e.y + e.height) hit = &e;
         select(hit);
-        if (hit) { dragging = true; drag_x = hit->x; drag_y = hit->y; mouse_x = io.MousePos.x; mouse_y = io.MousePos.y; }
+        if (hit) {
+            const auto *entity=find_entity(doc,selected);
+            dragging = true; drag_x = entity?entity->x:hit->x; drag_y = entity?entity->y:hit->y; mouse_x = io.MousePos.x; mouse_y = io.MousePos.y;
+        }
     }
     if (dragging && ImGui::IsKeyPressed(ImGuiKey_Escape)) dragging = false;
     double next_x = drag_x, next_y = drag_y;
     if (dragging) {
         const auto *e = find(doc, selected);
-        if (e) {
-            next_x = std::clamp(drag_x + double(io.MousePos.x - mouse_x) / double(zoom), 0.0, std::max(0.0, p.width - e->width));
-            next_y = std::clamp(drag_y + double(io.MousePos.y - mouse_y) / double(zoom), 0.0, std::max(0.0, p.height - e->height));
+        const auto *entity=find_entity(doc,selected);
+        if (e || entity) {
+            next_x = std::clamp(drag_x + double(io.MousePos.x - mouse_x) / double(scale), 0.0, std::max(0.0, p.width - (entity?entity->width:e->width)));
+            next_y = std::clamp(drag_y + double(io.MousePos.y - mouse_y) / double(scale), 0.0, std::max(0.0, p.height - (entity?entity->height:e->height)));
         } else dragging = false;
     }
     for (const auto &e : doc.elements) {
         if (e.page != size_t(page)) continue;
-        bool active = e.id == selected;
-        double x = active && dragging ? next_x : e.x, y = active && dragging ? next_y : e.y;
-        ImVec2 a(origin.x + float(x) * zoom, origin.y + float(y) * zoom);
-        ImVec2 b(a.x + float(e.width) * zoom, a.y + float(e.height) * zoom);
+        bool active = e.id == selected || (!e.entity.empty() && e.entity==selected);
+        double x = active && dragging ? e.x+next_x-drag_x : e.x, y = active && dragging ? e.y+next_y-drag_y : e.y;
+        ImVec2 a(origin.x + float(x) * scale, origin.y + float(y) * scale);
+        ImVec2 b(a.x + float(e.width) * scale, a.y + float(e.height) * scale);
         auto color = IM_COL32((e.color >> 16) & 255, (e.color >> 8) & 255, e.color & 255, 255);
         if (e.kind == jolttype::Kind::Rectangle) draw->AddRectFilled(a, b, color);
         else if(e.kind==jolttype::Kind::Image) {
@@ -495,10 +658,10 @@ void Workspace::canvas() {
                 for (size_t i = 0; i < line.text.size();) {
                     size_t end = i + 1;
                     while (end < line.text.size() && (static_cast<unsigned char>(line.text[end]) & 0xc0) == 0x80) ++end;
-                    draw->AddText(ImGui::GetFont(), float(e.size) * zoom, {tx, ty}, color, line.text.data() + i, line.text.data() + end);
-                    tx += float(e.size * .6) * zoom; i = end;
+                    draw->AddText(ImGui::GetFont(), float(e.size) * scale, {tx, ty}, color, line.text.data() + i, line.text.data() + end);
+                    tx += float(e.size * .6) * scale; i = end;
                 }
-                ty += float(e.size * 1.2) * zoom;
+                ty += float(e.size * 1.2) * scale;
             }
         }
         if (active) draw->AddRect(a, b, IM_COL32(38, 140, 240, 255), 0.f, 2.f);
@@ -533,6 +696,11 @@ void Workspace::draw(jfx_desktop_window_t *window) {
         if(ImGui::BeginTabItem("IDE Mode")){ide_mode=true;ImGui::EndTabItem();}
         ImGui::EndTabBar();
     }
+    if(ide_mode) {
+        if(ImGui::Button(show_page_preview?"Hide page preview":"Show page preview")){show_page_preview=!show_page_preview;dragging=false;}
+        ImGui::SameLine();if(ImGui::Checkbox("Auto-update preview",&auto_update) && auto_update){live_pending=true;live_deadline=ImGui::GetTime();}
+        ImGui::SameLine();if(ImGui::Button("Update preview")){session.refresh();sync();}
+    }
     ImGui::BeginDisabled(dirty());
     if (ImGui::Button("New document")) reset();
     ImGui::EndDisabled(); ImGui::SameLine();
@@ -540,13 +708,16 @@ void Workspace::draw(jfx_desktop_window_t *window) {
     if (ImGui::Button("Add text")) append("text");
     ImGui::SameLine(); if (ImGui::Button("Add rectangle")) append("rect");
     ImGui::SameLine(); if (ImGui::Button("Add page")) append("page");
+    ImGui::SameLine(); if (ImGui::Button("Insert Pagelet")) insert_pagelet(pagelet_type);
     ImGui::EndDisabled();
     const auto &error = session.error();
     if (error.message[0]) ImGui::TextWrapped("Line %zu, column %zu: %s", error.line, error.column, error.message);
     if (message[0]) ImGui::TextWrapped("%s", message);
-    if (ImGui::BeginTable("Page Design layout", show_progress?3:2, ImGuiTableFlags_Resizable)) {
-        ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 420);
-        ImGui::TableSetupColumn("Page", ImGuiTableColumnFlags_WidthStretch);
+    bool page_visible=!ide_mode || show_page_preview;
+    if (ImGui::BeginTable(ide_mode?(page_visible?"Page Design IDE layout":"Page Design IDE code layout"):"Page Design layout", 1+int(page_visible)+int(show_progress),
+        ImGuiTableFlags_NoSavedSettings | (ide_mode?ImGuiTableFlags_SizingStretchProp:ImGuiTableFlags_Resizable))) {
+        ImGui::TableSetupColumn("Source", ide_mode?ImGuiTableColumnFlags_WidthStretch:ImGuiTableColumnFlags_WidthFixed, ide_mode?2.f:420.f);
+        if(page_visible)ImGui::TableSetupColumn("Page", ImGuiTableColumnFlags_WidthStretch,1.f);
         if(show_progress)ImGui::TableSetupColumn("Progress",ImGuiTableColumnFlags_WidthFixed,330);
         ImGui::TableNextColumn();
         if (ImGui::BeginChild("JoltType editor", ImVec2(0, 0))) {
@@ -561,13 +732,15 @@ void Workspace::draw(jfx_desktop_window_t *window) {
                 ImGui::SameLine();if(ImGui::Button("Restore hatch")){jolttype::Diagnostic d;if(hatch.restore(session,ImGui::GetTime(),d)){text_pending=false;sync();}else std::snprintf(message,sizeof(message),"%s",d.message);}
                 if(ImGui::Button("Keep manual code"))hatch.accept();
             }
-            ImGui::TextWrapped("Edit markup, or select and drag frames on the page. Commit publishes changes; Save writes the committed revision to disk.");
+            ImGui::TextWrapped("Commit publishes changes; Save writes the committed revision. Preview updates do not commit.");
             ImGui::BeginDisabled(text_pending);
             source_id = ImGui::GetID("##JoltType source");
+            if(ide_mode || hatch.active() || ImGui::CollapsingHeader("Source preview")) {
             if (ImGui::InputTextMultiline("##JoltType source", source, sizeof(source), ImVec2(-1, 230), ImGuiInputTextFlags_AllowTabInput | ((!ide_mode && !hatch.active())?ImGuiInputTextFlags_ReadOnly:0)))
                 session.stage(source, ImGui::GetTime());
+            }
             ImGui::EndDisabled();
-            if (!session.visual_ready()) ImGui::TextWrapped("Source changed: Commit to update the page and enable visual editing.");
+            if (!session.visual_ready()) ImGui::TextWrapped("Preview is stale. Update preview or Commit to compile the draft.");
             if (const auto *e = find(session.preview(), selected)) {
                 ImGui::SeparatorText("Selected frame");
                 ImGui::Text("%s  |  %.2f, %.2f pt", e->id.c_str(), e->x, e->y);
@@ -579,6 +752,8 @@ void Workspace::draw(jfx_desktop_window_t *window) {
                     ImGui::EndDisabled();
                 }
             }
+            component_panel();
+            pagelet_panel();
             if(ImGui::CollapsingHeader("Current page code")) {
                 const auto &pages=session.committed().pages;
                 if(size_t(page)<pages.size()){const auto &p=pages[size_t(page)];if(p.source_end<=session.source().size())ImGui::TextUnformatted(session.source().data()+p.source_begin,session.source().data()+p.source_end);}
@@ -588,17 +763,21 @@ void Workspace::draw(jfx_desktop_window_t *window) {
             package_panel();
             if (ImGui::CollapsingHeader("Language reference")) {
                 ImGui::TextWrapped("\\jolttype{1}\n\\page{width}{height}\n\\text{id}{x}{y}{width}{size}{#RRGGBB}{text}\n\\rect{id}{x}{y}{width}{height}{#RRGGBB}\nUnits: pt, mm, cm, in. Escape \\, {, }, %% with a backslash. %% comments outside arguments. Newlines in text create lines. New frames append to the last page.");
+                ImGui::TextUnformatted("\\pagelet{name}{body}\n\\component{name}{default}\n\\config{name}{default}\n\\kliche{name}{base}{config assignments}\n\\place{id}{type}{x}{y}{assignments}\n\\inline{id}{x}{y}{body}\n\\use{inventory-id}\nUse {@name} for a whole-argument component reference.");
             }
         }
-        ImGui::EndChild(); ImGui::TableNextColumn();
+        ImGui::EndChild();
+        if(page_visible) {
+        ImGui::TableNextColumn();
         int count = int(session.preview().pages.size());
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(70);
         int shown = page + 1;
         if (ImGui::SliderInt("Page", &shown, 1, std::max(1, count))) { page = shown - 1; deactivate(); select(nullptr); preview_requested=true; }
-        ImGui::SameLine(); ImGui::SetNextItemWidth(140);
+        ImGui::SameLine(); ImGui::SetNextItemWidth(70);
         ImGui::SliderFloat("Zoom", &zoom, .25f, 2, "%.2fx", ImGuiSliderFlags_AlwaysClamp);
         if (ImGui::BeginChild("Page preview", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) canvas();
         ImGui::EndChild();
+        }
         if(show_progress){ImGui::TableNextColumn();if(ImGui::BeginChild("PDF progress pane",{0,0},ImGuiChildFlags_Borders))progress_display(window);ImGui::EndChild();}
         ImGui::EndTable();
     }

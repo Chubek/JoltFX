@@ -1,0 +1,12 @@
+\jolttype{1}
+\pagelet{Caption}{
+\component{number}{Fig. 01}
+\component{caption}{A brief explanation of what the reader is looking at.}
+\component{credit}{Image credit: Studio}
+\config{ink}{#303030}
+\config{accent}{#e46b36}
+\config{muted}{#657184}
+\text{number}{0}{0}{66}{10}{@accent}{@number}
+\text{caption}{78}{0}{252}{10}{@ink}{@caption}
+\text{credit}{78}{40}{252}{9}{@muted}{@credit}
+}

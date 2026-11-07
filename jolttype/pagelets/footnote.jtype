@@ -1,0 +1,11 @@
+\jolttype{1}
+\pagelet{Footnote}{
+\component{marker}{1}
+\component{note}{Add a source, qualification or supporting detail here.}
+\config{ink}{#657184}
+\config{rule}{#ccd2da}
+\config{size}{9}
+\rect{rule}{0}{0}{72}{1}{@rule}
+\text{marker}{0}{12}{18}{8}{@ink}{@marker}
+\text{note}{24}{12}{306}{@size}{@ink}{@note}
+}

@@ -1,0 +1,12 @@
+\jolttype{1}
+\pagelet{PageFooter}{
+\component{copyright}{Copyright 2026 Studio}
+\component{section}{Field Notes}
+\component{page}{01}
+\config{ink}{#657184}
+\config{rule}{#ccd2da}
+\rect{rule}{0}{0}{390}{1}{@rule}
+\text{copyright}{0}{12}{210}{9}{@ink}{@copyright}
+\text{section}{225}{12}{120}{9}{@ink}{@section}
+\text{page}{360}{10}{30}{11}{@ink}{@page}
+}

@@ -53,13 +53,15 @@ int main() {
     auto original=w->session.source();
     const auto first=w->session.committed().elements[0];
     auto *canvas=window("/Page preview_");
-    ImVec2 start(canvas->DC.CursorStartPos.x+float(first.x+15)*.65f,canvas->DC.CursorStartPos.y+float(first.y+10)*.65f);
+    const float fit=w->preview_scale();
+    assert(std::abs(float(w->session.preview().pages[0].width)*fit-canvas->InnerRect.GetWidth())<25);
+    ImVec2 start(canvas->DC.CursorStartPos.x+float(first.x+15)*fit,canvas->DC.CursorStartPos.y+float(first.y+10)*fit);
     move(f,start); ImGui::GetIO().AddMouseButtonEvent(0,true); frame(f);
     move(f,{start.x+30,start.y+20});
     assert(w->session.source()==original && !w->dirty());
     ImGui::GetIO().AddMouseButtonEvent(0,false); frame(f); frame(f);
     assert(w->dirty() && w->session.source()==original);
-    assert(w->session.preview().elements[0].x>first.x+40);
+    assert(std::abs(w->session.preview().elements[0].x-first.x-30.0/double(fit))<.1);
     auto moved=w->session.preview().elements[0].x;
     click(f,locate(f,editor,"Commit"));
     assert(!w->dirty() && w->session.committed().elements[0].x==moved);
@@ -68,7 +70,7 @@ int main() {
     // Escape and a workspace switch cancel live drags without changing drafts.
     auto before_cancel=w->session.source();
     const auto &moved_frame=w->session.preview().elements[0];
-    start={canvas->DC.CursorStartPos.x+float(moved_frame.x+15)*.65f,canvas->DC.CursorStartPos.y+float(moved_frame.y+10)*.65f};
+    start={canvas->DC.CursorStartPos.x+float(moved_frame.x+15)*w->preview_scale(),canvas->DC.CursorStartPos.y+float(moved_frame.y+10)*w->preview_scale()};
     for (int cancel=0;cancel<2;++cancel) {
         move(f,start); ImGui::GetIO().AddMouseButtonEvent(0,true); frame(f);
         move(f,{start.x-20,start.y+10});
@@ -137,6 +139,84 @@ int main() {
     click(f,locate(f,"Typelet package","Build + Pack Typelet"));scheduler_wait_idle();frame(f);
     FILE *package=std::fopen("page-ui.typelet","rb");assert(package);std::fclose(package);
     click(f,locate(f,"Typelet package","Close package tools"));
+    // IDE gives the page a third of the workspace and keeps draft compilation
+    // independent of publication, visibility and the auto-update switch.
+    canvas=window("/Page preview_");auto *code=window("/JoltType editor_");
+    assert(std::abs(code->Size.x/canvas->Size.x-2.f)<.15f);
+    const char *inline_source="\\jolttype{1}\\page{600}{800}\\inline{title}{20}{20}{\\component{content}{Live inline}\\text{label}{0}{0}{250}{20}{#123456}{@content}}";
+    replace(f,"/JoltType editor_","##JoltType source",inline_source);
+    ImGui::GetCurrentContext()->Time+=.3;frame(f);
+    assert(w->session.preview().entities.size()==1 && w->session.preview().elements[0].text=="Live inline");
+    assert(w->session.source()==saved && w->dirty());
+    click(f,locate(f,editor,"Hide page preview"));frame(f);
+    for(auto *item:ImGui::GetCurrentContext()->Windows)assert(!item->Active || !std::strstr(item->Name,"/Page preview_"));
+    click(f,locate(f,editor,"Auto-update preview"));
+    replace(f,"/JoltType editor_","##JoltType source","\\jolttype{1}\\page{600}{800}\\text{manual}{10}{10}{200}{12}{#000000}{Manual}");
+    ImGui::GetCurrentContext()->Time+=1;frame(f);
+    assert(w->session.preview().elements[0].text=="Live inline");
+    click(f,locate(f,editor,"Update preview"));assert(w->session.preview().elements[0].text=="Manual");
+    click(f,locate(f,editor,"Auto-update preview"));
+    replace(f,"/JoltType editor_","##JoltType source",inline_source);
+    ImGui::GetCurrentContext()->Time+=.3;frame(f);
+    assert(w->session.preview().elements[0].text=="Live inline"); // hidden updates continue
+    replace(f,"/JoltType editor_","##JoltType source","\\jolttype{1}\\inline{");
+    ImGui::GetCurrentContext()->Time+=.3;frame(f);
+    assert(w->session.error().message[0] && w->session.preview().elements[0].text=="Live inline");
+    click(f,locate(f,editor,"Show page preview"));
+    click(f,locate(f,editor,"Revert draft"));
+    // Insert a real module-backed Pagelet, edit its data and capture a Kliche.
+    click(f,locate(f,"/JoltType editor_","Insert Pagelet"));
+    assert(w->session.preview().entities.size()==1 && w->project.inventory.find("design-elements"));
+    assert(w->session.preview().elements.back().text=="New title");
+    click(f,locate(f,"/JoltType editor_","Component / configuration"));
+    click(f,locate(f,"##Combo_00","content"));
+    replace(f,"/JoltType editor_","##Component value","Private instance contents");
+    click(f,locate(f,"/JoltType editor_","Apply component"));
+    assert(w->session.preview().elements.back().text=="Private instance contents");
+    click(f,locate(f,"/JoltType editor_","Create Kliche"));
+    const auto *style=w->project.inventory.find("MyStyle");
+    assert(style && style->kind==jolttype::AssetKind::Kliche);
+    assert(style->bytes.find("Private instance contents")==style->bytes.npos);
+    click(f,locate(f,"/JoltType editor_","Insert Pagelet"));
+    assert(w->session.preview().entities.size()==2 && w->session.preview().elements.back().text=="New title");
+    click(f,locate(f,editor,"Commit"));
+    assert(w->session.committed().entities.size()==2);
+    click(f,locate(f,"/JoltType editor_","Pagelet / Kliche"));
+    click(f,locate(f,"##Combo_00","DoubleRuleTable"));
+    click(f,locate(f,"/JoltType editor_","Insert Pagelet"));
+    assert(w->session.preview().entities.size()==3);
+    const auto table=w->session.preview().entities.back();
+    assert(table.type=="DoubleRuleTable" && table.width==300);
+    auto child_begin=w->session.preview().elements.size()-4;
+    assert(w->session.preview().elements[child_begin+2].y-w->session.preview().elements[child_begin+1].y==4);
+    canvas=window("/Page preview_");
+    start={canvas->DC.CursorStartPos.x+30*w->preview_scale(),canvas->DC.CursorStartPos.y+65*w->preview_scale()};
+    move(f,start);ImGui::GetIO().AddMouseButtonEvent(0,true);frame(f);
+    move(f,{start.x+15,start.y+10});ImGui::GetIO().AddMouseButtonEvent(0,false);frame(f);frame(f);
+    assert(w->session.preview().entities.back().x>table.x);
+    const auto &moved_table=w->session.preview().entities.back();
+    assert(std::abs(w->session.preview().elements[child_begin].x-moved_table.x-6)<.001);
+    assert(std::abs(w->session.preview().elements[child_begin+1].x-moved_table.x)<.001);
+    click(f,locate(f,editor,"Commit"));
+    // Search the shipped catalog and insert one of the 30 additional modules.
+    click(f,locate(f,"/JoltType editor_","Pagelet / Kliche"));
+    replace(f,"##Combo_00","##Pagelet filter","contact");
+    click(f,locate(f,"##Combo_00","ContactCard"));
+    click(f,locate(f,editor,"Insert Pagelet"));
+    assert(w->session.preview().entities.back().type=="ContactCard");
+    const auto *contact=w->project.inventory.find("contact-card");
+    assert(contact && contact->kind==jolttype::AssetKind::Pagelet);
+    // Reusing a bundled library must preserve its document-owned source edits.
+    auto customized=*contact;auto at=customized.bytes.find("Alex Morgan");assert(at!=customized.bytes.npos);
+    customized.bytes.replace(at,std::strlen("Alex Morgan"),"Custom default");
+    jolttype::Diagnostic design_error;assert(w->project.inventory.put(customized,design_error));
+    assert(w->session.set_inventory(w->project.inventory,design_error));
+    assert(w->session.stage("\\jolttype{1}\\page{210mm}{297mm}",ImGui::GetTime()) && w->session.refresh());
+    frame(f);click(f,locate(f,editor,"Insert Pagelet"));
+    assert(w->session.preview().entities.size()==1 && w->session.preview().entities[0].type=="ContactCard");
+    assert(w->project.inventory.find("contact-card")->bytes==customized.bytes);
+    bool custom_name=false;for(const auto &e:w->session.preview().elements)if(e.text=="Custom default")custom_name=true;
+    assert(custom_name);click(f,locate(f,editor,"Commit"));
     jfx_desktop_frontend_destroy(f);
     // Persisted interval is used by the real draw loop, even off-tab.
     prefs.page_auto_commit_seconds=1;

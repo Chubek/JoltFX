@@ -12,6 +12,15 @@ module calls share the extension runtime's serialized owner thread. Callbacks
 must not reenter or destroy their active project. No vendor or ImGui types appear
 in the C11/C++17 header.
 
+API 1.2 adds `jt_project_refresh` and `jt_project_preview_document` for draft-only
+live preview. Refresh retains the previous preview on errors and never commits.
+Use `jt_document_entity_count/entity/component` and `jt_document_element_entity`
+to inspect Pagelet identity, independent data components and configuration.
+`jt_project_set_component` edits an instance; Commit remains explicit. Kliche
+source definitions accept configuration only, never data-component overrides.
+`JT_FONT`, `JT_PAGELET` and `JT_KLICHE` append inventory kinds without renumbering
+older values. Fonts are packaged resources, not a font-selection/typesetting API.
+
 ## New output targets
 
 Built-in target `pdf` uses libharu for final output; `pdf-podofo` explicitly
@@ -19,6 +28,9 @@ selects the retained PoDoFo exporter. Both produce multi-page PDF and validate
 through qpdf. The desktop's Progress Display continues to use PoDoFo/PDFium.
 Libharu embeds a TrueType font and supports BMP Unicode in its UTF-8 profile;
 supplementary characters require the alternative exporter.
+Targets `jtbc` and `jtype` freeze the committed layout and component contents as
+bytecode or ordinary JoltType elements. JTBC embeds images; frozen source retains
+image inventory references. Editable schemas remain in the original source/Typelet.
 
 Fill `jt_target_desc` (`size`, ABI major 1, name, extension, userdata, `emit`) and
 call `jt_project_register_target`. Built-in names cannot be replaced. The emitter

@@ -1,0 +1,14 @@
+\jolttype{1}
+\pagelet{Breadcrumbs}{
+\component{root}{Journal}
+\component{section}{Design}
+\component{current}{Typography}
+\config{ink}{#182840}
+\config{muted}{#657184}
+\config{accent}{#e46b36}
+\text{root}{0}{0}{78}{10}{@muted}{@root}
+\text{separatorone}{84}{0}{12}{10}{@accent}{/}
+\text{section}{102}{0}{78}{10}{@muted}{@section}
+\text{separatortwo}{186}{0}{12}{10}{@accent}{/}
+\text{current}{204}{0}{120}{10}{@ink}{@current}
+}

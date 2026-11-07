@@ -94,6 +94,15 @@ language examples elsewhere in this guide.
 
 JoltType is the C++17 desktop-publishing language in `jolttype/`. Its version-1
 markup describes pages, positioned fixed-em text frames and filled rectangles.
+Version 0.4 adds Pagelet modules and inline entities with independent data
+components, configuration-only Kliches, and inventory-backed design libraries.
+Edit mode fits the page beside the existing tools; IDE has a hideable one-third
+live draft preview with an independent auto-update toggle. Images, fonts and
+design modules share the inventory; fonts are stored resources, while typography
+retains its fixed-em profile. Frozen source/JTBC exports resolve component data.
+Version 0.5 ships 30 additional Pagelets (32 Pagelets and one Kliche total),
+embedded and installed from the same editable `.jtype` resources, with a
+searchable insertion catalog shared by the library and desktop.
 The Page Design workspace stages source/visual edits until Commit or the global
 auto-commit deadline (60 seconds by default). Compilation is failure-atomic;
 committed source saves as `.jtype`; PDF/SVG/PostScript/DVI publishing uses bounded

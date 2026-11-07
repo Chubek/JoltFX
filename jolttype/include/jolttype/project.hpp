@@ -3,7 +3,7 @@
 #include "publishing.hpp"
 namespace jolttype {
 constexpr size_t max_asset_bytes=16*1024*1024, max_inventory_bytes=64*1024*1024, max_assets=128;
-enum class AssetKind { Image, Text, Code, Source, Compiled, Module, Other };
+enum class AssetKind { Image, Text, Code, Source, Compiled, Module, Other, Font, Pagelet, Kliche };
 struct Asset {
     tilly::string id, path;
     AssetKind kind=AssetKind::Other;

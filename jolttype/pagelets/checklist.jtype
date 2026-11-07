@@ -1,0 +1,20 @@
+\jolttype{1}
+\pagelet{Checklist}{
+\component{heading}{Ready to publish}
+\component{first}{Review the content}
+\component{second}{Check the layout}
+\component{third}{Export the final document}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#ffffff}
+\text{heading}{0}{0}{330}{16}{@ink}{@heading}
+\rect{boxone}{0}{38}{14}{14}{@accent}
+\rect{insideone}{1}{39}{12}{12}{@paper}
+\text{first}{26}{38}{304}{11}{@ink}{@first}
+\rect{boxtwo}{0}{72}{14}{14}{@accent}
+\rect{insidetwo}{1}{73}{12}{12}{@paper}
+\text{second}{26}{72}{304}{11}{@ink}{@second}
+\rect{boxthree}{0}{106}{14}{14}{@accent}
+\rect{insidethree}{1}{107}{12}{12}{@paper}
+\text{third}{26}{106}{304}{11}{@ink}{@third}
+}

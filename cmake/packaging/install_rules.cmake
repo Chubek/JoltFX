@@ -115,6 +115,7 @@ install(DIRECTORY tilly/include/tilly tilly/tillyz/include/tillyz DESTINATION ${
 install(DIRECTORY jolttype/include/jolttype DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES jolttype/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/jolttype)
 install(DIRECTORY jolttype/examples DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/jolttype)
+install(DIRECTORY jolttype/pagelets DESTINATION ${CMAKE_INSTALL_DATADIR}/joltfx/jolttype COMPONENT JoltTypePagelets FILES_MATCHING PATTERN "*.jtype")
 install(DIRECTORY backends/common/include/jfx
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING

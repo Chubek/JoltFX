@@ -116,8 +116,8 @@ const kson_node_t *array(const kson_node_t *n,size_t limit){need(n && n->type==K
 tilly::vector<tilly::string> strings(const kson_node_t *n,size_t limit=32) {
     tilly::vector<tilly::string> out;if(!n)return out;array(n,limit);for(size_t i=0;i<n->n;++i)out.push_back(string(n->v.child[i],63));return out;
 }
-const char *kind_name(AssetKind kind){static const char *names[]={"image","text","code","source","compiled","module","other"};return names[unsigned(kind)];}
-AssetKind kind(std::string_view name){for(unsigned i=0;i<7;++i)if(name==kind_name(AssetKind(i)))return AssetKind(i);throw std::runtime_error("Unknown asset kind.");}
+const char *kind_name(AssetKind kind){static const char *names[]={"image","text","code","source","compiled","module","other","font","pagelet","kliche"};return names[unsigned(kind)];}
+AssetKind kind(std::string_view name){for(unsigned i=0;i<=unsigned(AssetKind::Kliche);++i)if(name==kind_name(AssetKind(i)))return AssetKind(i);throw std::runtime_error("Unknown asset kind.");}
 tilly::string quote(std::string_view s){tilly::string out="\"";for(char c:s){if(c=='"' || c=='\\'){out+='\\';out+=c;}else if(c=='\n')out+="\\n";else if(c=='\r')out+="\\r";else if(c=='\t')out+="\\t";else {need(static_cast<unsigned char>(c)>=32,"Invalid manifest text.");out+=c;}}return out+'"';}
 tilly::string list(const tilly::vector<tilly::string>& values){tilly::string out="[";for(const auto &v:values){if(out.size()>1)out+=',';out+=quote(v);}return out+"]";}
 }
@@ -154,7 +154,7 @@ bool parse_manifest(std::string_view source,Manifest &out,tilly::vector<Asset> &
 bool manifest_text(const Typelet &p,tilly::string &out,Diagnostic &error) noexcept {
     try {
         const auto &m=p.manifest;tilly::string text="{\n\"schema\":1,\n\"name\":"+quote(m.name)+",\n\"version\":"+quote(m.version)+",\n\"author\":"+quote(m.author)+",\n\"description\":"+quote(m.description)+",\n\"kind\":"+quote(m.kind)+",\n\"entry\":"+quote(m.entry)+",\n\"dependencies\":[\n";
-        bool comma=false;for(const auto &a:p.inventory.assets()) {if(comma)text+=",\n";comma=true;need(unsigned(a.kind)<7,"Invalid asset kind.");text+="{\"id\":"+quote(a.id)+",\"path\":"+quote(a.path)+",\"kind\":"+quote(kind_name(a.kind))+",\"tags\":"+list(a.tags)+",\"requires\":"+list(a.dependencies)+"}";}
+        bool comma=false;for(const auto &a:p.inventory.assets()) {if(comma)text+=",\n";comma=true;need(unsigned(a.kind)<=unsigned(AssetKind::Kliche),"Invalid asset kind.");text+="{\"id\":"+quote(a.id)+",\"path\":"+quote(a.path)+",\"kind\":"+quote(kind_name(a.kind))+",\"tags\":"+list(a.tags)+",\"requires\":"+list(a.dependencies)+"}";}
         text+="\n],\n\"compile\":[";comma=false;for(const auto &s:m.build){if(comma)text+=',';comma=true;text+="{\"input\":"+quote(s.input)+",\"output\":"+quote(s.output)+",\"target\":"+quote(s.target)+"}";}
         text+="],\n\"interfaces\":[";comma=false;for(const auto &i:m.interfaces){if(comma)text+=',';comma=true;text+="{\"id\":"+quote(i.id)+",\"module\":"+quote(i.module)+",\"export\":"+quote(i.entry)+",\"label\":"+quote(i.label)+",\"parameters\":"+list(i.parameters)+"}";}
         text+="]\n}\n";Manifest validated;tilly::vector<Asset> deps;if(!parse_manifest(text,validated,deps,error))return false;out.swap(text);return true;

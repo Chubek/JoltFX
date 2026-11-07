@@ -9,6 +9,8 @@ jfx_test_target(test_jolttype_project SOURCES test_jolttype_project.cpp LIBRARIE
 add_test(NAME jolttype_project COMMAND test_jolttype_project)
 jfx_test_target(test_jolttype_api SOURCES test_jolttype_api.cpp LIBRARIES jolttype)
 add_test(NAME jolttype_api COMMAND test_jolttype_api)
+jfx_test_target(test_jolttype_pagelets SOURCES test_jolttype_pagelets.cpp LIBRARIES jolttype)
+add_test(NAME jolttype_pagelets COMMAND test_jolttype_pagelets "${PROJECT_SOURCE_DIR}/jolttype/pagelets")
 
 if(TARGET jfx_ezdesign)
     jfx_test_target(test_ezdesign SOURCES frontends/test_ezdesign.cpp LIBRARIES jfx_ezdesign)

@@ -1,0 +1,22 @@
+\jolttype{1}
+\pagelet{ContentsList}{
+\component{heading}{Contents}
+\component{first}{Introduction}
+\component{firstpage}{03}
+\component{second}{The design process}
+\component{secondpage}{12}
+\component{third}{Putting it to work}
+\component{thirdpage}{28}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{rule}{#ccd2da}
+\text{heading}{0}{0}{300}{20}{@ink}{@heading}
+\text{first}{0}{42}{260}{12}{@ink}{@first}
+\text{firstpage}{280}{42}{40}{12}{@accent}{@firstpage}
+\rect{ruleone}{0}{66}{320}{1}{@rule}
+\text{second}{0}{80}{260}{12}{@ink}{@second}
+\text{secondpage}{280}{80}{40}{12}{@accent}{@secondpage}
+\rect{ruletwo}{0}{104}{320}{1}{@rule}
+\text{third}{0}{118}{260}{12}{@ink}{@third}
+\text{thirdpage}{280}{118}{40}{12}{@accent}{@thirdpage}
+}

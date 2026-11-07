@@ -1,0 +1,13 @@
+\jolttype{1}
+\pagelet{ChapterOpener}{
+\component{number}{01}
+\component{title}{A new beginning}
+\component{introduction}{Explore the ideas, people and practical steps that bring this chapter to life.}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{muted}{#657184}
+\text{number}{0}{0}{130}{48}{@accent}{@number}
+\rect{rule}{0}{76}{80}{3}{@accent}
+\text{title}{0}{100}{390}{28}{@ink}{@title}
+\text{introduction}{0}{152}{360}{12}{@muted}{@introduction}
+}

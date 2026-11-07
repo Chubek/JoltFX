@@ -480,6 +480,17 @@ texture after tab changes; document output remains separate from draft visuals.
 Final PDF uses libharu by default (`pdf`); `pdf-podofo` is the explicit alternative.
 Keep Progress Display on its PoDoFo/qpdf/PDFium pipeline when changing exporters.
 
+JoltType 0.4 adds Pagelet entity insertion/components and configuration-only
+Kliche capture to the shared inventory. Render/move an entity as one group; never
+patch generated child spans. Edit mode retains 420px tools and fits the page to
+the remaining width. IDE uses a 2:1 code/page split with independent visibility
+and auto-update controls. Debounced live refresh updates only Session's draft
+preview, even when hidden, retaining the last valid page on errors. Commit and
+published PDF jobs retain their independent revision/ownership semantics.
+JoltType 0.5's shared embedded catalog supplies 32 Pagelets and one Kliche.
+Keep the picker searchable and copy only the selected module into inventory;
+existing document-owned libraries must not be overwritten by factory defaults.
+
 Workspace Undo/Redo buttons, Edit-menu actions and document shortcuts route through
 the private workspace history dispatcher in `desktop_frontend.cpp`. Drawing and
 EZDesign retain independent histories; Creative source/canvas and GameDev source

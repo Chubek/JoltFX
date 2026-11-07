@@ -9,13 +9,16 @@ component changes (see `AGENTS.md`).
 
 - Seventeen header-only facet targets re-exporting the 28 canonical `jfx/*.h`
   contracts, plus Ingagi, Joltscript and Tilly allocator headers.
-- JoltType C API 1.1 facet: staged page projects, tagged inventories, Typelets,
+- JoltType C API 1.2 facet: staged page projects, tagged inventories, Typelets,
   target emitters, WASM modules and frontend-neutral controls. Runtime linkage is
   separate; the standalone package installs only canonical headers and guidance.
   Relocated SDK C11/C++17 checks, native callback/package/module tests and targeted
   ASan/UBSan checks pass. Desktop owns the implemented toolkit adapter.
   Final `pdf` export defaults to libharu; `pdf-podofo` retains PoDoFo as an
   alternative. The desktop progress preview continues to use PoDoFo/PDFium.
+  Pagelet entities/components and configuration-only Kliches are first-class
+  source constructs. Draft refresh/snapshots, entity inspection/component editing,
+  font/design-library asset kinds and frozen `jtype`/`jtbc` targets are exposed.
 - Two implementation libraries: `JoltFXSDK::loader` (renderer-module loading,
   static attachment, serialized render/close with BUSY semantics and engine-free
   renderer/plugin metadata peek) and `JoltFXSDK::openfx` (native OpenFX inspection).

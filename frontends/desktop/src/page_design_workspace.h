@@ -28,6 +28,7 @@ public:
     bool background_busy() const {return file_job || preview_job;}
     const jolttype::Bitmap &pdf_bitmap() const {return bitmap;}
     const tilly::string &pdf_bytes() const {return pdf;}
+    float preview_scale() const {return canvas_scale;}
 private:
     FileJob *file_job = nullptr;
     PreviewJob *preview_job = nullptr;
@@ -37,6 +38,10 @@ private:
     uint64_t revision=1,pdf_revision=0;
     int pdf_page=-1;
     bool preview_requested=false,show_progress=false,ide_mode=false;
+    bool show_page_preview=true,auto_update=true,live_pending=false;
+    double live_deadline=0;
+    tilly::string live_source;
+    const jolttype::Inventory *live_inventory=nullptr;
     void *pdf_texture=nullptr;
     char pdf_message[256]{};
     char output_path[1024]="page.pdf",package_path[1024]="page.typelet";
@@ -46,6 +51,11 @@ private:
     char build_input[64]="main",build_output[64]="layout.pdf";
     int build_target=0;
     int asset_kind=0;
+    char pagelet_type[64]="Title",kliche_name[64]="MyStyle";
+    char pagelet_filter[128]{};
+    char component_name[64]{},component_value[jolttype::max_source_bytes+1]{};
+    char component_model_value[jolttype::max_source_bytes+1]{};
+    char component_owner[64]{};
     char inventory_selection[64]{};
     char asset_editor[jolttype::max_source_bytes+1]{};
     char manifest_editor[jolttype::max_source_bytes+1]{};
@@ -54,6 +64,10 @@ private:
     void inventory_panel();
     void package_panel();
     void module_panel();
+    void pagelet_panel();
+    void insert_pagelet(const char *type);
+    void component_panel();
+    void capture_kliche();
     void select_asset(const jolttype::Asset *);
     void inventory_action(int action);
     void preview_tick();
@@ -67,7 +81,7 @@ private:
     char message[256]{};
     unsigned source_id = 0, text_id = 0;
     int page = 0;
-    float zoom = .65f;
+    float zoom = 1.f,canvas_scale=1.f;
     bool text_pending = false, dragging = false, was_dirty = false;
     double dirty_since = 0, drag_x = 0, drag_y = 0;
     float mouse_x = 0, mouse_y = 0;

@@ -10,7 +10,7 @@ bool Inventory::validate(Diagnostic &error) const noexcept {
     try {
         need(assets_.size()<=max_assets,"Inventory exceeds 128 assets.");size_t total=0;
         for(size_t i=0;i<assets_.size();++i){const auto &a=assets_[i];
-            need(id(a.id) && path(a.path) && a.path!="MANIFEST" && unsigned(a.kind)<=unsigned(AssetKind::Other),"Invalid asset ID, kind or package path.");
+            need(id(a.id) && path(a.path) && a.path!="MANIFEST" && unsigned(a.kind)<=unsigned(AssetKind::Kliche),"Invalid asset ID, kind or package path.");
             need(a.bytes.size()<=max_asset_bytes && a.bytes.size()<=max_inventory_bytes-total,"Inventory exceeds its byte budget.");total+=a.bytes.size();
             need(a.tags.size()<=32 && a.dependencies.size()<=32,"Too many asset tags/dependencies.");
             for(const auto &tag:a.tags){need(!tag.empty() && tag.size()<=63,"Invalid asset tag.");for(char c:tag)need(static_cast<unsigned char>(c)>=32,"Invalid tag character.");}

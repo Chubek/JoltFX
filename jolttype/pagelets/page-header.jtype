@@ -1,0 +1,11 @@
+\jolttype{1}
+\pagelet{PageHeader}{
+\component{publication}{FIELD NOTES}
+\component{section}{Ideas and practice}
+\config{ink}{#182840}
+\config{muted}{#657184}
+\config{rule}{#ccd2da}
+\text{publication}{0}{0}{180}{10}{@ink}{@publication}
+\text{section}{210}{0}{180}{10}{@muted}{@section}
+\rect{rule}{0}{22}{390}{1}{@rule}
+}

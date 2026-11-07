@@ -1,4 +1,5 @@
 add_library(jolttype STATIC src/jolttype.cpp src/publishing.cpp src/pdf.cpp src/project.cpp src/manifest.cpp src/object.cpp src/module.cpp src/image.cpp)
+include(pagelets/catalog.cmake)
 target_include_directories(jolttype SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/stb")
 if(NOT MSVC)
     set_source_files_properties(src/image.cpp PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion;-Wno-unused-function;-Wno-double-promotion")

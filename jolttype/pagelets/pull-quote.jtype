@@ -1,0 +1,11 @@
+\jolttype{1}
+\pagelet{PullQuote}{
+\component{quote}{Good design makes room for the important things.}
+\component{attribution}{A. Designer}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{muted}{#657184}
+\rect{bar}{0}{0}{4}{100}{@accent}
+\text{quote}{18}{4}{282}{18}{@ink}{@quote}
+\text{attribution}{18}{80}{282}{10}{@muted}{@attribution}
+}

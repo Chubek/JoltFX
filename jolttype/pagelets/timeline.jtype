@@ -1,0 +1,22 @@
+\jolttype{1}
+\pagelet{Timeline}{
+\component{dateone}{JAN}
+\component{first}{Discovery and research}
+\component{datetwo}{MAR}
+\component{second}{Design and prototyping}
+\component{datethree}{JUN}
+\component{third}{Launch and evaluation}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{rule}{#ccd2da}
+\rect{spine}{78}{8}{2}{126}{@rule}
+\rect{nodeone}{74}{4}{10}{10}{@accent}
+\rect{nodetwo}{74}{64}{10}{10}{@accent}
+\rect{nodethree}{74}{124}{10}{10}{@accent}
+\text{dateone}{0}{4}{64}{11}{@accent}{@dateone}
+\text{first}{98}{4}{232}{12}{@ink}{@first}
+\text{datetwo}{0}{64}{64}{11}{@accent}{@datetwo}
+\text{second}{98}{64}{232}{12}{@ink}{@second}
+\text{datethree}{0}{124}{64}{11}{@accent}{@datethree}
+\text{third}{98}{124}{232}{12}{@ink}{@third}
+}

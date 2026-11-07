@@ -1,0 +1,12 @@
+\jolttype{1}
+\pagelet{Callout}{
+\component{heading}{Take note}
+\component{body}{Use this space to highlight an important point or a useful piece of advice.}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#f1f4f7}
+\rect{background}{0}{0}{330}{112}{@paper}
+\rect{bar}{0}{0}{4}{112}{@accent}
+\text{heading}{18}{14}{294}{14}{@ink}{@heading}
+\text{body}{18}{42}{294}{11}{@ink}{@body}
+}

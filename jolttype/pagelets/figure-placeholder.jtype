@@ -1,0 +1,17 @@
+\jolttype{1}
+\pagelet{FigurePlaceholder}{
+\component{label}{FIGURE / IMAGE}
+\component{dimensions}{300 x 180 pt}
+\component{caption}{Figure 01. Add your caption here.}
+\config{ink}{#657184}
+\config{rule}{#ccd2da}
+\config{paper}{#f1f4f7}
+\rect{background}{0}{0}{300}{180}{@paper}
+\rect{top}{0}{0}{300}{1}{@rule}
+\rect{bottom}{0}{179}{300}{1}{@rule}
+\rect{left}{0}{0}{1}{180}{@rule}
+\rect{right}{299}{0}{1}{180}{@rule}
+\text{label}{78}{68}{200}{12}{@ink}{@label}
+\text{dimensions}{96}{94}{180}{9}{@ink}{@dimensions}
+\text{caption}{0}{194}{300}{10}{@ink}{@caption}
+}

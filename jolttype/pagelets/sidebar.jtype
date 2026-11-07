@@ -1,0 +1,14 @@
+\jolttype{1}
+\pagelet{Sidebar}{
+\component{heading}{Along the way}
+\component{body}{A short companion story adds context without interrupting the main narrative.}
+\component{reference}{Further reading: studio.example}
+\config{ink}{#182840}
+\config{accent}{#e46b36}
+\config{paper}{#f1f4f7}
+\rect{background}{0}{0}{210}{190}{@paper}
+\rect{toprule}{0}{0}{210}{4}{@accent}
+\text{heading}{14}{18}{182}{15}{@ink}{@heading}
+\text{body}{14}{52}{182}{11}{@ink}{@body}
+\text{reference}{14}{148}{182}{9}{@accent}{@reference}
+}
