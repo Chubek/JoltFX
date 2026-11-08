@@ -1,11 +1,58 @@
 #include "joltscript/video_io.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 #if defined(JFX_HAVE_FFMPEG)
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 #endif
+const char *jolt_media_ffmpeg_version(void) {
+#if defined(JFX_HAVE_FFMPEG)
+    return av_version_info();
+#else
+    return "unavailable";
+#endif
+}
+const char *jolt_media_encoder_at(size_t index,int audio) {
+#if defined(JFX_HAVE_FFMPEG)
+    void *cursor=NULL; const AVCodec *codec;
+    while ((codec=av_codec_iterate(&cursor))) if (av_codec_is_encoder(codec) &&
+        codec->type==(audio?AVMEDIA_TYPE_AUDIO:AVMEDIA_TYPE_VIDEO)) {
+        if (!index--) return codec->name;
+    }
+#else
+    (void)index; (void)audio;
+#endif
+    return NULL;
+}
+int jolt_media_probe(const char *path,jolt_media_info_t *out) {
+    if (!path || !*path || strstr(path,"://") || !out || out->size<sizeof(*out)) return -1;
+#if defined(JFX_HAVE_FFMPEG)
+    AVFormatContext *format=NULL; AVDictionary *options=NULL;
+    av_dict_set(&options,"protocol_whitelist","file",0);
+    int result=avformat_open_input(&format,path,NULL,&options); av_dict_free(&options);
+    if (result<0 || avformat_find_stream_info(format,NULL)<0) { avformat_close_input(&format); return -1; }
+    jolt_media_info_t info={.size=sizeof(info)};
+    snprintf(info.format,sizeof(info.format),"%s",format->iformat->name);
+    if (format->duration!=AV_NOPTS_VALUE) info.duration=(double)format->duration/AV_TIME_BASE;
+    int video=av_find_best_stream(format,AVMEDIA_TYPE_VIDEO,-1,-1,NULL,0);
+    int audio=av_find_best_stream(format,AVMEDIA_TYPE_AUDIO,-1,-1,NULL,0);
+    if (video>=0) {
+        AVStream *stream=format->streams[video]; AVRational fps=av_guess_frame_rate(format,stream,NULL);
+        info.video=1; info.width=(uint32_t)stream->codecpar->width; info.height=(uint32_t)stream->codecpar->height;
+        if (fps.num>0 && fps.den>0) { info.fps_num=(uint32_t)fps.num; info.fps_den=(uint32_t)fps.den; }
+        snprintf(info.video_codec,sizeof(info.video_codec),"%s",avcodec_get_name(stream->codecpar->codec_id));
+        if (info.duration<=0 && stream->duration!=AV_NOPTS_VALUE) info.duration=(double)stream->duration*av_q2d(stream->time_base);
+    }
+    if (audio>=0) { info.audio=1; snprintf(info.audio_codec,sizeof(info.audio_codec),"%s",avcodec_get_name(format->streams[audio]->codecpar->codec_id)); }
+    avformat_close_input(&format);
+    if (!info.video && !info.audio) return -1;
+    *out=info; return 0;
+#else
+    return -2;
+#endif
+}
 int jolt_video_io_available(void) {
 #if defined(JFX_HAVE_FFMPEG)
     return 1;

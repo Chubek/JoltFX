@@ -206,6 +206,10 @@ if(JFX_VIDEO_FFMPEG AND JFX_MEDIA_FFMPEG_BUNDLED)
     install(FILES third_party/ffmpeg/COPYING.LGPLv2.1
         DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/ffmpeg)
 endif()
+install(FILES third_party/OpenTimelineIO/LICENSE.txt third_party/OpenTimelineIO/NOTICE.txt
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/OpenTimelineIO)
+install(FILES third_party/libebur128/COPYING
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party/libebur128)
 
 install(EXPORT JoltFXTargets
     FILE JoltFXTargets.cmake
@@ -219,11 +223,11 @@ foreach(target IN LISTS JFX_INSTALL_TARGETS_PRESENT)
     get_target_property(links ${target} INTERFACE_LINK_LIBRARIES)
     string(APPEND package_links ";${links}")
 endforeach()
-foreach(dependency IN ITEMS VULKAN SDL2 OPENGL OCIO FFMPEG)
+foreach(dependency IN ITEMS VULKAN SDL2 OPENGL OCIO FFMPEG LIBASS)
     set(JFX_PACKAGE_${dependency} OFF)
 endforeach()
 foreach(pair IN ITEMS "VULKAN|Vulkan::" "SDL2|SDL2::" "OPENGL|OpenGL::"
-        "OCIO|OpenColorIO::" "FFMPEG|PkgConfig::JFX_FFMPEG")
+        "OCIO|OpenColorIO::" "FFMPEG|PkgConfig::JFX_FFMPEG" "LIBASS|PkgConfig::JFX_LIBASS")
     string(REPLACE "|" ";" parts "${pair}")
     list(GET parts 0 dependency)
     list(GET parts 1 symbol)

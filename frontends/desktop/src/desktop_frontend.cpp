@@ -18,6 +18,7 @@
 
 #include "jfx/jfx_events.h"
 #include "jfx/jfx_editor.h"
+#include "jfx/jfx_nle.h"
 #include "jfx/jfx_color.h"
 #include "jfx/jfx_vst3.h"
 #include "jfx/jfx_midi.h"
@@ -197,6 +198,32 @@ static void preferences_save_task(void *userdata) {
     job->success=jfx_preferences::save(job->path,job->values,job->message,sizeof(job->message));
     job->done.store(true,std::memory_order_release);
 }
+struct NleMediaJob {
+    std::atomic<bool> done{false};
+    char path[JFX_NODE_PATH_MAX]{},reference[JFX_NODE_PATH_MAX]{},output[JFX_NODE_PATH_MAX]{},codec[64]{};
+    int operation=0; // probe, analyze pair, conversion
+    uint64_t revision=0;
+    uint32_t track=0,clip=0,reference_track=0,reference_clip=0;
+    jfx_nle_media_info_t info{};
+    jfx_nle_audio_analysis_t analysis{},reference_analysis{};
+    jfx_export_options_t options{};
+    jfx_export_job_t *export_job=nullptr;
+    jfx_result_t result=JFX_ERROR_BACKEND_FAILURE;
+    ~NleMediaJob() { jfx_export_destroy(export_job); }
+};
+static void nle_media_task(void *userdata) {
+    auto *j=static_cast<NleMediaJob *>(userdata);
+    if (j->operation==0) { j->info.size=sizeof(j->info); j->result=jfx_nle_probe(j->path,&j->info); }
+    else if (j->operation==1) {
+        j->analysis.size=sizeof(j->analysis); j->reference_analysis.size=sizeof(j->reference_analysis);
+        j->result=jfx_nle_analyze_file(j->path,10,&j->analysis);
+        if (j->result==JFX_SUCCESS && *j->reference) j->result=jfx_nle_analyze_file(j->reference,10,&j->reference_analysis);
+    } else {
+        j->options.path=j->output; j->options.video_codec=*j->codec?j->codec:nullptr;
+        j->result=jfx_nle_convert_begin(j->path,&j->options,&j->export_job);
+    }
+    j->done.store(true,std::memory_order_release);
+}
 struct SceneExportStep {
     std::atomic<bool> done{false};
     jfx_export_job_t *job=nullptr;
@@ -291,6 +318,15 @@ struct jfx_desktop_frontend {
     int nle_width, nle_height, nle_fps_num, nle_fps_den;
     int nle_gap_length;
     char nle_export_path[512];
+    NleMediaJob *nle_media_job;
+    char nle_filter[128],nle_kernel_filter[128],nle_relink_path[JFX_NODE_PATH_MAX];
+    char nle_script[16384],nle_script_error[256],nle_subtitles[JFX_NODE_PATH_MAX];
+    char nle_otio[65536];
+    bool nle_drop_frame;
+    char nle_convert_source[JFX_NODE_PATH_MAX],nle_convert_output[JFX_NODE_PATH_MAX];
+    int nle_reference_track,nle_reference_clip,nle_transition_frames;
+    int nle_bitrate_kbps,nle_audio_bitrate_kbps;
+    float nle_loudness_target;
     char video_export_path[512], video_codec[64];
     uint64_t video_start,video_frames;
     bool video_audio;
@@ -658,6 +694,9 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
     frontend->automation_value=1;
     frontend->nle_width=320; frontend->nle_height=180; frontend->nle_fps_num=30; frontend->nle_fps_den=1;
     frontend->nle_gap_length=30;
+    frontend->nle_transition_frames=12; frontend->nle_loudness_target=-23;
+    std::snprintf(frontend->nle_convert_output,sizeof(frontend->nle_convert_output),"converted.mkv");
+    std::snprintf(frontend->nle_script,sizeof(frontend->nle_script),"(defkernel edit []\n  [[\"clip.name\" 0 0 0 0 \"Opening shot\"]])");
     std::snprintf(frontend->nle_export_path,sizeof(frontend->nle_export_path),"frame.ppm");
     std::snprintf(frontend->video_export_path,sizeof(frontend->video_export_path),"sequence.mp4");
     frontend->video_audio=true;
@@ -777,11 +816,12 @@ extern "C" jfx_result_t jfx_desktop_frontend_create(
 }
 
 extern "C" void jfx_desktop_frontend_destroy(jfx_desktop_frontend_t *frontend) {
-    if (frontend && (frontend->scene_preview_job || frontend->scene_png_job || frontend->scene_export_step || frontend->preferences_save_job)) {
+    if (frontend && (frontend->scene_preview_job || frontend->scene_png_job || frontend->scene_export_step || frontend->preferences_save_job || frontend->nle_media_job)) {
         scheduler_wait_idle(); tilly::destroy(frontend->scene_preview_job); frontend->scene_preview_job=nullptr;
         tilly::destroy(frontend->scene_png_job); frontend->scene_png_job=nullptr;
         tilly::destroy(frontend->scene_export_step); frontend->scene_export_step=nullptr;
         tilly::destroy(frontend->preferences_save_job); frontend->preferences_save_job=nullptr;
+        tilly::destroy(frontend->nle_media_job); frontend->nle_media_job=nullptr;
     }
     if (frontend) {
 #ifdef JFX_DESKTOP_HAVE_INGAGI
@@ -1572,6 +1612,7 @@ extern "C" jfx_result_t jfx_desktop_frontend_draw(jfx_desktop_frontend_t *fronte
             frontend->native_session=false; jfx_vst3_set_edit_callback(frontend->vst3_inspector,nullptr,nullptr);
         }
         recording_poll(frontend);
+        nle_poll(frontend);
         if (frontend->editing && jfx_editor_kind(frontend->editor)==JFX_PROJECT_KIND_SCENE3D)
             frontend->duration_seconds=(double)jfx_scene3d_frames(jfx_editor_scene3d(frontend->editor))/jfx_scene3d_fps(jfx_editor_scene3d(frontend->editor));
         /* Advance the engine clock while playing, looping at the end of the

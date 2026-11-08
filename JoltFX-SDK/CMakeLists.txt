@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(JoltFXSDK VERSION 1.3.0 LANGUAGES C CXX)
+    project(JoltFXSDK VERSION 1.4.0 LANGUAGES C CXX)
 endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -39,7 +39,7 @@ target_include_directories(jfx_sdk_headers INTERFACE
     $<BUILD_INTERFACE:${JOLTFX_SDK_API_ROOT}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 set(sdk_facets audio backend events facet frontend gui ingagi joltscript jolttype libraries
-    module plugins renderer runtime timeline tools)
+    module nle plugins renderer runtime timeline tools)
 foreach(facet IN LISTS sdk_facets)
     add_library(jfx_sdk_${facet} INTERFACE)
     set_target_properties(jfx_sdk_${facet} PROPERTIES EXPORT_NAME ${facet})
@@ -125,7 +125,7 @@ configure_package_config_file(cmake/JoltFXSDKConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfig.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JoltFXSDK)
 write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfigVersion.cmake"
-    VERSION 1.3.0 COMPATIBILITY SameMajorVersion)
+    VERSION 1.4.0 COMPATIBILITY SameMajorVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/JoltFXSDKConfigVersion.cmake" cmake/JoltFXSDKModules.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JoltFXSDK)

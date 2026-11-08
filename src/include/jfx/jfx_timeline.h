@@ -37,7 +37,7 @@ extern "C" {
 #define JFX_TIMELINE_MAX_KEYS 64
 #define JFX_TIMELINE_NAME_MAX 64
 #define JFX_TIMELINE_API_MAJOR 1
-#define JFX_TIMELINE_API_MINOR 3
+#define JFX_TIMELINE_API_MINOR 4
 
 /* How a value between two keyframes is chosen. */
 typedef enum {
@@ -189,6 +189,18 @@ jfx_result_t jfx_timeline_ripple_insert(jfx_timeline_t *timeline, uint32_t track
 jfx_clip_source_t jfx_timeline_clip_source(const jfx_timeline_t *timeline, uint32_t track,
     uint32_t clip);
 const char *jfx_timeline_clip_path(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
+/* Replace a media reference without changing source timing/effects. Does not
+ * open the file; callers may intentionally retain offline references. */
+jfx_result_t jfx_timeline_set_clip_path(jfx_timeline_t *timeline,uint32_t track,uint32_t clip,const char *path);
+/* First N reference-clock frames transition from earlier overlapping clips on
+ * this track. Requires normal blending/full opacity for the incoming clip.
+ * Empty kernel/0 frames removes the transition; otherwise N >= 2. */
+jfx_result_t jfx_timeline_set_clip_transition(jfx_timeline_t *timeline,uint32_t track,uint32_t clip,const char *kernel,uint64_t frames);
+const char *jfx_timeline_clip_transition(const jfx_timeline_t *timeline,uint32_t track,uint32_t clip);
+uint64_t jfx_timeline_clip_transition_frames(const jfx_timeline_t *timeline,uint32_t track,uint32_t clip);
+/* ASS/SSA overlay at the clip source clock. Empty path removes captions. */
+jfx_result_t jfx_timeline_set_clip_subtitles(jfx_timeline_t *timeline,uint32_t track,uint32_t clip,const char *path);
+const char *jfx_timeline_clip_subtitles(const jfx_timeline_t *timeline,uint32_t track,uint32_t clip);
 const float *jfx_timeline_clip_params(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
 bool jfx_timeline_clip_enabled(const jfx_timeline_t *timeline, uint32_t track, uint32_t clip);
 /* The exact rate, so a document can record 30000/1001 rather than 29.97. */

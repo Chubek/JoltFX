@@ -161,6 +161,16 @@ jfx_fence_wait(ctx, fence, JFX_TIMEOUT_INFINITE);
 
 ## Public API Conventions
 
+NLE workflow API 1.0 (`jfx_nle.h`), editor 1.9 and timeline 1.4 add named/no-op-aware
+history, atomic Joltscript batches, relinking, clap/loudness analysis, independent
+conversion, bounded editorial OTIO and persistent transitions/caption paths.
+Keep vendor types private; scripts use one rollback-capable sequence transaction.
+Reacquire borrowed handles after rollback/import/history. Reject unsupported OTIO
+rendering/timing rather than silently dropping it. Transition sampling uses the
+existing clip reference clock. `nle_workflow`, `nle_media` and `nle_ui_tests`
+cover CPU pixels, media output, rollback and actual desktop input; run optional
+FFmpeg/libass-off and ASan/UBSan configurations. See `docs/nle.md`.
+
 The private `modeling3d_preview.h` editing profile accepts a clear color and
 single-/four-sample raster coverage without changing public production renders.
 Its private `render_editing_triangles` adapter also serves the desktop EZDesign

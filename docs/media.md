@@ -6,6 +6,14 @@ retain audio settings alongside frame-accurate NLE and composition edits.
 
 ## Dependencies and building
 
+NLE workflow API 1.0 adds direct FFmpeg probing/encoder enumeration and standalone
+conversion using the existing export jobs. Vendored `libebur128` measures opening
+LUFS/sample peak and the Glue transient detector supports clap alignment. Optional
+`JFX_NLE_LIBASS=ON` links pkg-config libass for ASS/SSA captions; missing libass
+leaves explicit unavailable stubs. OpenTimelineIO's vendored OpenTime supplies
+rational timing and drop-frame formatting for editorial interchange. See
+[the NLE workflow guide](nle.md#workflow-tools-nle-api-10).
+
 - **miniaudio 0.11.23** (`third_party/miniaudio`) decodes WAV, FLAC and MP3 to
   stereo float. The build disables its device, engine, resource-manager and
   threading layers; frontends send the shared mix to their platform audio API.

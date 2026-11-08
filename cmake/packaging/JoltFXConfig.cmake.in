@@ -20,6 +20,10 @@ if(@JFX_PACKAGE_FFMPEG@ AND NOT TARGET PkgConfig::JFX_FFMPEG)
     pkg_check_modules(JFX_FFMPEG REQUIRED IMPORTED_TARGET
         libavformat libavcodec libavutil libswscale libswresample)
 endif()
+if(@JFX_PACKAGE_LIBASS@ AND NOT TARGET PkgConfig::JFX_LIBASS)
+    find_dependency(PkgConfig)
+    pkg_check_modules(JFX_LIBASS REQUIRED IMPORTED_TARGET libass)
+endif()
 if(@JFX_MONKEYTRACE@ AND NOT TARGET monkeytrace_native)
     add_library(monkeytrace_native SHARED IMPORTED)
     set_target_properties(monkeytrace_native PROPERTIES

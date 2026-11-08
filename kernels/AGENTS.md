@@ -403,6 +403,12 @@ Don't assume `f32` precision is sufficient for accumulation. Use `f64` locals fo
 - **Performance tuning**: `#joltfx-perf`
 ## Implemented CPU image profile (first CSV batch)
 
+`transition/morph_cut.jolt` consumes a second premultiplied RGBA frame via
+`to-frame`. Its local 3×3 Lucas–Kanade fit is a bounded small-motion dissolve,
+not face tracking/inpainting. Clamp target-resource coordinates explicitly.
+`jfx_nle_transition` supplies straight/premultiplied conversion and transactional
+output; `nle_workflow` covers endpoints, borders and persistent timeline use.
+
 Color frontend integration uses the curated catalog in `cmake/ColorKernels.cmake`.
 `grade_primary`, `grade_lut` and `calib_lut` extend the existing kernels; LUT
 wrappers share domain-aware sampling in `common/image.jolt`. Add/edit parameters

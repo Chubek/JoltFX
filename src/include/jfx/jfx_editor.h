@@ -9,7 +9,7 @@ extern "C" {
  * valid until a successful load/reset/undo/redo/cancel or destruction. Edits use the timeline and
  * graph APIs, so every interface uses the same validators and evaluator. */
 #define JFX_EDITOR_API_MAJOR 1
-#define JFX_EDITOR_API_MINOR 8
+#define JFX_EDITOR_API_MINOR 9
 typedef struct jfx_editor jfx_editor_t;
 jfx_editor_t *jfx_editor_create(uint32_t width, uint32_t height);
 void jfx_editor_destroy(jfx_editor_t *editor);
@@ -53,6 +53,12 @@ void jfx_editor_clear_history(jfx_editor_t *editor);
  * document return BUSY. Cancel restores the baseline and invalidates borrowed
  * handles. Failed commands leave the group active. Empty groups add no history. */
 jfx_result_t jfx_editor_begin_edit(jfx_editor_t *editor, jfx_project_kind_t document);
+/* Label the active group; at most 63 UTF-8 bytes. History index 0 is newest.
+ * Borrowed labels are invalidated by history edits. Missing entries return "".
+ * Net-zero groups and no-op commands preserve undo/redo. */
+jfx_result_t jfx_editor_edit_label(jfx_editor_t *editor,const char *label);
+size_t jfx_editor_history_count(const jfx_editor_t *editor,bool redo);
+const char *jfx_editor_history_label(const jfx_editor_t *editor,bool redo,size_t index);
 jfx_result_t jfx_editor_commit_edit(jfx_editor_t *editor);
 jfx_result_t jfx_editor_cancel_edit(jfx_editor_t *editor);
 /* JSON sequence state for native/mobile/WASM/host NLE widgets. Does not change

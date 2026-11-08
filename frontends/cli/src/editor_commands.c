@@ -207,6 +207,7 @@ import_cleanup:
     return 1;
 }
 int cmd_nle(int argc,char **argv) {
+    int tools=cmd_nle_tools(argc,argv); if (tools>=0) return tools;
     if (argc<2) { print_command_help("nle"); return 1; }
     if (!strcmp(argv[0],"edit")) return cmd_edit(argc-1,argv+1);
     if (!strcmp(argv[0],"render")) return cmd_render_sequence(argc-1,argv+1);

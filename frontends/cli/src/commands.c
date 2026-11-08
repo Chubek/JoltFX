@@ -42,6 +42,10 @@ void print_usage(void) {
     printf("  nle edit IN.jfx OUT.jfx     Shared terminal editor, or pipe edit commands\n");
     printf("  nle info IN.jfx            NLE state as JSON\n");
     printf("  nle render IN.jfx -o PREFIX Render a PPM sequence\n");
+    printf("  nle probe/analyze FILE     Media info, loudness and clap detection\n");
+    printf("  nle convert IN OUT [CODEC] Independent format conversion; nle encoders lists FFmpeg codecs\n");
+    printf("  nle script IN SCRIPT OUT  Atomic Joltscript sequence edits\n");
+    printf("  nle otio-export IN OUT / otio-import IN OUT [W H NUM DEN]\n");
     printf("  compose new/edit/info/render Node-based composition editor and PPM export\n");
     printf("  3d new/edit/info/render    3D mesh modeling, keyframe animation and PNG export\n");
     printf("  iap info/validate/export/import  Ingagi Animation Pack: pack, inspect and apply 3D animation\n");
@@ -133,6 +137,11 @@ void print_command_help(const char *command) {
         printf("Usage: joltfx nle new OUTPUT.jfx [--size W H] [--fps NUM DEN]\n"
             "       joltfx nle edit INPUT.jfx OUTPUT.jfx\n"
             "       joltfx nle info INPUT.jfx\n"
+            "       joltfx nle script INPUT.jfx EDIT.jolt OUTPUT.jfx\n"
+            "       joltfx nle convert INPUT OUTPUT [VIDEO_ENCODER]\n"
+            "       joltfx nle probe FILE | analyze FILE [SECONDS] | encoders\n"
+            "       joltfx nle otio-export INPUT.jfx OUTPUT.otio\n"
+            "       joltfx nle otio-import INPUT.otio OUTPUT.jfx [WIDTH HEIGHT FPS_NUM FPS_DEN]\n"
             "       joltfx nle render INPUT.jfx -o PREFIX [--start N --end N]\n"
             "Editor syntax: OP TRACK CLIP TARGET VALUE TEXT (zero-based indices).\n"
             "NLE commands: clip.add/trim/move/split/duplicate/slip/remove/ripple_delete,\n"

@@ -1,5 +1,32 @@
 # Progress
 
+## NLE workflow revision (2026-11-07)
+
+- Audited the shared timeline/editor, desktop controls, SDK facets and media
+  adapters. Existing FFmpeg snapshot exports and transaction rollback provide
+  the foundation for conversion and scripted batch edits.
+- Implemented named/no-op-aware history, media relinking, searchable kernel
+  controls, bounded clap synchronization/libebur128 loudness, standalone direct
+  FFmpeg conversion and canonical `jfx_nle.h` / SDK 1.4 `nle` facet.
+- Added persistent CPU morph-cut/dissolve transitions and libass ASS/SSA captions;
+  OpenTime powers SMPTE/drop-frame and rational editorial OTIO interchange.
+  Unsupported OTIO rendering/timing is rejected. Guides document local-motion,
+  transient-analysis and interchange limits, external resources and build options.
+- Desktop owns scheduler analysis/conversion jobs, revision-checked application,
+  script/history/media/interchange controls and grouped audio gestures. CLI
+  exposes probe/analyze/encoders/convert/script/OTIO workflows over the same API.
+- Native and ASan/UBSan workflow/media/widget tests pass with FFmpeg/libass enabled
+  and disabled. Actual ImGui source/button input verifies pixel changes, atomic
+  script failure, grouped audio gestures and one-step undo/redo. Relocated SDK
+  C11/C++17 packaging passes. Morph tests cover motion distinct from a dissolve,
+  alpha/in-place output and sample preservation after splitting.
+- Existing history-budget tests now use distinct edits rather than no-ops; color
+  tests distinguish spatial NLE kernels from alpha-preserving grading operators.
+- All 22 targeted native editor/timeline/color/audio/frontend/CLI checks and nine
+  Clang ASan/UBSan checks pass; desktop and CLI builds pass. Diff checks are clean.
+  The repository-wide memory policy check reports pre-existing standard-library
+  storage in NovoGFX and desktop ELF/browser exporters, outside this revision.
+
 ## Thirty additional bundled Pagelets (2026-11-07)
 
 - JoltType 0.5 adds 30 editable modules covering typography, navigation,

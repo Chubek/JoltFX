@@ -5,10 +5,14 @@ Keep this file current: mark items done when they land, record follow-ups in
 the root `PROGRESS.md`, and bump the SDK package minor version for additive
 component changes (see `AGENTS.md`).
 
-## Current state (SDK 1.3)
+## Current state (SDK 1.4)
 
-- Seventeen header-only facet targets re-exporting the 28 canonical `jfx/*.h`
+- Eighteen header-only facet targets re-exporting the 29 canonical `jfx/*.h`
   contracts, plus Ingagi, Joltscript and Tilly allocator headers.
+- NLE workflow API 1.0 facet: transactional Joltscript edits, relinking, clap/
+  loudness analysis, editorial OTIO, transitions and independent conversion.
+  Desktop and CLI consume the same canonical engine API; runtime dependencies
+  and bounded profiles are documented in `docs/nle.md`.
 - JoltType C API 1.2 facet: staged page projects, tagged inventories, Typelets,
   target emitters, WASM modules and frontend-neutral controls. Runtime linkage is
   separate; the standalone package installs only canonical headers and guidance.

@@ -458,6 +458,14 @@ Similar steps for Premiere and DaVinci. Consult each plugin's `README.md` for SD
 
 ## Desktop Frontend Architecture
 
+The NLE workflow panels in `desktop/src/nle_tools.inc` consume canonical
+`jfx_nle.h`. Media jobs own copied paths and publish through acquire/release;
+only the UI thread edits the live sequence, and analysis application checks the
+captured revision. Conversion hands an owned export job to serialized scheduler
+steps. Finish gestures before script/relink/sync/import and reacquire document
+handles after rollback. `nle_ui_tests` drives actual text/button input and checks
+pixels, atomic failure and one-step history. CLI `nle` tools use the same API.
+
 Desktop 1.18 appends Page Design workspace/panel IDs. The standalone C++17
 `jolttype` library owns bounded parsing, fixed-em page layout, source spans,
 draft/committed sessions, history and SVG generation. `page_design_workspace.*`

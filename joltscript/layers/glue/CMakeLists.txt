@@ -20,6 +20,26 @@ target_link_libraries(joltscript_glue PUBLIC
 
 set_project_warnings(joltscript_glue)
 
+add_library(jfx_ebur128 OBJECT src/ebur128_vendor.c)
+target_include_directories(jfx_ebur128 PRIVATE "${PROJECT_SOURCE_DIR}/third_party/libebur128/ebur128"
+    "${PROJECT_SOURCE_DIR}/third_party/libebur128/ebur128/queue")
+target_link_libraries(jfx_ebur128 PRIVATE tilly)
+set_target_properties(jfx_ebur128 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_sources(joltscript_glue PRIVATE src/media_analysis.c $<TARGET_OBJECTS:jfx_ebur128>)
+target_include_directories(joltscript_glue SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/libebur128/ebur128")
+option(JFX_NLE_LIBASS "Enable ASS/SSA captions using libass" ON)
+target_sources(joltscript_glue PRIVATE src/subtitle_io.c)
+if(JFX_NLE_LIBASS)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND AND NOT CMAKE_CROSSCOMPILING)
+        pkg_check_modules(JFX_LIBASS QUIET IMPORTED_TARGET libass)
+    endif()
+    if(TARGET PkgConfig::JFX_LIBASS)
+        target_link_libraries(joltscript_glue PRIVATE PkgConfig::JFX_LIBASS)
+        target_compile_definitions(joltscript_glue PRIVATE JFX_HAVE_LIBASS=1)
+    endif()
+endif()
+
 # Production LUT readers; the bundled parsers remain usable on small/WASM builds.
 option(JFX_COLOR_OCIO "Enable OpenColorIO's registered LUT formats" ON)
 option(JFX_COLOR_OCIO_BUNDLED "Build third_party/opencolorio when no system package is available" OFF)

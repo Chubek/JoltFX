@@ -61,6 +61,8 @@ jfx_result_t jfx_editor_sequence_state(const jfx_editor_t *editor,char *out,size
             APP("%s{\"name\":",clip?",":""); STR(jfx_timeline_clip_name(t,track,clip));
             APP(",\"source\":"); STR(jfx_clip_source_name(jfx_timeline_clip_source(t,track,clip)));
             APP(",\"path\":"); STR(jfx_timeline_clip_path(t,track,clip));
+            APP(",\"transition\":"); STR(jfx_timeline_clip_transition(t,track,clip));
+            APP(",\"transitionFrames\":%llu",(unsigned long long)jfx_timeline_clip_transition_frames(t,track,clip));
             APP(",\"start\":%llu,\"length\":%llu,\"inPoint\":%llu,\"enabled\":%s,\"opacity\":%.9g,\"effects\":%zu",
                 (unsigned long long)jfx_timeline_clip_start(t,track,clip),
                 (unsigned long long)jfx_timeline_clip_length(t,track,clip),

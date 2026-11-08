@@ -1,5 +1,13 @@
 # JoltFX desktop frontend
 
+The **NLE** tab includes searchable media references/relinking and kernel
+application, morph-cut/dissolve transitions, ASS/SSA captions, recording-clap
+alignment/loudness, transactional Joltscript editing, named history, OTIO text
+interchange and an independent FFmpeg format converter. Encoder/bitrate controls
+are in **Encoded video export**. Media jobs run through the scheduler; conversion
+shows progress and supports cancellation. See the [NLE guide](../../docs/nle.md)
+for workflow steps, shortcuts, build options and the bounded algorithm profiles.
+
 **EZDesign** adds an editable vertex/edge/planar-face modeler with drawing,
 Push/Pull, prism door/window openings, offsets, linked components, dimensions,
 native `.jfx` save/reopen and OBJ/PLY export. It has independent history and uses

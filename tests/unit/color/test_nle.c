@@ -120,7 +120,7 @@ static void pixels_and_history(void) {
     assert(strstr(state,"\"inPoint\":60") && strstr(state,"\"canUndo\":true"));
     assert(jfx_editor_sequence_state(e,state,1)==JFX_ERROR_OUT_OF_MEMORY);
     assert(jfx_editor_sequence_state(NULL,state,sizeof(state))==JFX_ERROR_INVALID_ARGUMENT);
-    for (int i=0;i<40;++i) assert(jfx_editor_command(e,"clip.name",0,0,0,0,"Rename")==JFX_SUCCESS);
+    for (int i=0;i<40;++i) assert(jfx_editor_command(e,"clip.name",0,0,0,0,i%2?"Rename B":"Rename A")==JFX_SUCCESS);
     for (int i=0;i<32;++i) assert(jfx_editor_command(e,"undo",0,0,0,0,"")==JFX_SUCCESS);
     assert(!jfx_editor_can_undo(e) && jfx_editor_can_redo(e));
     for (int i=0;i<32;++i) assert(jfx_editor_command(e,"redo",0,0,0,0,"")==JFX_SUCCESS);

@@ -79,7 +79,7 @@ set(IMAGE_KERNELS
     stylize/stylize_ink_outline stylize/stylize_line_art
     stylize/stylize_8bit stylize/stylize_comic_book
     stylize/stylize_duotone_art stylize/stylize_contour
-    stylize/stylize_xray transition/cross_dissolve transition/wipe
+    stylize/stylize_xray transition/morph_cut transition/cross_dissolve transition/wipe
     transition/zoom_transition transition/slide_transition
     transition/luma_wipe transition/cube_flip mask_matte/rect_mask
     mask_matte/ellipse_mask mask_matte/feather_mask mask_matte/track_matte

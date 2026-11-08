@@ -13,6 +13,7 @@
 #include <string.h>
 typedef struct {
     char *text; size_t length; jfx_project_kind_t document,active;
+    char label[64];
     const jfx_node_kind_t *plugins[JFX_PLUGIN_MAX_EFFECTS]; size_t plugin_count;
 } snapshot_t;
 struct jfx_editor {
@@ -250,6 +251,10 @@ static jfx_result_t command_apply(jfx_editor_t *e, const char *op, uint32_t a,
     }
     if (strcmp(op,"clip.remove")==0) return jfx_timeline_remove_clip(t,a,b);
     if (!strcmp(op,"clip.name")) return jfx_timeline_set_clip_name(t,a,b,text);
+    if (!strcmp(op,"clip.path")) return jfx_timeline_set_clip_path(t,a,b,text);
+    if (!strcmp(op,"clip.subtitles")) return jfx_timeline_set_clip_subtitles(t,a,b,text);
+    if (!strcmp(op,"clip.transition")) return value<0 || floor(value)!=value?JFX_ERROR_INVALID_ARGUMENT:
+        jfx_timeline_set_clip_transition(t,a,b,text,(uint64_t)value);
     if (!strcmp(op,"clip.enabled")) return jfx_timeline_set_clip_enabled(t,a,b,value!=0);
     if (!strcmp(op,"clip.blend")) return value<0 || value>=(double)JFX_BLEND_COUNT || floor(value)!=value?JFX_ERROR_INVALID_ARGUMENT:jfx_timeline_set_clip_blend(t,a,b,(jfx_blend_mode_t)value);
     if (!strcmp(op,"clip.split")) return value<0 || floor(value)!=value?JFX_ERROR_INVALID_ARGUMENT:jfx_timeline_split_clip(t,a,b,(uint64_t)value);
@@ -487,12 +492,34 @@ jfx_result_t jfx_editor_begin_edit(jfx_editor_t *e,jfx_project_kind_t document) 
 jfx_result_t jfx_editor_commit_edit(jfx_editor_t *e) {
     if (!e || !e->edit_active) return JFX_ERROR_INVALID_ARGUMENT;
     if (e->edit_changed) {
+        snapshot_t after;
+        jfx_result_t r=snapshot(e,e->edit.document,&after);
+        /* History publication was reserved at begin. If comparison cannot
+         * allocate, retain the undo step rather than strand an active gesture. */
+        if (r==JFX_SUCCESS) {
+            e->edit_changed=after.length!=e->edit.length || memcmp(after.text,e->edit.text,after.length);
+            snapshot_release(&after);
+        }
+    }
+    if (e->edit_changed) {
         clear_stack(e,e->redo,&e->redo_count);
         push_snapshot(e,e->undo,&e->undo_count,e->edit);
     } else snapshot_release(&e->edit);
     release_edit_baseline(e);
     e->edit_active=false; e->edit_changed=false;
     return JFX_SUCCESS;
+}
+jfx_result_t jfx_editor_edit_label(jfx_editor_t *e,const char *label) {
+    if (!e || !label || strlen(label)>=64) return JFX_ERROR_INVALID_ARGUMENT;
+    if (!e->edit_active) return JFX_ERROR_BUSY;
+    strcpy(e->edit.label,label); return JFX_SUCCESS;
+}
+size_t jfx_editor_history_count(const jfx_editor_t *e,bool redo) {
+    return e?(redo?e->redo_count:e->undo_count):0;
+}
+const char *jfx_editor_history_label(const jfx_editor_t *e,bool redo,size_t index) {
+    size_t count=jfx_editor_history_count(e,redo);
+    return index<count?(redo?e->redo:e->undo)[count-index-1].label:"";
 }
 jfx_result_t jfx_editor_cancel_edit(jfx_editor_t *e) {
     if (!e || !e->edit_active) return JFX_ERROR_INVALID_ARGUMENT;
@@ -522,6 +549,7 @@ jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32
         snapshot_t previous=from[*from_count-1], current;
         jfx_result_t r=snapshot(e,previous.document,&current);
         if (r!=JFX_SUCCESS) return r;
+        strcpy(current.label,previous.label);
         jfx_timeline_t *restored=NULL; jfx_graph_t *graph=NULL; uint32_t output=0,w=0,h=0;
         r=previous.document==JFX_PROJECT_KIND_GRAPH?jfx_project_load_graph(previous.text,previous.length,&graph,&output,&w,&h,NULL,0)
             :jfx_project_load_sequence(previous.text,previous.length,&restored,NULL,0);
@@ -546,6 +574,13 @@ jfx_result_t jfx_editor_command(jfx_editor_t *e,const char *op,uint32_t a,uint32
     if (r!=JFX_SUCCESS) return r;
     r=command_apply(e,op,a,b,c,value,text);
     if (r==JFX_SUCCESS) {
+        snapshot_t after;
+        if (snapshot(e,before.document,&after)==JFX_SUCCESS) {
+            bool same=after.length==before.length && !memcmp(after.text,before.text,after.length);
+            snapshot_release(&after);
+            if (same) { snapshot_release(&before); return JFX_SUCCESS; }
+        }
+        snprintf(before.label,sizeof(before.label),"%s",op);
         clear_stack(e,e->redo,&e->redo_count);
         push_snapshot(e,e->undo,&e->undo_count,before);
     } else snapshot_release(&before);

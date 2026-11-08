@@ -17,6 +17,7 @@ int cmd_render_graph(int argc, char **argv);
 int cmd_render_sequence(int argc, char **argv);
 int cmd_edit(int argc, char **argv);
 int cmd_nle(int argc, char **argv);
+int cmd_nle_tools(int argc,char **argv);
 int cmd_compose(int argc, char **argv);
 int cmd_scene3d(int argc,char **argv);
 int cmd_iap(int argc,char **argv);

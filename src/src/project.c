@@ -707,6 +707,14 @@ jfx_result_t jfx_project_load_sequence(const char *text, size_t length, jfx_time
                 !read_frame(&cursor,end,&audio.fade_out_frames) || !read_frame(&cursor,end,&audio.reference_frames)) goto bad_line;
             audio.enabled=enabled!=0;
             if (jfx_timeline_set_clip_audio(timeline,track,clip,&audio)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"clip_subtitles")) {
+            char path[JFX_NODE_PATH_MAX];
+            if (!read_word(&cursor,end,path,sizeof(path)) ||
+                jfx_timeline_set_clip_subtitles(timeline,track,clip,path)!=JFX_SUCCESS) goto bad_line;
+        } else if (!strcmp(key,"clip_transition")) {
+            char kernel[32]; uint64_t frames;
+            if (!read_word(&cursor,end,kernel,sizeof(kernel)) || !read_frame(&cursor,end,&frames) ||
+                jfx_timeline_set_clip_transition(timeline,track,clip,kernel,frames)!=JFX_SUCCESS) goto bad_line;
         } else if (!strcmp(key,"clip_keys")) {
             int64_t offset;
             if (clip==UINT32_MAX || !read_signed_frame(&cursor,end,&offset) ||
@@ -886,6 +894,12 @@ jfx_result_t jfx_project_save_sequence(const jfx_timeline_t *timeline, char *out
             }
 
             if (!append(out_text,out_size,&used,"clip_keys %lld\n",(long long)jfx_timeline_clip_key_offset(timeline,track,clip))) return JFX_ERROR_BACKEND_FAILURE;
+            if (jfx_timeline_clip_transition_frames(timeline,track,clip) &&
+                !append(out_text,out_size,&used,"clip_transition %s %llu\n",jfx_timeline_clip_transition(timeline,track,clip),
+                    (unsigned long long)jfx_timeline_clip_transition_frames(timeline,track,clip))) return JFX_ERROR_BACKEND_FAILURE;
+            const char *subtitles=jfx_timeline_clip_subtitles(timeline,track,clip);
+            if (*subtitles && (!append(out_text,out_size,&used,"clip_subtitles ") || !append_token(out_text,out_size,&used,subtitles) ||
+                !append(out_text,out_size,&used,"\n"))) return JFX_ERROR_BACKEND_FAILURE;
             jfx_clip_audio_t audio={.size=sizeof(audio)};
             if (jfx_timeline_get_clip_audio(timeline,track,clip,&audio)!=JFX_SUCCESS ||
                 !append(out_text,out_size,&used,"clip_audio %u %.9g %.9g %llu %llu %llu\n",audio.enabled,

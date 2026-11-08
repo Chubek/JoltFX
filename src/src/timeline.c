@@ -7,6 +7,8 @@
  * stack, or the timeline. See jfx_timeline.h for the model. */
 
 #include "jfx/jfx_timeline.h"
+#include "jfx/jfx_nle.h"
+#include "joltscript/subtitle_io.h"
 #include "plugin_internal.h"
 #include "jfx/jfx_audio.h"
 #include "jfx/jfx_vst3.h"
@@ -79,6 +81,9 @@ typedef struct {
     uint64_t length_frames;
     uint64_t in_point;
     int64_t key_offset;
+    char transition[32];
+    char subtitles[JFX_NODE_PATH_MAX];
+    uint64_t transition_frames;
     float opacity;
     jfx_blend_mode_t blend_mode;
     bool enabled;
@@ -757,6 +762,37 @@ const char *jfx_timeline_clip_path(const jfx_timeline_t *timeline, uint32_t trac
     const clip_t *c = clip_at_const(timeline, track, clip);
     return c ? c->image_path : NULL;
 }
+jfx_result_t jfx_timeline_set_clip_transition(jfx_timeline_t *t,uint32_t track,uint32_t clip,const char *kernel,uint64_t frames) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || !kernel || c->source==JFX_CLIP_AUDIO || c->source==JFX_CLIP_MIDI ||
+        ((*kernel || frames) && (frames<2 || frames>1000000 ||
+        (strcmp(kernel,"morph_cut") && strcmp(kernel,"cross_dissolve"))))) return JFX_ERROR_INVALID_ARGUMENT;
+    memmove(c->transition,kernel,strlen(kernel)+1); c->transition_frames=frames; return JFX_SUCCESS;
+}
+jfx_result_t jfx_timeline_set_clip_subtitles(jfx_timeline_t *t,uint32_t track,uint32_t clip,const char *path) {
+    clip_t *c=clip_at(t,track,clip);
+    if (!c || !path || strlen(path)>=JFX_NODE_PATH_MAX || c->source==JFX_CLIP_AUDIO || c->source==JFX_CLIP_MIDI) return JFX_ERROR_INVALID_ARGUMENT;
+    memmove(c->subtitles,path,strlen(path)+1); return JFX_SUCCESS;
+}
+const char *jfx_timeline_clip_subtitles(const jfx_timeline_t *t,uint32_t track,uint32_t clip) {
+    const clip_t *c=clip_at_const(t,track,clip); return c?c->subtitles:"";
+}
+const char *jfx_timeline_clip_transition(const jfx_timeline_t *t,uint32_t track,uint32_t clip) {
+    const clip_t *c=clip_at_const(t,track,clip); return c?c->transition:"";
+}
+uint64_t jfx_timeline_clip_transition_frames(const jfx_timeline_t *t,uint32_t track,uint32_t clip) {
+    const clip_t *c=clip_at_const(t,track,clip); return c?c->transition_frames:0;
+}
+jfx_result_t jfx_timeline_set_clip_path(jfx_timeline_t *t,uint32_t track,uint32_t clip,const char *path) {
+    if (!t || track>=jfx_timeline_track_count(t) || clip>=jfx_timeline_clip_count(t,track) ||
+        !path || !*path || strlen(path)>=JFX_NODE_PATH_MAX) return JFX_ERROR_INVALID_ARGUMENT;
+    jfx_clip_source_t source=jfx_timeline_clip_source(t,track,clip);
+    if (source!=JFX_CLIP_IMAGE && source!=JFX_CLIP_VIDEO && source!=JFX_CLIP_AUDIO) return JFX_ERROR_INVALID_ARGUMENT;
+    char *copy=dup_string(path); if (!copy) return JFX_ERROR_OUT_OF_MEMORY;
+    free_bytes(t->tracks[track].clips[clip].image_path);
+    t->tracks[track].clips[clip].image_path=copy;
+    return JFX_SUCCESS;
+}
 
 const float *jfx_timeline_clip_params(const jfx_timeline_t *timeline, uint32_t track,
     uint32_t clip) {
@@ -1421,6 +1457,28 @@ jfx_result_t jfx_timeline_render(const jfx_timeline_t *timeline, uint64_t frame,
                 free_bytes(clip_pixels);
                 free_bytes(layer);
                 return status;
+            }
+            uint64_t transition_frame=clip_key_frame(clip,frame);
+            if (*clip->subtitles) {
+                jolt_status_t s=jolt_subtitle_render(clip->subtitles,
+                    (double)(frame-clip->start_frame+clip->in_point)/jfx_timeline_fps(timeline),width,height,clip_pixels);
+                if (s!=JOLT_OK) { free_bytes(clip_pixels); free_bytes(layer);
+                    return s==JOLT_ERR_CAPABILITY?JFX_ERROR_NOT_IMPLEMENTED:JFX_ERROR_BACKEND_FAILURE; }
+            }
+            if (clip->transition_frames && transition_frame<clip->transition_frames) {
+                if (!layer) layer=alloc_bytes(pixel_count*4u);
+                /* No outgoing overlap is an edit error, not a silent dissolve
+                 * from arbitrary memory. */
+                bool outgoing=false;
+                for (size_t prior=0;prior<c;++prior) if (track->clips[prior].enabled &&
+                    track->clips[prior].source!=JFX_CLIP_AUDIO && track->clips[prior].source!=JFX_CLIP_MIDI &&
+                    jfx_timeline_clip_covers(timeline,(uint32_t)t,(uint32_t)prior,frame)) outgoing=true;
+                jfx_result_t r=!layer?JFX_ERROR_OUT_OF_MEMORY:!outgoing || clip->opacity!=1 || clip->blend_mode!=JFX_BLEND_NORMAL?
+                    JFX_ERROR_INVALID_ARGUMENT:jfx_nle_transition(clip->transition,layer,clip_pixels,width,height,
+                        (double)transition_frame/(double)(clip->transition_frames-1),layer,pixel_count*4u);
+                free_bytes(clip_pixels);
+                if (r!=JFX_SUCCESS) { free_bytes(layer); return r; }
+                continue;
             }
             if (!layer) {
                 /* The first live clip must obey its opacity too. Preserve straight

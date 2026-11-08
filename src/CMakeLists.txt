@@ -11,6 +11,9 @@ add_library(jfx_core STATIC
     src/timeline.c
     src/editor.c
     src/nle.c
+    src/nle_workflow.c
+    src/nle_transition.c
+    src/nle_otio.cpp
     src/audio.c
     src/recording.c
     src/vst3.cpp
@@ -29,6 +32,17 @@ if(NOT JFX_CPU_SIMD)
     target_compile_definitions(jfx_core PRIVATE JFX_CPU_SIMD_OFF=1)
 endif()
 target_include_directories(jfx_core SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/xsimd/include")
+target_sources(jfx_core PRIVATE "${PROJECT_SOURCE_DIR}/third_party/yyjson/src/yyjson.c")
+target_include_directories(jfx_core SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/yyjson/src"
+    "${PROJECT_SOURCE_DIR}/third_party/OpenTimelineIO/src")
+target_compile_definitions(jfx_core PRIVATE OPENTIME_STATIC)
+add_library(jfx_opentime OBJECT
+    "${PROJECT_SOURCE_DIR}/third_party/OpenTimelineIO/src/opentime/rationalTime.cpp"
+    "${PROJECT_SOURCE_DIR}/third_party/OpenTimelineIO/src/opentime/errorStatus.cpp")
+target_include_directories(jfx_opentime SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/OpenTimelineIO/src")
+target_compile_definitions(jfx_opentime PRIVATE OPENTIME_STATIC)
+set_target_properties(jfx_opentime PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_sources(jfx_core PRIVATE $<TARGET_OBJECTS:jfx_opentime>)
 
 target_include_directories(jfx_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

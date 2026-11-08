@@ -59,7 +59,111 @@ toolbar controlling playback. Shortcuts are suppressed while entering text.
 The desktop file-path popup has **Open** and **Save .jfx** buttons. File > Export
 Frame uses the path entered in the timeline's frame-export controls.
 
-## Shared commands
+## Workflow tools (NLE API 1.0)
+
+The desktop NLE adds searchable **Media bin / relink**, **Kernels / transitions /
+captions**, **Clap sync / loudness**, **Joltscript edits**, **OpenTimelineIO
+interchange**, **History**, and **Format converter / FFmpeg** panels. The media
+bin lists sequence references and their uses; probing reports codecs, duration,
+raster and rate, and can insert a full source at the playhead. Relinking replaces
+every exact matching media path in one undo step. Analysis, probing and conversion
+preparation run on scheduler jobs with owned paths. Stale analysis cannot be applied
+after sequence changes. Left/Right step one frame, Shift+Left/Right ten frames;
+Home returns to zero. Drop-frame timecode supports 30000/1001 and 60000/1001.
+
+### Kernels, morph cut and captions
+
+The searchable kernel picker applies single-image node operators to the selected
+clip. It includes sharpening, Gaussian blur, grain, pixelation and safe-title
+overlay alongside existing color and plugin operators. Numeric parameters commit
+on Enter. **Cross dissolve** and **Morph cut** use two frames: the selected incoming
+clip and earlier-created visual clips overlapping it on the same track. Set the
+incoming clip to full opacity/normal blend; missing overlap during the transition
+is a render error. Duration is 2–1,000,000 frames in the clip's reference clock,
+so split/head-trim retains its original transition samples.
+
+`morph_cut.jolt` performs a bounded local 3×3 Lucas–Kanade small-motion estimate
+and warped dissolve, on the CPU. It is not face-aware and does not reconstruct
+occluded areas. Large motion and cuts between different scenes can ghost. The
+two-frame API has a 512 MiB scratch / one-billion-step budget; expensive frames
+can exceed it. ASS/SSA caption files use libass and source-relative time; paths
+persist in projects, while the files and fonts remain external resources.
+
+New commands (A=track, B=clip): `clip.path` takes a replacement path in text;
+`clip.subtitles` takes an ASS/SSA path (empty removes it); `clip.transition`
+takes `cross_dissolve` or `morph_cut` in text and duration in value (empty/zero
+removes it). Serialization adds `clip_transition KERNEL FRAMES` and quoted
+`clip_subtitles PATH` directives.
+
+### Clap alignment and loudness
+
+Select the microphone/target clip, enter the reference track/clip indices, then
+analyze and align detected claps. Detection uses transient energy with noise and
+decay checks; ambiguous/absent impulses are reported rather than applied. This
+is a recording-clap heuristic, not speech matching or drift correction. Both
+source in-points and the rational sequence rate are included in alignment.
+
+Vendored libebur128 measures integrated LUFS and sample peak. The desktop samples
+the opening ten seconds; the C API accepts 0.1–60 seconds or finite stereo PCM.
+Claps need at least 50 ms of preceding/following context. Opening loudness is not
+a whole-program compliance measurement. Gain adjustment targets the requested
+LUFS with a sample-peak cap; it is not a true-peak limiter.
+
+### Joltscript edit batches
+
+The no-input kernel returns up to 256 command vectors. For example:
+
+```lisp
+(defkernel edit []
+  [["clip.name" 0 0 0 0 "Opening shot"]
+   ["effect.add" 0 0 0 0 "unsharp_mask"]])
+```
+
+Each vector is `[operation a b c value text]`, using the shared command surface.
+Only sequence edit families are allowed; loading, saving, undo and scene/graph
+commands are rejected. Compilation/execution is bounded to 64 KiB source and
+100,000 VM steps (desktop input: 16 KiB). No filesystem functions are exposed.
+The entire batch commits as one named history entry or rolls back on any error.
+No-op commands and net-zero transactions retain redo and consume no history step.
+`jfx_editor_history_count/label` inspect newest-first history; labels are borrowed.
+
+### Interchange and conversion
+
+OTIO JSON uses vendored OpenTimelineIO's OpenTime for rescaling and SMPTE
+timecode, with a restricted yyjson editorial adapter: Timeline/Stack/Track,
+Clip.1/Clip.2, gaps, names, local external media paths and source trims. Import
+uses an explicit raster/rational rate and requires integral rescaled frames.
+It replaces the sequence and clears history only after validation succeeds.
+Effects, markers, disabled objects, nested stacks, overlaps, mixing, nonzero
+global start time, trailing gaps and URL media references are unsupported;
+export rejects unsupported rendering state. Arbitrary OTIO metadata is not
+preserved. The desktop text buffer is 64 KiB; API/CLI input is project-bounded.
+
+Independent conversion builds an immutable temporary sequence from source media,
+then uses the shared export job for progress, cancellation and atomic publication.
+It does not edit the open sequence. Defaults come from the source; explicit FPS
+resamples to constant frame rate. Audio is stereo. Supported containers/encoders
+depend on the linked FFmpeg build, with MP4/MOV/MKV/WebM and WAV output profiles.
+The encoder list describes compiled encoders, not hardware/format compatibility.
+This uses FFmpeg libraries directly, without shell commands or an external process.
+
+```sh
+joltfx nle probe camera.mov
+joltfx nle analyze microphone.wav 10
+joltfx nle encoders
+joltfx nle convert camera.mov delivery.mp4 libx264
+joltfx nle script edit.jfx batch.jolt edited.jfx
+joltfx nle otio-export edit.jfx edit.otio
+joltfx nle otio-import edit.otio imported.jfx 1920 1080 30000 1001
+```
+
+`JFX_VIDEO_FFMPEG=OFF` retains PCM analysis, scripts, transitions, history and
+OTIO, but disables probing/conversion. `JFX_NLE_LIBASS=ON` detects system libass
+with pkg-config; if unavailable or OFF, caption rendering returns NOT_IMPLEMENTED.
+SDK 1.4 supplies `<joltfx/sdk/nle.h>` / `JoltFXSDK::nle`, adapting canonical
+`jfx/jfx_nle.h`; link the full `JoltFX::jfx_core` runtime separately.
+
+## Shared command reference
 
 ```c
 jfx_editor_command(editor, op, a, b, c, value, text);
@@ -174,7 +278,7 @@ file. Old unquoted project tokens still load. Older readers that do not support
 the new state directives may reject newly saved documents.
 
 Command-based sequence and graph edits share up to **32 undo/redo steps**, with a **32 MiB
-combined snapshot budget**. New edits clear redo; successful project loads clear
+combined snapshot budget**. Changed edits clear redo; successful project loads clear
 both stacks. Failed commands and failed loads preserve history. Snapshots restore
 their edited document and prior active mode while retaining the other model.
 See [composition history](composition.md). Direct mutations of a borrowed timeline
@@ -204,7 +308,9 @@ compact command surface bounds numeric values to ±1,000,000,000 and A/B/C to
 
 ## Verification and versions
 
-The additive editor API is **1.4**, timeline API **1.2**, and color API **1.0.0**.
+The additive editor API is **1.9**, timeline API **1.4**, NLE workflow API **1.0**,
+and color API **1.0.0**. `nle_workflow`, `nle_media` and `nle_ui_tests` cover the
+workflow additions, including rollback, decoded conversion output and widgets.
 Existing public structure layouts are preserved. `tests/fixtures/nle_sequence.jfx`
 is the small cross-frontend sequence. Native tests cover ownership, edit timing,
 ripple conflicts, limits, smooth-curve pixel preservation, history, rational-rate

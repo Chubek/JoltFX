@@ -665,6 +665,13 @@ See `kernels/README.md` and `tests/kernels/test_image_program.c` for the contrac
 
 ## Media adapters (Glue ABI 0.4)
 
+NLE's `media_analysis.h` wraps vendored libebur128 with Tilly allocation hooks
+and a bounded transient detector. `video_io.h` also exposes FFmpeg probing,
+version and encoder discovery. `subtitle_io.h` uses optional system libass
+(`JFX_NLE_LIBASS`) for source-timed ASS/SSA rasterization. Keep optional-off
+stubs, size-guarded structs and failure-atomic public output; `nle_media` and
+`nle_workflow` exercise these adapters through the canonical NLE boundary.
+
 `audio_io.h` streams stereo float through vendored miniaudio or FFmpeg, preserving
 EOF, seek/resampling and delayed stream behavior. `JOLT_AUDIO_NO_STREAM` means a
 valid container has no audio; unavailable/invalid decoding must remain an error.

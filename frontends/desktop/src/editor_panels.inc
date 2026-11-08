@@ -3,14 +3,25 @@ void editor_result(jfx_desktop_frontend_t *f, jfx_result_t r) {
     if (r == JFX_SUCCESS) { reset_audio(f); f->editing = true; f->preview_dirty = true; ++f->scene_revision; f->status[0]=0; }
     else std::snprintf(f->status, sizeof(f->status), "%s", jfx_result_to_string(r));
 }
+#include "nle_tools.inc"
+void audio_value(jfx_desktop_frontend_t *,const char *,uint32_t,uint32_t,double,uint32_t);
 void encoded_export(jfx_desktop_frontend_t *f) {
+    ImGui::Text("FFmpeg %s",jfx_nle_ffmpeg_version());
     ImGui::InputText("Video output (.mp4/.mov/.mkv)",f->video_export_path,sizeof(f->video_export_path));
     ImGui::InputText("Encoder (empty: default)",f->video_codec,sizeof(f->video_codec));
+    if (ImGui::BeginCombo("Available video encoders",*f->video_codec?f->video_codec:"Container default")) {
+        if (ImGui::Selectable("Container default")) f->video_codec[0]=0;
+        for (size_t i=0;const char *name=jfx_nle_encoder_at(i,false);++i)
+            if (ImGui::Selectable(name)) std::snprintf(f->video_codec,sizeof(f->video_codec),"%s",name);
+        ImGui::EndCombo();
+    }
+    ImGui::InputInt("Video bitrate kb/s (0: default)",&f->nle_bitrate_kbps);
+    ImGui::InputInt("Audio bitrate kb/s (0: default)",&f->nle_audio_bitrate_kbps);
     ImGui::InputScalar("Export start frame",ImGuiDataType_U64,&f->video_start);
     ImGui::InputScalar("Export frames (0: sequence)",ImGuiDataType_U64,&f->video_frames);
     ImGui::Checkbox("Include mixed audio",&f->video_audio);
     bool running=desktop_export_running(f);
-    ImGui::BeginDisabled(running);
+    ImGui::BeginDisabled(running || nle_busy(f));
     if (ImGui::Button("Export encoded video")) {
         f->export_image_sequence=false; f->export_result_snapshot=JFX_SUCCESS;
         jfx_export_destroy(f->export_job); f->export_job=nullptr;
@@ -18,8 +29,10 @@ void encoded_export(jfx_desktop_frontend_t *f) {
         options.video_codec=*f->video_codec?f->video_codec:nullptr; options.start_frame=f->video_start;
         options.frame_count=f->video_frames?f->video_frames:jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_GRAPH?300:0;
         options.audio=f->video_audio;
+        options.video_bitrate=(uint64_t)std::max(0,f->nle_bitrate_kbps)*1000;
+        options.audio_bitrate=(uint64_t)std::max(0,f->nle_audio_bitrate_kbps)*1000;
         editor_result(f,jfx_desktop_frontend_export_begin(f,&options,&f->export_job));
-        f->export_worker_scene=f->export_job && jfx_editor_kind(f->editor)==JFX_PROJECT_KIND_SCENE3D;
+        f->export_worker_scene=f->export_job!=nullptr;
     }
     ImGui::EndDisabled();
     if (running) {
@@ -37,12 +50,14 @@ void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
     if (f->selected_clip>=jfx_timeline_clip_count(t,f->selected_track)) f->selected_clip=0;
     uint64_t frame=jfx_desktop_frontend_timeline_current_frame(f);
     char code[64]; jfx_timeline_timecode(t,frame,code,sizeof(code));
+    if (f->nle_drop_frame) (void)jfx_nle_timecode(frame,jfx_timeline_fps_num(t),jfx_timeline_fps_den(t),true,code,sizeof(code));
     ImGui::Text("%s | %u/%u fps",code,jfx_timeline_fps_num(t),jfx_timeline_fps_den(t));
     ImGui::SameLine();
     if (ImGui::Button("Preview sequence")) {
         command("sequence");
     }
     ImGui::SameLine(); ImGui::Checkbox("Loop", &f->looping);
+    ImGui::SameLine(); ImGui::Checkbox("Drop-frame TC",&f->nle_drop_frame);
     ImGui::SameLine();
     ImGui::BeginDisabled(!jfx_editor_can_undo(f->editor));
     if (ImGui::Button("Undo")) { command("undo"); f->nle_drag=0; }
@@ -72,7 +87,7 @@ void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
         ImGui::EndCombo();
     }
     float scale=f->nle_zoom;
-    ImGui::BeginChild("NLE lanes",ImVec2(0,daw?240.0f:125.0f),true);
+    ImGui::BeginChild("NLE lanes",ImVec2(0,daw?240.0f:210.0f),true);
     float available=ImGui::GetContentRegionAvail().x;
     ImVec2 ruler=ImGui::GetCursorScreenPos(); ruler.x+=120;
     ImGui::SetCursorScreenPos(ruler); ImGui::InvisibleButton("Ruler",ImVec2(available>120?available-120:20,20));
@@ -182,7 +197,8 @@ void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
         ImGui::SameLine(); if (ImGui::SmallButton("Track down") && f->selected_track) { command("track.move",f->selected_track,0,0,f->selected_track-1); --f->selected_track; }
         ImGui::SameLine(); if (ImGui::SmallButton("Remove track")) { command("track.remove",f->selected_track); return; }
         float gain=jfx_timeline_track_audio_gain(t,f->selected_track);
-        if (ImGui::SliderFloat("Track audio gain",&gain,0,4)) command("track.audio.gain",f->selected_track,0,0,gain);
+        if (ImGui::SliderFloat("Track audio gain",&gain,0,4)) audio_value(f,"track.audio.gain",f->selected_track,0,(double)gain,0);
+        if (ImGui::IsItemDeactivatedAfterEdit()) finish_audio(f);
     }
     if (f->selected_clip<jfx_timeline_clip_count(t,f->selected_track)) {
         uint64_t start=jfx_timeline_clip_start(t,f->selected_track,f->selected_clip);
@@ -210,8 +226,10 @@ void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
         if (jfx_timeline_get_clip_audio(t,f->selected_track,f->selected_clip,&audio)==JFX_SUCCESS &&
             (jfx_timeline_clip_source(t,f->selected_track,f->selected_clip)==JFX_CLIP_AUDIO || jfx_timeline_clip_source(t,f->selected_track,f->selected_clip)==JFX_CLIP_VIDEO)) {
             if (ImGui::Checkbox("Clip audio",&audio.enabled)) command("clip.audio.enabled",f->selected_track,f->selected_clip,0,audio.enabled?1:0);
-            if (ImGui::SliderFloat("Audio gain",&audio.gain,0,4)) command("clip.audio.gain",f->selected_track,f->selected_clip,0,audio.gain);
-            if (ImGui::SliderFloat("Stereo pan",&audio.pan,-1,1)) command("clip.audio.pan",f->selected_track,f->selected_clip,0,audio.pan);
+            if (ImGui::SliderFloat("Audio gain",&audio.gain,0,4)) audio_value(f,"clip.audio.gain",f->selected_track,f->selected_clip,(double)audio.gain,0);
+            if (ImGui::IsItemDeactivatedAfterEdit()) finish_audio(f);
+            if (ImGui::SliderFloat("Stereo pan",&audio.pan,-1,1)) audio_value(f,"clip.audio.pan",f->selected_track,f->selected_clip,(double)audio.pan,0);
+            if (ImGui::IsItemDeactivatedAfterEdit()) finish_audio(f);
             if (ImGui::InputScalar("Fade in frames",ImGuiDataType_U64,&audio.fade_in_frames)) command("clip.audio.fade_in",f->selected_track,f->selected_clip,0,(double)audio.fade_in_frames);
             if (ImGui::InputScalar("Fade out frames",ImGuiDataType_U64,&audio.fade_out_frames)) command("clip.audio.fade_out",f->selected_track,f->selected_clip,0,(double)audio.fade_out_frames);
         }
@@ -234,8 +252,16 @@ void timeline_tracks(jfx_desktop_frontend_t *f,bool daw=false) {
     if (ImGui::CollapsingHeader("Encoded video export")) {
         encoded_export(f);
     }
+    if (!daw) nle_tools(f);
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
         bool modifier=ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) f->nle_drag=0;
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+            int64_t next=(int64_t)frame+(ImGui::IsKeyPressed(ImGuiKey_LeftArrow)?-1:1)*(ImGui::GetIO().KeyShift?10:1);
+            f->time_seconds=(double)std::max<int64_t>(0,next)/jfx_timeline_fps(jfx_editor_timeline(f->editor)); f->playing=false; f->preview_dirty=true;
+            reset_audio(f);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Home)) { f->time_seconds=0; f->playing=false; f->preview_dirty=true; reset_audio(f); }
         if (ImGui::IsKeyPressed(ImGuiKey_Space)) f->playing=!f->playing;
         if (ImGui::IsKeyPressed(ImGuiKey_S) && !modifier) command("clip.split",f->selected_track,f->selected_clip,0,(double)frame);
         if (ImGui::IsKeyPressed(ImGuiKey_Delete)) command(ImGui::GetIO().KeyShift?"clip.ripple_delete":"clip.remove",f->selected_track,f->selected_clip);

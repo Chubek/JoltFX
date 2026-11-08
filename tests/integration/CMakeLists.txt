@@ -63,6 +63,9 @@ endif()
 find_program(JFX_TEST_FFMPEG ffmpeg)
 find_program(JFX_TEST_FFPROBE ffprobe)
 if(Python3_Interpreter_FOUND AND TARGET joltfx_cli)
+    add_test(NAME nle_workflow_cli COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cli/test_nle_workflow.py" "$<TARGET_FILE:joltfx_cli>")
+    set_tests_properties(nle_workflow_cli PROPERTIES LABELS "integration;cli;nle" TIMEOUT 120)
     add_test(NAME modeling3d_cli COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/cli/test_modeling3d.py" "$<TARGET_FILE:joltfx_cli>")
     add_test(NAME ext_conformance_cli COMMAND "${Python3_EXECUTABLE}"

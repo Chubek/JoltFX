@@ -27,6 +27,7 @@ file(WRITE "${TEST_DIR}/consumer/main.c" "
 #include <joltfx/sdk/jolttype.h>
 #include <joltfx/sdk/runtime.h>
 #include <joltfx/sdk/timeline.h>
+#include <joltfx/sdk/nle.h>
 #include <joltfx/sdk/facet.h>
 #include <joltfx/sdk/frontend.h>
 #include <joltfx/sdk/gui.h>
@@ -46,12 +47,12 @@ project(SDKConsumer LANGUAGES C CXX)
 if(SDK_SOURCE_DIR)
     add_subdirectory("${SDK_SOURCE_DIR}" sdk)
 else()
-    find_package(JoltFXSDK 1.3 REQUIRED CONFIG COMPONENTS
+    find_package(JoltFXSDK 1.4 REQUIRED CONFIG COMPONENTS
         headers audio backend events facet frontend gui ingagi joltscript jolttype libraries
-        loader openfx module plugins renderer runtime timeline tools)
+        loader openfx module nle plugins renderer runtime timeline tools)
 endif()
 foreach(facet audio backend events facet frontend gui ingagi joltscript jolttype libraries
-        loader openfx module plugins renderer runtime timeline tools)
+        loader openfx module nle plugins renderer runtime timeline tools)
     list(APPEND facets JoltFXSDK::${facet})
     foreach(language c cpp)
         file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${facet}.${language}"

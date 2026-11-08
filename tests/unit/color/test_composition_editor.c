@@ -154,7 +154,7 @@ static void ownership_limits_and_export(const char *path) {
     assert(edit(e,"undo",0,0,0,0,"")==JFX_SUCCESS && jfx_editor_kind(e)==JFX_PROJECT_KIND_SEQUENCE);
     assert(jfx_graph_node_count(jfx_editor_graph(e))==JFX_GRAPH_MAX_NODES);
     assert(edit(e,"redo",0,0,0,0,"")==JFX_SUCCESS && jfx_editor_kind(e)==JFX_PROJECT_KIND_GRAPH);
-    for (int i=0;i<40;++i) assert(edit(e,"node.label",0,0,0,0,"Rename")==JFX_SUCCESS);
+    for (int i=0;i<40;++i) assert(edit(e,"node.label",0,0,0,0,i%2?"Rename B":"Rename A")==JFX_SUCCESS);
     for (int i=0;i<32;++i) assert(edit(e,"undo",0,0,0,0,"")==JFX_SUCCESS);
     assert(!jfx_editor_can_undo(e) && jfx_editor_can_redo(e));
     jfx_editor_destroy(e);

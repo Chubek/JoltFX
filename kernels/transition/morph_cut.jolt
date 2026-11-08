@@ -1,0 +1,40 @@
+;; @kernel       morph_cut
+;; @category     transition
+;; @description  Motion-compensated dissolve using a bounded local Lucas-Kanade estimate.
+;; @complexity   High
+;; @gpu          No
+;; @since        0.7.0
+;; @author       joltfx-team
+;; CPU image profile. Resource is the destination premultiplied RGBA frame.
+;; Small-motion approximation: 3x3 gradient fit, no face tracking or inpainting.
+(param progress 0.5 0 1 0)
+(param strength 1 0 1 0)
+(param max_motion 4 0 16 0)
+(defn mc-pixel [x y c]
+  (to-frame (max 0 (min (- width 1) x)) (max 0 (min (- height 1) y)) c))
+(defn mc-g [x y axis]
+  (if (= axis 0)
+    (* .25 (+ (- (pixel (+ x 1) y 1) (pixel (- x 1) y 1))
+               (- (mc-pixel (+ x 1) y 1) (mc-pixel (- x 1) y 1))))
+    (* .25 (+ (- (pixel x (+ y 1) 1) (pixel x (- y 1) 1))
+               (- (mc-pixel x (+ y 1) 1) (mc-pixel x (- y 1) 1))))))
+(defn mc-term [x y a b]
+  (sum i -1 2 (sum j -1 2
+    (* (mc-g (+ x i) (+ y j) a)
+       (if (= b 2) (- (mc-pixel (+ x i) (+ y j) 1) (pixel (+ x i) (+ y j) 1))
+         (mc-g (+ x i) (+ y j) b))))))
+(defn mc-to [x y c]
+  (let [xx (max 0 (min (- width 1) x)) yy (max 0 (min (- height 1) y))
+        ix (floor xx) iy (floor yy) fx (- xx ix) fy (- yy iy)]
+    (mix (mix (mc-pixel ix iy c) (mc-pixel (+ ix 1) iy c) fx)
+         (mix (mc-pixel ix (+ iy 1) c) (mc-pixel (+ ix 1) (+ iy 1) c) fx) fy)))
+(defkernel morph_cut [x y c]
+  (if (= progress 0) (pixel x y c)
+    (if (= progress 1) (to-frame x y c)
+      (let [a (+ .0001 (mc-term x y 0 0)) b (mc-term x y 0 1)
+            d (+ .0001 (mc-term x y 1 1)) e (mc-term x y 0 2) f (mc-term x y 1 2)
+            det (- (* a d) (* b b))
+            u (* strength (max (- max_motion) (min max_motion (/ (- (* b f) (* d e)) det))))
+            v (* strength (max (- max_motion) (min max_motion (/ (- (* b e) (* a f)) det))))]
+        (mix (sample (- x (* progress u)) (- y (* progress v)) c 1 1)
+             (mc-to (+ x (* (- 1 progress) u)) (+ y (* (- 1 progress) v)) c) progress)))))

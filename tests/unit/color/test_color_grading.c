@@ -65,7 +65,8 @@ int main(void) {
     for (size_t i=0;i<jfx_color_kind_count();++i) {
         kind=jfx_color_kind_at(i); jfx_node_value_init(&value,kind);
         assert(jfx_color_apply(kind,&value,NULL,src,2,1,out)==JFX_SUCCESS);
-        assert(out[3]==src[3] && out[7]==src[7]);
+        if (jfx_color_section(kind)!=JFX_COLOR_NONE) assert(out[3]==src[3] && out[7]==src[7]);
+        else assert(out[3]>=0 && out[3]<=1 && out[7]>=0 && out[7]<=1);
     }
     assert(jfx_color_kind_at(SIZE_MAX)==NULL && jfx_color_section(NULL)==JFX_COLOR_NONE);
 

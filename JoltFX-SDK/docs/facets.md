@@ -1,6 +1,6 @@
 # SDK facets and capability inventory
 
-SDK 1.3 packages the existing public contracts. All 28 headers under
+SDK 1.4 packages the existing public contracts. All 29 headers under
 `src/include/jfx` are installed and represented by the adapters below. Names in
 the header column are relative to `include/jfx` unless explicitly qualified.
 Include adapters as `<joltfx/sdk/NAME.h>` and link `JoltFXSDK::NAME`.
@@ -20,6 +20,7 @@ Include adapters as `<joltfx/sdk/NAME.h>` and link `JoltFXSDK::NAME`.
 | `tools` | `jfx_project.h`, `jfx_modeling3d.h`, `jfx_iap.h` | Project/scene interchange and IAP1 animation/asset pack export and inspection. An IAP player is future work. |
 | `audio` | `jfx_audio.h`, `jfx_automation.h`, `jfx_midi.h`, `jfx_recording.h`, `jfx_vst3.h` | Stereo mixing, MIDI notes, automation, WAV capture, insert state and native VST3 hosting. Device/native-view support is platform-dependent. |
 | `timeline` | `jfx_timeline.h`, `jfx_animation.h` | Sequences/tracks/clips, transitions/effects and keyframe interpolation. Editor commands provide document history. |
+| `nle` | `jfx_nle.h` | Atomic Joltscript command batches, relinking, clap alignment, libebur128 loudness, bounded OTIO editorial JSON/OpenTime, CPU morph/dissolve transitions, optional libass captions and FFmpeg probing/independent conversion. Link `JoltFX::jfx_core`; see [NLE](nle.md). |
 | `events` | `jfx_events.h` | Typed event codes, synchronous subscriber snapshots and exact-userdata unsubscribe. Current symbols include `event_subscribe` and `event_publish`. |
 | `runtime` | `jfx_engine.h`, `jfx_memory.h`, `jfx_scheduler.h`, `jfx_result.h`; `tilly/allocator.h` | Engine lifecycle, scheduler jobs and engine-managed heaps/pools/frame scratch. Release storage with the matching API. |
 | `ingagi` | `ingagi/Ingagi-Module.h`, optional `.hpp` | Scalar C embedding with native callbacks; C++17 owning session wrapper. See [Ingagi](ingagi.md). |

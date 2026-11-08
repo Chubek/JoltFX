@@ -11,6 +11,17 @@ cmake --build build --target joltfx_cli
 
 ## Commands
 
+- `joltfx nle probe FILE`, `nle analyze FILE [SECONDS]`, `nle encoders` — direct
+  FFmpeg metadata/encoder discovery and bounded clap/libebur128 measurements.
+- `joltfx nle convert INPUT OUTPUT [VIDEO_ENCODER]` — independent format
+  conversion, preserving the destination on failure.
+- `joltfx nle script INPUT.jfx EDIT.jolt OUTPUT.jfx` — one atomic Joltscript
+  command batch; failed commands do not publish output.
+- `joltfx nle otio-export INPUT.jfx OUTPUT.otio` and
+  `nle otio-import INPUT.otio OUTPUT.jfx [WIDTH HEIGHT FPS_NUM FPS_DEN]` — bounded
+  editorial interchange; import defaults to 1920×1080 at 30 fps. See the
+  [NLE workflow guide](../../docs/nle.md) for supported state and limits.
+
 - `joltfx 3d new SCENE.jfx` — default 3D scene with a cube.
 - `joltfx 3d edit IN.jfx OUT.jfx` — terminal/piped `3d.*` mesh, generator, cloner,
   quaternion camera, key, Joltscript driver and physics edits.

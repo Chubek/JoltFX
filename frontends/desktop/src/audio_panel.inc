@@ -12,6 +12,7 @@ void audio_value(jfx_desktop_frontend_t *f,const char *op,uint32_t track,uint32_
         auto r=jfx_editor_begin_edit(f->editor,JFX_PROJECT_KIND_SEQUENCE);
         if (r!=JFX_SUCCESS) { editor_result(f,r); return; }
         f->audio_edit=true;
+        jfx_editor_edit_label(f->editor,op);
     }
     editor_result(f,jfx_editor_command(f->editor,op,track,clip,index,value,""));
 }

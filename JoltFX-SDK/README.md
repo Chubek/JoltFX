@@ -1,4 +1,4 @@
-# JoltFX SDK 1.3
+# JoltFX SDK 1.4
 
 A C11/C++17 development package over JoltFX's existing public contracts. The SDK
 does not duplicate the engine or expose third-party implementation types.
@@ -25,6 +25,7 @@ Planned and in-progress SDK work is tracked in [FUTURE_OF_SDK.md](FUTURE_OF_SDK.
 | `JoltFXSDK::tools` | `joltfx/sdk/tools.h` | Project, scene and Ingagi Animation Pack tooling |
 | `JoltFXSDK::audio` | `joltfx/sdk/audio.h` | Mixing, MIDI, automation, recording and VST3 |
 | `JoltFXSDK::timeline` | `joltfx/sdk/timeline.h` | Sequences, tracks, clips and keyframe animation |
+| `JoltFXSDK::nle` | `joltfx/sdk/nle.h` | Atomic Joltscript edits, relinking, clap/loudness analysis, OTIO, transitions and conversion |
 | `JoltFXSDK::events` | `joltfx/sdk/events.h` | Synchronous engine event subscriptions |
 | `JoltFXSDK::runtime` | `joltfx/sdk/runtime.h` | Engine lifecycle, memory, scheduler and result codes |
 | `JoltFXSDK::ingagi` | `joltfx/sdk/ingagi.h` | Canonical Ingagi native-module/embedding ABI 1.0.0 |
@@ -77,9 +78,9 @@ joltfx_sdk_add_plugin(MyEffect effect.c) # exports jfx_plugin_entry
 joltfx_sdk_add_renderer(MyRenderer renderer.cpp) # exports jfx_renderer_entry
 ```
 
-Request new facets with `find_package(JoltFXSDK 1.3 REQUIRED CONFIG COMPONENTS
-ingagi joltscript jolttype openfx)`. Required unknown components fail configuration. SDK package
-version 1.3.0 is additive; individual engine/language/module ABI versions are
+Request new facets with `find_package(JoltFXSDK 1.4 REQUIRED CONFIG COMPONENTS
+ingagi joltscript jolttype openfx nle)`. Required unknown components fail configuration. SDK package
+version 1.4.0 is additive; individual engine/language/module ABI versions are
 independent. Existing 1.0 consumers remain supported.
 
 JoltType consumers link `JoltFX::jolttype` separately; see

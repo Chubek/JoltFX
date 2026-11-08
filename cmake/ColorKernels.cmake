@@ -16,7 +16,10 @@ set(JFX_COLOR_KERNELS
     color_calibration/calib_white_point color_calibration/calib_color_space_transform
     color_calibration/calib_log_to_linear color_calibration/calib_legal_to_full
     color_calibration/calib_full_to_legal color_calibration/calib_rec709_to_rec2020
-    color_calibration/calib_srgb_to_display_p3)
+    color_calibration/calib_srgb_to_display_p3
+    blur_sharpen/unsharp_mask blur_sharpen/gaussian_blur
+    video_effects/video_noise_grain video_effects/video_pixelate
+    nle/nle_safe_title_overlay)
 set(header "${CMAKE_CURRENT_BINARY_DIR}/color_nodes.inc")
 file(WRITE "${header}" "/* Generated from kernels; do not edit. */\n")
 set(kinds "")
@@ -46,8 +49,10 @@ foreach(path IN LISTS JFX_COLOR_KERNELS)
     string(REPLACE "_" " " label "${label}")
     if(path MATCHES "^color_calibration/")
         set(category "Color Calibration")
-    else()
+    elseif(path MATCHES "^color_grading/")
         set(category "Color Grading")
+    else()
+        set(category "NLE Kernels")
     endif()
     set(strings "0,NULL")
     if(name STREQUAL "grade_lut" OR name STREQUAL "calib_lut")
